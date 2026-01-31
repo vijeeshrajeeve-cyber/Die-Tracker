@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Build outputs
+dist/
+build/
+
+# Development files
+.git/
+.gitignore
+.vscode/
+.claude/
+*.md
+!README.md
+
+# Test data and docs
+TestData/
+docs/
+
+# Environment files (we'll use docker-compose env vars)
+.env.local
+.env.development
+
+# Database files
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Zone identifiers (Windows)
+*Zone.Identifier
+
+# Backup files
+*.backup
+*.bak

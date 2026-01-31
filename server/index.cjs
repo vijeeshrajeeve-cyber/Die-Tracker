@@ -1,0 +1,121 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+// Import database pool and initialization
+const { pool, initializeDatabase } = require('./db.cjs');
+
+// Import routes
+const { router: authRouter, authMiddleware, adminMiddleware } = require('./routes/auth.cjs');
+const usersRouter = require('./routes/users.cjs');
+const ordersRouter = require('./routes/orders.cjs');
+const suppliersRouter = require('./routes/suppliers.cjs');
+const plantsRouter = require('./routes/plants.cjs');
+
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: isProduction ? undefined : false, // Disable CSP in development for hot reload
+    crossOriginEmbedderPolicy: false
+}));
+
+// General rate limiting
+const generalLimiter = rateLimit({
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+    message: { error: 'Too many requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+app.use(generalLimiter);
+
+// CORS configuration
+app.use(cors({
+    origin: isProduction
+        ? process.env.ALLOWED_ORIGINS?.split(',') || false
+        : true,
+    credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' })); // Limit payload size
+
+// Public routes
+app.use('/api/auth', authRouter);
+
+// Protected routes
+app.use('/api/users', authMiddleware, adminMiddleware, usersRouter);
+app.use('/api/orders', authMiddleware, ordersRouter);
+app.use('/api/suppliers', suppliersRouter);
+app.use('/api/plants', plantsRouter);
+
+
+// Health check
+app.get('/api/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({
+            status: 'ok',
+            database: 'connected',
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV || 'development'
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'error', database: 'disconnected', error: error.message });
+    }
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Not found' });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).json({
+        error: isProduction ? 'Internal server error' : err.message
+    });
+});
+
+// Initialize database and start server
+const startServer = async () => {
+    try {
+        // Validate required environment variables in production
+        if (isProduction) {
+            const requiredEnvVars = ['JWT_SECRET', 'PGPASSWORD'];
+            const missing = requiredEnvVars.filter(v => !process.env[v]);
+            if (missing.length > 0) {
+                throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+            }
+
+            // Warn if using default JWT secret
+            if (process.env.JWT_SECRET === 'die-ordering-secret-key-change-in-production') {
+                console.warn('WARNING: Using default JWT secret in production is insecure!');
+            }
+        }
+
+        await initializeDatabase();
+
+        app.listen(PORT, HOST, () => {
+            console.log(`Die Ordering API Server running at http://${HOST}:${PORT}`);
+            console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+            console.log(`Health check: http://localhost:${PORT}/api/health`);
+            if (!isProduction) {
+                console.log(`Default admin: ${process.env.DEFAULT_ADMIN_USERNAME || 'admin'} / [check .env file]`);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+};
+
+startServer();
