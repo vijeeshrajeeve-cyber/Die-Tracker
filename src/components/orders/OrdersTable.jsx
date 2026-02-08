@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Trash2, Eye } from 'lucide-react';
+import { Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Trash2, Eye, History } from 'lucide-react';
 import StatusBadge from '../common/StatusBadge';
 import ProgressPipeline from '../common/ProgressPipeline';
 
@@ -9,6 +9,7 @@ function OrdersTable({
   plants,
   onOrderClick,
   onDeleteOrder,
+  onViewChangeLog,
   isAdmin,
   theme
 }) {
@@ -182,6 +183,8 @@ function OrdersTable({
               <SortHeader label="Requested" sortKey="Die Requested Date" />
               <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Progress</th>
               <SortHeader label="Status" sortKey="STATUS" />
+              <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Log</th>
+              <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Rev</th>
               <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Actions</th>
             </tr>
           </thead>
@@ -229,6 +232,49 @@ function OrdersTable({
                 </td>
                 <td style={{ padding: '12px' }} onClick={() => onOrderClick(order)}>
                   <StatusBadge status={order.STATUS} />
+                </td>
+                <td style={{ padding: '12px', textAlign: 'center' }}>
+                  {order['Change Log'] && order['Change Log'].length > 0 ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onViewChangeLog && onViewChangeLog(order); }}
+                      style={{
+                        padding: '6px',
+                        background: 'rgba(59,130,246,0.2)',
+                        border: '1px solid rgba(59,130,246,0.4)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        color: '#3B82F6',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title={`${order['Change Log'].length} change(s) logged - Click to view`}
+                    >
+                      <History size={14} />
+                      <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order['Change Log'].length}</span>
+                    </button>
+                  ) : (
+                    <span style={{ color: theme.textMuted }}>—</span>
+                  )}
+                </td>
+                <td style={{ padding: '12px', textAlign: 'center' }} onClick={() => onOrderClick(order)}>
+                  {order['Design Revision Count'] > 0 ? (
+                    <span
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        background: 'rgba(245,158,11,0.2)',
+                        color: '#F59E0B'
+                      }}
+                      title={order['Last Revision Date'] ? `Last: ${order['Last Revision Date']}` : ''}
+                    >
+                      {order['Design Revision Count']}
+                    </span>
+                  ) : (
+                    <span style={{ color: theme.textMuted }}>—</span>
+                  )}
                 </td>
                 <td style={{ padding: '12px', textAlign: 'center' }}>
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>

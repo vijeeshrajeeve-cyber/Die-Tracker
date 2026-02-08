@@ -14,7 +14,7 @@ import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
-import { PIImportModal, RevisionModal } from './components/modals';
+import { PIImportModal, RevisionModal, ChangeLogModal } from './components/modals';
 
 // ============================================================================
 // SAMPLE DATA - Representative samples covering all statuses, types, plants
@@ -931,10 +931,28 @@ export default function DieOrderingSystem() {
   const [showPDFImportModal, setShowPDFImportModal] = useState(false);
   const [showPIImportModal, setShowPIImportModal] = useState(false);
   const [revisionOrder, setRevisionOrder] = useState(null); // For revision modal
+  const [changelogOrder, setChangelogOrder] = useState(null); // For changelog modal
   const [currentPage, setCurrentPage] = useState(1);
   const [showCompletedInChart, setShowCompletedInChart] = useState(false);
   const [showCancelledInChart, setShowCancelledInChart] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  // Get dark mode preference from localStorage, default to true (dark mode)
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('die-ordering-app-theme');
+      return saved !== null ? saved === 'dark' : true; // Default to dark mode
+    } catch {
+      return true;
+    }
+  });
+
+  // Persist dark mode preference to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('die-ordering-app-theme', isDarkMode ? 'dark' : 'light');
+    } catch (e) {
+      console.warn('Unable to save theme preference');
+    }
+  }, [isDarkMode]);
   const [analyticsFilter, setAnalyticsFilter] = useState({ period: 'all', quarter: 'all' });
   const itemsPerPage = 10;
 
@@ -1874,9 +1892,9 @@ export default function DieOrderingSystem() {
                           <td style={{ ...styles.td, textAlign: 'center' }}>
                             {order['Change Log'] && order['Change Log'].length > 0 ? (
                               <button
-                                onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
-                                style={{ padding: '6px', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                title={`${order['Change Log'].length} change(s) logged`}
+                                onClick={(e) => { e.stopPropagation(); setChangelogOrder(order); }}
+                                style={{ padding: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                title={`${order['Change Log'].length} change(s) logged - Click to view`}
                               >
                                 <History size={14} />
                                 <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order['Change Log'].length}</span>
@@ -2026,6 +2044,7 @@ export default function DieOrderingSystem() {
                               </th>
                             ))}
                             <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
+                            <th style={{ ...styles.th, textAlign: 'center' }}>Rev</th>
                             {/* PR Entry specific columns */}
                             {currentFlow.status === 'PENDING FOR PR' && (
                               <>
@@ -2089,6 +2108,15 @@ export default function DieOrderingSystem() {
                                 <td style={styles.td}>{order['Die Requested Date']}</td>
                                 <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}><button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button></td>
+                                <td style={{ ...styles.td, textAlign: 'center' }}>
+                                  {order['Design Revision Count'] > 0 ? (
+                                    <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B' }} title={order['Last Revision Date'] ? `Last: ${order['Last Revision Date']}` : ''}>
+                                      {order['Design Revision Count']}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#64748B' }}>—</span>
+                                  )}
+                                </td>
                                 {/* PR Entry specific cells */}
                                 {currentFlow.status === 'PENDING FOR PR' && (
                                   <>
@@ -2585,6 +2613,13 @@ export default function DieOrderingSystem() {
             onClose={() => setRevisionOrder(null)}
             order={revisionOrder}
             onRevision={handleRevision}
+            theme={theme}
+          />
+        )}
+        {changelogOrder && (
+          <ChangeLogModal
+            order={changelogOrder}
+            onClose={() => setChangelogOrder(null)}
             theme={theme}
           />
         )}
