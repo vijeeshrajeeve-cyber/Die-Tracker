@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
-import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, GripVertical, Menu, User, LogOut, Bell, Key, Lock, ShieldCheck } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, GripVertical, Menu, User, LogOut, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -14,7 +14,7 @@ import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
-import { PIImportModal } from './components/modals';
+import { PIImportModal, RevisionModal } from './components/modals';
 
 // ============================================================================
 // SAMPLE DATA - Representative samples covering all statuses, types, plants
@@ -930,6 +930,7 @@ export default function DieOrderingSystem() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showPDFImportModal, setShowPDFImportModal] = useState(false);
   const [showPIImportModal, setShowPIImportModal] = useState(false);
+  const [revisionOrder, setRevisionOrder] = useState(null); // For revision modal
   const [currentPage, setCurrentPage] = useState(1);
   const [showCompletedInChart, setShowCompletedInChart] = useState(false);
   const [showCancelledInChart, setShowCancelledInChart] = useState(false);
@@ -1011,6 +1012,13 @@ export default function DieOrderingSystem() {
       fetchUsers();
       fetchSuppliers();
       fetchPlants();
+
+      // Check if password change is required (persisted in localStorage)
+      const currentUser = getUser();
+      if (currentUser?.passwordMustChange) {
+        setForcePasswordChange(true);
+        setShowPasswordChangeModal(true);
+      }
     }
   }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants]);
 
@@ -1078,6 +1086,140 @@ export default function DieOrderingSystem() {
       fetchUsers();
     } catch (error) {
       alert(error.message);
+    }
+  };
+
+  // Handle revision request for design/simulation
+  const handleRevision = async ({ orderId, targetStatus, notes, pdfFile, revisionDate }) => {
+    try {
+      const order = data.find(o => o.id === orderId);
+      if (!order) throw new Error('Order not found');
+
+      const currentRevisionCount = order['Design Revision Count'] || 0;
+
+      // Prepare updated order data
+      const updatedOrder = {
+        ...order,
+        STATUS: targetStatus,
+        'Design Revision Count': currentRevisionCount + 1,
+        'Last Revision Date': revisionDate,
+        'Revision Notes': notes
+      };
+
+      // Handle PDF upload if provided
+      if (pdfFile) {
+        // For now, store the PDF name - in production this would upload to storage
+        updatedOrder['Revision PDF'] = pdfFile.name;
+      }
+
+      await ordersAPI.update(orderId, updatedOrder);
+      setData(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+
+      const targetLabel = targetStatus === 'AWAITING FOR DESIGN' ? 'Design' : 'Simulation';
+      setToast({
+        message: `Revision #${currentRevisionCount + 1} requested - sent back to ${targetLabel}`,
+        type: 'warning'
+      });
+      setTimeout(() => setToast(null), 4000);
+    } catch (error) {
+      console.error('Revision error:', error);
+      throw error;
+    }
+  };
+
+  // Parse Die Size into Diameter and Thickness (format: "300X100" → { diameter: 300, thickness: 100 })
+  const parseDieSize = (dieSize) => {
+    if (!dieSize) return { diameter: null, thickness: null };
+    const parts = String(dieSize).toUpperCase().split('X');
+    return {
+      diameter: parts[0] ? parseInt(parts[0], 10) || null : null,
+      thickness: parts[1] ? parseInt(parts[1], 10) || null : null
+    };
+  };
+
+  // Handle die size changes with change log tracking
+  const handleSizeChange = async (order, field, newValue) => {
+    try {
+      const oldValue = field === 'Diameter'
+        ? parseDieSize(order['Die Size']).diameter
+        : parseDieSize(order['Die Size']).thickness;
+
+      if (oldValue === newValue) return; // No change
+
+      const parsed = parseDieSize(order['Die Size']);
+      const newDiameter = field === 'Diameter' ? newValue : parsed.diameter;
+      const newThickness = field === 'Thickness' ? newValue : parsed.thickness;
+      const newDieSize = `${newDiameter || ''}X${newThickness || ''}`;
+
+      // Create change log entry
+      const changeLogEntry = {
+        date: new Date().toISOString().split('T')[0],
+        field,
+        oldValue,
+        newValue,
+        changedBy: user?.username || 'unknown',
+        stage: order.STATUS
+      };
+
+      const existingLog = order['Change Log'] || [];
+      const updatedOrder = {
+        ...order,
+        'Die Size': newDieSize,
+        'Change Log': [...existingLog, changeLogEntry]
+      };
+
+      await ordersAPI.update(order.id, updatedOrder);
+      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+
+      setToast({
+        message: `${field} updated: ${oldValue || 'N/A'} → ${newValue}`,
+        type: 'success'
+      });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error('Size change error:', error);
+      setToast({ message: 'Failed to update: ' + error.message, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  // Copy order details to clipboard in ERP format: Die Number, Dia DxT; CAV n; SF/PH
+  const copyForERP = async (order) => {
+    const parsed = parseDieSize(order['Die Size']);
+    const diameter = parsed.diameter || '';
+    const thickness = parsed.thickness || '';
+    const cavities = order['Mandrels per Cavity'] || 1;
+    // SF = Solid (T type), PH = Hollow (others)
+    const dieType = order.TYPE === 'T' ? 'SF' : 'PH';
+
+    // Format: 30533_201,Dia 355X200; CAV 1; PH
+    const erpString = `${order['DIE NO']},Dia ${diameter}X${thickness}; CAV ${cavities}; ${dieType}`;
+
+    try {
+      await navigator.clipboard.writeText(erpString);
+      setToast({ message: `Copied: ${erpString}`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error('Copy error:', error);
+      setToast({ message: 'Failed to copy', type: 'error' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
+
+  // Handle PR Number update
+  const handlePRNumberChange = async (order, prNumber) => {
+    if (order['PR Number'] === prNumber) return; // No change
+
+    try {
+      const updatedOrder = { ...order, 'PR Number': prNumber };
+      await ordersAPI.update(order.id, updatedOrder);
+      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      setToast({ message: `PR Number saved: ${prNumber}`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error('PR Number update error:', error);
+      setToast({ message: 'Failed to save PR Number', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
     }
   };
 
@@ -1659,7 +1801,7 @@ export default function DieOrderingSystem() {
               <div style={styles.pipelineSection}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                   <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text }}>Active Pipeline</h3>
-                  <button onClick={() => setActiveTab('pipeline')} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#3B82F6', fontSize: '0.875rem', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}>View all <ArrowRight size={16} /></button>
+                  <button onClick={() => setActiveTab('flow-pending-order')} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#3B82F6', fontSize: '0.875rem', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}>View all <ArrowRight size={16} /></button>
                 </div>
                 <div style={styles.pipelineColumns}>
                   {['AWAITING FOR DESIGN', 'PENDING FOR DESIGN APPROVAL', 'PENDING FOR ORACLE ENTRY', 'PENDING FOR ORDERING'].map(status => {
@@ -1703,11 +1845,12 @@ export default function DieOrderingSystem() {
                   <table style={styles.table}>
                     <thead>
                       <tr>
-                        {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Die Size', label: 'Size' }, { key: 'Supplier', label: 'Supplier' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' }].map(col => (
+                        {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Supplier', label: 'Supplier' }, { key: 'PR Number', label: 'PR#' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' }].map(col => (
                           <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{col.label}{sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color="#3B82F6" /> : <ChevronDown size={14} color="#3B82F6" />) : <ChevronDown size={14} color="#64748B" />}</div>
                           </th>
                         ))}
+                        <th style={{ ...styles.th, textAlign: 'center' }}>Log</th>
                         <th style={{ ...styles.th, textAlign: 'center' }}>Progress</th>
                         <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
                         {user?.role === 'admin' && <th style={{ ...styles.th, textAlign: 'center' }}>Actions</th>}
@@ -1720,11 +1863,28 @@ export default function DieOrderingSystem() {
                           <td style={styles.td}>{order['Order No']}</td>
                           <td style={styles.td}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
                           <td style={styles.td}>{order.TYPE}</td>
-                          <td style={styles.td}>{order['Die Size']}</td>
+                          <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
+                          <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
                           <td style={styles.td}>{order.Supplier}</td>
+                          <td style={styles.td}><span style={{ fontFamily: 'monospace', color: order['PR Number'] ? theme.text : '#64748B' }}>{order['PR Number'] || '—'}</span></td>
                           <td style={styles.td}>{order['Die Requested Date']}</td>
                           <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
                           <td style={styles.td}><StatusBadge status={order.STATUS} /></td>
+                          {/* Change Log indicator */}
+                          <td style={{ ...styles.td, textAlign: 'center' }}>
+                            {order['Change Log'] && order['Change Log'].length > 0 ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
+                                style={{ padding: '6px', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                title={`${order['Change Log'].length} change(s) logged`}
+                              >
+                                <History size={14} />
+                                <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order['Change Log'].length}</span>
+                              </button>
+                            ) : (
+                              <span style={{ color: '#64748B', fontSize: '0.8rem' }}>—</span>
+                            )}
+                          </td>
                           <td style={styles.td}><ProgressPipeline order={order} /></td>
                           <td style={{ ...styles.td, textAlign: 'center' }}><button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button></td>
                           {user?.role === 'admin' && <td style={{ ...styles.td, textAlign: 'center' }}>
@@ -1772,110 +1932,238 @@ export default function DieOrderingSystem() {
             </>
           )}
 
-          {activeTab === 'pipeline' && (
-            <>
-              <div style={{ marginBottom: '1.5rem' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Pipeline Kanban Board</h2>
-                <p style={{ fontSize: '0.85rem', color: theme.textMuted }}>Drag and drop orders between stages to update their status</p>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', overflowX: 'auto', paddingBottom: '8px' }}>
-                {[
-                  { status: 'PENDING FOR ORDERING', label: 'Pending Order', color: '#8B5CF6', bgColor: 'rgba(139,92,246,0.1)', dateField: 'Ordered date' },
-                  { status: 'AWAITING FOR DESIGN', label: 'Awaiting Design', color: '#EF4444', bgColor: 'rgba(239,68,68,0.1)', dateField: 'Die Requested Date' },
-                  { status: 'UNDER SIMULATION', label: 'Simulation', color: '#EC4899', bgColor: 'rgba(236,72,153,0.1)', dateField: null },
-                  { status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval', color: '#F59E0B', bgColor: 'rgba(245,158,11,0.1)', dateField: 'Design Received Date' },
-                  { status: 'PENDING FOR PR', label: 'PR Entry', color: '#06B6D4', bgColor: 'rgba(6,182,212,0.1)', dateField: 'PR Entry' },
-                  { status: 'PENDING FOR ORACLE ENTRY', label: 'Oracle Entry', color: '#3B82F6', bgColor: 'rgba(59,130,246,0.1)', dateField: 'Oracle Entry' },
-                  { status: 'PENDING FOR DESIGN TO EMS', label: 'Design to EMS', color: '#14B8A6', bgColor: 'rgba(20,184,166,0.1)', dateField: 'Design Approved Date' },
-                  { status: 'DONE', label: 'Completed', color: '#10B981', bgColor: 'rgba(16,185,129,0.1)', dateField: 'Ordered date' },
-                ].map(column => {
-                  const columnOrders = data.filter(o => o.STATUS === column.status);
-                  return (
-                    <div
-                      key={column.status}
-                      style={{
-                        background: column.bgColor,
-                        borderRadius: '16px',
-                        padding: '1rem',
-                        minHeight: '400px',
-                        border: `2px dashed transparent`,
-                        transition: 'border-color 0.2s'
-                      }}
-                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = column.color; }}
-                      onDragLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; }}
-                      onDrop={async (e) => {
-                        e.preventDefault();
-                        e.currentTarget.style.borderColor = 'transparent';
-                        const orderId = e.dataTransfer.getData('orderId');
-                        const order = data.find(o => o.id === parseInt(orderId));
-                        if (order && order.STATUS !== column.status) {
-                          // Check if trying to move to Simulation without simulation flag
-                          if (column.status === 'UNDER SIMULATION' && !order.simulationEnabled) {
-                            alert('This order does not have Simulation enabled. Please enable simulation in the order details first.');
-                            return;
-                          }
-                          const today = new Date().toISOString().split('T')[0];
-                          const updatedOrder = { ...order, STATUS: column.status };
-                          if (column.dateField && !order[column.dateField]) {
-                            updatedOrder[column.dateField] = today;
-                          }
-                          try {
-                            await ordersAPI.update(order.id, updatedOrder);
-                            setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
-                          } catch (error) {
-                            alert('Failed to update order: ' + error.message);
-                          }
-                        }
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: `2px solid ${column.color}30` }}>
-                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: column.color }}>{column.label}</span>
-                        <span style={{ marginLeft: 'auto', background: column.color, padding: '2px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, color: 'white' }}>{columnOrders.length}</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '500px', overflowY: 'auto' }}>
-                        {columnOrders.map(order => (
-                          <div
-                            key={order.id}
-                            draggable
-                            onDragStart={(e) => { e.dataTransfer.setData('orderId', order.id.toString()); e.currentTarget.style.opacity = '0.5'; }}
-                            onDragEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
-                            onClick={() => setSelectedOrder(order)}
-                            style={{
-                              background: theme.cardBg,
-                              borderRadius: '12px',
-                              padding: '0.875rem',
-                              cursor: 'grab',
-                              border: `1px solid ${theme.border}`,
-                              transition: 'transform 0.15s, box-shadow 0.15s'
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                              <GripVertical size={14} color={theme.textDim} />
-                              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '4px' }}>{order.Supplier}</div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.7rem', color: theme.textMuted }}>{order.Plant}</span>
-                              <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '6px', background: order.TYPE === 'N' ? '#3B82F620' : order.TYPE === 'B' ? '#F59E0B20' : '#64748B20', color: order.TYPE === 'N' ? '#3B82F6' : order.TYPE === 'B' ? '#F59E0B' : '#64748B', fontWeight: 600 }}>
-                                {order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : order.TYPE}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                        {columnOrders.length === 0 && (
-                          <div style={{ textAlign: 'center', padding: '2rem 1rem', color: theme.textDim, fontSize: '0.8rem', fontStyle: 'italic' }}>
-                            Drop orders here
-                          </div>
-                        )}
-                      </div>
+          {/* Process Flow Pages */}
+          {activeTab.startsWith('flow-') && (() => {
+            // Dynamic import would be cleaner but this works for inline
+            const flowTabs = [
+              { id: 'flow-pending-order', status: 'PENDING FOR ORDERING' },
+              { id: 'flow-awaiting-design', status: 'AWAITING FOR DESIGN' },
+              { id: 'flow-simulation', status: 'UNDER SIMULATION' },
+              { id: 'flow-design-approval', status: 'PENDING FOR DESIGN APPROVAL' },
+              { id: 'flow-pending-pr', status: 'PENDING FOR PR' },
+              { id: 'flow-oracle-entry', status: 'PENDING FOR ORACLE ENTRY' },
+              { id: 'flow-design-ems', status: 'PENDING FOR DESIGN TO EMS' },
+              { id: 'flow-completed', status: 'DONE' },
+            ];
+            const currentFlow = flowTabs.find(f => f.id === activeTab);
+            if (!currentFlow) return null;
+
+            const config = STATUS_CONFIG[currentFlow.status] || { color: '#6B7280', label: currentFlow.status };
+            const StatusIcon = config.icon || Package;
+            const flowOrders = data.filter(o => o.STATUS === currentFlow.status);
+
+            // Workflow steps configuration
+            const WORKFLOW_STEPS = {
+              'PENDING FOR ORDERING': { dateField: 'Ordered date', nextStatus: 'AWAITING FOR DESIGN', completionLabel: 'Mark as Ordered' },
+              'AWAITING FOR DESIGN': { dateField: 'Design Received Date', nextStatus: 'PENDING FOR DESIGN APPROVAL', completionLabel: 'Design Received' },
+              'UNDER SIMULATION': { dateField: '3D Model Received Date', nextStatus: 'PENDING FOR DESIGN APPROVAL', completionLabel: 'Simulation Complete' },
+              'PENDING FOR DESIGN APPROVAL': { dateField: 'Design Approved Date', nextStatus: 'PENDING FOR PR', completionLabel: 'Approve Design' },
+              'PENDING FOR PR': { dateField: 'PR Entry', nextStatus: 'PENDING FOR ORACLE ENTRY', completionLabel: 'PR Completed' },
+              'PENDING FOR ORACLE ENTRY': { dateField: 'Oracle Entry', nextStatus: 'PENDING FOR DESIGN TO EMS', completionLabel: 'Oracle Entry Done' },
+              'PENDING FOR DESIGN TO EMS': { dateField: 'Design to EMS Date', nextStatus: 'DONE', completionLabel: 'Sent to EMS' },
+              'DONE': { dateField: null, nextStatus: null, completionLabel: null }
+            };
+            const workflow = WORKFLOW_STEPS[currentFlow.status];
+
+            const handleCompleteStep = async (order, e) => {
+              e.stopPropagation();
+              if (!workflow || !workflow.nextStatus) return;
+
+              const today = new Date().toISOString().split('T')[0];
+              const updatedOrder = { ...order, STATUS: workflow.nextStatus, [workflow.dateField]: today };
+
+              try {
+                await ordersAPI.update(order.id, updatedOrder);
+                setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+                setToast({ message: `Order ${order['DIE NO']} moved to ${STATUS_CONFIG[workflow.nextStatus]?.label || workflow.nextStatus}`, type: 'success' });
+                setTimeout(() => setToast(null), 3000);
+              } catch (error) {
+                console.error('Complete step error:', error);
+                setToast({ message: 'Failed to update: ' + error.message, type: 'error' });
+                setTimeout(() => setToast(null), 5000);
+              }
+            };
+
+            return (
+              <div>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${config.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <StatusIcon size={24} color={config.color} />
                     </div>
-                  );
-                })}
+                    <div>
+                      <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: theme.text, margin: 0 }}>{config.label}</h1>
+                      <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Orders in {config.label.toLowerCase()} stage</p>
+                    </div>
+                    <span style={{ background: config.color, color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600 }}>{flowOrders.length}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '280px' }}>
+                    <Search size={18} color={theme.textMuted} />
+                    <input
+                      type="text"
+                      placeholder="Search orders..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div style={styles.tableContainer}>
+                  {flowOrders.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr>
+                            {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Diameter' }, { key: 'Thickness', label: 'Thickness' }, { key: 'Supplier', label: 'Supplier' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }].map(col => (
+                              <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  {col.label}
+                                  {sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color={config.color} /> : <ChevronDown size={14} color={config.color} />) : <ChevronDown size={14} color="#64748B" style={{ opacity: 0.3 }} />}
+                                </div>
+                              </th>
+                            ))}
+                            <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
+                            {/* PR Entry specific columns */}
+                            {currentFlow.status === 'PENDING FOR PR' && (
+                              <>
+                                <th style={{ ...styles.th, textAlign: 'center' }}>Copy ERP</th>
+                                <th style={{ ...styles.th, textAlign: 'center' }}>PR Number</th>
+                              </>
+                            )}
+                            {workflow && workflow.nextStatus && <th style={{ ...styles.th, textAlign: 'center' }}>Complete</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {flowOrders
+                            .filter(o => !searchTerm || (o['DIE NO'] && o['DIE NO'].toLowerCase().includes(searchTerm.toLowerCase())) || (o['Order No'] && o['Order No'].toLowerCase().includes(searchTerm.toLowerCase())) || (o.Supplier && o.Supplier.toLowerCase().includes(searchTerm.toLowerCase())))
+                            .sort((a, b) => {
+                              if (!sortConfig.key) return 0;
+                              const aVal = a[sortConfig.key] || '';
+                              const bVal = b[sortConfig.key] || '';
+                              if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                              if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                              return 0;
+                            })
+                            .map((order, idx) => (
+                              <tr key={`${order['DIE NO']}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedOrder(order)}>
+                                <td style={styles.td}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
+                                <td style={styles.td}>{order['Order No']}</td>
+                                <td style={styles.td}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
+                                <td style={styles.td}><span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: order.TYPE === 'N' ? '#3B82F620' : order.TYPE === 'B' ? '#F59E0B20' : '#64748B20', color: order.TYPE === 'N' ? '#3B82F6' : order.TYPE === 'B' ? '#F59E0B' : '#64748B' }}>{order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : order.TYPE}</span></td>
+                                {/* Diameter - editable on Simulation and Design Approval */}
+                                <td style={styles.td}>
+                                  {(currentFlow.status === 'UNDER SIMULATION' || currentFlow.status === 'PENDING FOR DESIGN APPROVAL') ? (
+                                    <input
+                                      type="number"
+                                      defaultValue={parseDieSize(order['Die Size']).diameter || ''}
+                                      onBlur={(e) => handleSizeChange(order, 'Diameter', parseInt(e.target.value, 10))}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                      style={{ width: '65px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                                      placeholder="Ø"
+                                    />
+                                  ) : (
+                                    <span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span>
+                                  )}
+                                </td>
+                                {/* Thickness - editable on Simulation and Design Approval */}
+                                <td style={styles.td}>
+                                  {(currentFlow.status === 'UNDER SIMULATION' || currentFlow.status === 'PENDING FOR DESIGN APPROVAL') ? (
+                                    <input
+                                      type="number"
+                                      defaultValue={parseDieSize(order['Die Size']).thickness || ''}
+                                      onBlur={(e) => handleSizeChange(order, 'Thickness', parseInt(e.target.value, 10))}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                      style={{ width: '65px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                                      placeholder="T"
+                                    />
+                                  ) : (
+                                    <span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span>
+                                  )}
+                                </td>
+                                <td style={styles.td}>{order.Supplier}</td>
+                                <td style={styles.td}>{order['Die Requested Date']}</td>
+                                <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
+                                <td style={{ ...styles.td, textAlign: 'center' }}><button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button></td>
+                                {/* PR Entry specific cells */}
+                                {currentFlow.status === 'PENDING FOR PR' && (
+                                  <>
+                                    {/* Copy ERP button */}
+                                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); copyForERP(order); }}
+                                        style={{ padding: '6px 12px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#3B82F6', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600, transition: 'all 0.2s' }}
+                                        title="Copy for ERP"
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = '#3B82F6'; e.currentTarget.style.color = 'white'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.color = '#3B82F6'; }}
+                                      >
+                                        <Copy size={14} /> Copy
+                                      </button>
+                                    </td>
+                                    {/* PR Number input */}
+                                    <td style={styles.td}>
+                                      <input
+                                        type="text"
+                                        defaultValue={order['PR Number'] || ''}
+                                        onBlur={(e) => handlePRNumberChange(order, e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                        style={{ width: '100px', padding: '6px 8px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                                        placeholder="PR-XXXX"
+                                      />
+                                    </td>
+                                  </>
+                                )}
+                                {workflow && workflow.nextStatus && (
+                                  <td style={{ ...styles.td, textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                      {/* Request Revision button - only for Design Approval */}
+                                      {currentFlow.status === 'PENDING FOR DESIGN APPROVAL' && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setRevisionOrder(order); }}
+                                          style={{ padding: '6px 12px', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s' }}
+                                          title="Request Revision"
+                                          onMouseEnter={(e) => { e.currentTarget.style.background = '#F59E0B'; e.currentTarget.style.color = 'white'; }}
+                                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(245,158,11,0.2)'; e.currentTarget.style.color = '#F59E0B'; }}
+                                        >
+                                          <RotateCcw size={16} />
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={(e) => handleCompleteStep(order, e)}
+                                        style={{ padding: '6px 12px', background: `${config.color}20`, border: `1px solid ${config.color}40`, borderRadius: '8px', cursor: 'pointer', color: config.color, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s' }}
+                                        title={workflow.completionLabel}
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = config.color; e.currentTarget.style.color = 'white'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = `${config.color}20`; e.currentTarget.style.color = config.color; }}
+                                      >
+                                        <CheckCircle size={16} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '4rem 2rem', color: theme.textMuted }}>
+                      <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: `${config.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                        <StatusIcon size={28} color={config.color} />
+                      </div>
+                      <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: theme.text, marginBottom: '0.5rem' }}>No Orders in {config.label}</h3>
+                      <p style={{ fontSize: '0.9rem', color: theme.textMuted }}>There are currently no orders at this stage</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </>
-          )}
+            );
+          })()}
+
 
           {activeTab === 'analytics' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.25rem' }}>
@@ -2289,6 +2577,15 @@ export default function DieOrderingSystem() {
             onClose={() => !forcePasswordChange && setShowPasswordChangeModal(false)}
             onSuccess={handlePasswordChangeSuccess}
             isForced={forcePasswordChange}
+          />
+        )}
+        {revisionOrder && (
+          <RevisionModal
+            isOpen={!!revisionOrder}
+            onClose={() => setRevisionOrder(null)}
+            order={revisionOrder}
+            onRevision={handleRevision}
+            theme={theme}
           />
         )}
 

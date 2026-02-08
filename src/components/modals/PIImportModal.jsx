@@ -46,11 +46,19 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         return match ? match[1].toUpperCase() : null;
     };
 
-    // Parse cavity count from specification string (e.g., "CAV 2" -> 2)
+    // Parse cavity count from specification string (e.g., "CAV 2" or "2 CAV" -> 2)
     const parseCavity = (spec) => {
         if (!spec) return 0;
-        const match = spec.match(/CAV\s*(\d+)/i);
-        return match ? parseInt(match[1], 10) : 0;
+        // Pattern 1: "CAV 2" or "CAV2"
+        let match = spec.match(/CAV\s*(\d+)/i);
+        if (match) return parseInt(match[1], 10);
+        // Pattern 2: "2 CAV" or "1CAV"
+        match = spec.match(/(\d+)\s*CAV/i);
+        if (match) return parseInt(match[1], 10);
+        // Pattern 3: Just number between semicolons like "; 1 ;" in specs
+        match = spec.match(/;\s*(\d+)\s*;/);
+        if (match) return parseInt(match[1], 10);
+        return 0;
     };
 
     // Parse die type from specification (PH = Hollow, SF = Solid)
@@ -79,6 +87,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             let fullText = '';
+            let page1Text = ''; // Die orders are only on page 1 (justification form)
 
             // Extract text from all pages
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -86,6 +95,10 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items.map(item => item.str).join(' ');
                 fullText += pageText + '\n';
+                // Store page 1 separately - die orders are only in the justification form
+                if (i === 1) {
+                    page1Text = pageText;
+                }
             }
 
             // Extract header information
@@ -152,31 +165,105 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                 shipmentType = 'LAND';
             }
 
-            // Extract die order rows
-            // Pattern: Die No like "30547_201" or "30547-201"
-            const dieNoPattern = /(\d{5}[-_]\d{2,3})/g;
-            const dieNumbers = [...fullText.matchAll(dieNoPattern)].map(m => m[1].replace('_', '-'));
+            // Extract die order rows using multiple patterns
+            // Die numbers appear with different formats:
+            // - Standard with suffix: "D 11598-438", "E 12003-505", "30559-601"
+            // - INS format: "INS-29957" (no suffix)
+            // - Exclude PR numbers like "PR 8442-26"
+            const dieNumbers = [];
+
+            // Pattern 1: Die numbers with D/E/F prefix (standard format with suffix)
+            // Matches: "D   11598-438", "E   12003-505"
+            const prefixedDiePattern = /(?:^|[^A-Z])([DEF]\s+)(\d{4,5})\s*[-_]\s*(\d{2,4})/gi;
+            for (const m of page1Text.matchAll(prefixedDiePattern)) {
+                dieNumbers.push(`${m[2]}-${m[3]}`);
+            }
+
+            // Pattern 2: INS prefixed dies (may or may not have suffix)
+            // Matches: "INS-29957", "INS29957", "INS-29957-001"
+            const insPattern = /INS[-\s]*(\d{5})(?:\s*[-_]\s*(\d{2,4}))?/gi;
+            for (const m of page1Text.matchAll(insPattern)) {
+                const dieNo = m[2] ? `INS-${m[1]}-${m[2]}` : `INS-${m[1]}`;
+                dieNumbers.push(dieNo);
+            }
+
+            // Pattern 3: Die numbers in table rows (30559-601 format without letter prefix)
+            // Check context to exclude PR numbers
+            const tableDiePattern = /(\d{5})\s*[-_]\s*(\d{2,4})/gi;
+            for (const m of page1Text.matchAll(tableDiePattern)) {
+                const dieNo = `${m[1]}-${m[2]}`;
+                // Check if preceded by "PR" in context (within 5 chars before match)
+                const idx = page1Text.indexOf(m[0]);
+                const prevChars = page1Text.substring(Math.max(0, idx - 5), idx).toUpperCase();
+                // Only add if not already captured, not preceded by PR, and is 5-digit
+                if (!prevChars.includes('PR') && !dieNumbers.includes(dieNo) && m[1].length === 5) {
+                    dieNumbers.push(dieNo);
+                }
+            }
+
             const uniqueDieNumbers = [...new Set(dieNumbers)];
 
-            // Extract die specifications - look for "Dia XXXxYYY; CAV N; PH/SF" patterns
-            const specPattern = /Dia\s*(\d{2,4}[Xx]\d{2,4})\s*[;,]?\s*CAV\s*(\d+)\s*[;,]?\s*(PH|SF|Hollow|Solid)/gi;
-            const specifications = [...fullText.matchAll(specPattern)].map(m => ({
-                size: m[1].toUpperCase(),
-                cavity: parseInt(m[2], 10),
-                type: m[3].toUpperCase()
-            }));
+            // Extract die specifications using multiple patterns:
+            // Pattern 1: "Dia 700X500; 1 CAV; PH" or "Dia 220X130; 1 CAV; SF"
+            // Pattern 2: "Dia 250X160 4 P5 Hollow" (no semicolons)
+            // Pattern 3: "250x160 1 P4" (no Dia prefix)
+            const specRows = [];
 
-            // Extract justifications (NEW, BACKUP)
-            const justificationPattern = /(NEW|BACKUP)/gi;
+            // Pattern 1: Full spec with semicolons - "Dia XXXxYYY; N CAV; PH/SF"
+            const specPattern1 = /Dia\s*(\d{2,4}[Xx]\d{2,4})\s*[;,]?\s*(\d+)\s*CAV\s*[;,]?\s*(PH|SF|Hollow|Solid)/gi;
+            for (const m of page1Text.matchAll(specPattern1)) {
+                specRows.push({
+                    size: m[1].toUpperCase(),
+                    cavity: parseInt(m[2], 10),
+                    type: m[3].toUpperCase()
+                });
+            }
+
+            // Pattern 2: "Dia XXXxYYY N P# Type" format (no semicolons)
+            const specPattern2 = /Dia\s*(\d{2,4}[Xx]\d{2,4})\s+(\d+)\s+P\d+\s+(Hollow|Solid)/gi;
+            for (const m of page1Text.matchAll(specPattern2)) {
+                specRows.push({
+                    size: m[1].toUpperCase(),
+                    cavity: parseInt(m[2], 10),
+                    type: m[3].toUpperCase()
+                });
+            }
+
+            // Pattern 3: Specification rows from table with die number context
+            // Look for "DieNo ... Dia XXXxYYY ... CAV/cavity ... PH/SF"
+            for (const dieNo of uniqueDieNumbers) {
+                const escapedDieNo = dieNo.replace(/[-_]/g, '\\s*[-_]\\s*');
+                // Look for die number followed by spec within ~200 chars
+                const contextPattern = new RegExp(escapedDieNo + '[^]*?(?:Dia\\s*)?(\\d{2,4}[Xx]\\d{2,4})[^]*?(\\d+)\\s*(?:CAV|P\\d)', 'i');
+                const contextMatch = page1Text.match(contextPattern);
+                if (contextMatch && !specRows.some(s => s.forDie === dieNo)) {
+                    const sizeMatch = contextMatch[1];
+                    const cavityMatch = contextMatch[2] ? parseInt(contextMatch[2], 10) : 0;
+                    // Check for type near this context
+                    const typeContext = page1Text.substring(page1Text.indexOf(dieNo), page1Text.indexOf(dieNo) + 200);
+                    const typeMatch = typeContext.match(/\b(PH|SF|Hollow|Solid)\b/i);
+                    specRows.push({
+                        size: sizeMatch?.toUpperCase() || null,
+                        cavity: cavityMatch,
+                        type: typeMatch ? typeMatch[1].toUpperCase() : null,
+                        forDie: dieNo
+                    });
+                }
+            }
+
+            // Extract justifications (NEW, BACKUP, TOP URGENT, URGENT)
+            const justificationPattern = /\b(NEW|BACKUP)(?:\s*\((?:TOP\s+)?URGENT\))?/gi;
             const justifications = [...fullText.matchAll(justificationPattern)].map(m => m[1].toUpperCase());
 
             // Build die orders from extracted data
             // Debug: Log existing orders for matching
             console.log('PI Import - Existing orders count:', existingOrders.length);
             console.log('PI Import - Die numbers to import:', uniqueDieNumbers);
+            console.log('PI Import - Extracted specifications:', specRows);
 
             const orders = uniqueDieNumbers.map((dieNo, index) => {
-                const spec = specifications[index] || {};
+                // Try to find specification by forDie match first, then by index
+                const spec = specRows.find(s => s.forDie === dieNo) || specRows[index] || {};
                 const justification = justifications[index] || null;
                 const dieType = parseDieType(spec.type || '', justification);
 

@@ -186,6 +186,79 @@ function OrderDetailModal({ order, onClose, onUpdate, theme, suppliers = [], pla
               </div>
             </div>
           )}
+          {/* Revision Info Section */}
+          {currentOrder['Design Revision Count'] > 0 && (
+            <div style={{ background: 'rgba(245,158,11,0.1)', borderRadius: '12px', padding: '1rem', marginTop: '1rem' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#F59E0B', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Design Revisions
+                <span style={{ background: '#F59E0B', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem' }}>
+                  {currentOrder['Design Revision Count']} {currentOrder['Design Revision Count'] === 1 ? 'revision' : 'revisions'}
+                </span>
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: '#F59E0B', opacity: 0.8 }}>Last Revision Date</span>
+                  <span style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: theme?.text || '#F1F5F9', marginTop: '4px' }}>
+                    {currentOrder['Last Revision Date'] || '—'}
+                  </span>
+                </div>
+                {currentOrder['Revision PDF'] && (
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: '#F59E0B', opacity: 0.8 }}>Revision Document</span>
+                    <span style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#F59E0B', marginTop: '4px' }}>
+                      📄 {currentOrder['Revision PDF']}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {currentOrder['Revision Notes'] && (
+                <div style={{ marginTop: '12px', padding: '10px', background: 'rgba(245,158,11,0.1)', borderRadius: '8px', borderLeft: '3px solid #F59E0B' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#F59E0B', opacity: 0.8, display: 'block', marginBottom: '4px' }}>Revision Notes</span>
+                  <p style={{ fontSize: '0.85rem', color: theme?.text || '#F1F5F9', margin: 0, lineHeight: 1.5 }}>
+                    {currentOrder['Revision Notes']}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          {/* Change Log Section */}
+          {currentOrder['Change Log'] && currentOrder['Change Log'].length > 0 && (
+            <div style={{ background: 'rgba(59,130,246,0.1)', borderRadius: '12px', padding: '1rem', marginTop: '1rem' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#3B82F6', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Size Change Log
+                <span style={{ background: '#3B82F6', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem' }}>
+                  {currentOrder['Change Log'].length} {currentOrder['Change Log'].length === 1 ? 'change' : 'changes'}
+                </span>
+              </h3>
+              <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                {[...currentOrder['Change Log']].reverse().map((entry, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 10px',
+                    background: idx % 2 === 0 ? 'rgba(59,130,246,0.05)' : 'transparent',
+                    borderRadius: '6px',
+                    marginBottom: '4px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '0.75rem', color: theme?.textMuted || '#94A3B8', minWidth: '80px' }}>{entry.date}</span>
+                      <span style={{ fontWeight: 600, color: '#3B82F6', fontSize: '0.8rem' }}>{entry.field}</span>
+                      <span style={{ fontSize: '0.8rem', color: theme?.text || '#F1F5F9' }}>
+                        <span style={{ color: '#EF4444', textDecoration: 'line-through' }}>{entry.oldValue || 'N/A'}</span>
+                        {' → '}
+                        <span style={{ color: '#10B981', fontWeight: 600 }}>{entry.newValue}</span>
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.7rem', color: theme?.textMuted || '#94A3B8', padding: '2px 6px', background: 'rgba(100,116,139,0.2)', borderRadius: '4px' }}>{entry.stage}</span>
+                      <span style={{ fontSize: '0.7rem', color: theme?.textMuted || '#94A3B8' }}>by {entry.changedBy}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

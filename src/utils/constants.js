@@ -55,3 +55,59 @@ export const TYPE_LABELS = {
   'C': 'Cancelled',
   'H': 'Hold'
 };
+
+// Process flow tabs for sidebar navigation (ordered by workflow sequence)
+export const PROCESS_FLOW_TABS = [
+  { id: 'flow-pending-order', status: 'PENDING FOR ORDERING', label: 'Pending Order' },
+  { id: 'flow-awaiting-design', status: 'AWAITING FOR DESIGN', label: 'Awaiting Design' },
+  { id: 'flow-simulation', status: 'UNDER SIMULATION', label: 'Simulation' },
+  { id: 'flow-design-approval', status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval' },
+  { id: 'flow-pending-pr', status: 'PENDING FOR PR', label: 'Pending PR' },
+  { id: 'flow-oracle-entry', status: 'PENDING FOR ORACLE ENTRY', label: 'Oracle Entry' },
+  { id: 'flow-design-ems', status: 'PENDING FOR DESIGN TO EMS', label: 'Design to EMS' },
+  { id: 'flow-completed', status: 'DONE', label: 'Completed' },
+];
+
+// Workflow steps configuration: defines which date to set and which status to move to
+export const WORKFLOW_STEPS = {
+  'PENDING FOR ORDERING': {
+    dateField: 'Ordered date',
+    nextStatus: 'AWAITING FOR DESIGN',
+    completionLabel: 'Mark as Ordered'
+  },
+  'AWAITING FOR DESIGN': {
+    dateField: 'Design Received Date',
+    nextStatus: 'PENDING FOR DESIGN APPROVAL',
+    completionLabel: 'Design Received'
+  },
+  'UNDER SIMULATION': {
+    dateField: '3D Model Received Date',
+    nextStatus: 'PENDING FOR DESIGN APPROVAL',
+    completionLabel: 'Simulation Complete'
+  },
+  'PENDING FOR DESIGN APPROVAL': {
+    dateField: 'Design Approved Date',
+    nextStatus: 'PENDING FOR PR',
+    completionLabel: 'Approve Design'
+  },
+  'PENDING FOR PR': {
+    dateField: 'PR Entry',
+    nextStatus: 'PENDING FOR ORACLE ENTRY',
+    completionLabel: 'PR Completed'
+  },
+  'PENDING FOR ORACLE ENTRY': {
+    dateField: 'Oracle Entry',
+    nextStatus: 'PENDING FOR DESIGN TO EMS',
+    completionLabel: 'Oracle Entry Done'
+  },
+  'PENDING FOR DESIGN TO EMS': {
+    dateField: 'Design to EMS Date',
+    nextStatus: 'DONE',
+    completionLabel: 'Sent to EMS'
+  },
+  'DONE': {
+    dateField: null,
+    nextStatus: null,
+    completionLabel: null
+  }
+};
