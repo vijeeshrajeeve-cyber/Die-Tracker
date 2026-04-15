@@ -53,7 +53,8 @@ export const normalizeColumnName = (col) => {
 // Parse date in DD/MM/YYYY format
 export const parseDateDMY = (dateStr) => {
   if (!dateStr) return null;
-  const match = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  // Support DD/MM/YYYY, DD-MM-YYYY, and DD.MM.YYYY formats
+  const match = dateStr.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
   if (match) {
     const [, day, month, year] = match;
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;

@@ -1,0 +1,170 @@
+const express = require('express');
+const { body, param, validationResult } = require('express-validator');
+const { pool } = require('../db.cjs');
+
+const router = express.Router();
+
+const VALID_STATUSES = ['Pending', 'Completed', 'HOLD', 'Not required'];
+
+const sanitizeString = (value) => {
+    if (typeof value !== 'string') return value;
+    return value.trim().substring(0, 500);
+};
+
+const handleValidationErrors = (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            error: 'Validation failed',
+            details: errors.array().map(e => e.msg)
+        });
+    }
+    next();
+};
+
+const requestValidation = [
+    body('Plant').optional().customSanitizer(sanitizeString),
+    body('DIE NO').optional().customSanitizer(sanitizeString),
+    body('Customer').optional().customSanitizer(sanitizeString),
+    body('Requested Date').optional().customSanitizer(sanitizeString),
+    body('Die Available').optional().customSanitizer(sanitizeString),
+    body('Drawing Requested').optional().customSanitizer(sanitizeString),
+    body('Ordered Date').optional().customSanitizer(sanitizeString),
+    body('Status').optional().customSanitizer(sanitizeString),
+    body('Reason').optional().customSanitizer(sanitizeString),
+    body('Order Received Last Year').optional().customSanitizer(sanitizeString),
+    body('Remarks').optional().customSanitizer(sanitizeString),
+];
+
+const requestIdValidation = [
+    param('id').isInt({ min: 1 }).withMessage('Invalid request ID')
+];
+
+// Get all backup requests
+router.get('/', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM backup_die_requests ORDER BY created_at DESC');
+
+        const formattedRequests = result.rows.map(row => ({
+            id: row.id,
+            'Plant': row.plant,
+            'DIE NO': row.die_no,
+            'Customer': row.customer,
+            'Requested Date': row.requested_date,
+            'Die Available': row.die_available,
+            'Drawing Requested': row.drawing_requested,
+            'Ordered Date': row.ordered_date,
+            'Status': row.status,
+            'Reason': row.reason,
+            'Order Received Last Year': row.order_received_last_year,
+            'Remarks': row.remarks,
+        }));
+
+        res.json({ requests: formattedRequests });
+    } catch (error) {
+        console.error('Get backup requests error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Create backup request
+router.post('/', requestValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const data = req.body;
+
+        const result = await pool.query(`
+            INSERT INTO backup_die_requests (
+                plant, die_no, customer, requested_date,
+                die_available, drawing_requested, ordered_date, status,
+                reason, order_received_last_year, remarks, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id
+        `, [
+            sanitizeString(data['Plant']),
+            sanitizeString(data['DIE NO']),
+            sanitizeString(data['Customer']),
+            sanitizeString(data['Requested Date']),
+            sanitizeString(data['Die Available']),
+            sanitizeString(data['Drawing Requested']),
+            sanitizeString(data['Ordered Date']),
+            'Pending',
+            sanitizeString(data['Reason']),
+            sanitizeString(data['Order Received Last Year']),
+            sanitizeString(data['Remarks']),
+            req.user.id
+        ]);
+
+        res.status(201).json({
+            id: result.rows[0].id,
+            message: 'Backup request created successfully'
+        });
+    } catch (error) {
+        console.error('Create backup request error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Update backup request
+router.put('/:id', requestIdValidation, requestValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const data = req.body;
+
+        const status = sanitizeString(data['Status']);
+        if (status && !VALID_STATUSES.includes(status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+        }
+
+        const result = await pool.query(`
+            UPDATE backup_die_requests SET
+                plant = $1, die_no = $2, customer = $3,
+                requested_date = $4, die_available = $5, drawing_requested = $6,
+                ordered_date = $7, status = $8, reason = $9,
+                order_received_last_year = $10, remarks = $11,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $12
+        `, [
+            sanitizeString(data['Plant']),
+            sanitizeString(data['DIE NO']),
+            sanitizeString(data['Customer']),
+            sanitizeString(data['Requested Date']),
+            sanitizeString(data['Die Available']),
+            sanitizeString(data['Drawing Requested']),
+            sanitizeString(data['Ordered Date']),
+            status || 'Pending',
+            sanitizeString(data['Reason']),
+            sanitizeString(data['Order Received Last Year']),
+            sanitizeString(data['Remarks']),
+            id
+        ]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Backup request not found' });
+        }
+
+        res.json({ message: 'Backup request updated successfully' });
+    } catch (error) {
+        console.error('Update backup request error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Delete backup request
+router.delete('/:id', requestIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const result = await pool.query('DELETE FROM backup_die_requests WHERE id = $1', [id]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Backup request not found' });
+        }
+
+        res.json({ message: 'Backup request deleted successfully' });
+    } catch (error) {
+        console.error('Delete backup request error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+module.exports = router;

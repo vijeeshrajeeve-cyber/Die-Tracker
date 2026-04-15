@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_must_change BOOLEAN DEFAULT false,
     failed_login_attempts INTEGER DEFAULT 0,
     locked_until TIMESTAMP,
+    page_access TEXT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -58,6 +59,46 @@ CREATE TABLE IF NOT EXISTS die_orders (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Backup Die Requests table
+CREATE TABLE IF NOT EXISTS backup_die_requests (
+    id SERIAL PRIMARY KEY,
+    plant TEXT,
+    die_no TEXT,
+    customer TEXT,
+    requested_date TEXT,
+    die_available TEXT,
+    drawing_requested TEXT,
+    ordered_date TEXT,
+    status TEXT DEFAULT 'Pending',
+    reason TEXT,
+    order_received_last_year TEXT,
+    remarks TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sample Followup table
+CREATE TABLE IF NOT EXISTS sample_followups (
+    id SERIAL PRIMARY KEY,
+    profile TEXT,
+    press TEXT,
+    supplier TEXT,
+    customer TEXT,
+    die_received_date TEXT,
+    ascona_reference TEXT DEFAULT 'No',
+    submission_date TEXT,
+    sample_approval_date TEXT,
+    delay_days INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'Pending',
+    no_of_trial INTEGER DEFAULT 0,
+    remark TEXT,
+    corrector TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Seed suppliers
 INSERT INTO suppliers (name) VALUES 
     ('PDTMC'), ('EKSTEK'), ('PHOENIX'), ('COMPES'), ('PHME'),
@@ -68,5 +109,52 @@ ON CONFLICT (name) DO NOTHING;
 INSERT INTO plants (name) VALUES 
     ('GEX 1'), ('GEX 2')
 ON CONFLICT (name) DO NOTHING;
+
+-- Email configuration (SMTP/IMAP direct integration)
+CREATE TABLE IF NOT EXISTS email_config (
+    id SERIAL PRIMARY KEY,
+    smtp_host TEXT,
+    smtp_port INTEGER DEFAULT 587,
+    imap_host TEXT,
+    imap_port INTEGER DEFAULT 993,
+    email_user TEXT,
+    email_password TEXT,
+    mailbox_email TEXT,
+    send_enabled BOOLEAN DEFAULT false,
+    receive_enabled BOOLEAN DEFAULT false,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Email log (sent and received emails)
+CREATE TABLE IF NOT EXISTS email_log (
+    id SERIAL PRIMARY KEY,
+    direction TEXT NOT NULL,
+    message_id TEXT,
+    conversation_id TEXT,
+    from_address TEXT,
+    to_addresses TEXT,
+    cc_addresses TEXT,
+    subject TEXT,
+    body_preview TEXT,
+    body_content TEXT,
+    order_id INTEGER REFERENCES die_orders(id) ON DELETE SET NULL,
+    sent_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'sent',
+    error_message TEXT,
+    importance TEXT DEFAULT 'normal',
+    received_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Email templates
+CREATE TABLE IF NOT EXISTS email_templates (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    subject_template TEXT NOT NULL,
+    body_template TEXT NOT NULL,
+    category TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing

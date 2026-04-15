@@ -7,7 +7,7 @@ export const STATUS_CONFIG = {
   'PENDING FOR PR': { color: '#D97706', bgColor: '#FFFBEB', label: 'Pending PR' },
   'PENDING FOR ORACLE ENTRY': { color: '#C2410C', bgColor: '#FFF7ED', label: 'Oracle Entry' },
   'PENDING FOR ORDERING': { color: '#0D9488', bgColor: '#F0FDFA', label: 'Pending Order' },
-  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', label: 'Completed' },
+  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', label: 'In Manufacturing' },
   'CANCELLED': { color: '#6B7280', bgColor: '#F3F4F6', label: 'Cancelled' },
   'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', label: 'On Hold' },
 };
@@ -65,8 +65,17 @@ export const PROCESS_FLOW_TABS = [
   { id: 'flow-pending-pr', status: 'PENDING FOR PR', label: 'Pending PR' },
   { id: 'flow-oracle-entry', status: 'PENDING FOR ORACLE ENTRY', label: 'Oracle Entry' },
   { id: 'flow-design-ems', status: 'PENDING FOR DESIGN TO EMS', label: 'Design to EMS' },
-  { id: 'flow-completed', status: 'DONE', label: 'Completed' },
+  { id: 'flow-completed', status: 'DONE', label: 'In Manufacturing' },
+  { id: 'flow-sample-followup', status: null, label: 'Sample Followup' },
 ];
+
+// Backup request status configuration
+export const BACKUP_REQUEST_STATUS_CONFIG = {
+  'Pending': { color: '#F59E0B', bgColor: '#FFFBEB', label: 'Pending' },
+  'Completed': { color: '#16A34A', bgColor: '#F0FDF4', label: 'Completed' },
+  'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', label: 'HOLD' },
+  'Not required': { color: '#6B7280', bgColor: '#F3F4F6', label: 'Not required' },
+};
 
 // Workflow steps configuration: defines which date to set and which status to move to
 export const WORKFLOW_STEPS = {
@@ -111,3 +120,21 @@ export const WORKFLOW_STEPS = {
     completionLabel: null
   }
 };
+
+export const CONTROLLABLE_PAGES = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'orders', label: 'Orders' },
+  { id: 'backup-requests', label: 'Backup Die Requests' },
+  // Individual Process Flow pages
+  { id: 'flow-pending-order', label: 'Pending Order', group: 'Process Flow' },
+  { id: 'flow-awaiting-design', label: 'Awaiting Design', group: 'Process Flow' },
+  { id: 'flow-simulation', label: 'Simulation', group: 'Process Flow' },
+  { id: 'flow-design-approval', label: 'Design Approval', group: 'Process Flow' },
+  { id: 'flow-pending-pr', label: 'Pending PR', group: 'Process Flow' },
+  { id: 'flow-oracle-entry', label: 'Oracle Entry', group: 'Process Flow' },
+  { id: 'flow-design-ems', label: 'Design to EMS', group: 'Process Flow' },
+  { id: 'flow-completed', label: 'In Manufacturing', group: 'Process Flow' },
+  { id: 'flow-sample-followup', label: 'Sample Followup', group: 'Process Flow' },
+  { id: 'email-inbox', label: 'Email Inbox' },
+  { id: 'analytics', label: 'Analytics' },
+];

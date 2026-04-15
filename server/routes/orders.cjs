@@ -30,6 +30,21 @@ const sanitizeString = (value) => {
     return value.trim().substring(0, 500); // Limit string length
 };
 
+// Auto-update matching backup die requests when a die order is created/updated
+const autoUpdateBackupRequests = async (dieNo, orderedDate) => {
+    if (!dieNo) return;
+    try {
+        const today = orderedDate || new Date().toISOString().split('T')[0];
+        await pool.query(`
+            UPDATE backup_die_requests
+            SET status = 'Completed', ordered_date = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE LOWER(die_no) = LOWER($2) AND status = 'Pending'
+        `, [today, dieNo.trim()]);
+    } catch (error) {
+        console.error('Auto-update backup requests error:', error);
+    }
+};
+
 // Validation error handler
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
@@ -144,6 +159,8 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             req.user.id
         ]);
 
+        await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
+
         res.status(201).json({
             id: result.rows[0].id,
             message: 'Order created successfully'
@@ -197,6 +214,8 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Order not found' });
         }
+
+        await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
 
         res.json({ message: 'Order updated successfully' });
     } catch (error) {

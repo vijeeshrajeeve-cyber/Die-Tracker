@@ -100,16 +100,23 @@ export const usersAPI = {
         return apiRequest('/users');
     },
 
-    create: async (username, password, role = 'user') => {
+    create: async (username, password, role = 'user', pageAccess = null) => {
         return apiRequest('/users', {
             method: 'POST',
-            body: JSON.stringify({ username, password, role }),
+            body: JSON.stringify({ username, password, role, page_access: pageAccess }),
         });
     },
 
     delete: async (id) => {
         return apiRequest(`/users/${id}`, {
             method: 'DELETE',
+        });
+    },
+
+    updatePageAccess: async (id, pageAccess) => {
+        return apiRequest(`/users/${id}/page-access`, {
+            method: 'PATCH',
+            body: JSON.stringify({ page_access: pageAccess }),
         });
     },
 };
@@ -146,10 +153,17 @@ export const suppliersAPI = {
         return apiRequest('/suppliers');
     },
 
-    create: async (name) => {
+    create: async (name, shipment_mode = 'LAND') => {
         return apiRequest('/suppliers', {
             method: 'POST',
-            body: JSON.stringify({ name }),
+            body: JSON.stringify({ name, shipment_mode }),
+        });
+    },
+
+    update: async (id, data) => {
+        return apiRequest(`/suppliers/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
         });
     },
 
@@ -179,3 +193,138 @@ export const plantsAPI = {
         });
     },
 };
+
+// Backup Requests API
+export const backupRequestsAPI = {
+    getAll: async () => {
+        return apiRequest('/backup-requests');
+    },
+
+    create: async (request) => {
+        return apiRequest('/backup-requests', {
+            method: 'POST',
+            body: JSON.stringify(request),
+        });
+    },
+
+    update: async (id, request) => {
+        return apiRequest(`/backup-requests/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(request),
+        });
+    },
+
+    delete: async (id) => {
+        return apiRequest(`/backup-requests/${id}`, {
+            method: 'DELETE',
+        });
+    },
+};
+
+// API Keys API (admin only)
+export const apiKeysAPI = {
+    getAll: async () => {
+        return apiRequest('/api-keys');
+    },
+
+    create: async (name) => {
+        return apiRequest('/api-keys', {
+            method: 'POST',
+            body: JSON.stringify({ name }),
+        });
+    },
+
+    delete: async (id) => {
+        return apiRequest(`/api-keys/${id}`, {
+            method: 'DELETE',
+        });
+    },
+};
+
+// Email API
+export const emailAPI = {
+    sendEmail: async ({ to, cc, subject, body, importance, orderId }) => {
+        return apiRequest('/email/send', {
+            method: 'POST',
+            body: JSON.stringify({ to, cc, subject, body, importance, orderId }),
+        });
+    },
+
+    getInbox: async (page = 1, pageSize = 20, direction = null) => {
+        const params = new URLSearchParams({ page, pageSize });
+        if (direction) params.append('direction', direction);
+        return apiRequest(`/email/inbox?${params}`);
+    },
+
+    getThread: async (conversationId) => {
+        return apiRequest(`/email/thread/${conversationId}`);
+    },
+
+    getOrderEmails: async (orderId) => {
+        return apiRequest(`/email/order/${orderId}`);
+    },
+
+    linkToOrder: async (emailId, orderId) => {
+        return apiRequest('/email/link', {
+            method: 'POST',
+            body: JSON.stringify({ emailId, orderId }),
+        });
+    },
+
+    getTemplates: async () => {
+        return apiRequest('/email/templates');
+    },
+
+    getConfig: async () => {
+        return apiRequest('/email/config');
+    },
+
+    updateConfig: async (config) => {
+        return apiRequest('/email/config', {
+            method: 'PUT',
+            body: JSON.stringify(config),
+        });
+    },
+
+    testConnection: async (type = 'smtp') => {
+        return apiRequest(`/email/test-connection?type=${type}`, {
+            method: 'POST',
+        });
+    },
+
+    getImapStatus: async () => {
+        return apiRequest('/email/imap-status');
+    },
+
+    triggerImapPoll: async () => {
+        return apiRequest('/email/imap-poll', { method: 'POST' });
+    },
+};
+
+// Sample Followups API
+export const sampleFollowupsAPI = {
+    getAll: async () => {
+        return apiRequest('/sample-followups');
+    },
+
+    create: async (data) => {
+        return apiRequest('/sample-followups', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    },
+
+    update: async (id, data) => {
+        return apiRequest(`/sample-followups/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    },
+
+    delete: async (id) => {
+        return apiRequest(`/sample-followups/${id}`, {
+            method: 'DELETE',
+        });
+    },
+};
+

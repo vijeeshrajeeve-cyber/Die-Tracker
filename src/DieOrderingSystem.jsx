@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
-import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, GripVertical, Menu, User, LogOut, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area, LabelList } from 'recharts';
+import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -9,53 +9,21 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
 import { PIImportModal, RevisionModal, ChangeLogModal } from './components/modals';
+import BackupDieRequests from './components/backup/BackupDieRequests';
+import EmailCompose from './components/email/EmailCompose';
+import EmailInbox from './components/email/EmailInbox';
+import EmailSettings from './components/email/EmailSettings';
+import AddUserModal from './components/modals/AddUserModal';
+import { CONTROLLABLE_PAGES, MONTHS } from './utils/constants';
+import { parseDateDMY } from './utils/helpers';
 
-// ============================================================================
-// SAMPLE DATA - Representative samples covering all statuses, types, plants
-// ============================================================================
-const INITIAL_SAMPLE_DATA = [
-  // DONE - various types (B, N, T, C, H), suppliers, plants, shipment methods
-  { "Plant": "EXT 1", "Order No": "7613-25", "DIE NO": "INS-25033", "TYPE": "T", "Die Size": "300X100", "Die Requested Date": "2025-01-03", "Ordered date": "2025-01-03", "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-01-03", "Design Approved Date": "2025-01-03", "Delay": 0, "PR Entry": "2025-01-04", "Oracle Entry": "2025-01-04", "Supplier": "SUPPLIER-1", "STATUS": "DONE", "OVERALL DELAY": 0, "ETA": "2025-01-12", "month": "Jan" },
-  { "Plant": "EXT 2", "Order No": "8001-25", "DIE NO": "27562-502", "TYPE": "B", "Die Size": "320X160", "Die Requested Date": "2025-02-05", "Ordered date": "2025-02-05", "Type of shipment": "AIR", "Mandrels per Cavity": 2, "Total Mandrels": 4, "Design Received Date": "2025-02-06", "Design Approved Date": "2025-02-07", "Delay": 1, "PR Entry": "2025-02-08", "Oracle Entry": "2025-02-09", "Supplier": "SUPPLIER-3", "STATUS": "DONE", "OVERALL DELAY": 2, "ETA": "2025-02-20", "month": "Feb" },
-  { "Plant": "EXT 1", "Order No": "7620-25", "DIE NO": "29084-301", "TYPE": "N", "Die Size": "355X200", "Die Requested Date": "2025-03-01", "Ordered date": "2025-03-01", "Type of shipment": "AIR", "Mandrels per Cavity": 2, "Total Mandrels": 4, "Design Received Date": "2025-03-03", "Design Approved Date": "2025-03-04", "Delay": 1, "PR Entry": "2025-03-05", "Oracle Entry": "2025-03-06", "Supplier": "SUPPLIER-6", "STATUS": "DONE", "OVERALL DELAY": 2, "ETA": "2025-03-18", "month": "Mar" },
-  { "Plant": "EXT 2", "Order No": "8010-25", "DIE NO": "30123-401", "TYPE": "C", "Die Size": "280X160", "Die Requested Date": "2025-04-05", "Ordered date": "2025-04-05", "Type of shipment": "LAND", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": "2025-04-07", "Design Approved Date": "2025-04-08", "Delay": 1, "PR Entry": "2025-04-10", "Oracle Entry": "2025-04-11", "Supplier": "SUPPLIER-7", "STATUS": "DONE", "OVERALL DELAY": 3, "ETA": "2025-04-28", "month": "Apr" },
-  { "Plant": "EXT 1", "Order No": "7625-25", "DIE NO": "INS-25100", "TYPE": "H", "Die Size": "450X250", "Die Requested Date": "2025-05-01", "Ordered date": "2025-05-01", "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-05-02", "Design Approved Date": "2025-05-03", "Delay": 1, "PR Entry": "2025-05-04", "Oracle Entry": "2025-05-05", "Supplier": "SUPPLIER-1", "STATUS": "DONE", "OVERALL DELAY": 1, "ETA": "2025-05-15", "month": "May" },
-  { "Plant": "EXT 2", "Order No": "8020-25", "DIE NO": "31245-501", "TYPE": "N", "Die Size": "450X260", "Die Requested Date": "2025-06-10", "Ordered date": "2025-06-10", "Type of shipment": "AIR", "Mandrels per Cavity": 3, "Total Mandrels": 6, "Design Received Date": "2025-06-12", "Design Approved Date": "2025-06-14", "Delay": 2, "PR Entry": "2025-06-15", "Oracle Entry": "2025-06-17", "Supplier": "SUPPLIER-6", "STATUS": "DONE", "OVERALL DELAY": 4, "ETA": "2025-07-01", "month": "Jun" },
-  { "Plant": "EXT 1", "Order No": "7630-25", "DIE NO": "28765-202", "TYPE": "B", "Die Size": "280X160", "Die Requested Date": "2025-07-01", "Ordered date": "2025-07-01", "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-07-02", "Design Approved Date": "2025-07-03", "Delay": 1, "PR Entry": "2025-07-04", "Oracle Entry": "2025-07-05", "Supplier": "SUPPLIER-2", "STATUS": "DONE", "OVERALL DELAY": 2, "ETA": "2025-07-20", "month": "Jul" },
-  { "Plant": "EXT 2", "Order No": "8030-25", "DIE NO": "33200-701", "TYPE": "B", "Die Size": "250X160", "Die Requested Date": "2025-08-10", "Ordered date": "2025-08-10", "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-08-12", "Design Approved Date": "2025-08-13", "Delay": 1, "PR Entry": "2025-08-14", "Oracle Entry": "2025-08-15", "Supplier": "SUPPLIER-4", "STATUS": "DONE", "OVERALL DELAY": 2, "ETA": "2025-08-30", "month": "Aug" },
-  { "Plant": "EXT 1", "Order No": "7640-25", "DIE NO": "INS-25200", "TYPE": "T", "Die Size": "460X150", "Die Requested Date": "2025-09-01", "Ordered date": "2025-09-01", "Type of shipment": "AIR", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-09-02", "Design Approved Date": "2025-09-03", "Delay": 1, "PR Entry": "2025-09-04", "Oracle Entry": "2025-09-05", "Supplier": "SUPPLIER-5", "STATUS": "DONE", "OVERALL DELAY": 1, "ETA": "2025-09-18", "month": "Sep" },
-  { "Plant": "EXT 2", "Order No": "8035-25", "DIE NO": "34500-801", "TYPE": "N", "Die Size": "220X130", "Die Requested Date": "2025-10-15", "Ordered date": "2025-10-15", "Type of shipment": "LAND", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": "2025-10-17", "Design Approved Date": "2025-10-18", "Delay": 1, "PR Entry": "2025-10-19", "Oracle Entry": "2025-10-20", "Supplier": "SUPPLIER-8", "STATUS": "DONE", "OVERALL DELAY": 2, "ETA": "2025-11-05", "month": "Oct" },
-  // CANCELLED
-  { "Plant": "EXT 2", "Order No": "8025-25", "DIE NO": "32100-601", "TYPE": "C", "Die Size": "320X200", "Die Requested Date": "2025-04-15", "Ordered date": "2025-04-15", "Type of shipment": "AIR", "Mandrels per Cavity": 1, "Total Mandrels": 1, "Design Received Date": "2025-04-17", "Design Approved Date": "2025-04-18", "Delay": 1, "PR Entry": "2025-04-19", "Oracle Entry": "2025-04-21", "Supplier": "SUPPLIER-8", "STATUS": "CANCELLED", "OVERALL DELAY": 0, "ETA": null, "month": "Apr" },
-  { "Plant": "EXT 1", "Order No": "7720-25", "DIE NO": "43300-1616", "TYPE": "B", "Die Size": "355X200", "Die Requested Date": "2025-05-10", "Ordered date": "2025-05-10", "Type of shipment": "LAND", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": "2025-05-12", "Design Approved Date": "2025-05-14", "Delay": 2, "PR Entry": "2025-05-15", "Oracle Entry": "2025-05-16", "Supplier": "SUPPLIER-9", "STATUS": "CANCELLED", "OVERALL DELAY": 0, "ETA": null, "month": "May" },
-  // PENDING FOR ORACLE ENTRY
-  { "Plant": "EXT 2", "Order No": "8060-25", "DIE NO": "40000-1301", "TYPE": "B", "Die Size": "320X160", "Die Requested Date": "2025-11-10", "Ordered date": "2025-11-10", "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-11-12", "Design Approved Date": "2025-11-13", "Delay": 1, "PR Entry": "2025-11-14", "Oracle Entry": null, "Supplier": "SUPPLIER-7", "STATUS": "PENDING FOR ORACLE ENTRY", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  { "Plant": "EXT 1", "Order No": "7670-25", "DIE NO": "INS-25400", "TYPE": "T", "Die Size": "460X150", "Die Requested Date": "2025-11-15", "Ordered date": "2025-11-15", "Type of shipment": "AIR", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-11-16", "Design Approved Date": "2025-11-17", "Delay": 1, "PR Entry": "2025-11-18", "Oracle Entry": null, "Supplier": "SUPPLIER-1", "STATUS": "PENDING FOR ORACLE ENTRY", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  // PENDING FOR DESIGN APPROVAL
-  { "Plant": "EXT 1", "Order No": "7675-25", "DIE NO": "34500-808", "TYPE": "B", "Die Size": "355X200", "Die Requested Date": "2025-11-20", "Ordered date": null, "Type of shipment": "LAND", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": "2025-11-22", "Design Approved Date": null, "Delay": 0, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-3", "STATUS": "PENDING FOR DESIGN APPROVAL", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  { "Plant": "EXT 2", "Order No": "8070-25", "DIE NO": "42200-1501", "TYPE": "N", "Die Size": "250X160", "Die Requested Date": "2025-11-22", "Ordered date": null, "Type of shipment": "AIR", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-11-24", "Design Approved Date": null, "Delay": 0, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-2", "STATUS": "PENDING FOR DESIGN APPROVAL", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  // AWAITING FOR DESIGN
-  { "Plant": "EXT 2", "Order No": "8075-25", "DIE NO": "43300-1601", "TYPE": "T", "Die Size": "300X100", "Die Requested Date": "2025-11-28", "Ordered date": null, "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": null, "Design Approved Date": null, "Delay": 0, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-1", "STATUS": "AWAITING FOR DESIGN", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  { "Plant": "EXT 1", "Order No": "7685-25", "DIE NO": "36700-1010", "TYPE": "B", "Die Size": "280X160", "Die Requested Date": "2025-12-01", "Ordered date": null, "Type of shipment": "AIR", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": null, "Design Approved Date": null, "Delay": 0, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-6", "STATUS": "AWAITING FOR DESIGN", "OVERALL DELAY": 0, "ETA": null, "month": "Dec" },
-  // UNDER SIMULATION
-  { "Plant": "EXT 1", "Order No": "7710-25", "DIE NO": "41100-1414", "TYPE": "T", "Die Size": "700X196", "Die Requested Date": "2025-11-05", "Ordered date": "2025-11-05", "Type of shipment": "AIR", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-11-06", "Design Approved Date": "2025-11-07", "Delay": 1, "PR Entry": "2025-11-08", "Oracle Entry": "2025-11-09", "Supplier": "SUPPLIER-1", "STATUS": "UNDER SIMULATION", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  { "Plant": "EXT 2", "Order No": "8088-25", "DIE NO": "45600-1901", "TYPE": "N", "Die Size": "450X260", "Die Requested Date": "2025-11-08", "Ordered date": "2025-11-08", "Type of shipment": "LAND", "Mandrels per Cavity": 2, "Total Mandrels": 4, "Design Received Date": "2025-11-10", "Design Approved Date": "2025-11-11", "Delay": 1, "PR Entry": "2025-11-12", "Oracle Entry": "2025-11-13", "Supplier": "SUPPLIER-6", "STATUS": "UNDER SIMULATION", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  // PENDING FOR PR
-  { "Plant": "EXT 2", "Order No": "8100-25", "DIE NO": "48800-2101", "TYPE": "N", "Die Size": "320X160", "Die Requested Date": "2025-11-12", "Ordered date": null, "Type of shipment": "LAND", "Mandrels per Cavity": 2, "Total Mandrels": 4, "Design Received Date": "2025-11-14", "Design Approved Date": "2025-11-15", "Delay": 1, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-6", "STATUS": "PENDING FOR PR", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  // PENDING FOR DESIGN TO EMS
-  { "Plant": "EXT 1", "Order No": "7715-25", "DIE NO": "42200-1515", "TYPE": "B", "Die Size": "250X160", "Die Requested Date": "2025-11-17", "Ordered date": null, "Type of shipment": "LAND", "Mandrels per Cavity": 0, "Total Mandrels": 0, "Design Received Date": "2025-11-19", "Design Approved Date": "2025-11-20", "Delay": 1, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-2", "STATUS": "PENDING FOR DESIGN TO EMS", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  // PENDING FOR ORDERING
-  { "Plant": "EXT 1", "Order No": "7665-25", "DIE NO": "33400-707", "TYPE": "N", "Die Size": "450X260", "Die Requested Date": "2025-11-01", "Ordered date": null, "Type of shipment": "LAND", "Mandrels per Cavity": 3, "Total Mandrels": 6, "Design Received Date": "2025-11-03", "Design Approved Date": "2025-11-05", "Delay": 2, "PR Entry": "2025-11-06", "Oracle Entry": "2025-11-07", "Supplier": "SUPPLIER-4", "STATUS": "PENDING FOR ORDERING", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-  { "Plant": "EXT 2", "Order No": "8055-25", "DIE NO": "38900-1201", "TYPE": "B", "Die Size": "250X160", "Die Requested Date": "2025-10-15", "Ordered date": null, "Type of shipment": "AIR", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": "2025-10-17", "Design Approved Date": "2025-10-18", "Delay": 1, "PR Entry": "2025-10-19", "Oracle Entry": "2025-10-20", "Supplier": "SUPPLIER-10", "STATUS": "PENDING FOR ORDERING", "OVERALL DELAY": 0, "ETA": null, "month": "Oct" },
-  // HOLD
-  { "Plant": "EXT 2", "Order No": "8105-25", "DIE NO": "49900-2201", "TYPE": "B", "Die Size": "280X160", "Die Requested Date": "2025-11-19", "Ordered date": null, "Type of shipment": "AIR", "Mandrels per Cavity": 1, "Total Mandrels": 2, "Design Received Date": "2025-11-21", "Design Approved Date": "2025-11-22", "Delay": 1, "PR Entry": null, "Oracle Entry": null, "Supplier": "SUPPLIER-7", "STATUS": "HOLD", "OVERALL DELAY": 0, "ETA": null, "month": "Nov" },
-];
+
 
 // Status configuration
 const STATUS_CONFIG = {
@@ -66,7 +34,8 @@ const STATUS_CONFIG = {
   'PENDING FOR PR': { color: '#D97706', bgColor: '#FFFBEB', icon: TrendingUp, label: 'Pending PR' },
   'PENDING FOR ORACLE ENTRY': { color: '#C2410C', bgColor: '#FFF7ED', icon: Factory, label: 'Oracle Entry' },
   'PENDING FOR ORDERING': { color: '#0D9488', bgColor: '#F0FDFA', icon: Truck, label: 'Pending Order' },
-  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', icon: CheckCircle, label: 'Completed' },
+  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', icon: CheckCircle, label: 'In Manufacturing' },
+  'DIE RECEIVED': { color: '#0891B2', bgColor: '#ECFEFF', icon: Package, label: 'Die Received' },
   'CANCELLED': { color: '#6B7280', bgColor: '#F3F4F6', icon: XCircle, label: 'Cancelled' },
   'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', icon: AlertTriangle, label: 'On Hold' },
 };
@@ -228,185 +197,825 @@ const ImportModal = ({ onClose, onImport }) => {
   );
 };
 
+// PDF Import Modal Component - PRESS to Plant mapping
+const PRESS_TO_PLANT_PDF = {
+  '25': 'GEX 2', 'P25': 'GEX 2',
+  '35': 'GEX 2', 'P35': 'GEX 2',
+  '2': 'GEX 1', 'P2': 'GEX 1',
+  '4': 'GEX 1', 'P4': 'GEX 1',
+  '5': 'GEX 1', 'P5': 'GEX 1',
+  '6': 'GEX 1', 'P6': 'GEX 1',
+  'B': 'GEX 1', 'D': 'GEX 1', 'E': 'GEX 1', 'F': 'GEX 1',
+};
+
+// Known die supplier names for PDF extraction
+const KNOWN_SUPPLIERS = ['PDTMC', 'PHME', 'EKSTEK', 'COMPES', 'ADEX', 'WEFA', 'JIANGSU', 'COMES', 'PHOENIX', 'PRESSMETAL', 'AIT'];
+// Map common PDF typos/variants to canonical supplier names
+const SUPPLIER_ALIASES = { 'GIANGSU': 'JIANGSU', 'GIANSUN': 'JIANGSU', 'JIANSU': 'JIANGSU' };
+
 // PDF Import Modal Component
-const PDFImportModal = ({ onClose, onAddRecord }) => {
+const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [] }) => {
   const [dragActive, setDragActive] = useState(false);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState(null);
+  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
+  const [importing, setImporting] = useState(false);
+  const [preview, setPreview] = useState(null); // { orders: [] }
 
-  const parseDateDMY = (dateStr) => {
-    if (!dateStr) return null;
-    const match = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (match) {
-      const [, day, month, year] = match;
-      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  // Extract metadata from filename
+  const extractFilenameMetadata = (filename) => {
+    const name = filename.replace(/\.pdf$/i, '');
+    const dieNoMatch = name.match(/(\d{3,6}[-_]\d{2,4})/);
+    return {
+      dieNo: dieNoMatch ? dieNoMatch[1].replace('_', '-') : name,
+      isUrgent: /[-\s](urgent|urgetn)/i.test(name),
+      isDiePlateOnly: /die\s*plate\s*only/i.test(name),
+      isInsertMandrelOnly: /insert\s*mandrel\s*only/i.test(name),
+      isRevision: /-R(?:\.|$)/i.test(filename) || /[-_]\d{2,4}-R/i.test(name),
+    };
+  };
+
+  // Parse a single PDF file and return structured order data
+  // Handles two PDF formats:
+  //   Format A: Labels + values as text (e.g., "SUPPLIER - PDTMC DATE - 03/01/2025")
+  //   Format B: Values-only, labels are form graphics (e.g., "PDTMC 22/01/2026", "Dia 220X130", "1 P4")
+  const parseSinglePDF = async (file, batchIndex = 0) => {
+    const meta = extractFilenameMetadata(file.name);
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    // Get page 1 text content with positional data
+    const page1 = await pdf.getPage(1);
+    const textContent = await page1.getTextContent();
+
+    // Group text items by Y position to reconstruct lines
+    const linesByY = {};
+    for (const item of textContent.items) {
+      const y = Math.round(item.transform[5]);
+      if (!linesByY[y]) linesByY[y] = [];
+      linesByY[y].push({ text: item.str, x: Math.round(item.transform[4]) });
     }
-    return null;
-  };
 
-  const extractDieNoFromFilename = (filename) => {
-    // Remove .pdf extension and return the filename as die number
-    return filename.replace(/\.pdf$/i, '');
-  };
-
-  const parsePDFContent = async (file) => {
-    setError(null);
-    setLoading(true);
-    setPreview(null);
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let fullText = '';
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        fullText += pageText + '\n';
+    // Merge nearby Y positions (within 3px tolerance for text wrapping)
+    const sortedYsRaw = Object.keys(linesByY).map(Number).sort((a, b) => b - a);
+    const mergedLinesByY = {};
+    let currentY = null;
+    for (const y of sortedYsRaw) {
+      if (currentY !== null && currentY - y <= 3) {
+        mergedLinesByY[currentY].push(...linesByY[y]);
+      } else {
+        currentY = y;
+        mergedLinesByY[y] = [...(linesByY[y] || [])];
       }
+    }
 
-      // Extract die number from filename
-      const dieNo = extractDieNoFromFilename(file.name);
+    const sortedYs = Object.keys(mergedLinesByY).map(Number).sort((a, b) => b - a);
+    const lines = sortedYs.map(y => {
+      const items = mergedLinesByY[y].sort((a, b) => a.x - b.x);
+      return { y, text: items.map(i => i.text).join(' ').trim(), items };
+    });
 
-      // Parse extracted text to find relevant fields
-      const lines = fullText.split(/\s+/).filter(Boolean);
+    // Extracted fields
+    let supplier = null;
+    let requestedDate = null;
+    let dieSize = null;
+    let cavity = null;
+    let pressCode = null;
+    let simulationEnabled = false;
+    let dieNo = meta.dieNo;
 
-      // Find dates (DD/MM/YYYY format)
-      const datePattern = /\d{1,2}\/\d{1,2}\/\d{4}/g;
-      const dates = fullText.match(datePattern) || [];
+    // ── Detect format: check if any line has info box LABELS as text ──
+    const fullText = lines.map(l => l.text).join(' ');
+    const hasLabels = /\bSUPPLIER\b/.test(fullText) || /\bDIE SIZE\b/i.test(fullText) || /\bMODE OF SHIPMENT\b/i.test(fullText);
 
-      // Find die size (e.g., 355X200, Dia 355X200)
-      const sizePattern = /(?:Dia\s*)?(\d{2,4}[Xx]\d{2,4})/i;
-      const sizeMatch = fullText.match(sizePattern);
-      const dieSize = sizeMatch ? sizeMatch[1].toUpperCase() : null;
+    // ── Check if Format A labels have actual VALUES filled in (not just empty dashes) ──
+    // Some PDFs have labels (SUPPLIER, DIE SIZE, PRESS) but no values filled in —
+    // the values were hand-written or added as annotation overlays that pdf.js can't extract.
+    // Detect this by checking if the SUPPLIER line has any value after the dash.
+    let labelsHaveValues = false;
+    if (hasLabels) {
+      for (const line of lines) {
+        const upper = line.text.toUpperCase();
+        // Check if any label line has a value (not just "SUPPLIER - DATE -" with nothing after)
+        if (upper.includes('SUPPLIER')) {
+          // Count non-label, non-separator content after SUPPLIER
+          const afterLabels = line.text.replace(/SUPPLIER|DATE|[-:\s]/gi, '').trim();
+          // If there's a date or supplier name, values are filled
+          if (/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/.test(line.text) || afterLabels.length >= 2) {
+            labelsHaveValues = true;
+          }
+          break;
+        }
+      }
+    }
 
-      // Find supplier - look for first alphabetic word (at least 4 chars) that's not a common keyword
-      const skipWords = ['DIA', 'HOLLOW', 'SOLID', 'LAND', 'ROAD', 'URGENT', 'NEED', 'WEEK', 'TOP'];
-      const words = fullText.match(/[A-Za-z]{4,}/g) || [];
-      let supplier = 'UNKNOWN';
-      for (const word of words) {
-        const upperWord = word.toUpperCase();
-        if (!skipWords.includes(upperWord) && !upperWord.match(/^(OLD|NEW|P\d+)$/i)) {
-          supplier = upperWord;
+    if (hasLabels && labelsHaveValues) {
+      // ═══ FORMAT A: Labels + values as text ═══
+      // Lines look like: "SUPPLIER - PDTMC DATE - 12/01/2026"
+      //                  "DIE SIZE - Dia 280X160"
+      //                  "No OF CAV - 2 PRESS - P 25"
+      // Some PDFs have supplier name on a SEPARATE line above the SUPPLIER label line
+      for (let i = 0; i < lines.length; i++) {
+        const lineText = lines[i].text;
+        const upperLine = lineText.toUpperCase();
+
+        // SUPPLIER + DATE extraction
+        // The SUPPLIER line may be merged with unrelated text (e.g., "MINIMUM ELECTRICAL... SUPPLIER - PDTMC DATE - 12/01/2026")
+        // Use positional items: only consider items at X >= first "SUPPLIER" item X position
+        if (upperLine.includes('SUPPLIER') && !supplier) {
+          // Extract only the info-box portion (items with X >= first "SUPPLIER" item X position)
+          const supplierItem = lines[i].items.find(it => it.text.toUpperCase().includes('SUPPLIER'));
+          const infoBoxX = supplierItem ? supplierItem.x : 0;
+          const infoBoxItems = lines[i].items.filter(it => it.x >= infoBoxX);
+          const infoBoxText = infoBoxItems.map(it => it.text).join(' ').trim();
+          const infoBoxUpper = infoBoxText.toUpperCase();
+
+          // Look for known supplier name in the info box portion
+          for (const s of KNOWN_SUPPLIERS) {
+            if (infoBoxUpper.includes(s)) {
+              supplier = s;
+              break;
+            }
+          }
+          // Fallback: look for uppercase word between SUPPLIER and DATE
+          if (!supplier) {
+            const afterSupplier = infoBoxText.replace(/.*SUPPLIER\s*[-:]?\s*/i, '');
+            const beforeDate = afterSupplier.replace(/\s*DATE\s*.*/i, '');
+            const candidate = beforeDate.replace(/^[-\s]+/, '').trim();
+            if (candidate && candidate.length >= 2 && /^[A-Za-z]+$/.test(candidate)) {
+              supplier = candidate.toUpperCase();
+            }
+          }
+          // Fallback: check the line ABOVE for a standalone supplier name
+          // (some PDFs put "PDTMC" on its own line above "SUPPLIER - DATE - 07/01/2026")
+          if (!supplier && i > 0) {
+            const prevLine = lines[i - 1].text.trim().toUpperCase();
+            for (const s of KNOWN_SUPPLIERS) {
+              if (prevLine.includes(s)) {
+                supplier = s;
+                break;
+              }
+            }
+          }
+          // Fallback: check the line BELOW for a standalone supplier name
+          // (some PDFs put "PDTMC" on its own line below "SUPPLIER - DATE 12/01/2026 -")
+          if (!supplier && i + 1 < lines.length) {
+            const nextLine = lines[i + 1].text.trim().toUpperCase();
+            for (const s of KNOWN_SUPPLIERS) {
+              if (nextLine.includes(s) && nextLine.length < 30) {
+                supplier = s;
+                break;
+              }
+            }
+          }
+
+          // Extract date from supplier line or adjacent lines
+          for (let j = Math.max(0, i - 1); j <= Math.min(i + 2, lines.length - 1); j++) {
+            const dm = lines[j].text.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/);
+            if (dm && !requestedDate) {
+              requestedDate = parseDateDMY(dm[1]);
+              break;
+            }
+          }
+        }
+
+        // DIE SIZE extraction
+        if (upperLine.includes('DIE SIZE') && !dieSize) {
+          const sizeMatch = lineText.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
+          if (sizeMatch) {
+            dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
+          }
+          if (!dieSize && i + 1 < lines.length) {
+            const nextMatch = lines[i + 1].text.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
+            if (nextMatch) dieSize = nextMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
+          }
+        }
+
+        // No OF CAV + PRESS extraction (often on same line: "No OF CAV - 2 PRESS - P 25")
+        // But sometimes cavity is on a SEPARATE line below (e.g., "No OF CAV - PRESS - P25" then "1" on next line)
+        if ((upperLine.includes('NO OF CAV') || upperLine.includes('NO. OF CAV') || upperLine.includes('CAVIT')) && cavity === null) {
+          // Extract cavity: digit(s) between "CAV" and "PRESS"
+          const cavPressMatch = lineText.match(/CAV\w*\s*[-:.]?\s*(\d+)\s*(?:PRESS|$)/i);
+          if (cavPressMatch) {
+            cavity = parseInt(cavPressMatch[1], 10);
+          }
+          // Also try next line for cavity digit (may be standalone "1", "- 2", or "4 P5" combined)
+          if (cavity === null && i + 1 < lines.length) {
+            const nextText = lines[i + 1].text.trim();
+            // Try combined "4 P5" format first
+            const nextCombined = nextText.match(/^[-\s]*(\d{1,2})\s+(P?\s*\d+|[A-F])(?:\s|$)/i);
+            if (nextCombined) {
+              cavity = parseInt(nextCombined[1], 10);
+              if (!pressCode) pressCode = nextCombined[2].trim();
+            } else {
+              // Match standalone digit (e.g., "1") or separator + digit (e.g., "- 2")
+              const nextCav = nextText.match(/^[-\s]*(\d{1,2})(?:\s|$)/);
+              if (nextCav) cavity = parseInt(nextCav[1], 10);
+            }
+          }
+          // Also try 2 lines down (in case next line is something else)
+          if (cavity === null && i + 2 < lines.length) {
+            const next2Text = lines[i + 2].text.trim();
+            const next2Cav = next2Text.match(/^[-\s]*(\d{1,2})(?:\s|$)/);
+            if (next2Cav) cavity = parseInt(next2Cav[1], 10);
+          }
+        }
+
+        // PRESS extraction (on same line as CAV or standalone)
+        // Formats: "PRESS - P25", "PRESS - P 25", "No OF CAV - 2 PRESS - P5"
+        // Avoid matching stray letters from notes (e.g., "for powder coating" → "f")
+        if (upperLine.includes('PRESS') && !upperLine.includes('SHIPMENT') && !pressCode) {
+          const pressMatch = lineText.match(/PRESS\s*[-:=]?\s*(P\s*\d+|\d+|[A-F])(?:\s|$)/i);
+          if (pressMatch) {
+            // Validate: single letters [A-F] are ok, but avoid matching first letter of unrelated words
+            const candidate = pressMatch[1].trim();
+            // Only accept single-letter press codes if they appear right after PRESS separator
+            if (candidate.length === 1 && /^[a-f]$/i.test(candidate)) {
+              // Check it's not just the start of a word like "for"
+              const afterPress = lineText.substring(lineText.toUpperCase().indexOf('PRESS') + 5).replace(/^[\s\-:=]+/, '');
+              if (/^[A-F]\s*$/i.test(afterPress) || /^[A-F]\b/i.test(afterPress) && afterPress.length <= 2) {
+                pressCode = candidate.toUpperCase();
+              }
+            } else {
+              pressCode = candidate;
+            }
+          }
+          if (!pressCode && i + 1 < lines.length) {
+            const nextText = lines[i + 1].text.trim();
+            // Next line: try "- P25", "P5", "4 P5" (cavity+press on next line)
+            const nextPress = nextText.match(/^[-\s]*(?:\d{1,2}\s+)?(P\s*\d+|[A-F])$/i);
+            if (nextPress) pressCode = nextPress[1].trim();
+          }
+        }
+
+        // 3D MODULE FOR SIMULATION
+        if ((upperLine.includes('3D MODULE') || upperLine.includes('SIMULATION')) && !simulationEnabled) {
+          if (/\b(yes|ok)\b/i.test(lineText)) simulationEnabled = true;
+          if (!simulationEnabled && i + 1 < lines.length && /\b(yes|ok)\b/i.test(lines[i + 1].text)) {
+            simulationEnabled = true;
+          }
+        }
+
+        // MODE OF SHIPMENT - now derived from supplier table (see supplier lookup below)
+      }
+    } else if (hasLabels && !labelsHaveValues) {
+      // ═══ FORMAT C: Labels exist but values are empty (hand-filled, not extractable) ═══
+      // The info box has SUPPLIER, DIE SIZE, PRESS labels but all values are blank dashes.
+      // Values may have been filled in by hand/annotation overlays that pdf.js can't read.
+      // We can only extract metadata from filename and any standalone text elsewhere.
+      // Nothing to extract from info box — rely on fallbacks below
+    } else {
+      // ═══ FORMAT B: Values-only (labels are form graphics/images, not text) ═══
+      // The info box values appear as short lines in sequential Y order:
+      //   1. Supplier + Date (e.g., "PDTMC 22/01/2026" or just "16/01/2026")
+      //   2. Die Size (e.g., "Dia 220X130" or "Dia 250X160")
+      //   3. Cavity + Press (e.g., "1 P4" or "8 P4" or "1 P25")
+      //      OR Cavity and Press on SEPARATE lines: "1" then "P5"
+      //   4. Solid/Hollow, Insert No, Size, Delivery Date, Simulation, Shipment, Weight
+      // Find the die size line as anchor - it's the most reliable pattern
+      let anchorIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (/(?:Dia\s*)?\d{2,4}\s*[Xx\u00D7]\s*\d{2,4}/i.test(lines[i].text)) {
+          anchorIdx = i;
           break;
         }
       }
 
-      // Determine shipment type
-      const shipmentType = fullText.toLowerCase().includes('air') ? 'AIR' : 'LAND';
+      if (anchorIdx >= 0) {
+        // Die size from anchor
+        const sizeMatch = lines[anchorIdx].text.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
+        if (sizeMatch) dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
 
-      // Check for 3D Module for Simulation - just set flag, don't auto-update dates/status
-      const simulationEnabled = /3D\s*Module\s*(for\s*)?Simulation\s*[:=]?\s*(ok|yes)/i.test(fullText);
+        // Line BEFORE die size = Supplier + Date
+        if (anchorIdx > 0) {
+          const supplierLine = lines[anchorIdx - 1].text.trim();
+          // Extract date first
+          const dateMatch = supplierLine.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/);
+          if (dateMatch) requestedDate = parseDateDMY(dateMatch[1]);
+          // Supplier = text before the date (or the whole line if no date)
+          const supplierPart = dateMatch ? supplierLine.replace(dateMatch[0], '').replace(/[-\s]+$/, '').trim() : supplierLine;
+          if (supplierPart && /^[A-Za-z]/.test(supplierPart)) {
+            // Check known suppliers
+            const upperPart = supplierPart.toUpperCase();
+            const knownMatch = KNOWN_SUPPLIERS.find(s => upperPart.includes(s));
+            supplier = knownMatch || upperPart;
+          }
+        }
 
-      // Build the new record
-      const today = new Date().toISOString().split('T')[0];
-      const requestDate = dates[0] ? parseDateDMY(dates[0]) : today;
+        // Line AFTER die size = Cavity + Press (e.g., "1 P4", "8 P4", "1 P25", "2 P 25")
+        // OR cavity and press on separate lines: "1" then "P5" or REVERSE: "P2" then "1"
+        if (anchorIdx + 1 < lines.length) {
+          const cavPressLine = lines[anchorIdx + 1].text.trim();
+          const cpMatch = cavPressLine.match(/^(\d+)\s+(P?\s*\d+|[A-F])\b/i);
+          if (cpMatch) {
+            cavity = parseInt(cpMatch[1], 10);
+            pressCode = cpMatch[2].trim();
+          } else {
+            // Try: cavity on this line alone, press on next line
+            const cavOnlyMatch = cavPressLine.match(/^(\d{1,2})$/);
+            if (cavOnlyMatch) {
+              cavity = parseInt(cavOnlyMatch[1], 10);
+              // Check next line for press code
+              if (anchorIdx + 2 < lines.length) {
+                const pressLine = lines[anchorIdx + 2].text.trim();
+                const pressOnlyMatch = pressLine.match(/^(P?\s*\d+|[A-F])$/i);
+                if (pressOnlyMatch) pressCode = pressOnlyMatch[1].trim();
+              }
+            } else {
+              // REVERSE order: press on this line, cavity on next line (e.g., "P2" then "1")
+              const pressFirstMatch = cavPressLine.match(/^(P\s*\d+|[A-F])$/i);
+              if (pressFirstMatch) {
+                pressCode = pressFirstMatch[1].trim();
+                if (anchorIdx + 2 < lines.length) {
+                  const cavLine = lines[anchorIdx + 2].text.trim();
+                  const cavMatch = cavLine.match(/^(\d{1,2})$/);
+                  if (cavMatch) cavity = parseInt(cavMatch[1], 10);
+                }
+              }
+            }
+          }
+        }
 
-      const newRecord = {
-        'Plant': 'EXT 1',
-        'Order No': `PDF-${Date.now().toString().slice(-6)}`,
-        'DIE NO': dieNo,
-        'TYPE': null,
-        'Die Size': dieSize || 'N/A',
-        'Die Requested Date': requestDate,
-        'Ordered date': null,
-        'Type of shipment': shipmentType,
-        'Mandrels per Cavity': 0,
-        'Total Mandrels': 0,
-        'Design Received Date': null,
-        '3D Model Received Date': null,
-        'simulationEnabled': simulationEnabled,
-        'Design Approved Date': null,
-        'Delay': 0,
-        'PR Entry': null,
-        'Oracle Entry': null,
-        'Supplier': supplier,
-        'STATUS': 'PENDING FOR ORDERING',
-        'OVERALL DELAY': 0,
-        'ETA': null,
-        'month': requestDate ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][new Date(requestDate).getMonth()] : null,
-      };
+        // Lines after cav+press: Solid/Hollow, Insert No, Size, Delivery Date, Simulation, Shipment
+        // Walk sequentially from anchorIdx + 2 (or +3 if cav/press were split across 2 lines)
+        const cavPressOnOneLine = lines[anchorIdx + 1]?.text.trim().match(/^(\d+)\s+(P?\s*\d+|[A-F])\b/i);
+        const startIdx = (cavity !== null && pressCode && !cavPressOnOneLine)
+          ? anchorIdx + 3  // cav and press were on separate lines
+          : anchorIdx + 2; // cav+press on same line
+        const remaining = lines.slice(startIdx).map(l => l.text.trim()).filter(t => t.length > 0);
 
-      setPreview({ record: newRecord, rawText: fullText.substring(0, 500) });
-    } catch (err) {
-      setError(`PDF parsing error: ${err.message}`);
-    } finally {
-      setLoading(false);
+        for (const val of remaining) {
+          // Delivery date: DD/MM/YYYY or DD-MM-YYYY
+          if (!requestedDate && /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/.test(val)) {
+            // Skip dates that look like old revision dates (< 2020)
+            const yearMatch = val.match(/(\d{4})/);
+            if (yearMatch && parseInt(yearMatch[1], 10) >= 2020) {
+              requestedDate = parseDateDMY(val.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/)[1]);
+            }
+          }
+          // Simulation: standalone "Yes" or "No" (but not "Old"/"New"/"Solid"/"Hollow")
+          if (!simulationEnabled && /^(yes|ok)$/i.test(val)) {
+            simulationEnabled = true;
+          }
+          // Shipment: now derived from supplier table (no PDF extraction needed)
+        }
+      }
+    }
+
+    // ── Normalize supplier aliases (typo corrections) ──
+    if (supplier) {
+      const upperSupplier = supplier.toUpperCase();
+      if (SUPPLIER_ALIASES[upperSupplier]) supplier = SUPPLIER_ALIASES[upperSupplier];
+    }
+
+    // ── Freeform PDF fallback (very short PDFs with key-value pairs) ──
+    // Some PDFs are freeform notes (e.g., "Supplier :- PDTMC", "Press-5", "Size 440X200")
+    // Also runs when supplier looks like garbage (too long = probably not a real supplier name)
+    const supplierLooksInvalid = supplier && supplier.length > 15 && !KNOWN_SUPPLIERS.includes(supplier.toUpperCase());
+    if (lines.length <= 10 && (!supplier || supplierLooksInvalid)) {
+      for (const line of lines) {
+        const text = line.text.trim();
+        // "Supplier :- PDTMC" or "Supplier Phoenix"
+        const supplierMatch = text.match(/Supplier\s*[:\-]*\s*(\w+)/i);
+        if (supplierMatch) {
+          const name = supplierMatch[1].toUpperCase();
+          const known = KNOWN_SUPPLIERS.find(s => name.includes(s));
+          supplier = known || (SUPPLIER_ALIASES[name] || name);
+        }
+        // "Press - 5" or "Press-4" (freeform format, not a label-based PRESS)
+        const pressMatch = text.match(/Press\s*[-:]*\s*(\d+)/i);
+        if (pressMatch && (!pressCode || supplierLooksInvalid)) {
+          pressCode = 'P' + pressMatch[1];
+        }
+        // "Size 440X200" or "insert Size 45x28"
+        if (!dieSize) {
+          const sizeMatch = text.match(/(?:Size|Dia)\s*(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
+          if (sizeMatch) dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
+        }
+      }
+    }
+
+    // ── Global fallbacks (both formats) ──
+
+    // Fallback: die size from any line
+    if (!dieSize) {
+      for (const line of lines) {
+        const sizeMatch = line.text.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
+        if (sizeMatch) {
+          dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
+          break;
+        }
+      }
+    }
+
+    // Fallback: date from any line
+    if (!requestedDate) {
+      for (const line of lines) {
+        const dm = line.text.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/);
+        if (dm) {
+          const yearMatch = dm[1].match(/(\d{4})/);
+          if (yearMatch && parseInt(yearMatch[1], 10) >= 2020) {
+            requestedDate = parseDateDMY(dm[1]);
+            break;
+          }
+        }
+      }
+    }
+
+    // Fallback: supplier from any line containing a known supplier name
+    if (!supplier) {
+      for (const line of lines) {
+        const upperText = line.text.toUpperCase();
+        for (const s of KNOWN_SUPPLIERS) {
+          if (upperText.includes(s)) {
+            supplier = s;
+            break;
+          }
+        }
+        if (supplier) break;
+        // Also check aliases
+        for (const [alias, canonical] of Object.entries(SUPPLIER_ALIASES)) {
+          if (upperText.includes(alias)) {
+            supplier = canonical;
+            break;
+          }
+        }
+        if (supplier) break;
+      }
+    }
+
+    // Shipment mode: lookup from supplier table instead of PDF extraction
+    const supplierRecord = suppliers.find(s => s.name === (supplier || '').toUpperCase());
+    const shipmentFromSupplier = supplierRecord?.shipment_mode || 'LAND';
+
+    // Confirm die number from PDF text
+    const pdfDieMatch = fullText.match(/\b(\d{3,6}[-]\d{2,4})\b/);
+    if (pdfDieMatch && !meta.dieNo.match(/^\d{3,6}-\d{2,4}$/)) {
+      dieNo = pdfDieMatch[1];
+    }
+
+    // Normalize press code: add "P" prefix if it's just a bare number (e.g., "6" → "P6")
+    if (pressCode) {
+      pressCode = pressCode.replace(/\s+/g, '').toUpperCase();
+      if (/^\d+$/.test(pressCode)) pressCode = 'P' + pressCode;
+    }
+
+    // Determine plant from press code
+    let plantFromPress = null;
+    if (pressCode) {
+      plantFromPress = PRESS_TO_PLANT_PDF[pressCode] || null;
+    }
+
+    // Check if order already exists
+    const existingOrder = existingOrders.find(o => o['DIE NO'] === dieNo);
+
+    return {
+      id: existingOrder?.id || null,
+      isExisting: !!existingOrder,
+      Plant: plantFromPress || existingOrder?.Plant || 'GEX 1',
+      'Order No': existingOrder?.['Order No'] || '',
+      'DIE NO': dieNo,
+      TYPE: existingOrder?.TYPE || null,
+      'Die Size': dieSize || 'N/A',
+      'Die Requested Date': requestedDate || null,
+      'Ordered date': null,
+      'Type of shipment': shipmentFromSupplier,
+      'Mandrels per Cavity': cavity || 0,
+      'Total Mandrels': 0,
+      'Design Received Date': null,
+      '3D Model Received Date': null,
+      simulationEnabled: simulationEnabled || false,
+      'Design Approved Date': null,
+      Delay: 0,
+      'PR Entry': null,
+      'Oracle Entry': null,
+      Supplier: supplier || 'UNKNOWN',
+      STATUS: existingOrder?.STATUS || 'PENDING FOR ORDERING',
+      'OVERALL DELAY': 0,
+      ETA: null,
+      month: requestedDate ? MONTHS[parseInt(requestedDate.split('-')[1], 10) - 1] : null,
+      // Display-only metadata (stripped before import)
+      _urgency: meta.isUrgent ? 'URGENT' : null,
+      _componentType: meta.isDiePlateOnly ? 'DIE PLATE ONLY' : meta.isInsertMandrelOnly ? 'INSERT MANDREL ONLY' : null,
+      _isRevision: meta.isRevision,
+      _cavity: cavity,
+    };
+  };
+
+  // Process multiple PDF files
+  const processFiles = useCallback(async (files) => {
+    const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfFiles.length === 0) {
+      setErrors(prev => [...prev, 'No PDF files found in selection']);
+      return;
+    }
+
+    setLoading(true);
+    setErrors([]);
+    setLoadingProgress({ current: 0, total: pdfFiles.length });
+
+    const newOrders = [];
+    const newErrors = [];
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+      setLoadingProgress({ current: i + 1, total: pdfFiles.length });
+      try {
+        const order = await parseSinglePDF(pdfFiles[i], i);
+        newOrders.push(order);
+      } catch (err) {
+        console.error(`PDF Import - Failed to parse ${pdfFiles[i].name}:`, err);
+        newErrors.push(`${pdfFiles[i].name}: ${err.message}`);
+      }
+    }
+
+    if (newErrors.length > 0) {
+      setErrors(newErrors);
+    }
+
+    if (newOrders.length > 0) {
+      setPreview(prev => ({
+        orders: [...(prev?.orders || []), ...newOrders],
+      }));
+    }
+
+    setLoading(false);
+  }, [existingOrders]);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragActive(false);
+    processFiles(e.dataTransfer.files);
+  }, [processFiles]);
+
+  const handleRemoveOrder = (index) => {
+    setPreview(prev => {
+      if (!prev) return null;
+      const updated = prev.orders.filter((_, i) => i !== index);
+      return updated.length > 0 ? { orders: updated } : null;
+    });
+  };
+
+  const handleEditOrder = (index, field, value) => {
+    setPreview(prev => ({
+      ...prev,
+      orders: prev.orders.map((order, i) =>
+        i === index ? { ...order, [field]: value } : order
+      ),
+    }));
+  };
+
+  const handleImportAll = async () => {
+    if (preview?.orders?.length > 0) {
+      setImporting(true);
+      try {
+        // Strip internal display-only fields before importing
+        const cleanOrders = preview.orders.map(({ _urgency, _componentType, _isRevision, _cavity, ...order }) => order);
+        await onImportRecords(cleanOrders);
+        onClose();
+      } catch (err) {
+        console.error('PDF Import failed:', err);
+        setErrors([`Import failed: ${err.message}`]);
+      } finally {
+        setImporting(false);
+      }
     }
   };
 
-  const processFile = useCallback((file) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Please upload a PDF file');
-      return;
-    }
-    parsePDFContent(file);
-  }, []);
-
-  const InfoRow = ({ label, value }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #334155' }}>
-      <span style={{ fontSize: '0.8rem', color: '#64748B' }}>{label}</span>
-      <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#F1F5F9', fontFamily: 'monospace' }}>{value || '—'}</span>
-    </div>
-  );
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
-      <div style={{ background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '580px', maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155' }} onClick={e => e.stopPropagation()}>
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '1100px',
+          maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid #334155' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FileText size={24} color="white" /></div>
-            <div><h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import from PDF</h2><p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload die ordering request PDF</p></div>
+            <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FileText size={24} color="white" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import Die Order PDFs</h2>
+              <p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload die ordering request PDFs</p>
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}><X size={24} /></button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
+            <X size={24} />
+          </button>
         </div>
+
+        {/* Content */}
         <div style={{ padding: '1.5rem', overflowY: 'auto', maxHeight: '65vh' }}>
-          {!preview && (
-            <div style={{ border: `2px dashed ${dragActive ? '#F59E0B' : '#334155'}`, borderRadius: '16px', padding: '2.5rem', textAlign: 'center', background: dragActive ? 'rgba(245,158,11,0.1)' : 'transparent', marginBottom: '1rem' }}
+          {/* Drop zone - show when no preview or when adding more */}
+          {!preview && !loading && (
+            <div
+              style={{
+                border: `2px dashed ${dragActive ? '#F59E0B' : '#334155'}`,
+                borderRadius: '16px', padding: '2.5rem', textAlign: 'center',
+                background: dragActive ? 'rgba(245,158,11,0.1)' : 'transparent', marginBottom: '1rem',
+              }}
               onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
               onDragLeave={() => setDragActive(false)}
-              onDrop={(e) => { e.preventDefault(); setDragActive(false); processFile(e.dataTransfer.files[0]); }}>
+              onDrop={handleDrop}
+            >
               <FileText size={48} color="#64748B" />
-              <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop your PDF file here</p>
+              <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop your PDF files here</p>
               <p style={{ color: '#64748B', margin: '0.5rem 0' }}>or</p>
               <label style={{ display: 'inline-block', padding: '0.75rem 1.5rem', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', color: 'white', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>
-                Browse PDF Files<input type="file" accept=".pdf" onChange={(e) => processFile(e.target.files[0])} hidden />
+                Browse PDF Files
+                <input type="file" accept=".pdf" multiple onChange={(e) => processFiles(e.target.files)} hidden />
               </label>
-              <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>Die number will be extracted from filename</p>
+              <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>Select multiple PDF files at once. Fields extracted from PDF info box.</p>
             </div>
           )}
+
+          {/* Loading state */}
           {loading && (
             <div style={{ textAlign: 'center', padding: '2rem' }}>
               <div style={{ width: '40px', height: '40px', border: '3px solid #334155', borderTopColor: '#F59E0B', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
-              <p style={{ color: '#94A3B8', marginTop: '1rem' }}>Extracting data from PDF...</p>
+              <p style={{ color: '#94A3B8', marginTop: '1rem' }}>Parsing {loadingProgress.current} of {loadingProgress.total} PDFs...</p>
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
-          {error && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(244,63,94,0.1)', color: '#F43F5E', padding: '0.875rem 1rem', borderRadius: '10px', marginBottom: '1rem' }}><AlertTriangle size={18} /><span>{error}</span></div>}
-          {preview && (
+
+          {/* Errors */}
+          {errors.length > 0 && (
+            <div style={{ background: 'rgba(244,63,94,0.1)', padding: '0.875rem 1rem', borderRadius: '10px', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#F43F5E', marginBottom: errors.length > 1 ? '8px' : 0 }}>
+                <AlertTriangle size={18} />
+                <span style={{ fontWeight: 600 }}>{errors.length} file{errors.length !== 1 ? 's' : ''} failed to parse</span>
+              </div>
+              {errors.map((err, i) => (
+                <p key={i} style={{ fontSize: '0.8rem', color: '#F43F5E', marginLeft: '26px', marginTop: '4px' }}>{err}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Preview table */}
+          {preview && preview.orders.length > 0 && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(245,158,11,0.1)', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
                 <CheckCircle size={20} color="#F59E0B" />
-                <div><p style={{ fontWeight: 600, color: '#F59E0B' }}>PDF Parsed Successfully</p><p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Review extracted data below</p></div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontWeight: 600, color: '#F59E0B' }}>PDFs Parsed Successfully</p>
+                  <p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+                    Found {preview.orders.length} die order{preview.orders.length !== 1 ? 's' : ''}
+                  </p>
+                  {preview.orders.some(o => o.isExisting) && (
+                    <p style={{ fontSize: '0.75rem', color: '#F59E0B', marginTop: '4px' }}>
+                      {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
+                    </p>
+                  )}
+                </div>
               </div>
-              <div style={{ background: '#0F172A', borderRadius: '12px', padding: '1rem', marginBottom: '1rem' }}>
-                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', marginBottom: '0.75rem' }}>Extracted Die Order</h4>
-                <InfoRow label="Die No" value={preview.record['DIE NO']} />
-                <InfoRow label="Die Size" value={preview.record['Die Size']} />
-                <InfoRow label="Supplier" value={preview.record.Supplier} />
-                <InfoRow label="Requested Date" value={preview.record['Die Requested Date']} />
-                <InfoRow label="Shipment" value={preview.record['Type of shipment']} />
-                <InfoRow label="Status" value={preview.record.STATUS} />
+
+              {/* Orders Table */}
+              <div style={{ background: '#0F172A', borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
+                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', padding: '1rem', borderBottom: '1px solid #334155' }}>
+                  Extracted Die Orders ({preview.orders.length})
+                </h4>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: '#1E293B' }}>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Die No</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Size</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Supplier</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Plant</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Type</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Cavity</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Mandrels/Cav</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Total Mandrels</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Shipment</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Req Date</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.orders.map((order, index) => (
+                        <tr key={index} style={{ borderBottom: '1px solid #334155', background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span>{order['DIE NO']}</span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {order.isExisting && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', borderRadius: '4px' }}>UPDATE</span>}
+                                {order._urgency && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(239,68,68,0.2)', color: '#EF4444', borderRadius: '4px' }}>{order._urgency}</span>}
+                                {order._componentType === 'DIE PLATE ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(59,130,246,0.2)', color: '#3B82F6', borderRadius: '4px' }}>DIE PLATE ONLY</span>}
+                                {order._componentType === 'INSERT MANDREL ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(139,92,246,0.2)', color: '#8B5CF6', borderRadius: '4px' }}>INSERT MANDREL ONLY</span>}
+                                {order._isRevision && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(148,163,184,0.2)', color: '#94A3B8', borderRadius: '4px' }}>REVISION</span>}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <select
+                              value={order.Plant || ''}
+                              onChange={(e) => handleEditOrder(index, 'Plant', e.target.value || null)}
+                              style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
+                            >
+                              <option value="">--</option>
+                              <option value="GEX 1">GEX 1</option>
+                              <option value="GEX 2">GEX 2</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <select
+                              value={order.TYPE || ''}
+                              onChange={(e) => handleEditOrder(index, 'TYPE', e.target.value || null)}
+                              style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
+                            >
+                              <option value="">--</option>
+                              <option value="N">N - New</option>
+                              <option value="B">B - Backup</option>
+                              <option value="T">T - Tooling</option>
+                              <option value="C">C - Cancelled</option>
+                              <option value="H">H - Hold</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order._cavity || '-'}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              value={order['Mandrels per Cavity'] || 0}
+                              onChange={(e) => {
+                                const mpc = parseInt(e.target.value, 10) || 0;
+                                const cavities = order._cavity || 1;
+                                handleEditOrder(index, 'Mandrels per Cavity', mpc);
+                                handleEditOrder(index, 'Total Mandrels', mpc * cavities);
+                              }}
+                              style={{ width: '50px', padding: '4px 6px', background: '#334155', border: 'none', borderRadius: '4px', color: '#F1F5F9', fontSize: '0.8rem', textAlign: 'center' }}
+                            />
+                          </td>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <span style={{
+                              padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                              background: order['Type of shipment'] === 'AIR' ? 'rgba(14,165,233,0.2)' : 'rgba(16,185,129,0.2)',
+                              color: order['Type of shipment'] === 'AIR' ? '#0EA5E9' : '#10B981',
+                            }}>
+                              {order['Type of shipment']}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontSize: '0.8rem' }}>{order['Die Requested Date'] || '-'}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleRemoveOrder(index)}
+                              style={{ padding: '6px', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px', color: '#EF4444', cursor: 'pointer' }}
+                              title="Remove this order"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <button onClick={() => setPreview(null)} style={{ width: '100%', padding: '0.5rem', background: 'transparent', border: '1px solid #334155', borderRadius: '8px', color: '#94A3B8', cursor: 'pointer', marginBottom: '0.5rem' }}>Upload Different PDF</button>
+
+              {/* Upload More button */}
+              <label style={{
+                display: 'block', width: '100%', padding: '0.5rem', background: 'transparent',
+                border: '1px solid #334155', borderRadius: '8px', color: '#94A3B8', cursor: 'pointer',
+                textAlign: 'center', fontSize: '0.875rem',
+              }}>
+                Upload More PDFs
+                <input type="file" accept=".pdf" multiple onChange={(e) => processFiles(e.target.files)} hidden />
+              </label>
             </>
           )}
         </div>
+
+        {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: '1px solid #334155' }}>
-          <button onClick={onClose} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => { if (preview?.record) { onAddRecord(preview.record); onClose(); } }} disabled={!preview} style={{ padding: '0.75rem 1.5rem', background: preview ? 'linear-gradient(135deg, #F59E0B, #EF4444)' : '#475569', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: preview ? 'pointer' : 'not-allowed', opacity: preview ? 1 : 0.5 }}>Add Die Order</button>
+          <button onClick={onClose} disabled={importing} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.5 : 1 }}>
+            Cancel
+          </button>
+          <button
+            onClick={handleImportAll}
+            disabled={!preview || preview.orders.length === 0 || importing}
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: (preview?.orders?.length > 0 && !importing) ? 'linear-gradient(135deg, #F59E0B, #EF4444)' : '#475569',
+              color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600,
+              cursor: (preview?.orders?.length > 0 && !importing) ? 'pointer' : 'not-allowed',
+              opacity: (preview?.orders?.length > 0 && !importing) ? 1 : 0.5,
+              display: 'flex', alignItems: 'center', gap: '8px',
+            }}
+          >
+            {importing && <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
+            {importing ? 'Importing...' : `Import ${preview?.orders?.length || 0} Die Orders`}
+          </button>
         </div>
       </div>
     </div>
@@ -876,6 +1485,8 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               <InfoRow label="Plant" field="Plant" value={currentOrder.Plant} type="select" options={plants.map(p => p.name)} />
               <InfoRow label="Type" field="TYPE" value={currentOrder.TYPE} type="select" options={typeOptions} />
               <InfoRow label="Die Size" field="Die Size" value={currentOrder['Die Size']} />
+              <InfoRow label="Mandrels/Cav" field="Mandrels per Cavity" value={currentOrder['Mandrels per Cavity'] || 0} />
+              <InfoRow label="Total Mandrels" field="Total Mandrels" value={currentOrder['Total Mandrels'] || 0} />
               <InfoRow label="Shipment" field="Type of shipment" value={currentOrder['Type of shipment']} type="select" options={shipmentOptions} />
               <InfoRow label="Supplier" field="Supplier" value={currentOrder.Supplier} type="select" options={suppliers.map(s => s.name)} />
               <InfoRow label="Status" field="STATUS" value={currentOrder.STATUS} type="select" options={statusOptions} />
@@ -954,6 +1565,7 @@ export default function DieOrderingSystem() {
     }
   }, [isDarkMode]);
   const [analyticsFilter, setAnalyticsFilter] = useState({ period: 'all', quarter: 'all' });
+  const [trendYear, setTrendYear] = useState(new Date().getFullYear().toString());
   const itemsPerPage = 10;
 
   // Auth state
@@ -964,10 +1576,11 @@ export default function DieOrderingSystem() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [users, setUsers] = useState([]);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user', pageAccess: null });
   const [suppliers, setSuppliers] = useState([]);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierShipment, setNewSupplierShipment] = useState('LAND');
   const [plants, setPlants] = useState([]);
   const [showAddPlant, setShowAddPlant] = useState(false);
   const [newPlantName, setNewPlantName] = useState('');
@@ -976,6 +1589,39 @@ export default function DieOrderingSystem() {
   const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
   const [forcePasswordChange, setForcePasswordChange] = useState(false);
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+  const [backupRequests, setBackupRequests] = useState([]);
+  const [apiKeys, setApiKeys] = useState([]);
+  const [newApiKeyName, setNewApiKeyName] = useState('');
+  const [generatedKey, setGeneratedKey] = useState(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
+  const [showEmailCompose, setShowEmailCompose] = useState(null); // null or { to, cc, subject, body, orderId }
+  const [sampleFollowups, setSampleFollowups] = useState([]);
+  const [showSampleFollowupForm, setShowSampleFollowupForm] = useState(false);
+  const [editingSampleFollowup, setEditingSampleFollowup] = useState(null);
+  const [sampleFollowupForm, setSampleFollowupForm] = useState({
+    profile: '', press: '', supplier: '', customer: '', die_received_date: '',
+    ascona_reference: 'No', submission_date: '', sample_approval_date: '',
+    delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: ''
+  });
+  const [dieReceivanceOrder, setDieReceivanceOrder] = useState(null);
+  const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
+  const [sfStatusFilter, setSfStatusFilter] = useState('Pending');
+
+  // Clipboard helper - falls back to execCommand for HTTP (non-localhost) contexts
+  const copyToClipboard = async (text) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Fallback for HTTP
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  };
 
   // Fetch orders from API
   const fetchOrders = useCallback(async () => {
@@ -1023,6 +1669,38 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
+  // Fetch backup requests
+  const fetchBackupRequests = useCallback(async () => {
+    try {
+      const response = await backupRequestsAPI.getAll();
+      setBackupRequests(response.requests || []);
+    } catch (error) {
+      console.error('Failed to fetch backup requests:', error);
+    }
+  }, []);
+
+  // Fetch sample followups
+  const fetchSampleFollowups = useCallback(async () => {
+    try {
+      const response = await sampleFollowupsAPI.getAll();
+      setSampleFollowups(response.sampleFollowups || []);
+    } catch (error) {
+      console.error('Failed to fetch sample followups:', error);
+    }
+  }, []);
+
+  // Fetch API keys (admin only)
+  const fetchApiKeys = useCallback(async () => {
+    if (user?.role === 'admin') {
+      try {
+        const response = await apiKeysAPI.getAll();
+        setApiKeys(response.keys || []);
+      } catch (error) {
+        console.error('Failed to fetch API keys:', error);
+      }
+    }
+  }, [user]);
+
   // Check auth on mount and fetch data
   useEffect(() => {
     if (isLoggedIn) {
@@ -1030,6 +1708,9 @@ export default function DieOrderingSystem() {
       fetchUsers();
       fetchSuppliers();
       fetchPlants();
+      fetchBackupRequests();
+      fetchSampleFollowups();
+      fetchApiKeys();
 
       // Check if password change is required (persisted in localStorage)
       const currentUser = getUser();
@@ -1038,7 +1719,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -1087,8 +1768,8 @@ export default function DieOrderingSystem() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     try {
-      await usersAPI.create(newUser.username, newUser.password, newUser.role);
-      setNewUser({ username: '', password: '', role: 'user' });
+      await usersAPI.create(newUser.username, newUser.password, newUser.role, newUser.pageAccess);
+      setNewUser({ username: '', password: '', role: 'user', pageAccess: null });
       setShowAddUser(false);
       fetchUsers();
     } catch (error) {
@@ -1106,6 +1787,28 @@ export default function DieOrderingSystem() {
       alert(error.message);
     }
   };
+
+  // Check if user has access to a page
+  const hasPageAccess = useCallback((pageId) => {
+    if (user?.role === 'admin') return true;
+    if (!user?.pageAccess) return true; // null = all pages
+    // Support granular flow page IDs directly
+    if (user.pageAccess.includes(pageId)) return true;
+    // Backward compat: old 'process-flow' permission grants all flow pages
+    if (pageId.startsWith('flow-') && user.pageAccess.includes('process-flow')) return true;
+    return false;
+  }, [user]);
+
+  // Redirect if user lands on a restricted tab
+  useEffect(() => {
+    if (!user || !isLoggedIn) return;
+    if (hasPageAccess(activeTab)) return;
+    // Find first accessible page from CONTROLLABLE_PAGES
+    const firstAccessible = CONTROLLABLE_PAGES.map(p => p.id).find(p => hasPageAccess(p));
+    if (firstAccessible) {
+      setActiveTab(firstAccessible);
+    }
+  }, [activeTab, user, isLoggedIn, hasPageAccess]);
 
   // Handle revision request for design/simulation
   const handleRevision = async ({ orderId, targetStatus, notes, pdfFile, revisionDate }) => {
@@ -1145,10 +1848,12 @@ export default function DieOrderingSystem() {
     }
   };
 
-  // Parse Die Size into Diameter and Thickness (format: "300X100" → { diameter: 300, thickness: 100 })
+  // Parse Die Size into Diameter and Thickness (format: "300X100" or "Dia 300X100" → { diameter: 300, thickness: 100 })
   const parseDieSize = (dieSize) => {
     if (!dieSize) return { diameter: null, thickness: null };
-    const parts = String(dieSize).toUpperCase().split('X');
+    // Strip "Dia " prefix if present (legacy format from older imports)
+    const cleaned = String(dieSize).toUpperCase().replace(/^DIA\s+/i, '');
+    const parts = cleaned.split('X');
     return {
       diameter: parts[0] ? parseInt(parts[0], 10) || null : null,
       thickness: parts[1] ? parseInt(parts[1], 10) || null : null
@@ -1214,7 +1919,7 @@ export default function DieOrderingSystem() {
     const erpString = `${order['DIE NO']},Dia ${diameter}X${thickness}; CAV ${cavities}; ${dieType}`;
 
     try {
-      await navigator.clipboard.writeText(erpString);
+      await copyToClipboard(erpString);
       setToast({ message: `Copied: ${erpString}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
@@ -1237,6 +1942,41 @@ export default function DieOrderingSystem() {
     } catch (error) {
       console.error('PR Number update error:', error);
       setToast({ message: 'Failed to save PR Number', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  // Generic inline field save for flow tables (e.g., Order No, Supplier on Pending Ordering)
+  const handleInlineFieldSave = async (order, field, value) => {
+    if (order[field] === value) return;
+    try {
+      const updatedOrder = { ...order, [field]: value };
+      await ordersAPI.update(order.id, updatedOrder);
+      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      setToast({ message: `${field} saved`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error(`${field} update error:`, error);
+      setToast({ message: `Failed to save ${field}`, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  // Handle mandrels per cavity change - auto-calculates Total Mandrels
+  const handleMandrelsChange = async (order, mandrelsPerCavity) => {
+    const mpc = parseInt(mandrelsPerCavity, 10) || 0;
+    const cavities = order._cavity || 1;
+    const totalMandrels = mpc * cavities;
+    if (order['Mandrels per Cavity'] === mpc && order['Total Mandrels'] === totalMandrels) return;
+    try {
+      const updatedOrder = { ...order, 'Mandrels per Cavity': mpc, 'Total Mandrels': totalMandrels };
+      await ordersAPI.update(order.id, updatedOrder);
+      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      setToast({ message: `Mandrels updated: ${mpc}/cav, ${totalMandrels} total`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error('Mandrels update error:', error);
+      setToast({ message: 'Failed to save mandrels', type: 'error' });
       setTimeout(() => setToast(null), 5000);
     }
   };
@@ -1270,7 +2010,6 @@ export default function DieOrderingSystem() {
 
   // Handle PI Import with support for updating existing orders
   const handlePIImport = useCallback(async (importData) => {
-    console.log('handlePIImport called with', importData.length, 'records');
     try {
       let created = 0;
       let updated = 0;
@@ -1278,8 +2017,6 @@ export default function DieOrderingSystem() {
       for (const record of importData) {
         // Remove the isExisting flag before sending to API
         const { isExisting, ...orderData } = record;
-        console.log(`Processing ${orderData['DIE NO']}: isExisting=${isExisting}, id=${orderData.id}`);
-
         if (isExisting && orderData.id) {
           // Update existing order
           await ordersAPI.update(orderData.id, orderData);
@@ -1291,8 +2028,6 @@ export default function DieOrderingSystem() {
         }
       }
 
-      console.log(`PI Import complete: ${created} created, ${updated} updated`);
-
       // Refresh orders from database
       await fetchOrders();
       setCurrentPage(1);
@@ -1302,7 +2037,6 @@ export default function DieOrderingSystem() {
       if (created > 0) messages.push(`${created} new order(s) created`);
       if (updated > 0) messages.push(`${updated} order(s) updated`);
       const msg = `PI Import successful: ${messages.join(', ')}`;
-      console.log(msg);
       setToast({ message: msg, type: 'success' });
       setTimeout(() => setToast(null), 5000); // Auto-hide after 5 seconds
     } catch (error) {
@@ -1344,12 +2078,28 @@ export default function DieOrderingSystem() {
       .map(([name, value]) => ({ name: STATUS_CONFIG[name]?.label || name, value, color: STATUS_CONFIG[name]?.color || '#6B7280' }));
   }, [data, showCompletedInChart, showCancelledInChart]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set();
+    data.forEach(o => {
+      const d = o['Die Requested Date'];
+      if (d) years.add(d.split('-')[0]);
+    });
+    return [...years].sort().reverse();
+  }, [data]);
+
   const monthlyTrendData = useMemo(() => {
     return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(month => {
-      const monthOrders = data.filter(o => o.month === month);
+      const monthOrders = data.filter(o => {
+        if (o.month !== month) return false;
+        if (trendYear !== 'all') {
+          const d = o['Die Requested Date'];
+          if (!d || d.split('-')[0] !== trendYear) return false;
+        }
+        return true;
+      });
       return { month, new: monthOrders.filter(o => o.TYPE === 'N').length, backup: monthOrders.filter(o => o.TYPE === 'B').length };
     });
-  }, [data]);
+  }, [data, trendYear]);
 
   // Filtered data for analytics
   const analyticsData = useMemo(() => {
@@ -1386,78 +2136,114 @@ export default function DieOrderingSystem() {
   const uniqueTypes = [...new Set(data.map(o => o.TYPE))].filter(Boolean).sort();
   const uniqueMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
-  const exportData = () => { const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Die Orders'); XLSX.writeFile(wb, 'die_orders_export.xlsx'); };
+  // Map die_no → die_received_date from sample followups (for lead time columns)
+  const dieReceivedDateMap = useMemo(() => {
+    const map = {};
+    sampleFollowups.forEach(sf => {
+      if (sf.profile && sf.die_received_date) map[sf.profile.trim()] = sf.die_received_date;
+    });
+    return map;
+  }, [sampleFollowups]);
 
-  // Theme colors - InsightHub Style
-  const theme = isDarkMode ? {
-    bg: '#0F172A',
-    text: '#F1F5F9',
-    textMuted: '#94A3B8',
-    textDim: '#64748B',
-    cardBg: '#1E293B',
-    cardBorder: '#334155',
-    inputBg: '#0F172A',
-    headerBg: '#1E293B',
-    navBg: '#0F172A',
-    tableBg: '#0F172A',
-    tooltipBg: '#0F172A',
-    sidebarBg: '#1E293B',
-    primary: '#3B82F6',
-    primaryLight: 'rgba(59, 130, 246, 0.15)',
-  } : {
-    bg: '#F0F4F8',
-    text: '#1E293B',
-    textMuted: '#475569',
-    textDim: '#64748B',
-    cardBg: '#FFFFFF',
-    cardBorder: '#E5E9EF',
-    inputBg: '#F8FAFC',
-    headerBg: '#FFFFFF',
-    navBg: '#E8ECF0',
-    tableBg: '#FAFBFC',
-    tooltipBg: '#1E293B',
-    sidebarBg: '#FFFFFF',
-    primary: '#3B82F6',
-    primaryLight: 'rgba(59, 130, 246, 0.08)',
+  const calcLeadDays = (startDate, endDate) => {
+    if (!startDate || !endDate) return null;
+    const start = new Date(startDate), end = new Date(endDate);
+    if (isNaN(start) || isNaN(end)) return null;
+    const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
+    return days >= 0 ? days : null;
   };
 
-  // Inline styles - InsightHub Style
+  const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+
+  const exportData = () => {
+    const exportRows = data.map(order => {
+      const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
+      const deliveryDays = calcLeadDays(order['Ordered date'], receivedDate);
+      const mfgDays = calcLeadDays(order['Design Approved Date'], receivedDate);
+      return {
+        ...order,
+        'Delivery Lead Time (days)': deliveryDays !== null ? deliveryDays : '',
+        'Manufacturing Lead Time (days)': mfgDays !== null ? mfgDays : '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Die Orders');
+    XLSX.writeFile(wb, 'die_orders_export.xlsx');
+  };
+
+  // Theme colors - Shadcn Zinc Aesthetic
+  const theme = isDarkMode ? {
+    bg: '#09090b',
+    text: '#fafafa',
+    textMuted: '#a1a1aa',
+    textDim: '#71717a',
+    cardBg: '#09090b',
+    cardBorder: '#27272a',
+    inputBg: '#09090b',
+    headerBg: '#09090b', 
+    navBg: 'transparent',
+    tableBg: 'transparent',
+    tooltipBg: '#27272a',
+    sidebarBg: '#09090b',
+    primary: '#fafafa',
+    primaryText: '#18181b',
+    primaryLight: '#27272a',
+    accent: '#fafafa'
+  } : {
+    bg: '#ffffff',
+    text: '#09090b',
+    textMuted: '#71717a',
+    textDim: '#a1a1aa',
+    cardBg: '#ffffff',
+    cardBorder: '#e4e4e7',
+    inputBg: '#ffffff',
+    headerBg: '#ffffff',
+    navBg: 'transparent',
+    tableBg: 'transparent',
+    tooltipBg: '#09090b',
+    sidebarBg: '#ffffff',
+    primary: '#18181b',
+    primaryText: '#fafafa',
+    primaryLight: '#f4f4f5',
+    accent: '#18181b'
+  };
+
+  // Inline styles - Strict Shadcn UI
   const styles = {
-    // New sidebar layout styles
-    appLayout: { display: 'flex', minHeight: '100vh', background: theme.bg },
-    sidebar: { width: '260px', background: theme.sidebarBg, borderRight: `1px solid ${theme.cardBorder}`, padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100 },
+    appLayout: { display: 'flex', minHeight: '100vh', background: theme.bg, transition: 'background 0.15s ease' },
+    sidebar: { width: '260px', background: theme.sidebarBg, borderRight: `1px solid ${theme.cardBorder}`, padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100, transition: 'background 0.15s ease' },
     sidebarNav: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '1.5rem' },
-    sidebarNavItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px', fontWeight: 500, fontSize: '0.9rem', color: active ? theme.primary : theme.textMuted, background: active ? theme.primaryLight : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.2s' }),
-    mainContent: { flex: 1, marginLeft: '260px', background: theme.bg },
-    topBar: { background: theme.headerBg, borderBottom: `1px solid ${theme.cardBorder}`, padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 },
-    // Original styles with InsightHub enhancements
-    app: { minHeight: '100vh', background: theme.bg, fontFamily: "'DM Sans', sans-serif", color: theme.text },
-    header: { background: theme.headerBg, backdropFilter: 'blur(20px)', borderBottom: `1px solid ${theme.cardBorder}`, position: 'sticky', top: 0, zIndex: 100 },
+    sidebarNavItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', color: active ? theme.text : theme.textMuted, background: active ? theme.primaryLight : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }),
+    mainContent: { flex: 1, marginLeft: '260px', background: theme.bg, minHeight: '100vh', transition: 'background 0.15s ease' },
+    topBar: { background: theme.headerBg, borderBottom: `1px solid ${theme.cardBorder}`, padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, transition: 'background 0.15s ease' },
+    
+    app: { minHeight: '100vh', background: theme.bg, fontFamily: "'Inter', sans-serif", color: theme.text },
+    header: { background: theme.headerBg, borderBottom: `1px solid ${theme.cardBorder}`, position: 'sticky', top: 0, zIndex: 100, transition: 'background 0.15s ease' },
     headerContent: { maxWidth: '1800px', margin: '0 auto', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'nowrap' },
     logoSection: { display: 'flex', alignItems: 'center', gap: '12px' },
-    logoIcon: { width: '44px', height: '44px', background: 'linear-gradient(135deg, #3B82F6, #6366F1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    navTabs: { display: 'flex', gap: '4px', background: theme.navBg, padding: '4px', borderRadius: '12px' },
-    navTab: (active) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px', fontWeight: 500, fontSize: '0.875rem', color: active ? 'white' : theme.textMuted, background: active ? theme.primary : 'transparent', border: 'none', cursor: 'pointer' }),
-    actionBtn: (primary) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px', fontWeight: 500, fontSize: '0.875rem', border: primary ? 'none' : `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: primary ? theme.primary : theme.cardBg, color: primary ? 'white' : theme.text, transition: 'all 0.2s' }),
+    logoIcon: { width: '40px', height: '40px', background: theme.primary, color: theme.primaryText, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+    navTabs: { display: 'flex', gap: '4px', background: theme.navBg, padding: '4px', borderRadius: '8px' },
+    navTab: (active) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', color: active ? theme.text : theme.textMuted, background: active ? theme.primaryLight : 'transparent', border: 'none', cursor: 'pointer', transition: 'all 0.15s' }),
+    actionBtn: (primary) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', border: primary ? 'none' : `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: primary ? theme.primary : theme.cardBg, color: primary ? theme.primaryText : theme.text, transition: 'all 0.15s ease', boxShadow: primary ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.02)' }),
     main: { maxWidth: '1600px', margin: '0 auto', padding: '2rem 1.5rem' },
-    kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', marginBottom: '2rem' },
-    kpiCard: { background: theme.cardBg, borderRadius: '20px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
-    chartsGrid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.25rem', marginBottom: '2rem' },
-    chartCard: { background: theme.cardBg, borderRadius: '20px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
-    filterBar: { background: theme.cardBg, borderRadius: '20px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+    kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2.5rem' },
+    kpiCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    chartsGrid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.25rem', marginBottom: '2.5rem' },
+    chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    filterBar: { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
     filterRow: { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' },
     searchBox: { flex: 1, minWidth: '250px', position: 'relative' },
-    searchInput: { width: '100%', padding: '12px 16px 12px 44px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '12px', color: theme.text, fontSize: '0.875rem' },
-    filterSelect: { padding: '12px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '12px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px' },
-    tableContainer: { background: theme.cardBg, borderRadius: '20px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+    searchInput: { width: '100%', padding: '10px 16px 10px 40px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', transition: 'all 0.15s', outline: 'none' },
+    filterSelect: { padding: '10px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px', transition: 'all 0.15s', outline: 'none' },
+    tableContainer: { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
     table: { width: '100%', borderCollapse: 'collapse' },
-    th: { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.textDim, background: theme.tableBg, cursor: 'pointer' },
-    td: { padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted },
-    pipelineSection: { background: theme.cardBg, borderRadius: '20px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+    th: { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` },
+    td: { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text },
+    pipelineSection: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
     pipelineColumns: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' },
-    pipelineColumn: (color) => ({ borderRadius: '16px', padding: '1rem', background: color }),
-    pipelineItem: { background: theme.cardBg, borderRadius: '12px', padding: '10px 12px', marginBottom: '8px', cursor: 'pointer', border: '1px solid transparent', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', width: 'calc(100% - 4px)', overflow: 'hidden' },
+    pipelineColumn: (color) => ({ borderRadius: '8px', padding: '1rem', background: isDarkMode ? `${color}10` : `${color}1A`, border: `1px solid ${color}33` }), 
+    pipelineItem: { background: theme.cardBg, borderRadius: '6px', padding: '12px', marginBottom: '8px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.03)', width: 'calc(100% - 2px)', overflow: 'hidden', transition: 'all 0.15s ease' },
   };
 
   // Login Screen
@@ -1556,8 +2342,22 @@ export default function DieOrderingSystem() {
 
     const copyEmail = (type, key, orders) => {
       const emailText = type === 'design' ? generateDesignEmail(key, orders) : generateOrderingEmail(key, orders);
-      navigator.clipboard.writeText(emailText);
-      alert(`Email copied to clipboard!`);
+      copyToClipboard(emailText);
+      setToast({ message: 'Email copied to clipboard!', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    };
+
+    const sendEmailDirect = (type, key, orders) => {
+      const dieList = orders.map(o => `  - ${o['DIE NO']} | Order No: ${o['Order No']} (${o.Plant})`).join('\n');
+      let subject, body;
+      if (type === 'design') {
+        subject = `URGENT: Design Pending for ${orders.length} Die Order(s) - ${key}`;
+        body = `Dear ${key} Team,\n\nThis is a reminder that the following die order(s) have been awaiting design for more than 48 hours:\n\n${dieList}\n\nPlease provide the design drawings at the earliest to avoid further delays in production.\n\nBest regards,\nDie Ordering Team`;
+      } else {
+        subject = `URGENT: ${orders.length} Die Order(s) Pending Ordering - ${key}`;
+        body = `Dear Purchase Team,\n\nThe following die order(s) for ${key} have been pending ordering for more than 24 hours:\n\n${dieList}\n\nPlease process these orders at the earliest to avoid production delays.\n\nBest regards,\nDie Ordering Team`;
+      }
+      setShowEmailCompose({ to: '', subject, body, importance: 'high' });
     };
 
     return (
@@ -1603,29 +2403,27 @@ export default function DieOrderingSystem() {
                     <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: 0 }}>Click to copy email for supplier</p>
                   </div>
                   {Object.entries(designSupplierGroups).map(([supplier, orders]) => (
-                    <div
-                      key={`design-${supplier}`}
-                      onClick={() => copyEmail('design', supplier, orders)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '10px 16px', margin: '4px 8px', borderRadius: '10px',
-                        background: 'transparent', cursor: 'pointer',
-                        transition: 'background 0.2s', border: `1px solid transparent`
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
-                    >
+                    <div key={`design-${supplier}`} style={{ margin: '4px 8px' }}>
                       <div style={{
-                        width: '36px', height: '36px', borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #EF4444, #F59E0B)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '0.75rem', fontWeight: 700, color: 'white'
-                      }}>{supplier.substring(0, 2)}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{supplier}</div>
-                        <div style={{ fontSize: '0.7rem', color: theme.textDim }}>{orders.length} order(s) pending design</div>
+                        display: 'flex', alignItems: 'center', gap: '12px',
+                        padding: '10px 16px', borderRadius: '10px',
+                        background: 'transparent'
+                      }}>
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #EF4444, #F59E0B)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.75rem', fontWeight: 700, color: 'white'
+                        }}>{supplier.substring(0, 2)}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{supplier}</div>
+                          <div style={{ fontSize: '0.7rem', color: theme.textDim }}>{orders.length} order(s) pending design</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button onClick={(e) => { e.stopPropagation(); sendEmailDirect('design', supplier, orders); }} style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', background: 'rgba(59,130,246,0.2)', color: '#3B82F6', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600 }} title="Send via email">✉ Send</button>
+                          <button onClick={(e) => { e.stopPropagation(); copyEmail('design', supplier, orders); }} style={{ padding: '4px 10px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: 'transparent', color: theme.textDim, cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600 }} title="Copy to clipboard">📋 Copy</button>
+                        </div>
                       </div>
-                      <FileText size={14} color={theme.textDim} />
                     </div>
                   ))}
                 </>
@@ -1647,29 +2445,27 @@ export default function DieOrderingSystem() {
                     <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: 0 }}>Click to copy email for Purchase Team</p>
                   </div>
                   {Object.entries(orderingPlantGroups).map(([plant, orders]) => (
-                    <div
-                      key={`ordering-${plant}`}
-                      onClick={() => copyEmail('ordering', plant, orders)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '10px 16px', margin: '4px 8px', borderRadius: '10px',
-                        background: 'transparent', cursor: 'pointer',
-                        transition: 'background 0.2s', border: `1px solid transparent`
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.3)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
-                    >
+                    <div key={`ordering-${plant}`} style={{ margin: '4px 8px' }}>
                       <div style={{
-                        width: '36px', height: '36px', borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #8B5CF6, #3B82F6)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '0.75rem', fontWeight: 700, color: 'white'
-                      }}>{plant.substring(0, 2)}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{plant}</div>
-                        <div style={{ fontSize: '0.7rem', color: theme.textDim }}>{orders.length} order(s) pending ordering</div>
+                        display: 'flex', alignItems: 'center', gap: '12px',
+                        padding: '10px 16px', borderRadius: '10px',
+                        background: 'transparent'
+                      }}>
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #8B5CF6, #3B82F6)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.75rem', fontWeight: 700, color: 'white'
+                        }}>{plant.substring(0, 2)}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{plant}</div>
+                          <div style={{ fontSize: '0.7rem', color: theme.textDim }}>{orders.length} order(s) pending ordering</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button onClick={(e) => { e.stopPropagation(); sendEmailDirect('ordering', plant, orders); }} style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', background: 'rgba(59,130,246,0.2)', color: '#3B82F6', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600 }} title="Send via email">✉ Send</button>
+                          <button onClick={(e) => { e.stopPropagation(); copyEmail('ordering', plant, orders); }} style={{ padding: '4px 10px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: 'transparent', color: theme.textDim, cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600 }} title="Copy to clipboard">📋 Copy</button>
+                        </div>
                       </div>
-                      <FileText size={14} color={theme.textDim} />
                     </div>
                   ))}
                 </>
@@ -1708,12 +2504,12 @@ export default function DieOrderingSystem() {
         <main style={styles.main}>
 
 
-          {activeTab === 'dashboard' && (
+          {activeTab === 'dashboard' && hasPageAccess('dashboard') && (
             <>
               <div style={styles.kpiGrid}>
                 {[
                   { title: 'Total Orders', value: stats.total, color: '#3B82F6', icon: Package, sub: 'Year to date', filter: 'all' },
-                  { title: 'Completed', value: stats.completed, color: '#10B981', icon: CheckCircle, sub: `${stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(0) : 0}% rate`, filter: 'DONE' },
+                  { title: 'In Manufacturing', value: stats.completed, color: '#10B981', icon: CheckCircle, sub: `${stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(0) : 0}% rate`, filter: 'DONE' },
                   { title: 'In Progress', value: stats.pending, color: '#F59E0B', icon: Clock, sub: 'Active orders', filter: 'active' },
                   { title: 'Cancelled', value: stats.cancelled, color: '#EF4444', icon: XCircle, sub: `${stats.total > 0 ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%`, filter: 'CANCELLED' },
                   { title: 'Avg Delay', value: `${stats.avgDelay}d`, color: '#8B5CF6', icon: AlertTriangle, sub: 'Design approval' },
@@ -1775,9 +2571,13 @@ export default function DieOrderingSystem() {
                           data.forEach(o => { if (o.STATUS) statusCounts[o.STATUS] = (statusCounts[o.STATUS] || 0) + 1; });
                           const total = data.length;
                           const statusColors = {
-                            'DONE': '#10B981', 'CANCELLED': '#6B7280', 'AWAITING DESIGN': '#EF4444',
+                            'DONE': '#10B981', 'DIE RECEIVED': '#0891B2', 'CANCELLED': '#6B7280', 'AWAITING DESIGN': '#EF4444',
                             'DESIGN APPROVAL': '#F59E0B', 'PENDING ORDER': '#8B5CF6', 'ORACLE ENTRY': '#3B82F6',
                             'ON HOLD': '#64748B', 'DESIGN TO EMS': '#14B8A6', 'SIMULATION': '#EC4899'
+                          };
+                          const statusLabels = {
+                            'DONE': 'In Manufacturing',
+                            'DIE RECEIVED': 'Sample Followup',
                           };
                           return Object.entries(statusCounts)
                             .sort((a, b) => b[1] - a[1])
@@ -1786,7 +2586,7 @@ export default function DieOrderingSystem() {
                                 <td style={{ padding: '10px 12px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: statusColors[status] || '#94A3B8' }} />
-                                    <span style={{ fontSize: '0.85rem', color: theme.text, fontWeight: 500 }}>{status}</span>
+                                    <span style={{ fontSize: '0.85rem', color: theme.text, fontWeight: 500 }}>{statusLabels[status] || status}</span>
                                   </div>
                                 </td>
                                 <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600, color: theme.text }}>{count}</td>
@@ -1803,17 +2603,30 @@ export default function DieOrderingSystem() {
                   </div>
                 </div>
                 <div style={styles.chartCard}>
-                  <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Monthly Orders Trend</h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <AreaChart data={monthlyTrendData}>
-                      <defs><linearGradient id="gradNew" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4} /><stop offset="95%" stopColor="#3B82F6" stopOpacity={0} /></linearGradient><linearGradient id="gradBackup" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#F59E0B" stopOpacity={0.4} /><stop offset="95%" stopColor="#F59E0B" stopOpacity={0} /></linearGradient></defs>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: 0 }}>Monthly Orders Trend</h3>
+                    <select value={trendYear} onChange={(e) => setTrendYear(e.target.value)} style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.inputBg, color: theme.text, fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}>
+                      <option value="all">All Years</option>
+                      {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  <ResponsiveContainer width="100%" height={270}>
+                    <BarChart data={monthlyTrendData}>
                       <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                       <Tooltip contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} />
-                      <Area type="monotone" dataKey="new" stroke="#3B82F6" fill="url(#gradNew)" strokeWidth={2} name="New Dies" />
-                      <Area type="monotone" dataKey="backup" stroke="#F59E0B" fill="url(#gradBackup)" strokeWidth={2} name="Backup Dies" />
-                    </AreaChart>
+                      <Bar dataKey="new" fill="#3B82F6" name="New Dies" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="new" position="top" fill="#94A3B8" fontSize={11} fontWeight={600} formatter={(v) => v > 0 ? v : ''} />
+                      </Bar>
+                      <Bar dataKey="backup" fill="#F59E0B" name="Backup Dies" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="backup" position="top" fill="#94A3B8" fontSize={11} fontWeight={600} formatter={(v) => v > 0 ? v : ''} />
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '4px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} /> New Dies</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#F59E0B', display: 'inline-block' }} /> Backup Dies</span>
+                  </div>
                 </div>
               </div>
               <div style={styles.pipelineSection}>
@@ -1843,7 +2656,7 @@ export default function DieOrderingSystem() {
             </>
           )}
 
-          {activeTab === 'orders' && (
+          {activeTab === 'orders' && hasPageAccess('orders') && (
             <>
               <div style={styles.filterBar}>
                 <div style={styles.filterRow}>
@@ -1863,7 +2676,7 @@ export default function DieOrderingSystem() {
                   <table style={styles.table}>
                     <thead>
                       <tr>
-                        {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Supplier', label: 'Supplier' }, { key: 'PR Number', label: 'PR#' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' }].map(col => (
+                        {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Supplier', label: 'Supplier' }, { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' }, { key: 'Delivery Lead Time', label: 'Delivery LT' }, { key: 'Mfg Lead Time', label: 'Mfg LT' }].map(col => (
                           <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{col.label}{sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color="#3B82F6" /> : <ChevronDown size={14} color="#3B82F6" />) : <ChevronDown size={14} color="#64748B" />}</div>
                           </th>
@@ -1877,17 +2690,43 @@ export default function DieOrderingSystem() {
                     <tbody>
                       {paginatedData.map((order, idx) => (
                         <tr key={`${order['DIE NO']}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedOrder(order)}>
-                          <td style={styles.td}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
+                          <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
                           <td style={styles.td}>{order['Order No']}</td>
-                          <td style={styles.td}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
+                          <td style={{ ...styles.td, whiteSpace: 'nowrap' }}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
                           <td style={styles.td}>{order.TYPE}</td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
                           <td style={styles.td}>{order.Supplier}</td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace', color: order['PR Number'] ? theme.text : '#64748B' }}>{order['PR Number'] || '—'}</span></td>
+                          <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{order['Mandrels per Cavity'] || 0}</span></td>
+                          <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
                           <td style={styles.td}>{order['Die Requested Date']}</td>
                           <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
                           <td style={styles.td}><StatusBadge status={order.STATUS} /></td>
+                          {/* Delivery Lead Time */}
+                          {(() => {
+                            const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
+                            const days = calcLeadDays(order['Ordered date'], receivedDate);
+                            return (
+                              <td style={styles.td}>
+                                {days !== null
+                                  ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: days > 90 ? '#EF4444' : days > 60 ? '#F59E0B' : '#10B981' }}>{days}d</span>
+                                  : <span style={{ color: '#64748B' }}>—</span>}
+                              </td>
+                            );
+                          })()}
+                          {/* Manufacturing Lead Time */}
+                          {(() => {
+                            const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
+                            const days = calcLeadDays(order['Design Approved Date'], receivedDate);
+                            return (
+                              <td style={styles.td}>
+                                {days !== null
+                                  ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: days > 90 ? '#EF4444' : days > 60 ? '#F59E0B' : '#10B981' }}>{days}d</span>
+                                  : <span style={{ color: '#64748B' }}>—</span>}
+                              </td>
+                            );
+                          })()}
                           {/* Change Log indicator */}
                           <td style={{ ...styles.td, textAlign: 'center' }}>
                             {order['Change Log'] && order['Change Log'].length > 0 ? (
@@ -1951,7 +2790,7 @@ export default function DieOrderingSystem() {
           )}
 
           {/* Process Flow Pages */}
-          {activeTab.startsWith('flow-') && (() => {
+          {activeTab.startsWith('flow-') && hasPageAccess('process-flow') && (() => {
             // Dynamic import would be cleaner but this works for inline
             const flowTabs = [
               { id: 'flow-pending-order', status: 'PENDING FOR ORDERING' },
@@ -2035,7 +2874,7 @@ export default function DieOrderingSystem() {
                       <table style={styles.table}>
                         <thead>
                           <tr>
-                            {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Diameter' }, { key: 'Thickness', label: 'Thickness' }, { key: 'Supplier', label: 'Supplier' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }].map(col => (
+                            {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Diameter' }, { key: 'Thickness', label: 'Thickness' }, { key: 'Supplier', label: 'Supplier' }, ...(currentFlow.status === 'PENDING FOR ORDERING' ? [{ key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }] : [])].map(col => (
                               <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   {col.label}
@@ -2053,6 +2892,7 @@ export default function DieOrderingSystem() {
                               </>
                             )}
                             {workflow && workflow.nextStatus && <th style={{ ...styles.th, textAlign: 'center' }}>Complete</th>}
+                            {currentFlow.status === 'DONE' && <th style={{ ...styles.th, textAlign: 'center' }}>Confirm Receivance</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -2068,9 +2908,24 @@ export default function DieOrderingSystem() {
                             })
                             .map((order, idx) => (
                               <tr key={`${order['DIE NO']}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedOrder(order)}>
-                                <td style={styles.td}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
-                                <td style={styles.td}>{order['Order No']}</td>
-                                <td style={styles.td}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
+                                {/* Order No - editable on Pending Ordering */}
+                                <td style={styles.td}>
+                                  {currentFlow.status === 'PENDING FOR ORDERING' ? (
+                                    <input
+                                      type="text"
+                                      defaultValue={order['Order No'] || ''}
+                                      onBlur={(e) => handleInlineFieldSave(order, 'Order No', e.target.value.trim())}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                      style={{ width: '90px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                                      placeholder="Order No"
+                                    />
+                                  ) : (
+                                    order['Order No']
+                                  )}
+                                </td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
                                 <td style={styles.td}><span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: order.TYPE === 'N' ? '#3B82F620' : order.TYPE === 'B' ? '#F59E0B20' : '#64748B20', color: order.TYPE === 'N' ? '#3B82F6' : order.TYPE === 'B' ? '#F59E0B' : '#64748B' }}>{order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : order.TYPE}</span></td>
                                 {/* Diameter - editable on Simulation and Design Approval */}
                                 <td style={styles.td}>
@@ -2104,9 +2959,44 @@ export default function DieOrderingSystem() {
                                     <span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span>
                                   )}
                                 </td>
-                                <td style={styles.td}>{order.Supplier}</td>
-                                <td style={styles.td}>{order['Die Requested Date']}</td>
-                                <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
+                                {/* Supplier - editable dropdown on Pending Ordering */}
+                                <td style={styles.td}>
+                                  {currentFlow.status === 'PENDING FOR ORDERING' ? (
+                                    <select
+                                      defaultValue={order.Supplier || ''}
+                                      onChange={(e) => { handleInlineFieldSave(order, 'Supplier', e.target.value); }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer', maxWidth: '120px' }}
+                                    >
+                                      <option value="">—</option>
+                                      {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                  ) : (
+                                    order.Supplier
+                                  )}
+                                </td>
+                                {currentFlow.status === 'PENDING FOR ORDERING' && (
+                                  <>
+                                    <td style={styles.td}>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        defaultValue={order['Mandrels per Cavity'] || 0}
+                                        onBlur={(e) => handleMandrelsChange(order, e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                        style={{ width: '55px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                                      />
+                                    </td>
+                                    <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
+                                  </>
+                                )}
+                                {currentFlow.status === 'PENDING FOR ORDERING' && (
+                                  <>
+                                    <td style={styles.td}>{order['Die Requested Date']}</td>
+                                    <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
+                                  </>
+                                )}
                                 <td style={{ ...styles.td, textAlign: 'center' }}><button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button></td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}>
                                   {order['Design Revision Count'] > 0 ? (
@@ -2173,6 +3063,19 @@ export default function DieOrderingSystem() {
                                     </div>
                                   </td>
                                 )}
+                                {currentFlow.status === 'DONE' && (
+                                  <td style={{ ...styles.td, textAlign: 'center' }}>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setDieReceivanceOrder(order); setDieReceivanceForm({ die_received_date: new Date().toISOString().split('T')[0], corrector: '' }); }}
+                                      style={{ padding: '6px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid rgba(8,145,178,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#0891B2', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s', whiteSpace: 'nowrap' }}
+                                      title="Confirm Die Receivance"
+                                      onMouseEnter={(e) => { e.currentTarget.style.background = '#0891B2'; e.currentTarget.style.color = 'white'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(8,145,178,0.15)'; e.currentTarget.style.color = '#0891B2'; }}
+                                    >
+                                      <Package size={16} /> Confirm
+                                    </button>
+                                  </td>
+                                )}
                               </tr>
                             ))}
                         </tbody>
@@ -2192,8 +3095,418 @@ export default function DieOrderingSystem() {
             );
           })()}
 
+          {/* Die Receivance Confirmation Modal */}
+          {dieReceivanceOrder && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '90%', maxWidth: '480px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <div>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>Confirm Die Receivance</h2>
+                    <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Die No: <strong style={{ color: theme.text, fontFamily: 'monospace' }}>{dieReceivanceOrder['DIE NO']}</strong></p>
+                  </div>
+                  <button onClick={() => setDieReceivanceOrder(null)} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                    <X size={20} />
+                  </button>
+                </div>
 
-          {activeTab === 'analytics' && (
+                <div style={{ background: `rgba(8,145,178,0.08)`, borderRadius: '12px', padding: '12px 16px', marginBottom: '1.5rem', border: '1px solid rgba(8,145,178,0.2)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
+                    <div><span style={{ color: theme.textDim }}>Supplier:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder.Supplier}</strong></div>
+                    <div><span style={{ color: theme.textDim }}>Plant:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder.Plant}</strong></div>
+                    <div><span style={{ color: theme.textDim }}>Type:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder.TYPE === 'N' ? 'New' : dieReceivanceOrder.TYPE === 'B' ? 'Backup' : dieReceivanceOrder.TYPE}</strong></div>
+                    <div><span style={{ color: theme.textDim }}>Size:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder['Die Size'] || '—'}</strong></div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Die Received Date *</label>
+                    <input
+                      type="date"
+                      value={dieReceivanceForm.die_received_date}
+                      onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, die_received_date: e.target.value })}
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assign Corrector *</label>
+                    <input
+                      type="text"
+                      value={dieReceivanceForm.corrector}
+                      onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, corrector: e.target.value })}
+                      placeholder="Enter corrector name"
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
+                  <button
+                    onClick={() => setDieReceivanceOrder(null)}
+                    style={{ padding: '10px 20px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!dieReceivanceForm.die_received_date) {
+                        setToast({ message: 'Please enter the die received date', type: 'error' });
+                        setTimeout(() => setToast(null), 3000);
+                        return;
+                      }
+                      if (!dieReceivanceForm.corrector.trim()) {
+                        setToast({ message: 'Please assign a corrector', type: 'error' });
+                        setTimeout(() => setToast(null), 3000);
+                        return;
+                      }
+                      try {
+                        // Create a sample followup record from the order
+                        await sampleFollowupsAPI.create({
+                          profile: dieReceivanceOrder['DIE NO'] || '',
+                          press: dieReceivanceOrder.Plant || '',
+                          supplier: dieReceivanceOrder.Supplier || '',
+                          customer: '',
+                          die_received_date: dieReceivanceForm.die_received_date,
+                          ascona_reference: 'No',
+                          submission_date: '',
+                          sample_approval_date: '',
+                          delay_days: 0,
+                          status: 'Pending',
+                          no_of_trial: 0,
+                          remark: `Order No: ${dieReceivanceOrder['Order No'] || ''}, Die Size: ${dieReceivanceOrder['Die Size'] || ''}, Type: ${dieReceivanceOrder.TYPE || ''}`,
+                          corrector: dieReceivanceForm.corrector.trim()
+                        });
+                        // Update order status to DIE RECEIVED so it leaves In Manufacturing
+                        const updatedOrder = { ...dieReceivanceOrder, STATUS: 'DIE RECEIVED', 'Die Received Date': dieReceivanceForm.die_received_date, 'Corrector': dieReceivanceForm.corrector.trim() };
+                        await ordersAPI.update(dieReceivanceOrder.id, updatedOrder);
+                        setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? updatedOrder : o));
+                        fetchSampleFollowups();
+                        setDieReceivanceOrder(null);
+                        setToast({ message: `Die ${dieReceivanceOrder['DIE NO']} confirmed & moved to Sample Followup`, type: 'success' });
+                        // Navigate to Sample Followup page
+                        setActiveTab('flow-sample-followup');
+                        setTimeout(() => setToast(null), 3000);
+                      } catch (error) {
+                        console.error('Confirm receivance error:', error);
+                        setToast({ message: 'Failed to confirm: ' + error.message, type: 'error' });
+                        setTimeout(() => setToast(null), 5000);
+                      }
+                    }}
+                    style={{ padding: '10px 24px', background: '#0891B2', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', boxShadow: '0 4px 12px rgba(8,145,178,0.4)', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <CheckCircle size={18} /> Confirm Receivance
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sample Followup Page */}
+          {activeTab === 'flow-sample-followup' && hasPageAccess('flow-sample-followup') && (() => {
+            const sfColor = '#0891B2';
+
+            const handleSampleFollowupSubmit = async () => {
+              try {
+                if (editingSampleFollowup) {
+                  await sampleFollowupsAPI.update(editingSampleFollowup.id, sampleFollowupForm);
+                  setToast({ message: 'Sample followup updated successfully', type: 'success' });
+                } else {
+                  await sampleFollowupsAPI.create(sampleFollowupForm);
+                  setToast({ message: 'Sample followup created successfully', type: 'success' });
+                }
+                setTimeout(() => setToast(null), 3000);
+                setShowSampleFollowupForm(false);
+                setEditingSampleFollowup(null);
+                setSampleFollowupForm({ profile: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' });
+                fetchSampleFollowups();
+              } catch (error) {
+                console.error('Sample followup error:', error);
+                setToast({ message: 'Failed: ' + error.message, type: 'error' });
+                setTimeout(() => setToast(null), 5000);
+              }
+            };
+
+            const handleDeleteSampleFollowup = async (id) => {
+              if (!window.confirm('Delete this sample followup record? This cannot be undone.')) return;
+              try {
+                await sampleFollowupsAPI.delete(id);
+                setToast({ message: 'Sample followup deleted', type: 'success' });
+                setTimeout(() => setToast(null), 3000);
+                fetchSampleFollowups();
+              } catch (error) {
+                setToast({ message: 'Failed to delete: ' + error.message, type: 'error' });
+                setTimeout(() => setToast(null), 5000);
+              }
+            };
+
+            const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
+
+            const sfStatusColors = {
+              'Pending': { color: '#F59E0B', bg: '#FFFBEB' },
+              'Sample Submitted': { color: '#3B82F6', bg: '#EFF6FF' },
+              'Approved': { color: '#16A34A', bg: '#F0FDF4' },
+              'Rejected': { color: '#EF4444', bg: '#FEF2F2' },
+              'On hold': { color: '#6B7280', bg: '#F3F4F6' },
+            };
+
+            const filteredFollowups = sampleFollowups.filter(sf => {
+              const matchesStatus = sfStatusFilter === 'All' || (sf.status || 'Pending') === sfStatusFilter;
+              const matchesSearch = !searchTerm ||
+                (sf.profile && sf.profile.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (sf.supplier && sf.supplier.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (sf.customer && sf.customer.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (sf.corrector && sf.corrector.toLowerCase().includes(searchTerm.toLowerCase()));
+              return matchesStatus && matchesSearch;
+            });
+
+            return (
+              <div>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${sfColor}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <ClipboardList size={24} color={sfColor} />
+                    </div>
+                    <div>
+                      <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: theme.text, margin: 0 }}>Sample Followup</h1>
+                      <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Track sample submissions, approvals and trials</p>
+                    </div>
+                    <span style={{ background: sfColor, color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600 }}>{filteredFollowups.length}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '240px' }}>
+                      <Search size={18} color={theme.textMuted} />
+                      <input
+                        type="text"
+                        placeholder="Search followups..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => { setEditingSampleFollowup(null); setSampleFollowupForm({ profile: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' }); setShowSampleFollowupForm(true); }}
+                      style={{ padding: '10px 20px', background: sfColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: `0 4px 12px ${sfColor}40` }}
+                    >
+                      + Add Record
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Filter Tabs */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  {['All', ...SF_STATUSES].map(s => {
+                    const active = sfStatusFilter === s;
+                    const sc = sfStatusColors[s];
+                    const count = s === 'All' ? sampleFollowups.length : sampleFollowups.filter(sf => (sf.status || 'Pending') === s).length;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => setSfStatusFilter(s)}
+                        style={{
+                          padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                          cursor: 'pointer', border: `1px solid ${active ? (sc?.color || sfColor) : theme.cardBorder}`,
+                          background: active ? (sc?.bg || `${sfColor}20`) : 'transparent',
+                          color: active ? (sc?.color || sfColor) : theme.textMuted,
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {s} <span style={{ marginLeft: '4px', opacity: 0.8 }}>({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Table */}
+                <div style={styles.tableContainer}>
+                  {filteredFollowups.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>Profile</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Press</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Supplier</th>
+                            <th style={styles.th}>Customer</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Die Received Date</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Ascona Ref</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Submission Date</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Sample Approval Date</th>
+                            <th style={{ ...styles.th, textAlign: 'center', whiteSpace: 'nowrap' }}>Delay Days</th>
+                            <th style={styles.th}>Status</th>
+                            <th style={{ ...styles.th, textAlign: 'center', whiteSpace: 'nowrap' }}>No. of Trial</th>
+                            <th style={styles.th}>Remark</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Corrector</th>
+                            <th style={{ ...styles.th, textAlign: 'center' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredFollowups.map((sf, idx) => {
+                            const statusStyle = sfStatusColors[sf.status] || { color: '#6B7280', bg: '#F3F4F6' };
+                            return (
+                              <tr key={sf.id}>
+                                <td style={{ ...styles.td, fontWeight: 600, color: theme.text }}>{sf.profile || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.press || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.supplier || '—'}</td>
+                                <td style={styles.td}>{sf.customer || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.die_received_date || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                                  <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: sf.ascona_reference === 'Yes' ? 'rgba(16,185,129,0.2)' : 'rgba(107,114,128,0.2)', color: sf.ascona_reference === 'Yes' ? '#10B981' : '#6B7280' }}>
+                                    {sf.ascona_reference || 'No'}
+                                  </span>
+                                </td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.submission_date || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.sample_approval_date || '—'}</td>
+                                <td style={{ ...styles.td, textAlign: 'center' }}>
+                                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: (sf.delay_days || 0) > 0 ? '#EF4444' : '#10B981' }}>
+                                    {sf.delay_days || 0}
+                                  </span>
+                                </td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                                  <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: statusStyle.bg, color: statusStyle.color }}>
+                                    {sf.status || 'Pending'}
+                                  </span>
+                                </td>
+                                <td style={{ ...styles.td, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>{sf.no_of_trial || 0}</td>
+                                <td style={{ ...styles.td, maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sf.remark}>{sf.remark || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.corrector || '—'}</td>
+                                <td style={{ ...styles.td, textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                    <button
+                                      onClick={() => { setEditingSampleFollowup(sf); setSampleFollowupForm({ profile: sf.profile || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' }); setShowSampleFollowupForm(true); }}
+                                      style={{ padding: '6px', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
+                                      title="Edit"
+                                    >
+                                      <Eye size={16} />
+                                    </button>
+                                    {user?.role === 'admin' && (
+                                      <button
+                                        onClick={() => handleDeleteSampleFollowup(sf.id)}
+                                        style={{ padding: '6px', background: 'rgba(239,68,68,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#EF4444' }}
+                                        title="Delete"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '4rem 2rem', color: theme.textMuted }}>
+                      <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: `${sfColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                        <ClipboardList size={28} color={sfColor} />
+                      </div>
+                      <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: theme.text, marginBottom: '0.5rem' }}>No Sample Followup Records</h3>
+                      <p style={{ fontSize: '0.9rem', color: theme.textMuted }}>Click "Add Record" to create a new sample followup entry</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Add/Edit Modal */}
+                {showSampleFollowupForm && (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '90%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>
+                          {editingSampleFollowup ? 'Edit Sample Followup' : 'New Sample Followup'}
+                        </h2>
+                        <button onClick={() => { setShowSampleFollowupForm(false); setEditingSampleFollowup(null); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                          <X size={20} />
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        {[
+                          { key: 'profile', label: 'Profile', type: 'text' },
+                          { key: 'press', label: 'Press', type: 'text' },
+                          { key: 'supplier', label: 'Supplier', type: 'text' },
+                          { key: 'customer', label: 'Customer', type: 'text' },
+                          { key: 'die_received_date', label: 'Die Received Date', type: 'date' },
+                          { key: 'ascona_reference', label: 'Ascona Reference', type: 'select', options: ['Yes', 'No'] },
+                          { key: 'submission_date', label: 'Submission Date', type: 'date' },
+                          { key: 'sample_approval_date', label: 'Sample Approval Date', type: 'date' },
+                          { key: 'delay_days', label: 'Delay Days', type: 'number' },
+                          { key: 'status', label: 'Status', type: 'select', options: SF_STATUSES },
+                          { key: 'no_of_trial', label: 'No. of Trial', type: 'number' },
+                          { key: 'corrector', label: 'Corrector', type: 'text' },
+                        ].map(field => (
+                          <div key={field.key}>
+                            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
+                            {field.type === 'select' ? (
+                              <select
+                                value={sampleFollowupForm[field.key] || ''}
+                                onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: e.target.value })}
+                                style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none' }}
+                              >
+                                {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                              </select>
+                            ) : (
+                              <input
+                                type={field.type}
+                                value={sampleFollowupForm[field.key] || ''}
+                                onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: field.type === 'number' ? parseInt(e.target.value, 10) || 0 : e.target.value })}
+                                style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Remark</label>
+                          <textarea
+                            value={sampleFollowupForm.remark || ''}
+                            onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, remark: e.target.value })}
+                            rows={3}
+                            style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
+                        <button
+                          onClick={() => { setShowSampleFollowupForm(false); setEditingSampleFollowup(null); }}
+                          style={{ padding: '10px 20px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSampleFollowupSubmit}
+                          style={{ padding: '10px 24px', background: sfColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', boxShadow: `0 4px 12px ${sfColor}40` }}
+                        >
+                          {editingSampleFollowup ? 'Update' : 'Create'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {activeTab === 'backup-requests' && hasPageAccess('backup-requests') && (
+            <BackupDieRequests
+              theme={theme}
+              backupRequests={backupRequests}
+              onRefresh={fetchBackupRequests}
+              plants={plants}
+              user={user}
+            />
+          )}
+
+          {activeTab === 'email-inbox' && hasPageAccess('email-inbox') && (
+            <EmailInbox
+              theme={theme}
+              onCompose={(prefill) => setShowEmailCompose(prefill || {})}
+            />
+          )}
+
+          {activeTab === 'email-settings' && user?.role === 'admin' && (
+            <EmailSettings theme={theme} />
+          )}
+
+          {activeTab === 'analytics' && hasPageAccess('analytics') && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.25rem' }}>
               {/* Analytics Filter Bar */}
               <div style={{ ...styles.chartCard, gridColumn: 'span 2', padding: '1rem 1.5rem' }}>
@@ -2266,7 +3579,9 @@ export default function DieOrderingSystem() {
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                     <Tooltip contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} />
-                    <Bar dataKey="value" fill="#3B82F6" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="value" fill="#3B82F6" radius={[0, 6, 6, 0]}>
+                      <LabelList dataKey="value" position="right" fill="#94A3B8" fontSize={11} fontWeight={600} formatter={(v) => { const total = supplierData.reduce((s, d) => s + d.value, 0); return `${v} (${Math.round(v / total * 100)}%)`; }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -2412,20 +3727,110 @@ export default function DieOrderingSystem() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', gridColumn: 'span 2' }}>
-                {[
-                  { title: 'Die Types', value: [...new Set(analyticsData.map(o => o.TYPE))].filter(Boolean).length, desc: 'In selection', gradient: 'linear-gradient(135deg, #3B82F6, #8B5CF6)' },
-                  { title: 'Suppliers', value: [...new Set(analyticsData.map(o => o.Supplier))].filter(Boolean).length, desc: 'Active vendors', gradient: 'linear-gradient(135deg, #10B981, #14B8A6)' },
-                  { title: 'Die Sizes', value: [...new Set(analyticsData.filter(o => o.TYPE === 'N' || o.TYPE === 'B').map(o => o['Die Size']))].filter(Boolean).length, desc: 'New & Backup only', gradient: 'linear-gradient(135deg, #F59E0B, #F97316)' },
-                  { title: 'Total Mandrels', value: analyticsData.reduce((sum, o) => sum + (o['Total Mandrels'] || 0), 0), desc: 'Across selection', gradient: 'linear-gradient(135deg, #EC4899, #F43F5E)' },
-                ].map(card => (
-                  <div key={card.title} style={{ padding: '1.25rem', borderRadius: '16px', color: 'white', background: card.gradient }}>
-                    <h4 style={{ fontSize: '0.8rem', opacity: 0.85, marginBottom: '8px' }}>{card.title}</h4>
-                    <div style={{ fontSize: '2rem', fontWeight: 700, fontFamily: 'monospace' }}>{card.value}</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: '4px' }}>{card.desc}</div>
-                  </div>
-                ))}
-              </div>
+
+              {/* Delivery & Manufacturing Lead Time — computed once, split into two charts */}
+              {(() => {
+                const supplierDelivery = {};
+                const supplierMfg = {};
+
+                sampleFollowups.forEach(sf => {
+                  if (!sf.die_received_date || !sf.supplier) return;
+                  const receivedDate = new Date(sf.die_received_date);
+                  if (isNaN(receivedDate)) return;
+
+                  const order = data.find(o => o['DIE NO'] && sf.profile && o['DIE NO'].trim() === sf.profile.trim());
+                  if (!order) return;
+
+                  if (order['Ordered date']) {
+                    const orderedDate = new Date(order['Ordered date']);
+                    if (!isNaN(orderedDate)) {
+                      const days = Math.round((receivedDate - orderedDate) / (1000 * 60 * 60 * 24));
+                      if (days >= 0) {
+                        if (!supplierDelivery[sf.supplier]) supplierDelivery[sf.supplier] = [];
+                        supplierDelivery[sf.supplier].push(days);
+                      }
+                    }
+                  }
+
+                  if (order['Design Approved Date']) {
+                    const approvedDate = new Date(order['Design Approved Date']);
+                    if (!isNaN(approvedDate)) {
+                      const days = Math.round((receivedDate - approvedDate) / (1000 * 60 * 60 * 24));
+                      if (days >= 0) {
+                        if (!supplierMfg[sf.supplier]) supplierMfg[sf.supplier] = [];
+                        supplierMfg[sf.supplier].push(days);
+                      }
+                    }
+                  }
+                });
+
+                const deliveryData = Object.entries(supplierDelivery)
+                  .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+                  .sort((a, b) => a.avgDays - b.avgDays);
+
+                const mfgData = Object.entries(supplierMfg)
+                  .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+                  .sort((a, b) => a.avgDays - b.avgDays);
+
+                const tooltipStyle = { background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' };
+
+                return (
+                  <>
+                    {deliveryData.length > 0 && (
+                      <div style={styles.chartCard}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>
+                          Avg Delivery Lead Time by Supplier
+                        </h3>
+                        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>
+                          Days from Die Order Date to Die Received Date
+                        </p>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <BarChart data={deliveryData} layout="vertical" margin={{ right: 50 }}>
+                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
+                            <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
+                            <Tooltip
+                              contentStyle={tooltipStyle}
+                              itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
+                              labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
+                              formatter={(value, _, props) => [`${value} days (${props.payload.count} dies)`, 'Avg Delivery Lead Time']}
+                            />
+                            <Bar dataKey="avgDays" fill="#0EA5E9" radius={[0, 6, 6, 0]}>
+                              <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {mfgData.length > 0 && (
+                      <div style={styles.chartCard}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>
+                          Avg Manufacturing Lead Time by Supplier
+                        </h3>
+                        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>
+                          Days from Design Approval Date to Die Received Date
+                        </p>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <BarChart data={mfgData} layout="vertical" margin={{ right: 50 }}>
+                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
+                            <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
+                            <Tooltip
+                              contentStyle={tooltipStyle}
+                              itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
+                              labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
+                              formatter={(value, _, props) => [`${value} days (${props.payload.count} dies)`, 'Avg Manufacturing Lead Time']}
+                            />
+                            <Bar dataKey="avgDays" fill="#F59E0B" radius={[0, 6, 6, 0]}>
+                              <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
             </div>
           )}
           {/* Settings Tab (Admin Only) - Plants and Suppliers Management */}
@@ -2474,6 +3879,7 @@ export default function DieOrderingSystem() {
                       <thead>
                         <tr>
                           <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Name</th>
+                          <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Shipment</th>
                           <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Actions</th>
                         </tr>
                       </thead>
@@ -2481,14 +3887,153 @@ export default function DieOrderingSystem() {
                         {suppliers.map(supplier => (
                           <tr key={supplier.id}>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, fontWeight: 500, color: theme.text }}>{supplier.name}</td>
+                            <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                              <select
+                                value={supplier.shipment_mode || 'LAND'}
+                                onChange={async (e) => { try { await suppliersAPI.update(supplier.id, { shipment_mode: e.target.value }); fetchSuppliers(); } catch (error) { alert('Failed to update: ' + error.message); } }}
+                                style={{ padding: '4px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
+                              >
+                                <option value="AIR">AIR</option>
+                                <option value="LAND">LAND</option>
+                              </select>
+                            </td>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
                               <button onClick={async () => { if (window.confirm(`Delete supplier "${supplier.name}"?`)) { try { await suppliersAPI.delete(supplier.id); fetchSuppliers(); } catch (error) { alert('Failed to delete: ' + error.message); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
                             </td>
                           </tr>
                         ))}
-                        {suppliers.length === 0 && <tr><td colSpan={2} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
+                        {suppliers.length === 0 && <tr><td colSpan={3} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Excel Integration Section - full width */}
+              <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}><Download size={20} /> Excel Integration</h3>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                  {/* API Keys Management */}
+                  <div>
+                    <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted, marginBottom: '0.75rem' }}>API Keys</h4>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+                      <input
+                        type="text"
+                        value={newApiKeyName}
+                        onChange={(e) => setNewApiKeyName(e.target.value)}
+                        placeholder="Key name (e.g. My Excel)"
+                        style={{ flex: 1, padding: '10px 14px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem' }}
+                      />
+                      <button
+                        disabled={apiKeyLoading || !newApiKeyName.trim()}
+                        onClick={async () => {
+                          setApiKeyLoading(true);
+                          try {
+                            const response = await apiKeysAPI.create(newApiKeyName.trim());
+                            setGeneratedKey(response.rawKey);
+                            setNewApiKeyName('');
+                            fetchApiKeys();
+                            setToast({ message: 'API key created! Copy it now.', type: 'success' });
+                            setTimeout(() => setToast(null), 5000);
+                          } catch (error) {
+                            setToast({ message: 'Failed to create key: ' + error.message, type: 'error' });
+                            setTimeout(() => setToast(null), 5000);
+                          } finally {
+                            setApiKeyLoading(false);
+                          }
+                        }}
+                        style={{ padding: '10px 16px', background: !newApiKeyName.trim() ? theme.cardBorder : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: !newApiKeyName.trim() ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600, opacity: !newApiKeyName.trim() ? 0.5 : 1 }}
+                      >
+                        + Generate
+                      </button>
+                    </div>
+
+                    {/* Show generated key */}
+                    {generatedKey && (
+                      <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <CheckCircle size={16} color="#10B981" />
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#10B981' }}>New API Key — copy now, it won't be shown again!</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <code style={{ flex: 1, padding: '8px 12px', background: theme.inputBg, borderRadius: '6px', fontSize: '0.75rem', color: theme.text, wordBreak: 'break-all', fontFamily: 'monospace' }}>{generatedKey}</code>
+                          <button
+                            onClick={() => { copyToClipboard(generatedKey); setToast({ message: 'Key copied to clipboard!', type: 'success' }); setTimeout(() => setToast(null), 3000); }}
+                            style={{ padding: '8px', background: '#10B981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex' }}
+                          ><Copy size={16} /></button>
+                        </div>
+                        <button onClick={() => setGeneratedKey(null)} style={{ marginTop: '8px', padding: '4px 10px', background: 'transparent', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '6px', color: '#10B981', cursor: 'pointer', fontSize: '0.75rem' }}>Dismiss</button>
+                      </div>
+                    )}
+
+                    {/* List existing keys */}
+                    <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Name</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Created</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Last Used</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {apiKeys.map(k => (
+                            <tr key={k.id}>
+                              <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, fontWeight: 500, color: theme.text, fontSize: '0.875rem' }}>{k.name}</td>
+                              <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textDim, fontSize: '0.8rem' }}>{k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}</td>
+                              <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textDim, fontSize: '0.8rem' }}>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
+                              <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
+                                <button onClick={async () => { if (window.confirm(`Revoke API key "${k.name}"?`)) { try { await apiKeysAPI.delete(k.id); fetchApiKeys(); setToast({ message: 'API key revoked', type: 'success' }); setTimeout(() => setToast(null), 3000); } catch (error) { alert('Failed to revoke: ' + error.message); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Revoke</button>
+                              </td>
+                            </tr>
+                          ))}
+                          {apiKeys.length === 0 && <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem' }}>No API keys generated yet</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Instructions */}
+                  <div>
+                    <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted, marginBottom: '0.75rem' }}>Connect Excel to Live Data</h4>
+                    <div style={{ background: theme.inputBg, borderRadius: '12px', padding: '1.25rem' }}>
+                      <ol style={{ margin: 0, paddingLeft: '1.25rem', color: theme.textMuted, fontSize: '0.85rem', lineHeight: 1.8 }}>
+                        <li>Generate an API key using the form on the left</li>
+                        <li>Open Excel → <b style={{ color: theme.text }}>Data</b> tab → <b style={{ color: theme.text }}>Get Data</b> → <b style={{ color: theme.text }}>From Web</b></li>
+                        <li>Paste the URL below (with your API key):</li>
+                      </ol>
+                      <div style={{ marginTop: '12px', padding: '10px 14px', background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}` }}>
+                        <code style={{ fontSize: '0.75rem', color: '#3B82F6', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                          {`${window.location.origin}/api/export/orders?key=YOUR_API_KEY&format=csv`}
+                        </code>
+                      </div>
+                      <div style={{ marginTop: '1rem' }}>
+                        <h5 style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' }}>Optional Parameters</h5>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {[
+                            { label: 'format=json', desc: 'JSON output' },
+                            { label: 'fields=die_no,status,...', desc: 'Select columns' },
+                            { label: 'status=DONE', desc: 'Filter by status' },
+                            { label: 'plant=EXT 1', desc: 'Filter by plant' },
+                            { label: 'supplier=COMPES', desc: 'Filter by supplier' },
+                          ].map(p => (
+                            <span key={p.label} title={p.desc} style={{ fontSize: '0.7rem', padding: '4px 8px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, color: '#3B82F6', borderRadius: '4px', fontFamily: 'monospace', cursor: 'help' }}>{p.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '1rem' }}>
+                        <h5 style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' }}>Available Fields</h5>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'design_approved_date', 'delay', 'pr_entry', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month'].map(f => (
+                            <span key={f} style={{ fontSize: '0.65rem', padding: '2px 6px', background: theme.cardBg, color: theme.textDim, borderRadius: '3px', fontFamily: 'monospace' }}>{f}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2519,9 +4064,16 @@ export default function DieOrderingSystem() {
                       <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Supplier Name</label>
                       <input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter supplier name" />
                     </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Mode of Shipment</label>
+                      <select value={newSupplierShipment} onChange={(e) => setNewSupplierShipment(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
+                        <option value="LAND">LAND</option>
+                        <option value="AIR">AIR</option>
+                      </select>
+                    </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                      <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
+                      <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
                     </div>
                   </div>
                 </div>
@@ -2543,6 +4095,7 @@ export default function DieOrderingSystem() {
                       <th style={styles.th}>ID</th>
                       <th style={styles.th}>Username</th>
                       <th style={styles.th}>Role</th>
+                      <th style={styles.th}>Page Access</th>
                       <th style={styles.th}>Created At</th>
                       <th style={styles.th}>Actions</th>
                     </tr>
@@ -2553,6 +4106,22 @@ export default function DieOrderingSystem() {
                         <td style={styles.td}>{u.id}</td>
                         <td style={{ ...styles.td, fontWeight: 600, color: '#F1F5F9' }}>{u.username}</td>
                         <td style={styles.td}><span style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, background: u.role === 'admin' ? '#3B82F620' : '#64748B20', color: u.role === 'admin' ? '#3B82F6' : '#94A3B8' }}>{u.role}</span></td>
+                        <td style={styles.td}>
+                          {u.role === 'admin' ? (
+                            <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: '#10B98120', color: '#10B981' }}>All Pages</span>
+                          ) : !u.page_access ? (
+                            <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: '#10B98120', color: '#10B981' }}>All Pages</span>
+                          ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                              {u.page_access.map(pageId => {
+                                const page = CONTROLLABLE_PAGES.find(p => p.id === pageId);
+                                return page ? (
+                                  <span key={pageId} style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 500, background: '#3B82F620', color: '#60A5FA' }}>{page.label}</span>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
+                        </td>
                         <td style={styles.td}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}</td>
                         <td style={styles.td}>{u.id !== user.id && <button onClick={() => handleDeleteUser(u.id)} style={{ padding: '6px 12px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}>Delete</button>}</td>
                       </tr>
@@ -2563,42 +4132,27 @@ export default function DieOrderingSystem() {
 
               {/* Add User Modal */}
               {showAddUser && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowAddUser(false)}>
-                  <div style={{ background: '#1E293B', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '400px', border: '1px solid #334155' }} onClick={e => e.stopPropagation()}>
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New User</h3>
-                    <form onSubmit={handleAddUser}>
-                      <div style={{ marginBottom: '1rem' }}>
-                        <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>Username</label>
-                        <input type="text" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} style={{ width: '100%', padding: '10px 14px', background: '#0F172A', border: '1px solid #334155', borderRadius: '8px', color: '#F1F5F9' }} required />
-                      </div>
-                      <div style={{ marginBottom: '1rem' }}>
-                        <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>Password</label>
-                        <input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} style={{ width: '100%', padding: '10px 14px', background: '#0F172A', border: '1px solid #334155', borderRadius: '8px', color: '#F1F5F9' }} required minLength={6} />
-                      </div>
-                      <div style={{ marginBottom: '1.5rem' }}>
-                        <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>Role</label>
-                        <select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })} style={{ width: '100%', padding: '10px 14px', background: '#0F172A', border: '1px solid #334155', borderRadius: '8px', color: '#F1F5F9' }}>
-                          <option value="user">User</option>
-                          <option value="die_designer">Die Designer</option>
-                          <option value="simulation_engineer">Simulation Engineer</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                        <button type="button" onClick={() => setShowAddUser(false)} style={{ padding: '10px 20px', background: '#334155', color: '#F1F5F9', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
-                        <button type="submit" style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>Create User</button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
+                <AddUserModal
+                  onClose={() => setShowAddUser(false)}
+                  onSubmit={async (userData) => {
+                    try {
+                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess);
+                      setShowAddUser(false);
+                      fetchUsers();
+                    } catch (error) {
+                      alert(error.message);
+                    }
+                  }}
+                  theme={theme}
+                />
               )}
             </div>
           )}
         </main>
 
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
-        {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onAddRecord={handleAddRecord} />}
+        {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
         {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}
         {showPasswordChangeModal && (
           <PasswordChangeModal
@@ -2621,6 +4175,17 @@ export default function DieOrderingSystem() {
             order={changelogOrder}
             onClose={() => setChangelogOrder(null)}
             theme={theme}
+          />
+        )}
+        {showEmailCompose && (
+          <EmailCompose
+            onClose={() => setShowEmailCompose(null)}
+            onSent={() => {
+              setToast({ message: 'Email sent successfully!', type: 'success' });
+              setTimeout(() => setToast(null), 3000);
+            }}
+            theme={theme}
+            prefill={showEmailCompose}
           />
         )}
 

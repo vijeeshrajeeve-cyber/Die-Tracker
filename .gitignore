@@ -45,3 +45,12 @@ supabase/.branches/
 # Test files
 *.test.js
 coverage/
+
+# Windows Zone.Identifier alternate data stream files
+*:Zone.Identifier
+
+# Test data (large PDF files)
+TestData/
+
+# Debug/analysis scripts output
+pi_analysis_output.txt

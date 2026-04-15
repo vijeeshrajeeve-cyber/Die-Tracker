@@ -59,11 +59,6 @@ const getPoolConfig = () => {
 // PostgreSQL connection configuration
 const pool = new Pool(getPoolConfig());
 
-// Test connection and log status
-pool.on('connect', () => {
-  console.log('Connected to PostgreSQL database');
-});
-
 pool.on('error', (err) => {
   console.error('PostgreSQL pool error:', err);
 });
@@ -85,6 +80,7 @@ const initializeDatabase = async () => {
         password_must_change BOOLEAN DEFAULT false,
         failed_login_attempts INTEGER DEFAULT 0,
         locked_until TIMESTAMP,
+        page_access TEXT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -104,14 +100,25 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='updated_at') THEN
           ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='page_access') THEN
+          ALTER TABLE users ADD COLUMN page_access TEXT DEFAULT NULL;
+        END IF;
       END $$;
 
       -- Suppliers table
       CREATE TABLE IF NOT EXISTS suppliers (
         id SERIAL PRIMARY KEY,
         name TEXT UNIQUE NOT NULL,
+        shipment_mode TEXT DEFAULT 'LAND',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Add shipment_mode column if not exists (migration for existing DBs)
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppliers' AND column_name='shipment_mode') THEN
+          ALTER TABLE suppliers ADD COLUMN shipment_mode TEXT DEFAULT 'LAND';
+        END IF;
+      END $$;
 
       -- Plants table
       CREATE TABLE IF NOT EXISTS plants (
@@ -145,6 +152,131 @@ const initializeDatabase = async () => {
         overall_delay INTEGER DEFAULT 0,
         eta TEXT,
         month TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Backup Die Requests table
+      CREATE TABLE IF NOT EXISTS backup_die_requests (
+        id SERIAL PRIMARY KEY,
+        plant TEXT,
+        die_no TEXT,
+        customer TEXT,
+        requested_date TEXT,
+        die_available TEXT,
+        drawing_requested TEXT,
+        ordered_date TEXT,
+        status TEXT DEFAULT 'Pending',
+        reason TEXT,
+        order_received_last_year TEXT,
+        remarks TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- API Keys table for external data access (e.g. Excel Power Query)
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id SERIAL PRIMARY KEY,
+        key_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_by INTEGER REFERENCES users(id),
+        last_used_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Email configuration (SMTP/IMAP direct integration)
+      CREATE TABLE IF NOT EXISTS email_config (
+        id SERIAL PRIMARY KEY,
+        smtp_host TEXT,
+        smtp_port INTEGER DEFAULT 587,
+        imap_host TEXT,
+        imap_port INTEGER DEFAULT 993,
+        email_user TEXT,
+        email_password TEXT,
+        mailbox_email TEXT,
+        send_enabled BOOLEAN DEFAULT false,
+        receive_enabled BOOLEAN DEFAULT false,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Migrate existing email_config table if it has old Power Automate columns
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='smtp_host') THEN
+          ALTER TABLE email_config ADD COLUMN smtp_host TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='smtp_port') THEN
+          ALTER TABLE email_config ADD COLUMN smtp_port INTEGER DEFAULT 587;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='imap_host') THEN
+          ALTER TABLE email_config ADD COLUMN imap_host TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='imap_port') THEN
+          ALTER TABLE email_config ADD COLUMN imap_port INTEGER DEFAULT 993;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='email_user') THEN
+          ALTER TABLE email_config ADD COLUMN email_user TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='email_password') THEN
+          ALTER TABLE email_config ADD COLUMN email_password TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='send_enabled') THEN
+          ALTER TABLE email_config ADD COLUMN send_enabled BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_config' AND column_name='receive_enabled') THEN
+          ALTER TABLE email_config ADD COLUMN receive_enabled BOOLEAN DEFAULT false;
+        END IF;
+      END $$;
+
+      -- Email log (sent and received emails)
+      CREATE TABLE IF NOT EXISTS email_log (
+        id SERIAL PRIMARY KEY,
+        direction TEXT NOT NULL,
+        message_id TEXT,
+        conversation_id TEXT,
+        from_address TEXT,
+        to_addresses TEXT,
+        cc_addresses TEXT,
+        subject TEXT,
+        body_preview TEXT,
+        body_content TEXT,
+        order_id INTEGER REFERENCES die_orders(id) ON DELETE SET NULL,
+        sent_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        status TEXT DEFAULT 'sent',
+        error_message TEXT,
+        importance TEXT DEFAULT 'normal',
+        received_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Email templates
+      CREATE TABLE IF NOT EXISTS email_templates (
+        id SERIAL PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        subject_template TEXT NOT NULL,
+        body_template TEXT NOT NULL,
+        category TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Sample Followups table
+      CREATE TABLE IF NOT EXISTS sample_followups (
+        id SERIAL PRIMARY KEY,
+        profile TEXT,
+        press TEXT,
+        supplier TEXT,
+        customer TEXT,
+        die_received_date TEXT,
+        ascona_reference TEXT DEFAULT 'No',
+        submission_date TEXT,
+        sample_approval_date TEXT,
+        delay_days INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'Pending',
+        no_of_trial INTEGER DEFAULT 0,
+        remark TEXT,
+        corrector TEXT,
         created_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -183,6 +315,21 @@ const initializeDatabase = async () => {
         await client.query('INSERT INTO plants (name) VALUES ($1)', [name]);
       }
       console.log('Seeded plants table with default plants');
+    }
+
+    // Seed default email templates if table is empty
+    const templateCount = await client.query('SELECT COUNT(*) as count FROM email_templates');
+    if (parseInt(templateCount.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO email_templates (name, subject_template, body_template, category) VALUES
+        ('Design Reminder', 'URGENT: Design Pending for {{orderCount}} Die Order(s) - {{supplier}}',
+         'Dear {{supplier}} Team,\n\nThis is a reminder that the following die order(s) have been awaiting design for more than 48 hours:\n\n{{orderList}}\n\nPlease provide the design drawings at the earliest to avoid further delays in production.\n\nBest regards,\nDie Ordering Team',
+         'design_reminder'),
+        ('Ordering Reminder', 'URGENT: {{orderCount}} Die Order(s) Pending Ordering - {{plant}}',
+         'Dear Purchase Team,\n\nThe following die order(s) for {{plant}} have been pending ordering for more than 24 hours:\n\n{{orderList}}\n\nPlease process these orders at the earliest to avoid production delays.\n\nBest regards,\nDie Ordering Team',
+         'ordering_reminder')
+      `);
+      console.log('Seeded email_templates with default templates');
     }
 
     console.log('Database initialized successfully');

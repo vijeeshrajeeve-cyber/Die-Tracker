@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { FileText, X, AlertTriangle, CheckCircle, Edit2, Trash2 } from 'lucide-react';
+import { FileText, X, AlertTriangle, CheckCircle, Trash2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
@@ -7,9 +7,30 @@ import { MONTHS } from '../../utils/constants';
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
+// Plant mapping: Org code from PI document -> Plant name in system
+const PLANT_MAP = {
+    'AUH': 'GEX 2',
+    'DXB': 'GEX 1',
+};
+
+// Press code -> Plant fallback (when Org column has checkboxes instead of text)
+// Numeric press codes (25, 35) are AUH/GEX 2 presses; letter codes (B, D, E, F) are DXB/GEX 1 presses
+const PRESS_TO_PLANT = {
+    '25': 'GEX 2',
+    '35': 'GEX 2',
+    'B': 'GEX 1',
+    'D': 'GEX 1',
+    'E': 'GEX 1',
+    'F': 'GEX 1',
+};
+
 /**
  * PI (Purchase Instruction) Import Modal
- * Imports multiple die orders from purchase team PDF documents sent to suppliers
+ * Imports multiple die orders from purchase team PDF documents sent to suppliers.
+ *
+ * Parsing approach: Uses PDF.js text extraction with Y-position grouping to
+ * reconstruct table rows from the Die Order Justification Form (page 1).
+ * Each row is parsed as a unit, keeping die number, spec, plant, and customer ref together.
  */
 function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
     const [dragActive, setDragActive] = useState(false);
@@ -17,12 +38,10 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
     const [loading, setLoading] = useState(false);
     const [importing, setImporting] = useState(false);
     const [preview, setPreview] = useState(null);
-    const [editingIndex, setEditingIndex] = useState(null);
 
     // Parse date in DD/MM/YYYY format to YYYY-MM-DD
     const parseDateDMY = (dateStr) => {
         if (!dateStr) return null;
-        // Handle both DD/MM/YYYY and DD-MM-YYYY formats
         const match = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
         if (match) {
             const [, day, month, year] = match;
@@ -31,53 +50,118 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         return null;
     };
 
-    // Extract Order No from PR number (e.g., "8429-26" -> "8429")
-    const extractOrderNo = (prNumber) => {
-        if (!prNumber) return null;
-        // Get first 4 digits
-        const match = prNumber.match(/(\d{4})/);
-        return match ? match[1] : null;
-    };
+    /**
+     * Parse a single table row text into structured die order data.
+     * Row format from PDF extraction (pipe-separated by position):
+     *   PressCode | DieNo | DieSpec | [Mandrel] | [Wt/m] | [DeliveryDate] | Org | CustomerRef
+     *
+     * Examples from real PDFs:
+     *   "E | 28836-514 | Dia 440X250; 4 CAV; PH | 2 | DXB | BACKUP (TOP URGENT)"
+     *   "25 | 005037-2503 | DIA 280X160; 2 CAV; PH | 1 | AUH | BACKUP"
+     *   "35 | 051150-3502 | Dia 450X260; 1 CAV; PH | 7 | 5.573 | AUH | NEW (TOP URGENT)"
+     *   "F | INS-30573 | DIA 460X150; 1 CAV | DXB | NEW (TOP URGENT)"
+     *   "35 | 024216-3506 | 450X250; 2 CAV; SF | 2.800 | 01/03/2026 | AUH | BACKUP (TOP URGENT)"
+     *   "F | 28115-603 | Dia 700x312 | BACKUP (TOP URGENT)"
+     */
+    const parseTableRow = (rowText) => {
+        if (!rowText || rowText.trim().length < 10) return null;
 
-    // Parse die size from specification string (e.g., "Dia 355X200; CAV 1; PH" -> "355X200")
-    const parseDieSize = (spec) => {
-        if (!spec) return null;
-        const match = spec.match(/(?:Dia\s*)?(\d{2,4}[Xx]\d{2,4})/i);
-        return match ? match[1].toUpperCase() : null;
-    };
+        const text = rowText.trim();
 
-    // Parse cavity count from specification string (e.g., "CAV 2" or "2 CAV" -> 2)
-    const parseCavity = (spec) => {
-        if (!spec) return 0;
-        // Pattern 1: "CAV 2" or "CAV2"
-        let match = spec.match(/CAV\s*(\d+)/i);
-        if (match) return parseInt(match[1], 10);
-        // Pattern 2: "2 CAV" or "1CAV"
-        match = spec.match(/(\d+)\s*CAV/i);
-        if (match) return parseInt(match[1], 10);
-        // Pattern 3: Just number between semicolons like "; 1 ;" in specs
-        match = spec.match(/;\s*(\d+)\s*;/);
-        if (match) return parseInt(match[1], 10);
-        return 0;
-    };
+        // Extract die number - the most reliable anchor point
+        // Formats: "28836-514", "005037-2503", "032029-2501", "INS-30573", "14488-501", "30559 -601"
+        const dieNoMatch = text.match(/\b(INS[-\s]*\d{5}(?:\s*[-]\s*\d{1,4})?|\d{3,6}\s*[-]\s*\d{2,4})\b/i);
+        if (!dieNoMatch) return null;
 
-    // Parse die type from specification (PH = Hollow, SF = Solid)
-    const parseDieType = (spec, justification) => {
-        // First check justification for NEW/BACKUP mapping
-        if (justification) {
-            const just = justification.toUpperCase().trim();
-            if (just === 'NEW') return 'N';
-            if (just === 'BACKUP') return 'B';
+        const rawDieNo = dieNoMatch[0].replace(/\s+/g, '');
+        // Normalize INS format
+        const dieNo = rawDieNo.replace(/^INS\s*-?\s*/i, 'INS-');
+
+        // Extract die specifications - look for size pattern
+        // Formats: "Dia 440X250; 4 CAV; PH", "DIA 280X160; 2 CAV; PH", "450X250; 2 CAV; SF", "Dia 700x312"
+        const sizeMatch = text.match(/(?:Dia\s*)?(\d{2,4}[Xx×]\d{2,4})/i);
+        const dieSize = sizeMatch ? sizeMatch[1].toUpperCase().replace('×', 'X') : null;
+
+        // Extract cavity count: "N CAV" or "CAV N"
+        let cavity = 0;
+        const cavMatch = text.match(/(\d+)\s*CAV/i) || text.match(/CAV\s*(\d+)/i);
+        if (cavMatch) cavity = parseInt(cavMatch[1], 10);
+
+        // Extract mandrel count - a standalone small digit (1-9) that appears after the spec
+        // and before Wt/m or Org. It's typically the mandrel count.
+        let mandrel = 0;
+        const specEndIdx = text.indexOf(dieSize || '') + (dieSize?.length || 0);
+        const afterSpec = text.substring(specEndIdx);
+        // Look for PH/SF followed by a standalone digit
+        const mandrelMatch = afterSpec.match(/(?:PH|SF)\s+(\d)\s/i);
+        if (mandrelMatch) mandrel = parseInt(mandrelMatch[1], 10);
+
+        // Extract Org/Plant (AUH or DXB)
+        let plant = null;
+        const orgMatch = text.match(/\b(AUH|DXB)\b/i);
+        if (orgMatch) {
+            plant = PLANT_MAP[orgMatch[1].toUpperCase()] || orgMatch[1].toUpperCase();
         }
-        // Fallback to specification type
-        if (spec) {
-            if (/\bPH\b/i.test(spec) || /hollow/i.test(spec)) return 'N'; // Hollow
-            if (/\bSF\b/i.test(spec) || /solid/i.test(spec)) return 'B'; // Solid
+
+        // Extract press code (before die number) - needed for plant fallback
+        const beforeDieNo = text.substring(0, text.indexOf(dieNoMatch[0])).trim();
+        const pressCode = beforeDieNo || null;
+
+        // Fallback: infer plant from press code when Org column has checkboxes instead of text
+        if (!plant && pressCode) {
+            plant = PRESS_TO_PLANT[pressCode.toUpperCase()] || null;
         }
-        return null;
+
+        // Extract Customer Ref for TYPE determination
+        // Look for BACKUP or NEW keywords - these determine the order type
+        let type = null;
+        if (/\bBACKUP\b/i.test(text)) {
+            type = 'B';
+        } else if (/\bNEW\b/i.test(text)) {
+            type = 'N';
+        }
+
+        // Extract urgency level
+        let urgency = null;
+        if (/TOP\s*URGENT/i.test(text)) {
+            urgency = 'TOP URGENT';
+        } else if (/URGENT/i.test(text)) {
+            urgency = 'URGENT';
+        }
+
+        // Extract Wt/m (weight per meter) - a decimal number like 0.705, 2.800, 5.573
+        let weightPerMeter = null;
+        const wtMatch = text.match(/\b(\d+\.\d{2,3})\b/);
+        if (wtMatch) {
+            const val = parseFloat(wtMatch[1]);
+            // Wt/m is typically between 0.1 and 20.0
+            if (val >= 0.1 && val <= 20.0) {
+                weightPerMeter = val;
+            }
+        }
+
+        // Extract delivery request date from row (e.g., "01/03/2026")
+        let deliveryDate = null;
+        const dateMatch = text.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+        if (dateMatch) {
+            deliveryDate = parseDateDMY(dateMatch[1]);
+        }
+
+        return {
+            dieNo,
+            dieSize,
+            cavity,
+            mandrel,
+            plant,
+            type,
+            urgency,
+            weightPerMeter,
+            deliveryDate,
+            pressCode,
+        };
     };
 
-    // Parse the PI PDF content
+    // Parse the PI PDF content using position-based line grouping
     const parsePIPDFContent = async (file) => {
         setError(null);
         setLoading(true);
@@ -86,207 +170,309 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = '';
-            let page1Text = ''; // Die orders are only on page 1 (justification form)
 
-            // Extract text from all pages
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
-                fullText += pageText + '\n';
-                // Store page 1 separately - die orders are only in the justification form
-                if (i === 1) {
-                    page1Text = pageText;
+            // ── Extract page 1 text with positional data ──
+            const page1 = await pdf.getPage(1);
+            const textContent = await page1.getTextContent();
+
+            // Group text items by Y position to reconstruct lines
+            const linesByY = {};
+            for (const item of textContent.items) {
+                const y = Math.round(item.transform[5]);
+                if (!linesByY[y]) linesByY[y] = [];
+                linesByY[y].push({
+                    text: item.str,
+                    x: Math.round(item.transform[4]),
+                });
+            }
+
+            // Merge nearby Y positions (within 3px) to handle text wrapping
+            // e.g., "BACKUP" at Y=371 should merge into the die row at Y=372
+            const sortedYsRaw = Object.keys(linesByY).map(Number).sort((a, b) => b - a);
+            const mergedLinesByY = {};
+            let currentY = null;
+            for (const y of sortedYsRaw) {
+                if (currentY !== null && currentY - y <= 3) {
+                    // Merge into the current group
+                    mergedLinesByY[currentY].push(...linesByY[y]);
+                } else {
+                    currentY = y;
+                    mergedLinesByY[y] = [...(linesByY[y] || [])];
                 }
             }
 
-            // Extract header information
-            // PR Number (e.g., "PR 8429-26")
-            const prMatch = fullText.match(/PR\s*(\d{4}(?:-\d+)?)/i);
-            const prNumber = prMatch ? prMatch[1] : null;
-            const orderNo = extractOrderNo(prNumber);
+            // Sort merged Y positions descending (top-to-bottom in PDF coords)
+            const sortedYs = Object.keys(mergedLinesByY).map(Number).sort((a, b) => b - a);
 
-            // Date (e.g., "Date: 16/01/2026" or "Date:" followed by newline and date)
-            // NOTE: PDF.js text extraction doesn't always preserve the date text correctly
-            // Try multiple patterns since PDF text extraction can vary
+            // Build line texts sorted by X within each merged Y group
+            const lines = sortedYs.map(y => {
+                const items = mergedLinesByY[y].sort((a, b) => a.x - b.x);
+                return {
+                    y,
+                    text: items.map(i => i.text).join(' ').trim(),
+                    items,
+                };
+            });
+
+            // Also build the flat page1 text for fallback patterns
+            const page1Text = lines.map(l => l.text).join(' ');
+
+            // ── Extract header information from known Y positions ──
+
+            // PR Number - look for "PR NNNN-NN" pattern
+            let prNumber = null;
+            let orderNo = null;
+            for (const line of lines) {
+                const prMatch = line.text.match(/PR\s*(\d{4}[-]\d{1,2})/i);
+                if (prMatch) {
+                    prNumber = prMatch[1];
+                    const noMatch = prNumber.match(/(\d{4})/);
+                    orderNo = noMatch ? noMatch[1] : null;
+                    break;
+                }
+            }
+
+            // Date - look for "Date:" followed by DD/MM/YYYY
             let orderDate = null;
-            // Pattern 1: Date followed by date on same line or with whitespace/newlines
-            const dateMatch1 = fullText.match(/Date[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
-            if (dateMatch1) {
-                orderDate = parseDateDMY(dateMatch1[1]);
-            }
-            // Pattern 2: Look for any DD/MM/YYYY pattern in entire text
-            if (!orderDate) {
-                const dateMatch2 = fullText.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
-                if (dateMatch2) {
-                    orderDate = parseDateDMY(dateMatch2[1]);
-                }
-            }
-            // Pattern 3: If still no date, use today's date as fallback
-            if (!orderDate) {
-                const today = new Date();
-                orderDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
-            }
-
-            // Supplier extraction - PDF.js doesn't reliably extract "Die Supplier: PHME" 
-            // So we extract from the filename which contains the supplier code (e.g., "8429-26 PHME. DIE ORDER.pdf")
-            let supplier = 'UNKNOWN';
-            // Try to extract supplier from filename first (most reliable)
-            const filenameSupplierMatch = file.name.match(/\d{4}-\d+\s+([A-Z]+)\./i);
-            if (filenameSupplierMatch) {
-                supplier = filenameSupplierMatch[1].toUpperCase();
-            } else {
-                // Fallback: try to find supplier in PDF text
-                // Look for common supplier names
-                const knownSuppliers = ['PHME', 'JIANGSU', 'ALUMAT', 'WEFA', 'AQF'];
-                for (const s of knownSuppliers) {
-                    if (fullText.toUpperCase().includes(s)) {
-                        supplier = s;
+            for (const line of lines) {
+                if (/Date/i.test(line.text)) {
+                    const dateMatch = line.text.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+                    if (dateMatch) {
+                        orderDate = parseDateDMY(dateMatch[1]);
                         break;
                     }
                 }
             }
-
-            // Shipment type - detect checkmark by looking for patterns
-            // In PDF text, checkmarks often appear near the selected option
-            // Look for "LAND" or "AIR" that appears with a checkmark indicator
-            let shipmentType = 'LAND'; // Default
-
-            // Check for patterns indicating AIR is selected
-            // Often checkmarks appear as special characters or the word appears in a specific context
-            if (/AIR\s*(?:✓|√|☑|✔|X|x|\*)/i.test(fullText) ||
-                /(?:✓|√|☑|✔|X|x|\*)\s*AIR/i.test(fullText) ||
-                /By\s*Air/i.test(fullText)) {
-                shipmentType = 'AIR';
-            } else if (/LAND\s*(?:✓|√|☑|✔|X|x|\*)/i.test(fullText) ||
-                /(?:✓|√|☑|✔|X|x|\*)\s*LAND/i.test(fullText) ||
-                /By\s*Road/i.test(fullText)) {
-                shipmentType = 'LAND';
+            if (!orderDate) {
+                // Fallback: first date found in page 1
+                const anyDate = page1Text.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+                if (anyDate) orderDate = parseDateDMY(anyDate[1]);
+            }
+            if (!orderDate) {
+                orderDate = new Date().toISOString().split('T')[0];
             }
 
-            // Extract die order rows using multiple patterns
-            // Die numbers appear with different formats:
-            // - Standard with suffix: "D 11598-438", "E 12003-505", "30559-601"
-            // - INS format: "INS-29957" (no suffix)
-            // - Exclude PR numbers like "PR 8442-26"
-            const dieNumbers = [];
-
-            // Pattern 1: Die numbers with D/E/F prefix (standard format with suffix)
-            // Matches: "D   11598-438", "E   12003-505"
-            const prefixedDiePattern = /(?:^|[^A-Z])([DEF]\s+)(\d{4,5})\s*[-_]\s*(\d{2,4})/gi;
-            for (const m of page1Text.matchAll(prefixedDiePattern)) {
-                dieNumbers.push(`${m[2]}-${m[3]}`);
+            // Supplier - extract from "Die Supplier:" line (always on same line as SHIPMENT VIA)
+            let supplier = 'UNKNOWN';
+            for (const line of lines) {
+                const supplierMatch = line.text.match(/Die\s+Supplier\s*:\s*(\S+)/i);
+                if (supplierMatch) {
+                    supplier = supplierMatch[1].toUpperCase();
+                    break;
+                }
             }
-
-            // Pattern 2: INS prefixed dies (may or may not have suffix)
-            // Matches: "INS-29957", "INS29957", "INS-29957-001"
-            const insPattern = /INS[-\s]*(\d{5})(?:\s*[-_]\s*(\d{2,4}))?/gi;
-            for (const m of page1Text.matchAll(insPattern)) {
-                const dieNo = m[2] ? `INS-${m[1]}-${m[2]}` : `INS-${m[1]}`;
-                dieNumbers.push(dieNo);
-            }
-
-            // Pattern 3: Die numbers in table rows (30559-601 format without letter prefix)
-            // Check context to exclude PR numbers
-            const tableDiePattern = /(\d{5})\s*[-_]\s*(\d{2,4})/gi;
-            for (const m of page1Text.matchAll(tableDiePattern)) {
-                const dieNo = `${m[1]}-${m[2]}`;
-                // Check if preceded by "PR" in context (within 5 chars before match)
-                const idx = page1Text.indexOf(m[0]);
-                const prevChars = page1Text.substring(Math.max(0, idx - 5), idx).toUpperCase();
-                // Only add if not already captured, not preceded by PR, and is 5-digit
-                if (!prevChars.includes('PR') && !dieNumbers.includes(dieNo) && m[1].length === 5) {
-                    dieNumbers.push(dieNo);
+            // Fallback: extract from filename (e.g., "8469-26 EKSTEK.pdf")
+            if (supplier === 'UNKNOWN') {
+                const fnMatch = file.name.match(/\d{4}-\d+\s+([A-Za-z]+)/i);
+                if (fnMatch) {
+                    supplier = fnMatch[1].toUpperCase();
                 }
             }
 
-            const uniqueDieNumbers = [...new Set(dieNumbers)];
+            // Shipment type - LAND and AIR appear on the SHIPMENT VIA line
+            // In the PI form, the selected option has a checkbox mark (often not extractable as text).
+            // Heuristic: The supplier name appears next to the SELECTED shipment type in the text.
+            // From testing: "SHIPMENT VIA: | LAND | Die Supplier: PHME" and "AIR" on separate line
+            // means LAND was checked. When AIR is checked, the layout stays the same but
+            // the supplier name appears on the AIR line instead.
+            // Safest approach: check page 1 for "By Air" vs "By Road" in the drawing sheet info,
+            // but those are on page 2+. For page 1, default to checking if supplier appears
+            // next to LAND or AIR line.
+            let shipmentType = 'LAND'; // default
 
-            // Extract die specifications using multiple patterns:
-            // Pattern 1: "Dia 700X500; 1 CAV; PH" or "Dia 220X130; 1 CAV; SF"
-            // Pattern 2: "Dia 250X160 4 P5 Hollow" (no semicolons)
-            // Pattern 3: "250x160 1 P4" (no Dia prefix)
-            const specRows = [];
+            // Find the lines containing LAND and AIR around SHIPMENT VIA
+            const shipmentLine = lines.find(l => /SHIPMENT VIA/i.test(l.text));
+            const airLine = lines.find(l => /^\s*AIR\s*$/i.test(l.text));
 
-            // Pattern 1: Full spec with semicolons - "Dia XXXxYYY; N CAV; PH/SF"
-            const specPattern1 = /Dia\s*(\d{2,4}[Xx]\d{2,4})\s*[;,]?\s*(\d+)\s*CAV\s*[;,]?\s*(PH|SF|Hollow|Solid)/gi;
-            for (const m of page1Text.matchAll(specPattern1)) {
-                specRows.push({
-                    size: m[1].toUpperCase(),
-                    cavity: parseInt(m[2], 10),
-                    type: m[3].toUpperCase()
-                });
-            }
-
-            // Pattern 2: "Dia XXXxYYY N P# Type" format (no semicolons)
-            const specPattern2 = /Dia\s*(\d{2,4}[Xx]\d{2,4})\s+(\d+)\s+P\d+\s+(Hollow|Solid)/gi;
-            for (const m of page1Text.matchAll(specPattern2)) {
-                specRows.push({
-                    size: m[1].toUpperCase(),
-                    cavity: parseInt(m[2], 10),
-                    type: m[3].toUpperCase()
-                });
-            }
-
-            // Pattern 3: Specification rows from table with die number context
-            // Look for "DieNo ... Dia XXXxYYY ... CAV/cavity ... PH/SF"
-            for (const dieNo of uniqueDieNumbers) {
-                const escapedDieNo = dieNo.replace(/[-_]/g, '\\s*[-_]\\s*');
-                // Look for die number followed by spec within ~200 chars
-                const contextPattern = new RegExp(escapedDieNo + '[^]*?(?:Dia\\s*)?(\\d{2,4}[Xx]\\d{2,4})[^]*?(\\d+)\\s*(?:CAV|P\\d)', 'i');
-                const contextMatch = page1Text.match(contextPattern);
-                if (contextMatch && !specRows.some(s => s.forDie === dieNo)) {
-                    const sizeMatch = contextMatch[1];
-                    const cavityMatch = contextMatch[2] ? parseInt(contextMatch[2], 10) : 0;
-                    // Check for type near this context
-                    const typeContext = page1Text.substring(page1Text.indexOf(dieNo), page1Text.indexOf(dieNo) + 200);
-                    const typeMatch = typeContext.match(/\b(PH|SF|Hollow|Solid)\b/i);
-                    specRows.push({
-                        size: sizeMatch?.toUpperCase() || null,
-                        cavity: cavityMatch,
-                        type: typeMatch ? typeMatch[1].toUpperCase() : null,
-                        forDie: dieNo
-                    });
+            if (shipmentLine && airLine) {
+                // If supplier name is on the SHIPMENT VIA line (which also has LAND), it means LAND is checked
+                // If supplier is NOT on that line, check if it's near AIR
+                const shipmentHasSupplier = shipmentLine.text.toUpperCase().includes(supplier);
+                if (shipmentHasSupplier && shipmentLine.text.toUpperCase().includes('LAND')) {
+                    shipmentType = 'LAND';
                 }
             }
 
-            // Extract justifications (NEW, BACKUP, TOP URGENT, URGENT)
-            const justificationPattern = /\b(NEW|BACKUP)(?:\s*\((?:TOP\s+)?URGENT\))?/gi;
-            const justifications = [...fullText.matchAll(justificationPattern)].map(m => m[1].toUpperCase());
+            // ── Scan drawing pages (2+) for shipment type and requested dates per die ──
+            // Each drawing page has an info box with: SUPPLIER/DATE, DIE SIZE, REQUESTED DELIVERY DATE, etc.
+            // The "Die Requested Date" is the date next to the SUPPLIER field in the info box.
+            // Formats: "SUPPLIER - DATE -" with date on next Y line, or date on same Y as supplier name
+            let drawingShipment = null;
+            const drawingRequestedDates = {}; // dieNo -> date string
 
-            // Build die orders from extracted data
-            // Debug: Log existing orders for matching
-            console.log('PI Import - Existing orders count:', existingOrders.length);
-            console.log('PI Import - Die numbers to import:', uniqueDieNumbers);
-            console.log('PI Import - Extracted specifications:', specRows);
+            for (let p = 2; p <= pdf.numPages; p++) {
+                const pg = await pdf.getPage(p);
+                const tc = await pg.getTextContent();
 
-            const orders = uniqueDieNumbers.map((dieNo, index) => {
-                // Try to find specification by forDie match first, then by index
-                const spec = specRows.find(s => s.forDie === dieNo) || specRows[index] || {};
-                const justification = justifications[index] || null;
-                const dieType = parseDieType(spec.type || '', justification);
+                // Group by Y for line-based extraction
+                const pgLinesByY = {};
+                for (const item of tc.items) {
+                    const y = Math.round(item.transform[5]);
+                    if (!pgLinesByY[y]) pgLinesByY[y] = [];
+                    pgLinesByY[y].push({ text: item.str, x: Math.round(item.transform[4]) });
+                }
+                const pgYs = Object.keys(pgLinesByY).map(Number).sort((a, b) => b - a);
+                const pgLines = pgYs.map(y => {
+                    const items = pgLinesByY[y].sort((a, b) => a.x - b.x);
+                    return items.map(i => i.text).join(' ').trim();
+                });
+                const pgText = pgLines.join(' ');
 
-                // Get month from date
+                // Extract shipment type (first found wins)
+                if (!drawingShipment) {
+                    if (/By\s*Air/i.test(pgText)) drawingShipment = 'AIR';
+                    else if (/By\s*Road/i.test(pgText)) drawingShipment = 'LAND';
+                }
+
+                // Extract die number from drawing page (full format NNNNN-NNN)
+                const pgDieMatch = pgText.match(/\b(\d{3,6}\s*[-]\s*\d{2,4})\b/);
+                let pgDieNo = pgDieMatch ? pgDieMatch[0].replace(/\s+/g, '') : null;
+
+                // If no full die number found, look for section number at bottom of page
+                // and match it to table rows by the base number (before the hyphen)
+                let pgSectionNo = null;
+                if (!pgDieNo) {
+                    // Section numbers appear at the bottom of drawing pages (low Y values)
+                    for (let li = pgLines.length - 1; li >= Math.max(0, pgLines.length - 10); li--) {
+                        const secMatch = pgLines[li].match(/^\s*(\d{4,6})\s*$/);
+                        if (secMatch) { pgSectionNo = secMatch[1]; break; }
+                    }
+                }
+
+                // Extract Die Requested Date from drawing page info box
+                // Strategy: Find "SUPPLIER" line, then look at same line and next 2 lines for a date
+                // The date is in the first row of the info box, next to the supplier name
+                let pgRequestedDate = null;
+                for (let li = 0; li < pgLines.length; li++) {
+                    if (/SUPPLIER/i.test(pgLines[li])) {
+                        // Check same line and next 2 lines for a date (DD/MM/YYYY or DD-MM-YYYY)
+                        for (let j = li; j <= Math.min(li + 2, pgLines.length - 1); j++) {
+                            const dm = pgLines[j].match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+                            if (dm) { pgRequestedDate = dm[1]; break; }
+                        }
+                        break;
+                    }
+                }
+
+                // Fallback for pages without explicit SUPPLIER label:
+                // The first date at the top of the page (highest Y) is typically the supplier date
+                if (!pgRequestedDate && pgYs.length > 0) {
+                    // Scan from top (highest Y) - the info box is at the top of the drawing page
+                    for (let li = 0; li < Math.min(5, pgLines.length); li++) {
+                        const dm = pgLines[li].match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+                        if (dm) { pgRequestedDate = dm[1]; break; }
+                    }
+                }
+
+                if (pgRequestedDate) {
+                    const parsedDate = parseDateDMY(pgRequestedDate);
+                    if (pgDieNo) {
+                        drawingRequestedDates[pgDieNo] = parsedDate;
+                    }
+                    // Also store by section number for fallback matching
+                    if (pgSectionNo) {
+                        drawingRequestedDates['_section_' + pgSectionNo] = parsedDate;
+                    }
+                    // Store all drawing page dates for common-date fallback
+                    if (!drawingRequestedDates._allDates) drawingRequestedDates._allDates = [];
+                    drawingRequestedDates._allDates.push(parsedDate);
+                }
+            }
+            if (drawingShipment) shipmentType = drawingShipment;
+
+            // ── Extract die order table rows ──
+            // Table data rows are between the header row (contains "Die No/str") and "Ordered By"
+            // They contain die number patterns like NNNNN-NNN or INS-NNNNN
+
+            const headerLineIdx = lines.findIndex(l =>
+                /Die No\/str/i.test(l.text) || /Die Specifications/i.test(l.text)
+            );
+            const orderedByIdx = lines.findIndex(l => /Ordered By/i.test(l.text));
+
+            // Data rows are between header and "Ordered By"
+            const dataLines = [];
+            if (headerLineIdx >= 0 && orderedByIdx >= 0) {
+                for (let i = headerLineIdx + 1; i < orderedByIdx; i++) {
+                    const lineText = lines[i].text;
+                    // Skip empty lines and lines that are just checkbox remnants
+                    if (lineText.trim().length < 5) continue;
+                    // Must contain a die number pattern to be a valid data row
+                    if (/\b(?:INS[-\s]*\d{5}|\d{3,6}\s*[-]\s*\d{2,4})\b/i.test(lineText)) {
+                        dataLines.push(lineText);
+                    }
+                }
+            }
+
+            // Fallback: if position-based extraction found nothing, scan all lines
+            if (dataLines.length === 0) {
+                for (const line of lines) {
+                    const text = line.text;
+                    // Must have a die number pattern and NOT be a header/footer
+                    if (/\b(?:INS[-\s]*\d{5}|\d{3,6}\s*[-]\s*\d{2,4})\b/i.test(text) &&
+                        !/PR\s*\d{4}/i.test(text) &&
+                        !/Die No\/str/i.test(text) &&
+                        !/Order received/i.test(text)) {
+                        dataLines.push(text);
+                    }
+                }
+            }
+
+            // Parse each data line into structured order data
+            const parsedRows = dataLines
+                .map(line => parseTableRow(line))
+                .filter(Boolean);
+
+            // Enrich with requested dates from drawing pages when not found in table row
+            // First pass: match by exact die number
+            const allDrawingDates = Object.entries(drawingRequestedDates)
+                .filter(([k]) => !k.startsWith('_section_'))
+                .map(([, v]) => v);
+            for (const row of parsedRows) {
+                if (!row.deliveryDate && drawingRequestedDates[row.dieNo]) {
+                    row.deliveryDate = drawingRequestedDates[row.dieNo];
+                }
+                // Try section number match (base number before hyphen)
+                if (!row.deliveryDate) {
+                    const baseNo = row.dieNo.replace(/^0+/, '').split('-')[0];
+                    const sectionDate = drawingRequestedDates['_section_' + baseNo]
+                        || drawingRequestedDates['_section_' + row.dieNo.split('-')[0]];
+                    if (sectionDate) row.deliveryDate = sectionDate;
+                }
+            }
+            // Second pass: for dies still without dates, use most common drawing date as fallback
+            // (dies in the same PI typically share the same requested date)
+            const stillMissing = parsedRows.filter(r => !r.deliveryDate);
+            const fallbackDates = drawingRequestedDates._allDates || allDrawingDates;
+            if (stillMissing.length > 0 && fallbackDates.length > 0) {
+                // Find the most common date from all drawing pages
+                const dateCounts = {};
+                for (const d of fallbackDates) { dateCounts[d] = (dateCounts[d] || 0) + 1; }
+                const commonDate = Object.entries(dateCounts).sort((a, b) => b[1] - a[1])[0][0];
+                for (const row of stillMissing) {
+                    row.deliveryDate = commonDate;
+                }
+            }
+
+            // ── Build die orders ──
+            const orders = parsedRows.map(row => {
                 const month = orderDate ? MONTHS[new Date(orderDate).getMonth()] : null;
 
                 // Check if this die order already exists in the system
-                const existingOrder = existingOrders.find(o => o['DIE NO'] === dieNo);
-                console.log(`PI Import - Checking ${dieNo}: found=${!!existingOrder}, id=${existingOrder?.id}`);
+                const existingOrder = existingOrders.find(o => o['DIE NO'] === row.dieNo);
 
                 return {
-                    'id': existingOrder?.id || null, // Keep existing ID for updates
-                    'isExisting': !!existingOrder, // Flag to indicate if this is an update
-                    'Plant': existingOrder?.Plant || 'EXT 1',
+                    'id': existingOrder?.id || null,
+                    'isExisting': !!existingOrder,
+                    'Plant': row.plant || existingOrder?.Plant || 'GEX 1',
                     'Order No': orderNo || existingOrder?.['Order No'] || `PI-${Date.now().toString().slice(-6)}`,
-                    'DIE NO': dieNo,
-                    'TYPE': dieType || existingOrder?.TYPE,
-                    'Die Size': spec.size || existingOrder?.['Die Size'] || 'N/A',
-                    'Die Requested Date': existingOrder?.['Die Requested Date'] || null,
-                    'Ordered date': orderDate, // Set from PI document date
+                    'DIE NO': row.dieNo,
+                    'TYPE': row.type || existingOrder?.TYPE || null,
+                    'Die Size': row.dieSize || existingOrder?.['Die Size'] || 'N/A',
+                    'Die Requested Date': row.deliveryDate || existingOrder?.['Die Requested Date'] || null,
+                    'Ordered date': orderDate,
                     'Type of shipment': shipmentType,
-                    'Mandrels per Cavity': spec.cavity || existingOrder?.['Mandrels per Cavity'] || 0,
-                    'Total Mandrels': (spec.cavity || existingOrder?.['Total Mandrels']) || 0,
+                    'Mandrels per Cavity': row.mandrel || existingOrder?.['Mandrels per Cavity'] || 0,
+                    'Total Mandrels': (row.mandrel * (row.cavity || 1)) || existingOrder?.['Total Mandrels'] || 0,
                     'Design Received Date': existingOrder?.['Design Received Date'] || null,
                     '3D Model Received Date': existingOrder?.['3D Model Received Date'] || null,
                     'simulationEnabled': existingOrder?.simulationEnabled || false,
@@ -295,10 +481,15 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     'PR Entry': existingOrder?.['PR Entry'] || null,
                     'Oracle Entry': existingOrder?.['Oracle Entry'] || null,
                     'Supplier': supplier,
-                    'STATUS': 'AWAITING FOR DESIGN', // PI import means order placed, now awaiting design
+                    'STATUS': existingOrder?.STATUS || 'AWAITING FOR DESIGN',
                     'OVERALL DELAY': existingOrder?.['OVERALL DELAY'] || 0,
                     'ETA': existingOrder?.ETA || null,
                     'month': month,
+                    // Extra parsed fields for display (not saved to DB)
+                    '_urgency': row.urgency,
+                    '_cavity': row.cavity,
+                    '_weightPerMeter': row.weightPerMeter,
+                    '_pressCode': row.pressCode,
                 };
             });
 
@@ -314,11 +505,12 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     orderNo,
                     supplier,
                     shipmentType,
-                    orderDate
+                    orderDate,
                 },
-                rawText: fullText.substring(0, 500)
+                rawText: page1Text.substring(0, 500),
             });
         } catch (err) {
+            console.error('PI PDF parse error:', err);
             setError(`PDF parsing error: ${err.message}`);
         } finally {
             setLoading(false);
@@ -332,7 +524,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
             return;
         }
         parsePIPDFContent(file);
-    }, []);
+    }, [existingOrders]);
 
     const handleDrop = useCallback((e) => {
         e.preventDefault();
@@ -344,7 +536,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
     const handleRemoveOrder = (index) => {
         setPreview(prev => ({
             ...prev,
-            orders: prev.orders.filter((_, i) => i !== index)
+            orders: prev.orders.filter((_, i) => i !== index),
         }));
     };
 
@@ -353,7 +545,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
             ...prev,
             orders: prev.orders.map((order, i) =>
                 i === index ? { ...order, [field]: value } : order
-            )
+            ),
         }));
     };
 
@@ -361,9 +553,11 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         if (preview?.orders?.length > 0) {
             setImporting(true);
             try {
-                await onImportRecords(preview.orders);
-            } catch (error) {
-                console.error('Import failed:', error);
+                // Strip internal display-only fields before importing
+                const cleanOrders = preview.orders.map(({ _urgency, _cavity, _weightPerMeter, _pressCode, ...order }) => order);
+                await onImportRecords(cleanOrders);
+            } catch (err) {
+                console.error('Import failed:', err);
             } finally {
                 setImporting(false);
                 onClose();
@@ -375,14 +569,14 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         <div
             style={{
                 position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem'
+                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
             }}
             onClick={onClose}
         >
             <div
                 style={{
-                    background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '900px',
-                    maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155'
+                    background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '1000px',
+                    maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155',
                 }}
                 onClick={e => e.stopPropagation()}
             >
@@ -409,7 +603,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                             style={{
                                 border: `2px dashed ${dragActive ? '#10B981' : '#334155'}`,
                                 borderRadius: '16px', padding: '2.5rem', textAlign: 'center',
-                                background: dragActive ? 'rgba(16,185,129,0.1)' : 'transparent', marginBottom: '1rem'
+                                background: dragActive ? 'rgba(16,185,129,0.1)' : 'transparent', marginBottom: '1rem',
                             }}
                             onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                             onDragLeave={() => setDragActive(false)}
@@ -449,11 +643,11 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                 <div style={{ flex: 1 }}>
                                     <p style={{ fontWeight: 600, color: '#10B981' }}>PI Document Parsed Successfully</p>
                                     <p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
-                                        Found {preview.orders.length} die orders • Order: {preview.headerInfo.orderNo || 'N/A'} • Supplier: {preview.headerInfo.supplier} • Shipment: {preview.headerInfo.shipmentType} • Date: {preview.headerInfo.orderDate || 'N/A'}
+                                        Found {preview.orders.length} die order{preview.orders.length !== 1 ? 's' : ''} &bull; PR: {preview.headerInfo.prNumber || 'N/A'} &bull; Supplier: {preview.headerInfo.supplier} &bull; Shipment: {preview.headerInfo.shipmentType} &bull; Date: {preview.headerInfo.orderDate || 'N/A'}
                                     </p>
                                     {preview.orders.some(o => o.isExisting) && (
                                         <p style={{ fontSize: '0.75rem', color: '#F59E0B', marginTop: '4px' }}>
-                                            ⚠️ {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
+                                            {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
                                         </p>
                                     )}
                                 </div>
@@ -472,6 +666,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Size</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Type</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Cavity</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Plant</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Supplier</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Shipment</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Actions</th>
@@ -483,6 +678,15 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>
                                                         {order['DIE NO']}
                                                         {order.isExisting && <span style={{ marginLeft: '6px', fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', borderRadius: '4px' }}>UPDATE</span>}
+                                                        {order._urgency && (
+                                                            <span style={{
+                                                                marginLeft: '6px', fontSize: '0.6rem', padding: '2px 5px', borderRadius: '4px',
+                                                                background: order._urgency === 'TOP URGENT' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                                                                color: order._urgency === 'TOP URGENT' ? '#EF4444' : '#F59E0B',
+                                                            }}>
+                                                                {order._urgency}
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>
                                                     <td style={{ padding: '10px 12px' }}>
@@ -491,7 +695,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                             onChange={(e) => handleEditOrder(index, 'TYPE', e.target.value || null)}
                                                             style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
                                                         >
-                                                            <option value="">—</option>
+                                                            <option value="">--</option>
                                                             <option value="N">N - New</option>
                                                             <option value="B">B - Backup</option>
                                                             <option value="T">T - Tooling</option>
@@ -499,13 +703,24 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                             <option value="H">H - Hold</option>
                                                         </select>
                                                     </td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Mandrels per Cavity']}</td>
+                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order._cavity || order['Mandrels per Cavity'] || '-'}</td>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <select
+                                                            value={order.Plant || ''}
+                                                            onChange={(e) => handleEditOrder(index, 'Plant', e.target.value || null)}
+                                                            style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
+                                                        >
+                                                            <option value="">--</option>
+                                                            <option value="GEX 1">GEX 1</option>
+                                                            <option value="GEX 2">GEX 2</option>
+                                                        </select>
+                                                    </td>
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <span style={{
                                                             padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
                                                             background: order['Type of shipment'] === 'AIR' ? 'rgba(14,165,233,0.2)' : 'rgba(16,185,129,0.2)',
-                                                            color: order['Type of shipment'] === 'AIR' ? '#0EA5E9' : '#10B981'
+                                                            color: order['Type of shipment'] === 'AIR' ? '#0EA5E9' : '#10B981',
                                                         }}>
                                                             {order['Type of shipment']}
                                                         </span>
@@ -550,7 +765,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                             color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600,
                             cursor: (preview?.orders?.length > 0 && !importing) ? 'pointer' : 'not-allowed',
                             opacity: (preview?.orders?.length > 0 && !importing) ? 1 : 0.5,
-                            display: 'flex', alignItems: 'center', gap: '8px'
+                            display: 'flex', alignItems: 'center', gap: '8px',
                         }}
                     >
                         {importing && <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}

@@ -32,7 +32,7 @@ const createUserValidation = [
         .matches(/[0-9]/).withMessage('Password must contain a number'),
     body('role')
         .optional()
-        .isIn(['admin', 'user']).withMessage('Role must be either "admin" or "user"'),
+        .isIn(['admin', 'user', 'die_designer', 'simulation_engineer']).withMessage('Role must be "admin", "user", "die_designer", or "simulation_engineer"'),
 ];
 
 const userIdValidation = [
@@ -40,13 +40,27 @@ const userIdValidation = [
         .isInt({ min: 1 }).withMessage('Invalid user ID')
 ];
 
+// Valid page IDs for validation
+const VALID_PAGE_IDS = [
+    'dashboard', 'orders', 'backup-requests', 'analytics',
+    'process-flow', // backward compat: old users may still have this
+    'flow-pending-order', 'flow-awaiting-design', 'flow-simulation',
+    'flow-design-approval', 'flow-pending-pr', 'flow-oracle-entry',
+    'flow-design-ems', 'flow-completed'
+];
+
 // Get all users (admin only)
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, role, created_at FROM users ORDER BY created_at DESC'
+            'SELECT id, username, role, page_access, created_at FROM users ORDER BY created_at DESC'
         );
-        res.json({ users: result.rows });
+        res.json({
+            users: result.rows.map(u => ({
+                ...u,
+                page_access: u.page_access ? JSON.parse(u.page_access) : null
+            }))
+        });
     } catch (error) {
         console.error('Get users error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -56,7 +70,14 @@ router.get('/', async (req, res) => {
 // Create new user (admin only)
 router.post('/', createUserValidation, handleValidationErrors, async (req, res) => {
     try {
-        const { username, password, role = 'user' } = req.body;
+        const { username, password, role = 'user', page_access } = req.body;
+
+        // Validate page_access if provided
+        if (page_access != null) {
+            if (!Array.isArray(page_access) || !page_access.every(p => VALID_PAGE_IDS.includes(p))) {
+                return res.status(400).json({ error: 'Invalid page_access. Must be an array of valid page IDs.' });
+            }
+        }
 
         // Check for existing user
         const existingResult = await pool.query(
@@ -67,21 +88,61 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
             return res.status(409).json({ error: 'Username already exists' });
         }
 
+        // Admins always get full access (null)
+        const storedPageAccess = role === 'admin' ? null : (page_access ? JSON.stringify(page_access) : null);
+
         const passwordHash = bcrypt.hashSync(password, 12);
         const result = await pool.query(
-            'INSERT INTO users (username, password_hash, role, password_must_change) VALUES ($1, $2, $3, $4) RETURNING id',
-            [username, passwordHash, role, false]
+            'INSERT INTO users (username, password_hash, role, password_must_change, page_access) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [username, passwordHash, role, false, storedPageAccess]
         );
 
         res.status(201).json({
             user: {
                 id: result.rows[0].id,
                 username,
-                role
+                role,
+                page_access: storedPageAccess ? JSON.parse(storedPageAccess) : null
             }
         });
     } catch (error) {
         console.error('Create user error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Update page access (admin only)
+router.patch('/:id/page-access', userIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { page_access } = req.body;
+
+        // Validate page_access
+        if (page_access != null) {
+            if (!Array.isArray(page_access) || !page_access.every(p => VALID_PAGE_IDS.includes(p))) {
+                return res.status(400).json({ error: 'Invalid page_access. Must be an array of valid page IDs.' });
+            }
+        }
+
+        const storedValue = page_access ? JSON.stringify(page_access) : null;
+        const result = await pool.query(
+            'UPDATE users SET page_access = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username, role, page_access, created_at',
+            [storedValue, parseInt(id, 10)]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const user = result.rows[0];
+        res.json({
+            user: {
+                ...user,
+                page_access: user.page_access ? JSON.parse(user.page_access) : null
+            }
+        });
+    } catch (error) {
+        console.error('Update page access error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

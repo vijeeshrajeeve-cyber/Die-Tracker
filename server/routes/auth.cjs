@@ -113,7 +113,7 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
         const { username, password } = req.body;
 
         const result = await pool.query(
-            'SELECT id, username, password_hash, role, password_must_change, failed_login_attempts, locked_until FROM users WHERE username = $1',
+            'SELECT id, username, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access FROM users WHERE username = $1',
             [username]
         );
         const user = result.rows[0];
@@ -148,12 +148,15 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
         // Reset failed attempts on successful login
         await resetFailedAttempts(user.id);
 
+        const pageAccess = user.page_access ? JSON.parse(user.page_access) : null;
+
         const token = jwt.sign(
             {
                 id: user.id,
                 username: user.username,
                 role: user.role,
-                passwordMustChange: user.password_must_change
+                passwordMustChange: user.password_must_change,
+                pageAccess
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
@@ -165,7 +168,8 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
                 id: user.id,
                 username: user.username,
                 role: user.role,
-                passwordMustChange: user.password_must_change
+                passwordMustChange: user.password_must_change,
+                pageAccess
             }
         });
     } catch (error) {
@@ -219,12 +223,14 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
         );
 
         // Generate new token without passwordMustChange flag
+        const cpPageAccess = user.page_access ? JSON.parse(user.page_access) : null;
         const newToken = jwt.sign(
             {
                 id: user.id,
                 username: user.username,
                 role: user.role,
-                passwordMustChange: false
+                passwordMustChange: false,
+                pageAccess: cpPageAccess
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
@@ -237,7 +243,8 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
                 id: user.id,
                 username: user.username,
                 role: user.role,
-                passwordMustChange: false
+                passwordMustChange: false,
+                pageAccess: cpPageAccess
             }
         });
     } catch (error) {
@@ -258,7 +265,7 @@ router.get('/me', async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         const result = await pool.query(
-            'SELECT id, username, role, password_must_change, created_at FROM users WHERE id = $1',
+            'SELECT id, username, role, password_must_change, page_access, created_at FROM users WHERE id = $1',
             [decoded.id]
         );
         const user = result.rows[0];
@@ -273,6 +280,7 @@ router.get('/me', async (req, res) => {
                 username: user.username,
                 role: user.role,
                 passwordMustChange: user.password_must_change,
+                pageAccess: user.page_access ? JSON.parse(user.page_access) : null,
                 createdAt: user.created_at
             }
         });
