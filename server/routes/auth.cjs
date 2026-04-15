@@ -88,13 +88,13 @@ const recordFailedAttempt = async (userId) => {
             failed_login_attempts = failed_login_attempts + 1,
             locked_until = CASE
                 WHEN failed_login_attempts + 1 >= $1
-                THEN CURRENT_TIMESTAMP + INTERVAL '${LOCKOUT_DURATION_MINUTES} minutes'
+                THEN CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute')
                 ELSE locked_until
             END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
         RETURNING failed_login_attempts`,
-        [MAX_FAILED_ATTEMPTS, userId]
+        [MAX_FAILED_ATTEMPTS, userId, LOCKOUT_DURATION_MINUTES]
     );
     return result.rows[0]?.failed_login_attempts || 0;
 };
@@ -318,4 +318,4 @@ const adminMiddleware = (req, res, next) => {
     next();
 };
 
-module.exports = { router, authMiddleware, adminMiddleware, JWT_SECRET };
+module.exports = { router, authMiddleware, adminMiddleware };

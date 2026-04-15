@@ -56,14 +56,22 @@ const DISPLAY_NAMES = {
     'month': 'Month'
 };
 
-// Validate API key from query parameter
+// Extract API key from Authorization header, X-API-Key header, or query param (deprecated)
+const extractApiKey = (req) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.slice(7);
+    if (req.headers['x-api-key']) return req.headers['x-api-key'];
+    return req.query.key; // backward compat — query params appear in server logs
+};
+
+// Validate API key using async bcrypt to avoid blocking the event loop
 const validateApiKey = async (key) => {
     if (!key || typeof key !== 'string' || key.length < 10) return null;
 
     const result = await pool.query('SELECT * FROM api_keys ORDER BY id');
     for (const row of result.rows) {
-        if (bcrypt.compareSync(key, row.key_hash)) {
-            // Update last_used_at
+        if (await bcrypt.compare(key, row.key_hash)) {
+            // Update last_used_at without blocking the response
             pool.query('UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1', [row.id])
                 .catch(err => console.error('Failed to update last_used_at:', err));
             return row;
@@ -82,14 +90,15 @@ const csvEscape = (val) => {
     return str;
 };
 
-// GET /api/export/orders?key=...&format=csv|json&fields=...&status=...&plant=...&supplier=...
+// GET /api/export/orders — key via Authorization: Bearer, X-API-Key header, or ?key= (deprecated)
 router.get('/orders', async (req, res) => {
     try {
-        const { key, format = 'csv', fields, status, plant, supplier } = req.query;
+        const { format = 'csv', fields, status, plant, supplier } = req.query;
 
-        // Validate API key
+        // Extract and validate API key
+        const key = extractApiKey(req);
         if (!key) {
-            return res.status(401).json({ error: 'API key is required. Pass ?key=YOUR_API_KEY' });
+            return res.status(401).json({ error: 'API key is required. Pass as Authorization: Bearer <key> or X-API-Key header.' });
         }
 
         const apiKeyRecord = await validateApiKey(key);

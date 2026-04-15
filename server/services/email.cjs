@@ -32,8 +32,7 @@ async function sendEmail({ to, cc, subject, body, importance = 'normal', orderId
         host: config.smtp_host,
         port: config.smtp_port || 587,
         secure: (config.smtp_port === 465),
-        auth: { user: config.email_user, pass: config.email_password },
-        tls: { rejectUnauthorized: false }
+        auth: { user: config.email_user, pass: config.email_password }
     });
 
     try {
@@ -93,8 +92,7 @@ async function testSmtpConnection(config) {
         host: config.smtp_host,
         port: config.smtp_port || 587,
         secure: (config.smtp_port === 465),
-        auth: { user: config.email_user, pass: config.email_password },
-        tls: { rejectUnauthorized: false }
+        auth: { user: config.email_user, pass: config.email_password }
     });
     await transporter.verify();
     return { success: true };

@@ -12,7 +12,7 @@ const validateDbConfig = () => {
   const required = ['PGHOST', 'PGDATABASE', 'PGUSER', 'PGPASSWORD'];
   const missing = required.filter(key => !process.env[key]);
 
-  if (missing.length > 0 && process.env.NODE_ENV === 'production') {
+  if (missing.length > 0) {
     throw new Error(`Missing required database environment variables: ${missing.join(', ')}`);
   }
 };
@@ -44,8 +44,8 @@ const getPoolConfig = () => {
     host: host,
     port: parseInt(process.env.PGPORT) || 5432,
     database: process.env.PGDATABASE || 'die_ordering',
-    user: process.env.PGUSER || 'dieorder',
-    password: process.env.PGPASSWORD || 'dieorder123',
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,

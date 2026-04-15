@@ -41,6 +41,9 @@ const STATUS_CONFIG = {
 };
 
 const CHART_COLORS = ['#0EA5E9', '#8B5CF6', '#F59E0B', '#10B981', '#EF4444', '#EC4899', '#6366F1', '#14B8A6', '#F97316', '#84CC16'];
+const PLANT_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#EF4444', '#EC4899', '#06B6D4', '#F97316', '#84CC16', '#A855F7', '#F43F5E'];
+const PLANT_COLOR_MAP = { 'GEX 1': '#32a838', 'GEX 2': '#3234a8' };
+const getPlantColor = (plant, index) => PLANT_COLOR_MAP[plant] || PLANT_COLORS[index % PLANT_COLORS.length];
 
 // Utility functions for data import
 const parseExcelDate = (value) => {
@@ -2088,6 +2091,7 @@ export default function DieOrderingSystem() {
   }, [data]);
 
   const monthlyTrendData = useMemo(() => {
+    const plants = [...new Set(data.map(o => o.Plant))].filter(Boolean).sort();
     return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(month => {
       const monthOrders = data.filter(o => {
         if (o.month !== month) return false;
@@ -2097,9 +2101,23 @@ export default function DieOrderingSystem() {
         }
         return true;
       });
-      return { month, new: monthOrders.filter(o => o.TYPE === 'N').length, backup: monthOrders.filter(o => o.TYPE === 'B').length };
+      const entry = { month, new_ghost: 0, backup_ghost: 0 };
+      let newTotal = 0, backupTotal = 0;
+      plants.forEach(plant => {
+        const newCount = monthOrders.filter(o => o.TYPE === 'N' && o.Plant === plant).length;
+        const backupCount = monthOrders.filter(o => o.TYPE === 'B' && o.Plant === plant).length;
+        entry[`new_${plant}`] = newCount;
+        entry[`backup_${plant}`] = backupCount;
+        newTotal += newCount;
+        backupTotal += backupCount;
+      });
+      entry.new_total = newTotal;
+      entry.backup_total = backupTotal;
+      return entry;
     });
   }, [data, trendYear]);
+
+  const trendPlants = useMemo(() => [...new Set(data.map(o => o.Plant))].filter(Boolean).sort(), [data]);
 
   // Filtered data for analytics
   const analyticsData = useMemo(() => {
@@ -2611,21 +2629,42 @@ export default function DieOrderingSystem() {
                     </select>
                   </div>
                   <ResponsiveContainer width="100%" height={270}>
-                    <BarChart data={monthlyTrendData}>
+                    <BarChart data={monthlyTrendData} barGap={4}>
                       <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                      <Tooltip contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} />
-                      <Bar dataKey="new" fill="#3B82F6" name="New Dies" radius={[4, 4, 0, 0]}>
-                        <LabelList dataKey="new" position="top" fill="#94A3B8" fontSize={11} fontWeight={600} formatter={(v) => v > 0 ? v : ''} />
+                      <Tooltip
+                        contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
+                        itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
+                        labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
+                        formatter={(value, name) => {
+                          if (!value || value === 0) return null;
+                          const isNew = name.endsWith('(New)');
+                          const plant = name.replace(' (New)', '').replace(' (Backup)', '');
+                          return [value, `${plant} · ${isNew ? 'New' : 'Backup'}`];
+                        }}
+                      />
+                      {trendPlants.map((plant, i) => (
+                        <Bar key={`new_${plant}`} dataKey={`new_${plant}`} stackId="new" fill={getPlantColor(plant, i)} name={`${plant} (New)`} />
+                      ))}
+                      <Bar dataKey="new_ghost" stackId="new" fill="transparent" legendType="none" isAnimationActive={false}>
+                        <LabelList dataKey="new_total" position="top" fill="#000000" fontSize={13} fontWeight={700} formatter={(v) => v > 0 ? v : ''} />
                       </Bar>
-                      <Bar dataKey="backup" fill="#F59E0B" name="Backup Dies" radius={[4, 4, 0, 0]}>
-                        <LabelList dataKey="backup" position="top" fill="#94A3B8" fontSize={11} fontWeight={600} formatter={(v) => v > 0 ? v : ''} />
+                      {trendPlants.map((plant, i) => (
+                        <Bar key={`backup_${plant}`} dataKey={`backup_${plant}`} stackId="backup" fill={getPlantColor(plant, i)} name={`${plant} (Backup)`} />
+                      ))}
+                      <Bar dataKey="backup_ghost" stackId="backup" fill="transparent" legendType="none" isAnimationActive={false}>
+                        <LabelList dataKey="backup_total" position="top" fill="#000000" fontSize={13} fontWeight={700} formatter={(v) => v > 0 ? v : ''} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '4px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} /> New Dies</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#F59E0B', display: 'inline-block' }} /> Backup Dies</span>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '8px', flexWrap: 'wrap' }}>
+                    {trendPlants.map((plant, i) => (
+                      <span key={plant} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: getPlantColor(plant, i), display: 'inline-block' }} />
+                        {plant}
+                      </span>
+                    ))}
+                    <span style={{ fontSize: '0.75rem', color: '#64748B', alignSelf: 'center' }}>· Left = New · Right = Backup</span>
                   </div>
                 </div>
               </div>
