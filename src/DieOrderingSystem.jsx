@@ -1275,11 +1275,13 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [] }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], currentUser }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
   const [viewingFile, setViewingFile] = useState(null); // { file, type, notes, signature }
+  const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
+  const [pendingStatusLog, setPendingStatusLog] = useState(null);
 
   const handleFileChange = (field, file) => {
     setEditedOrder(prev => ({ ...prev, [field]: file }));
@@ -1328,6 +1330,11 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   };
 
   const handleFieldChange = (field, value) => {
+    if (field === 'STATUS' && (value === 'CANCELLED' || value === 'HOLD')) {
+      const oldStatus = editedOrder.STATUS || order.STATUS;
+      setStatusReasonModal({ show: true, newStatus: value, oldStatus, reason: '' });
+      return;
+    }
     setEditedOrder(prev => {
       const updated = { ...prev, [field]: value };
       // Auto-update status when date fields change (except if manually setting STATUS)
@@ -1338,12 +1345,36 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     });
   };
 
+  const handleStatusReasonConfirm = () => {
+    const { newStatus, oldStatus, reason } = statusReasonModal;
+    const now = new Date();
+    const logEntry = {
+      date: now.toISOString().split('T')[0],
+      time: now.toTimeString().split(' ')[0],
+      field: 'STATUS',
+      oldValue: oldStatus,
+      newValue: newStatus,
+      reason: reason.trim(),
+      changedBy: currentUser?.username || 'unknown',
+      stage: oldStatus,
+    };
+    setPendingStatusLog(logEntry);
+    setEditedOrder(prev => ({ ...prev, STATUS: newStatus }));
+    setStatusReasonModal({ show: false, newStatus: '', oldStatus: '', reason: '' });
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await ordersAPI.update(order.id, editedOrder);
-      if (onUpdate) onUpdate(editedOrder);
+      let orderToSave = { ...editedOrder };
+      if (pendingStatusLog) {
+        const existingLog = order['Change Log'] || [];
+        orderToSave['Change Log'] = [...existingLog, pendingStatusLog];
+      }
+      await ordersAPI.update(order.id, orderToSave);
+      if (onUpdate) onUpdate(orderToSave);
       setIsEditing(false);
+      setPendingStatusLog(null);
     } catch (error) {
       alert('Failed to save: ' + error.message);
     } finally {
@@ -1354,6 +1385,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const handleCancel = () => {
     setEditedOrder({ ...order });
     setIsEditing(false);
+    setPendingStatusLog(null);
   };
 
   const inputStyle = {
@@ -1528,6 +1560,55 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           onSave={handleViewerSave}
           onClose={() => setViewingFile(null)}
         />
+      )}
+
+      {/* Status Change Reason Modal */}
+      {statusReasonModal.show && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: theme?.cardBg || '#1E293B', borderRadius: '16px', width: '100%', maxWidth: '440px', border: `1px solid ${theme?.cardBorder || '#334155'}`, overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}`, background: statusReasonModal.newStatus === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(75,85,99,0.15)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#4B5563', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <XCircle size={18} color="white" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: theme?.text || '#F1F5F9' }}>Reason Required</h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: theme?.textDim || '#64748B' }}>
+                    Status → <strong style={{ color: statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#9CA3AF' }}>{statusReasonModal.newStatus}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* Body */}
+            <div style={{ padding: '1.25rem 1.5rem' }}>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: theme?.textDim || '#64748B' }}>
+                Changing from <strong style={{ color: theme?.text || '#F1F5F9' }}>{statusReasonModal.oldStatus}</strong> to <strong style={{ color: statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#9CA3AF' }}>{statusReasonModal.newStatus}</strong>. Please provide a reason — this will be recorded in the order's change log.
+              </p>
+              <textarea
+                autoFocus
+                rows={4}
+                placeholder="Enter reason..."
+                value={statusReasonModal.reason}
+                onChange={(e) => setStatusReasonModal(prev => ({ ...prev, reason: e.target.value }))}
+                style={{ width: '100%', padding: '10px 12px', background: theme?.inputBg || '#0F172A', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', color: theme?.text || '#F1F5F9', fontSize: '0.875rem', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '0 1.5rem 1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setStatusReasonModal({ show: false, newStatus: '', oldStatus: '', reason: '' })} style={{ padding: '8px 18px', background: 'transparent', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', color: theme?.textDim || '#64748B', fontSize: '0.875rem', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button
+                disabled={!statusReasonModal.reason.trim()}
+                onClick={handleStatusReasonConfirm}
+                style={{ padding: '8px 18px', background: statusReasonModal.reason.trim() ? (statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#4B5563') : '#334155', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.875rem', cursor: statusReasonModal.reason.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2063,6 +2144,20 @@ export default function DieOrderingSystem() {
 
   const paginatedData = useMemo(() => filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [filteredData, currentPage]);
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+
+  const allChangeLogs = useMemo(() => {
+    const logs = [];
+    data.forEach(order => {
+      (order['Change Log'] || []).forEach(entry => {
+        logs.push({ ...entry, dieNo: order['DIE NO'], orderNo: order['Order No'] });
+      });
+    });
+    return logs.sort((a, b) => {
+      const da = `${a.date || ''} ${a.time || '00:00:00'}`;
+      const db = `${b.date || ''} ${b.time || '00:00:00'}`;
+      return db.localeCompare(da);
+    });
+  }, [data]);
 
   const stats = useMemo(() => {
     const total = data.length, completed = data.filter(o => o.STATUS === 'DONE').length;
@@ -4077,6 +4172,55 @@ export default function DieOrderingSystem() {
                 </div>
               </div>
 
+              {/* Change Log Section */}
+              <div style={{ marginTop: '1.5rem', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}>
+                    <History size={20} /> Change Log
+                  </h3>
+                  <span style={{ fontSize: '0.8rem', color: theme.textDim, background: theme.inputBg, padding: '4px 10px', borderRadius: '20px' }}>
+                    {allChangeLogs.length} {allChangeLogs.length === 1 ? 'entry' : 'entries'}
+                  </span>
+                </div>
+                <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden', maxHeight: '520px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {['Date', 'Time', 'Die No', 'Order No', 'Changed By', 'Field', 'Change', 'Reason'].map(h => (
+                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allChangeLogs.length === 0 ? (
+                        <tr><td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem' }}>No changes recorded yet</td></tr>
+                      ) : allChangeLogs.map((entry, idx) => (
+                        <tr key={idx} style={{ background: idx % 2 === 0 ? 'transparent' : `${theme.tableBg}55` }}>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{entry.date || '—'}</td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{entry.time || '—'}</td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', fontWeight: 600, color: theme.text, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{entry.dieNo || '—'}</td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{entry.orderNo || '—'}</td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: '#3B82F6', fontWeight: 500, whiteSpace: 'nowrap' }}>{entry.changedBy || '—'}</td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: '4px', background: entry.field === 'STATUS' ? 'rgba(139,92,246,0.15)' : 'rgba(59,130,246,0.1)', color: entry.field === 'STATUS' ? '#8B5CF6' : '#3B82F6', fontSize: '0.75rem', fontWeight: 600 }}>{entry.field}</span>
+                          </td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                            <span style={{ color: '#EF4444', textDecoration: 'line-through', fontFamily: 'monospace' }}>{entry.oldValue ?? '—'}</span>
+                            <span style={{ color: theme.textDim, margin: '0 6px' }}>→</span>
+                            <span style={{ color: '#10B981', fontWeight: 600, fontFamily: 'monospace' }}>{entry.newValue ?? '—'}</span>
+                          </td>
+                          <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, maxWidth: '220px' }}>
+                            {entry.reason ? (
+                              <span title={entry.reason} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.reason}</span>
+                            ) : <span style={{ color: theme.cardBorder }}>—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               {/* Add Plant Modal */}
               {showAddPlant && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowAddPlant(false)}>
@@ -4189,7 +4333,7 @@ export default function DieOrderingSystem() {
           )}
         </main>
 
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
         {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}

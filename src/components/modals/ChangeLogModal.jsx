@@ -193,6 +193,22 @@ function ChangeLogModal({ order, onClose, theme }) {
                                         }}>
                                             Changed by <strong style={{ color: theme?.text || '#F1F5F9' }}>{entry.changedBy}</strong>
                                         </div>
+
+                                        {entry.reason && (
+                                            <div style={{
+                                                marginTop: '8px',
+                                                padding: '8px 10px',
+                                                background: 'rgba(100,116,139,0.12)',
+                                                borderRadius: '6px',
+                                                borderLeft: '3px solid rgba(100,116,139,0.4)',
+                                                fontSize: '0.78rem',
+                                                color: theme?.textMuted || '#94A3B8',
+                                                lineHeight: 1.5
+                                            }}>
+                                                <span style={{ fontWeight: 600, color: theme?.text || '#F1F5F9' }}>Reason: </span>
+                                                {entry.reason}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
