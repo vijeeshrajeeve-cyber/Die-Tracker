@@ -45,8 +45,14 @@ services:
     environment:
       # Fail-fast if required secrets are missing.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?DEFAULT_ADMIN_PASSWORD must be set in .env}
+      # Database connection — derived from POSTGRES_* so the user sets the
+      # password in one place. env_file does not expand ${VAR}; this block does.
+      PGHOST: supabase-db
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-die_ordering}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       # Sensible runtime defaults (may also be overridden in .env).
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3001}
