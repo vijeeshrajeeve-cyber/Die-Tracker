@@ -27,6 +27,10 @@ const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Trust exactly one proxy hop (the Nginx frontend container).
+// Lets express-rate-limit key on the real client IP via X-Forwarded-For.
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
     contentSecurityPolicy: isProduction ? undefined : false, // Disable CSP in development for hot reload
