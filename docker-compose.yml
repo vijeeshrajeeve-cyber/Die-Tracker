@@ -1,89 +1,107 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
-  # PostgreSQL Database (Supabase-compatible)
+  # PostgreSQL database — only reachable on the internal Docker network.
   supabase-db:
     image: postgres:15-alpine
     container_name: die-ordering-db
+    env_file: .env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supersecretpassword}
+      # Fail-fast if required secrets are missing.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-die_ordering}
-    ports:
-      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d die_ordering" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-die_ordering}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
     networks:
       - die-ordering-network
 
-  # Backend API Server
+  # Backend API — not exposed to the host, frontend reaches it via the Docker network.
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: die-ordering-backend
+    env_file: .env
     environment:
-      NODE_ENV: production
-      PORT: 3001
-      HOST: 0.0.0.0
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-supersecretpassword}@supabase-db:5432/die_ordering
-      PGHOST: supabase-db
-      PGPORT: 5432
-      PGDATABASE: die_ordering
-      PGUSER: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD:-supersecretpassword}
-      JWT_SECRET: ${JWT_SECRET:-die-ordering-jwt-secret-change-in-production}
-      APP_JWT_SECRET: ${APP_JWT_SECRET:-die-ordering-app-jwt-secret}
-      APP_JWT_EXPIRES_IN: ${APP_JWT_EXPIRES_IN:-24h}
-      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
-      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
-      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
-      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
-    ports:
-      - "3001:3001"
+      # Fail-fast if required secrets are missing.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?DEFAULT_ADMIN_PASSWORD must be set in .env}
+      # Sensible runtime defaults (may also be overridden in .env).
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3001}
+      HOST: ${HOST:-0.0.0.0}
     depends_on:
       supabase-db:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/api/health" ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
     networks:
       - die-ordering-network
 
-  # Frontend (Nginx)
+  # Frontend (Nginx) — the only service published to the LAN.
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: die-ordering-frontend
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/" ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
     networks:
       - die-ordering-network
 
 volumes:
   postgres_data:
-
+    driver: local
 
 networks:
   die-ordering-network:

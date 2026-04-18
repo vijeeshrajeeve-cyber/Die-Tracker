@@ -6,33 +6,39 @@ npm-debug.log*
 dist/
 build/
 
-# Development files
+# Git / tooling
 .git/
 .gitignore
+.github/
 .vscode/
+.idea/
 .claude/
+.dockerignore
+eslint.config.js
+
+# Docs (README copied separately if needed)
 *.md
 !README.md
-
-# Test data and docs
-TestData/
 docs/
+TestData/
 
-# Environment files (we'll use docker-compose env vars)
-.env.local
-.env.development
+# Environment files — NEVER bake secrets into images.
+# Values must come from docker-compose at runtime.
+.env
+.env.*
+!.env.example
 
 # Database files
 *.db
 *.sqlite
+*.sqlite3
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Zone identifiers (Windows)
 *Zone.Identifier
 
-# Backup files
+# Backup / temp files
 *.backup
 *.bak
+*.log

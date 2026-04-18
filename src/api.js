@@ -1,7 +1,8 @@
 // API Service for Die Ordering System
-// In Docker: uses relative path /api (proxied by Nginx)
-// In development: uses localhost:3001
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Uses a relative /api path in both dev (via Vite proxy in vite.config.js)
+// and production (via the Nginx reverse proxy). Override with VITE_API_URL
+// only if hosting the backend on a different origin.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Get token from localStorage
 const getToken = () => localStorage.getItem('token');

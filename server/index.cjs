@@ -104,17 +104,15 @@ app.use((err, req, res, next) => {
 // Initialize database and start server
 const startServer = async () => {
     try {
-        // Validate required environment variables in production
+        // Validate required environment variables in production.
         if (isProduction) {
-            const requiredEnvVars = ['JWT_SECRET', 'PGPASSWORD'];
+            const requiredEnvVars = ['JWT_SECRET', 'PGPASSWORD', 'DEFAULT_ADMIN_PASSWORD'];
             const missing = requiredEnvVars.filter(v => !process.env[v]);
             if (missing.length > 0) {
                 throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
             }
-
-            // Warn if using default JWT secret
-            if (process.env.JWT_SECRET === 'die-ordering-secret-key-change-in-production') {
-                console.warn('WARNING: Using default JWT secret in production is insecure!');
+            if (process.env.JWT_SECRET.length < 32) {
+                throw new Error('JWT_SECRET must be at least 32 characters long in production');
             }
         }
 
@@ -131,9 +129,6 @@ const startServer = async () => {
             console.log(`Die Ordering API Server running at http://${HOST}:${PORT}`);
             console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`Health check: http://localhost:${PORT}/api/health`);
-            if (!isProduction) {
-                console.log(`Default admin: ${process.env.DEFAULT_ADMIN_USERNAME || 'admin'} / [check .env file]`);
-            }
         });
     } catch (error) {
         console.error('Failed to start server:', error);

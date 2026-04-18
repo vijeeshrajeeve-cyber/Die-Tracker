@@ -1,27 +1,21 @@
-# Backend Dockerfile for Die Ordering API
 FROM node:20-alpine
+
+# wget is used by the docker-compose healthcheck.
+RUN apk add --no-cache wget tini
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Install production dependencies only
-RUN npm ci --only=production
-
-# Copy server files
 COPY server/ ./server/
-COPY .env* ./
 
-# Install curl for health check
-RUN apk add --no-cache curl
+# Drop privileges. The official node image ships with a non-root `node` user.
+RUN chown -R node:node /app
+USER node
 
-# Expose port
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:3001/api/health || exit 1
-
-# Start the server
+# tini handles PID 1 signals correctly (clean SIGTERM on `docker compose down`).
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "server/index.cjs"]
