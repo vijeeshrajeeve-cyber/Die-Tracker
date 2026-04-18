@@ -46,7 +46,8 @@ const VALID_PAGE_IDS = [
     'process-flow', // backward compat: old users may still have this
     'flow-pending-order', 'flow-awaiting-design', 'flow-simulation',
     'flow-design-approval', 'flow-pending-pr', 'flow-oracle-entry',
-    'flow-design-ems', 'flow-completed'
+    'flow-design-ems', 'flow-completed', 'flow-sample-followup',
+    'email-inbox'
 ];
 
 // Get all users (admin only)

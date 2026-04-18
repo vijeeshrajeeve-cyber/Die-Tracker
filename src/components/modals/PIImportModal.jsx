@@ -481,7 +481,11 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     'PR Entry': existingOrder?.['PR Entry'] || null,
                     'Oracle Entry': existingOrder?.['Oracle Entry'] || null,
                     'Supplier': supplier,
-                    'STATUS': existingOrder?.STATUS || 'AWAITING FOR DESIGN',
+                    // PI import sets an Ordered date, which completes the "Pending for Ordering" stage.
+                    // Advance that status; otherwise preserve whatever stage the order is already in.
+                    'STATUS': (!existingOrder || existingOrder.STATUS === 'PENDING FOR ORDERING')
+                        ? 'AWAITING FOR DESIGN'
+                        : existingOrder.STATUS,
                     'OVERALL DELAY': existingOrder?.['OVERALL DELAY'] || 0,
                     'ETA': existingOrder?.ETA || null,
                     'month': month,

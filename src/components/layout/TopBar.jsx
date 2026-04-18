@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell, Sun, Moon, FileText, Upload, Download, User, ChevronDown, LogOut, Key, ClipboardList } from 'lucide-react';
+import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList } from 'lucide-react';
 
 const TopBar = ({
     user,
@@ -45,6 +45,32 @@ const TopBar = ({
 
     const [showUserMenu, setShowUserMenu] = React.useState(false);
     const [showPDFMenu, setShowPDFMenu] = React.useState(false);
+    const accentColor = theme.accent || '#3B82F6';
+
+    const actionButtonStyle = (active = false) => ({
+        padding: '8px 10px',
+        borderRadius: '10px',
+        background: active ? accentColor : theme.cardBg,
+        border: `1px solid ${active ? accentColor : theme.cardBorder}`,
+        color: active ? 'white' : theme.text,
+        cursor: 'pointer',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '2px',
+        minWidth: '76px',
+        position: 'relative',
+        transition: 'all 0.2s ease'
+    });
+
+    const actionLabelStyle = (active = false) => ({
+        fontSize: '0.6rem',
+        fontWeight: 600,
+        color: active ? 'rgba(255,255,255,0.9)' : theme.textMuted,
+        lineHeight: 1,
+        whiteSpace: 'nowrap'
+    });
 
     return (
         <div style={{
@@ -100,19 +126,10 @@ const TopBar = ({
                     <button
                         onClick={() => setShowPDFMenu(!showPDFMenu)}
                         title="Import PDF"
-                        style={{
-                            padding: '10px',
-                            borderRadius: '50%',
-                            background: showPDFMenu ? theme.accent || '#3B82F6' : theme.cardBg,
-                            border: `1px solid ${showPDFMenu ? (theme.accent || '#3B82F6') : theme.cardBorder}`,
-                            color: showPDFMenu ? 'white' : theme.text,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
+                        style={actionButtonStyle(showPDFMenu)}
                     >
-                        <FileText size={20} />
+                        <FileText size={18} />
+                        <span style={actionLabelStyle(showPDFMenu)}>Import PDF</span>
                     </button>
                     {showPDFMenu && (
                         <div style={{
@@ -171,28 +188,33 @@ const TopBar = ({
                         </div>
                     )}
                 </div>
-                <button onClick={() => setShowImportModal(true)} title="Import Excel/CSV" style={{ padding: '10px', borderRadius: '50%', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, color: theme.text, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Upload size={20} />
+                <button onClick={() => setShowImportModal(true)} title="Import Excel/CSV" style={actionButtonStyle()}>
+                    <Upload size={18} />
+                    <span style={actionLabelStyle()}>Import</span>
                 </button>
-                <button onClick={exportData} title="Export Data" style={{ padding: '10px', borderRadius: '50%', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, color: theme.text, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Download size={20} />
+                <button onClick={exportData} title="Export Data" style={actionButtonStyle()}>
+                    <Download size={18} />
+                    <span style={actionLabelStyle()}>Export</span>
                 </button>
 
-                <div style={{ height: '24px', width: '1px', background: theme.cardBorder, margin: '0 4px' }} />
+                <div style={{ height: '32px', width: '1px', background: theme.cardBorder, margin: '0 4px' }} />
 
-                <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ padding: '10px', borderRadius: '50%', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, color: theme.text, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+                <button onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle theme" style={actionButtonStyle()}>
+                    {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                    <span style={actionLabelStyle()}>Theme</span>
                 </button>
 
                 {/* Notifications */}
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowNotifications(!showNotifications)}
-                        style={{ padding: '10px', borderRadius: '50%', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, color: theme.text, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+                        title="Alerts"
+                        style={actionButtonStyle()}
                     >
-                        <Bell size={20} />
+                        <Bell size={18} />
+                        <span style={actionLabelStyle()}>Alerts</span>
                         {totalNotifications > 0 && (
-                            <span style={{ position: 'absolute', top: '-2px', right: '-2px', background: '#EF4444', color: 'white', width: '18px', height: '18px', borderRadius: '50%', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${theme.headerBg}` }}>
+                            <span style={{ position: 'absolute', top: '6px', right: '8px', background: '#EF4444', color: 'white', width: '18px', height: '18px', borderRadius: '50%', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${theme.headerBg}` }}>
                                 {totalNotifications}
                             </span>
                         )}

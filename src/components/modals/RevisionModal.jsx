@@ -6,9 +6,15 @@ function RevisionModal({
     onClose,
     order,
     onRevision,
+    sourceStatus,
     theme
 }) {
-    const [targetStatus, setTargetStatus] = useState('AWAITING FOR DESIGN');
+    const allOptions = [
+        { value: 'AWAITING FOR DESIGN', label: 'Design' },
+        { value: 'UNDER SIMULATION', label: 'Simulation' }
+    ];
+    const options = allOptions.filter(o => o.value !== sourceStatus);
+    const [targetStatus, setTargetStatus] = useState(options[0]?.value || 'AWAITING FOR DESIGN');
     const [notes, setNotes] = useState('');
     const [pdfFile, setPdfFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -42,7 +48,7 @@ function RevisionModal({
             onClose();
             setNotes('');
             setPdfFile(null);
-            setTargetStatus('AWAITING FOR DESIGN');
+            setTargetStatus(options[0]?.value || 'AWAITING FOR DESIGN');
         } catch (error) {
             console.error('Revision error:', error);
             alert('Failed to submit revision: ' + error.message);
@@ -143,10 +149,7 @@ function RevisionModal({
                             Send Back To
                         </label>
                         <div style={{ display: 'flex', gap: '10px' }}>
-                            {[
-                                { value: 'AWAITING FOR DESIGN', label: 'Design' },
-                                { value: 'UNDER SIMULATION', label: 'Simulation' }
-                            ].map(option => (
+                            {options.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => setTargetStatus(option.value)}

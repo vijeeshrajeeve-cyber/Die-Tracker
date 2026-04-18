@@ -261,6 +261,17 @@ const initializeDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Plant budget targets for monthly trend charts
+      CREATE TABLE IF NOT EXISTS plant_budgets (
+        id SERIAL PRIMARY KEY,
+        plant_name VARCHAR(100) NOT NULL,
+        year INTEGER NOT NULL,
+        type VARCHAR(10) NOT NULL CHECK (type IN ('backup', 'new')),
+        values JSONB NOT NULL DEFAULT '[]',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(plant_name, year, type)
+      );
+
       -- Sample Followups table
       CREATE TABLE IF NOT EXISTS sample_followups (
         id SERIAL PRIMARY KEY,

@@ -56,6 +56,10 @@ const apiRequest = async (endpoint, options = {}) => {
     const data = await response.json();
 
     if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            window.location.reload();
+        }
         throw new Error(data.error || 'API request failed');
     }
 
@@ -324,6 +328,27 @@ export const sampleFollowupsAPI = {
     delete: async (id) => {
         return apiRequest(`/sample-followups/${id}`, {
             method: 'DELETE',
+        });
+    },
+};
+
+// Plant Budgets API
+export const plantBudgetsAPI = {
+    getAll: async () => {
+        return apiRequest('/plant-budgets');
+    },
+
+    save: async (plant_name, year, type, values) => {
+        return apiRequest('/plant-budgets', {
+            method: 'POST',
+            body: JSON.stringify({ plant_name, year, type, values }),
+        });
+    },
+
+    import: async (rows) => {
+        return apiRequest('/plant-budgets/import', {
+            method: 'POST',
+            body: JSON.stringify({ rows }),
         });
     },
 };

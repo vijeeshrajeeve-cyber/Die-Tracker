@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area, LabelList } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area, LabelList, ComposedChart, Line } from 'recharts';
 import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -9,7 +9,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -20,7 +20,7 @@ import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
 import AddUserModal from './components/modals/AddUserModal';
-import { CONTROLLABLE_PAGES, MONTHS } from './utils/constants';
+import { CONTROLLABLE_PAGES, MONTHS, BACKUP_REQUEST_STATUS_CONFIG } from './utils/constants';
 import { parseDateDMY } from './utils/helpers';
 
 
@@ -1630,6 +1630,13 @@ export default function DieOrderingSystem() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showCompletedInChart, setShowCompletedInChart] = useState(false);
   const [showCancelledInChart, setShowCancelledInChart] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebarCollapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   // Get dark mode preference from localStorage, default to true (dark mode)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
@@ -1648,9 +1655,26 @@ export default function DieOrderingSystem() {
       console.warn('Unable to save theme preference');
     }
   }, [isDarkMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? 'true' : 'false');
+    } catch {
+      console.warn('Unable to save sidebar preference');
+    }
+  }, [sidebarCollapsed]);
+
   const [analyticsFilter, setAnalyticsFilter] = useState({ period: 'all', quarter: 'all' });
   const [trendYear, setTrendYear] = useState(new Date().getFullYear().toString());
   const itemsPerPage = 10;
+
+  // Plant budget state (fetched from DB)
+  const [plantBudgets, setPlantBudgets] = useState({}); // { year: { plantName: { backup: [], new: [] } } }
+  // Budget editing in Settings
+  const [budgetYear, setBudgetYear] = useState(new Date().getFullYear().toString());
+  const [budgetActivePlant, setBudgetActivePlant] = useState(null);
+  const [budgetEdits, setBudgetEdits] = useState({}); // { backup: [12], new: [12] }
+  const [budgetSaving, setBudgetSaving] = useState(false);
 
   // Auth state
   const [isLoggedIn, setIsLoggedIn] = useState(checkLoggedIn());
@@ -1753,6 +1777,23 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
+  // Fetch plant budget targets
+  const fetchPlantBudgets = useCallback(async () => {
+    try {
+      const rows = await plantBudgetsAPI.getAll();
+      const budgets = {};
+      (rows || []).forEach(row => {
+        const yr = String(row.year);
+        if (!budgets[yr]) budgets[yr] = {};
+        if (!budgets[yr][row.plant_name]) budgets[yr][row.plant_name] = {};
+        budgets[yr][row.plant_name][row.type] = row.values;
+      });
+      setPlantBudgets(budgets);
+    } catch (error) {
+      console.error('Failed to fetch plant budgets:', error);
+    }
+  }, []);
+
   // Fetch backup requests
   const fetchBackupRequests = useCallback(async () => {
     try {
@@ -1795,6 +1836,7 @@ export default function DieOrderingSystem() {
       fetchBackupRequests();
       fetchSampleFollowups();
       fetchApiKeys();
+      fetchPlantBudgets();
 
       // Check if password change is required (persisted in localStorage)
       const currentUser = getUser();
@@ -1803,7 +1845,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -1893,6 +1935,17 @@ export default function DieOrderingSystem() {
       setActiveTab(firstAccessible);
     }
   }, [activeTab, user, isLoggedIn, hasPageAccess]);
+
+  // Sync budget edits when plant or year selection changes in Settings
+  useEffect(() => {
+    if (budgetActivePlant) {
+      const existing = plantBudgets[budgetYear]?.[budgetActivePlant] || {};
+      setBudgetEdits({
+        backup: existing.backup ? [...existing.backup] : Array(12).fill(0),
+        new: existing.new ? [...existing.new] : Array(12).fill(0),
+      });
+    }
+  }, [budgetActivePlant, budgetYear, plantBudgets]);
 
   // Handle revision request for design/simulation
   const handleRevision = async ({ orderId, targetStatus, notes, pdfFile, revisionDate }) => {
@@ -2214,6 +2267,37 @@ export default function DieOrderingSystem() {
 
   const trendPlants = useMemo(() => [...new Set(data.map(o => o.Plant))].filter(Boolean).sort(), [data]);
 
+  const monthlyTrendDataByPlant = useMemo(() => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const plants = [...new Set(data.map(o => o.Plant))].filter(Boolean).sort();
+    const yearBudgets = trendYear !== 'all' ? (plantBudgets[trendYear] || {}) : {};
+    const result = {};
+    plants.forEach(plant => {
+      const budget = yearBudgets[plant];
+      result[plant] = months.map((month, mi) => {
+        const monthOrders = data.filter(o => {
+          if (o.month !== month || o.Plant !== plant) return false;
+          if (trendYear !== 'all') {
+            const d = o['Die Requested Date'];
+            if (!d || d.split('-')[0] !== trendYear) return false;
+          }
+          return true;
+        });
+        const entry = {
+          month,
+          backup: monthOrders.filter(o => o.TYPE === 'B').length,
+          new: monthOrders.filter(o => o.TYPE === 'N').length,
+        };
+        if (budget) {
+          entry.backup_target = budget.backup[mi];
+          entry.new_target = budget.new[mi];
+        }
+        return entry;
+      });
+    });
+    return result;
+  }, [data, trendYear, plantBudgets]);
+
   // Filtered data for analytics
   const analyticsData = useMemo(() => {
     const quarterMonths = {
@@ -2264,6 +2348,46 @@ export default function DieOrderingSystem() {
     if (isNaN(start) || isNaN(end)) return null;
     const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
     return days >= 0 ? days : null;
+  };
+
+  // Date when the order entered its current stage (used to compute delay days)
+  const getStageEntryDate = (order) => {
+    switch (order.STATUS) {
+      case 'PENDING FOR ORDERING': return order['Die Requested Date'] || order.created_at;
+      case 'AWAITING FOR DESIGN': return order['Ordered date'];
+      case 'UNDER SIMULATION': return order['Design Received Date'];
+      case 'PENDING FOR DESIGN APPROVAL':
+        return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
+      case 'PENDING FOR PR': return order['Design Approved Date'];
+      case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
+      case 'PENDING FOR DESIGN TO EMS': return order['Oracle Entry'];
+      case 'DONE': return order['Design to EMS Date'];
+      default: return null;
+    }
+  };
+
+  const daysInStage = (order) => {
+    const entry = getStageEntryDate(order);
+    if (!entry) return null;
+    const iso = typeof entry === 'string' && /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}/.test(entry)
+      ? parseDateDMY(entry)
+      : entry;
+    const start = new Date(iso);
+    if (isNaN(start)) return null;
+    const today = new Date();
+    const days = Math.floor((today.setHours(0,0,0,0) - start.setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+    return days >= 0 ? days : null;
+  };
+
+  const DaysBadge = ({ order }) => {
+    const days = daysInStage(order);
+    if (days === null) return <span style={{ color: '#64748B' }}>—</span>;
+    const red = days > 1;
+    return (
+      <span style={{ fontFamily: 'monospace', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', fontSize: '0.75rem', background: red ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)', color: red ? '#EF4444' : '#10B981' }}>
+        {days}d
+      </span>
+    );
   };
 
   const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
@@ -2328,7 +2452,13 @@ export default function DieOrderingSystem() {
     sidebar: { width: '260px', background: theme.sidebarBg, borderRight: `1px solid ${theme.cardBorder}`, padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100, transition: 'background 0.15s ease' },
     sidebarNav: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '1.5rem' },
     sidebarNavItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', color: active ? theme.text : theme.textMuted, background: active ? theme.primaryLight : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }),
-    mainContent: { flex: 1, marginLeft: '260px', background: theme.bg, minHeight: '100vh', transition: 'background 0.15s ease' },
+    mainContent: {
+      flex: 1,
+      marginLeft: sidebarCollapsed ? '64px' : '260px',
+      background: theme.bg,
+      minHeight: '100vh',
+      transition: 'margin-left 0.2s ease, background 0.15s ease'
+    },
     topBar: { background: theme.headerBg, borderBottom: `1px solid ${theme.cardBorder}`, padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, transition: 'background 0.15s ease' },
     
     app: { minHeight: '100vh', background: theme.bg, fontFamily: "'Inter', sans-serif", color: theme.text },
@@ -2339,10 +2469,10 @@ export default function DieOrderingSystem() {
     navTabs: { display: 'flex', gap: '4px', background: theme.navBg, padding: '4px', borderRadius: '8px' },
     navTab: (active) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', color: active ? theme.text : theme.textMuted, background: active ? theme.primaryLight : 'transparent', border: 'none', cursor: 'pointer', transition: 'all 0.15s' }),
     actionBtn: (primary) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', border: primary ? 'none' : `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: primary ? theme.primary : theme.cardBg, color: primary ? theme.primaryText : theme.text, transition: 'all 0.15s ease', boxShadow: primary ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.02)' }),
-    main: { maxWidth: '1600px', margin: '0 auto', padding: '2rem 1.5rem' },
+    main: { maxWidth: '100%', margin: '0 auto', padding: '2rem 1.5rem' },
     kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2.5rem' },
     kpiCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
-    chartsGrid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.25rem', marginBottom: '2.5rem' },
+    chartsGrid: { display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2.5rem' },
     chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
     filterBar: { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
     filterRow: { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' },
@@ -2400,7 +2530,6 @@ export default function DieOrderingSystem() {
             {loginError && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(244,63,94,0.1)', color: '#F43F5E', padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.875rem' }}><AlertTriangle size={16} />{loginError}</div>}
             <button type="submit" disabled={loginLoading} style={{ width: '100%', padding: '12px', background: loginLoading ? '#475569' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: loginLoading ? 'not-allowed' : 'pointer' }}>{loginLoading ? 'Signing in...' : 'Sign In'}</button>
           </form>
-          <p style={{ fontSize: '0.75rem', color: '#64748B', textAlign: 'center', marginTop: '1.5rem' }}>Default: admin / admin123</p>
         </div>
       </div>
     );
@@ -2592,7 +2721,14 @@ export default function DieOrderingSystem() {
 
   return (
     <div style={styles.appLayout}>
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} theme={theme} />
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        user={user}
+        theme={theme}
+        collapsed={sidebarCollapsed}
+        setCollapsed={setSidebarCollapsed}
+      />
 
       <div style={styles.mainContent}>
         <TopBar
@@ -2626,28 +2762,36 @@ export default function DieOrderingSystem() {
                   { title: 'In Progress', value: stats.pending, color: '#F59E0B', icon: Clock, sub: 'Active orders', filter: 'active' },
                   { title: 'Cancelled', value: stats.cancelled, color: '#EF4444', icon: XCircle, sub: `${stats.total > 0 ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%`, filter: 'CANCELLED' },
                   { title: 'Avg Delay', value: `${stats.avgDelay}d`, color: '#8B5CF6', icon: AlertTriangle, sub: 'Design approval' },
-                ].map((kpi, index) => (
+                ].map((kpi, index) => {
+                  // Fallback drill-down flow page when user lacks Orders access
+                  const flowFallback = { 'DONE': 'flow-completed' }[kpi.filter];
+                  const canUseOrders = !!kpi.filter && hasPageAccess('orders');
+                  const canUseFlow = !canUseOrders && flowFallback && hasPageAccess(flowFallback);
+                  const clickable = canUseOrders || canUseFlow;
+                  return (
                   <div
                     key={kpi.title}
                     style={{
                       ...styles.kpiCard,
-                      cursor: kpi.filter ? 'pointer' : 'default',
+                      cursor: clickable ? 'pointer' : 'default',
                       transition: 'transform 0.2s, box-shadow 0.2s'
                     }}
                     onClick={() => {
-                      if (kpi.filter) {
+                      if (canUseOrders) {
                         setFilters(prev => ({ ...prev, status: kpi.filter }));
                         setActiveTab('orders');
+                      } else if (canUseFlow) {
+                        setActiveTab(flowFallback);
                       }
                     }}
                     onMouseEnter={(e) => {
-                      if (kpi.filter) {
+                      if (clickable) {
                         e.currentTarget.style.transform = 'translateY(-2px)';
                         e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.3)';
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (kpi.filter) {
+                      if (clickable) {
                         e.currentTarget.style.transform = 'translateY(0)';
                         e.currentTarget.style.boxShadow = styles.kpiCard.boxShadow;
                       }
@@ -2662,9 +2806,83 @@ export default function DieOrderingSystem() {
                       <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${kpi.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><kpi.icon size={24} color={kpi.color} /></div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <div style={styles.chartsGrid}>
+                {/* Monthly Orders Trend — full width, top row */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {/* Shared header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: 0 }}>Monthly Orders Trend</h3>
+                    <select value={trendYear} onChange={(e) => setTrendYear(e.target.value)} style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.inputBg, color: theme.text, fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}>
+                      <option value="all">All Years</option>
+                      {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  {/* One card per plant, side by side */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem' }}>
+                    {trendPlants.map((plant) => {
+                      const plantData = monthlyTrendDataByPlant[plant] || [];
+                      const hasBudget = trendYear !== 'all' && !!(plantBudgets[trendYear]?.[plant]);
+                      const allValues = plantData.flatMap(d => {
+                        const vals = [d.new || 0, d.backup || 0];
+                        if (hasBudget) { vals.push(d.backup_target || 0, d.new_target || 0); }
+                        return vals;
+                      });
+                      const yMax = Math.max(...allValues, 0) + 10;
+                      return (
+                        <div key={plant} style={styles.chartCard}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: theme.text }}>{plant}</span>
+                            {hasBudget && (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.68rem', color: '#94A3B8' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <svg width="18" height="4" viewBox="0 0 18 4"><line x1="0" y1="2" x2="18" y2="2" stroke="#EF4444" strokeWidth="2" strokeDasharray="4 2"/></svg>
+                                  Backup Target
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <svg width="18" height="4" viewBox="0 0 18 4"><line x1="0" y1="2" x2="18" y2="2" stroke="#22C55E" strokeWidth="2" strokeDasharray="4 2"/></svg>
+                                  New Target
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <ComposedChart data={plantData} barCategoryGap="10%" barGap={2} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
+                              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} domain={[0, yMax]} />
+                              <Tooltip
+                                contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
+                                itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
+                                labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
+                                formatter={(value, name) => (value === 0 || value == null ? null : [value, name])}
+                              />
+                              <Bar dataKey="new" name="New Dies" fill="#3B82F6" radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="new" position="top" fill="#94A3B8" fontSize={10} fontWeight={700} formatter={(v) => v > 0 ? v : ''} />
+                              </Bar>
+                              <Bar dataKey="backup" name="Backup Dies" fill="#F59E0B" radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="backup" position="top" fill="#94A3B8" fontSize={10} fontWeight={700} formatter={(v) => v > 0 ? v : ''} />
+                              </Bar>
+                              {hasBudget && <Line dataKey="backup_target" name="Backup Target" type="monotone" stroke="#EF4444" strokeWidth={2} dot={false} strokeDasharray="5 3" />}
+                              {hasBudget && <Line dataKey="new_target" name="New Target" type="monotone" stroke="#22C55E" strokeWidth={2} dot={false} strokeDasharray="5 3" />}
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginTop: '6px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', color: '#94A3B8' }}>
+                              <span style={{ width: 10, height: 10, borderRadius: '2px', background: '#3B82F6', display: 'inline-block' }} /> New Dies
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', color: '#94A3B8' }}>
+                              <span style={{ width: 10, height: 10, borderRadius: '2px', background: '#F59E0B', display: 'inline-block' }} /> Backup Dies
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Status Distribution + Backup Request Status — second row, side-by-side */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem' }}>
                 <div style={styles.chartCard}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text }}>Status Distribution</h3>
@@ -2715,52 +2933,73 @@ export default function DieOrderingSystem() {
                     </table>
                   </div>
                 </div>
+                {/* Backup Request Status — status × plant matrix */}
                 <div style={styles.chartCard}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: 0 }}>Monthly Orders Trend</h3>
-                    <select value={trendYear} onChange={(e) => setTrendYear(e.target.value)} style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.inputBg, color: theme.text, fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}>
-                      <option value="all">All Years</option>
-                      {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text }}>Backup Request Status</h3>
                   </div>
-                  <ResponsiveContainer width="100%" height={270}>
-                    <BarChart data={monthlyTrendData} barGap={4}>
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                      <Tooltip
-                        contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
-                        itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
-                        labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
-                        formatter={(value, name) => {
-                          if (!value || value === 0) return null;
-                          const isNew = name.endsWith('(New)');
-                          const plant = name.replace(' (New)', '').replace(' (Backup)', '');
-                          return [value, `${plant} · ${isNew ? 'New' : 'Backup'}`];
-                        }}
-                      />
-                      {trendPlants.map((plant, i) => (
-                        <Bar key={`new_${plant}`} dataKey={`new_${plant}`} stackId="new" fill={getPlantColor(plant, i)} name={`${plant} (New)`} />
-                      ))}
-                      <Bar dataKey="new_ghost" stackId="new" fill="transparent" legendType="none" isAnimationActive={false}>
-                        <LabelList dataKey="new_total" position="top" fill="#000000" fontSize={13} fontWeight={700} formatter={(v) => v > 0 ? v : ''} />
-                      </Bar>
-                      {trendPlants.map((plant, i) => (
-                        <Bar key={`backup_${plant}`} dataKey={`backup_${plant}`} stackId="backup" fill={getPlantColor(plant, i)} name={`${plant} (Backup)`} />
-                      ))}
-                      <Bar dataKey="backup_ghost" stackId="backup" fill="transparent" legendType="none" isAnimationActive={false}>
-                        <LabelList dataKey="backup_total" position="top" fill="#000000" fontSize={13} fontWeight={700} formatter={(v) => v > 0 ? v : ''} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '8px', flexWrap: 'wrap' }}>
-                    {trendPlants.map((plant, i) => (
-                      <span key={plant} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8' }}>
-                        <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: getPlantColor(plant, i), display: 'inline-block' }} />
-                        {plant}
-                      </span>
-                    ))}
-                    <span style={{ fontSize: '0.75rem', color: '#64748B', alignSelf: 'center' }}>· Left = New · Right = Backup</span>
+                  <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                    {(() => {
+                      const statuses = Object.keys(BACKUP_REQUEST_STATUS_CONFIG);
+                      const plantSet = new Set();
+                      (backupRequests || []).forEach(r => { if (r['Plant']) plantSet.add(r['Plant']); });
+                      const plantList = Array.from(plantSet).sort();
+                      const matrix = {};
+                      statuses.forEach(s => { matrix[s] = { total: 0 }; plantList.forEach(p => { matrix[s][p] = 0; }); });
+                      (backupRequests || []).forEach(r => {
+                        const s = r['Status'] || 'Pending';
+                        const p = r['Plant'];
+                        if (!matrix[s]) matrix[s] = { total: 0, ...Object.fromEntries(plantList.map(pl => [pl, 0])) };
+                        if (p && matrix[s][p] === undefined) matrix[s][p] = 0;
+                        matrix[s].total += 1;
+                        if (p) matrix[s][p] += 1;
+                      });
+                      const plantTotals = Object.fromEntries(plantList.map(p => [p, 0]));
+                      let grandTotal = 0;
+                      Object.keys(matrix).forEach(s => { plantList.forEach(p => { plantTotals[p] += matrix[s][p] || 0; }); grandTotal += matrix[s].total; });
+                      const thStyle = { padding: '10px 12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' };
+                      const tdStyle = { padding: '10px 12px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600, color: theme.text };
+                      if (plantList.length === 0 && grandTotal === 0) {
+                        return <div style={{ padding: '1.5rem', textAlign: 'center', color: theme.textMuted, fontSize: '0.875rem' }}>No backup requests yet</div>;
+                      }
+                      return (
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                              <th style={{ ...thStyle, textAlign: 'left' }}>Status</th>
+                              {plantList.map(p => <th key={p} style={thStyle}>{p}</th>)}
+                              <th style={thStyle}>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.keys(matrix).map(s => {
+                              const cfg = BACKUP_REQUEST_STATUS_CONFIG[s] || { color: '#94A3B8', label: s };
+                              return (
+                                <tr key={s} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                                  <td style={{ padding: '10px 12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: cfg.color }} />
+                                      <span style={{ fontSize: '0.85rem', color: theme.text, fontWeight: 500 }}>{cfg.label}</span>
+                                    </div>
+                                  </td>
+                                  {plantList.map(p => <td key={p} style={tdStyle}>{matrix[s][p] || 0}</td>)}
+                                  <td style={tdStyle}>
+                                    <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: `${cfg.color}20`, color: cfg.color }}>{matrix[s].total}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            <tr>
+                              <td style={{ padding: '10px 12px', fontSize: '0.8rem', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase' }}>Total</td>
+                              {plantList.map(p => <td key={p} style={{ ...tdStyle, fontWeight: 700 }}>{plantTotals[p]}</td>)}
+                              <td style={{ ...tdStyle, fontWeight: 700 }}>{grandTotal}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      );
+                    })()}
                   </div>
+                </div>
                 </div>
               </div>
               <div style={styles.pipelineSection}>
@@ -2816,7 +3055,7 @@ export default function DieOrderingSystem() {
                           </th>
                         ))}
                         <th style={{ ...styles.th, textAlign: 'center' }}>Log</th>
-                        <th style={{ ...styles.th, textAlign: 'center' }}>Progress</th>
+                        <th style={{ ...styles.th, textAlign: 'center' }}>Days</th>
                         <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
                         {user?.role === 'admin' && <th style={{ ...styles.th, textAlign: 'center' }}>Actions</th>}
                       </tr>
@@ -2876,7 +3115,7 @@ export default function DieOrderingSystem() {
                               <span style={{ color: '#64748B', fontSize: '0.8rem' }}>—</span>
                             )}
                           </td>
-                          <td style={styles.td}><ProgressPipeline order={order} /></td>
+                          <td style={{ ...styles.td, textAlign: 'center' }}><DaysBadge order={order} /></td>
                           <td style={{ ...styles.td, textAlign: 'center' }}><button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button></td>
                           {user?.role === 'admin' && <td style={{ ...styles.td, textAlign: 'center' }}>
                             <button
@@ -2924,7 +3163,7 @@ export default function DieOrderingSystem() {
           )}
 
           {/* Process Flow Pages */}
-          {activeTab.startsWith('flow-') && hasPageAccess('process-flow') && (() => {
+          {activeTab.startsWith('flow-') && hasPageAccess(activeTab) && (() => {
             // Dynamic import would be cleaner but this works for inline
             const flowTabs = [
               { id: 'flow-pending-order', status: 'PENDING FOR ORDERING' },
@@ -3016,6 +3255,7 @@ export default function DieOrderingSystem() {
                                 </div>
                               </th>
                             ))}
+                            <th style={{ ...styles.th, textAlign: 'center' }}>Days</th>
                             <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
                             <th style={{ ...styles.th, textAlign: 'center' }}>Rev</th>
                             {/* PR Entry specific columns */}
@@ -3131,6 +3371,7 @@ export default function DieOrderingSystem() {
                                     <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
                                   </>
                                 )}
+                                <td style={{ ...styles.td, textAlign: 'center' }}><DaysBadge order={order} /></td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}><button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button></td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}>
                                   {order['Design Revision Count'] > 0 ? (
@@ -3173,8 +3414,8 @@ export default function DieOrderingSystem() {
                                 {workflow && workflow.nextStatus && (
                                   <td style={{ ...styles.td, textAlign: 'center' }}>
                                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                      {/* Request Revision button - only for Design Approval */}
-                                      {currentFlow.status === 'PENDING FOR DESIGN APPROVAL' && (
+                                      {/* Request Revision button - Design Approval and Simulation stages */}
+                                      {(currentFlow.status === 'PENDING FOR DESIGN APPROVAL' || currentFlow.status === 'UNDER SIMULATION') && (
                                         <button
                                           onClick={(e) => { e.stopPropagation(); setRevisionOrder(order); }}
                                           style={{ padding: '6px 12px', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s' }}
@@ -3339,13 +3580,28 @@ export default function DieOrderingSystem() {
           {activeTab === 'flow-sample-followup' && hasPageAccess('flow-sample-followup') && (() => {
             const sfColor = '#0891B2';
 
+            // Delay = (submission_date - die_received_date) if submission set, else (today - die_received_date)
+            const computeSfDelay = (received, submission) => {
+              if (!received) return 0;
+              const start = new Date(received);
+              if (isNaN(start)) return 0;
+              const end = submission ? new Date(submission) : new Date();
+              if (isNaN(end)) return 0;
+              const diff = Math.floor((end.setHours(0, 0, 0, 0) - start.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
+              return diff > 0 ? diff : 0;
+            };
+
             const handleSampleFollowupSubmit = async () => {
               try {
+                const payload = {
+                  ...sampleFollowupForm,
+                  delay_days: computeSfDelay(sampleFollowupForm.die_received_date, sampleFollowupForm.submission_date),
+                };
                 if (editingSampleFollowup) {
-                  await sampleFollowupsAPI.update(editingSampleFollowup.id, sampleFollowupForm);
+                  await sampleFollowupsAPI.update(editingSampleFollowup.id, payload);
                   setToast({ message: 'Sample followup updated successfully', type: 'success' });
                 } else {
-                  await sampleFollowupsAPI.create(sampleFollowupForm);
+                  await sampleFollowupsAPI.create(payload);
                   setToast({ message: 'Sample followup created successfully', type: 'success' });
                 }
                 setTimeout(() => setToast(null), 3000);
@@ -3492,9 +3748,14 @@ export default function DieOrderingSystem() {
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.submission_date || '—'}</td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.sample_approval_date || '—'}</td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}>
-                                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: (sf.delay_days || 0) > 0 ? '#EF4444' : '#10B981' }}>
-                                    {sf.delay_days || 0}
-                                  </span>
+                                  {(() => {
+                                    const d = computeSfDelay(sf.die_received_date, sf.submission_date);
+                                    return (
+                                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: d > 0 ? '#EF4444' : '#10B981' }}>
+                                        {d}
+                                      </span>
+                                    );
+                                  })()}
                                 </td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
                                   <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: statusStyle.bg, color: statusStyle.color }}>
@@ -3578,6 +3839,14 @@ export default function DieOrderingSystem() {
                               >
                                 {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                               </select>
+                            ) : field.key === 'delay_days' ? (
+                              <input
+                                type="number"
+                                value={computeSfDelay(sampleFollowupForm.die_received_date, sampleFollowupForm.submission_date)}
+                                readOnly
+                                title="Auto-calculated: submission date − die received date (or today − die received date if submission is empty)"
+                                style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', cursor: 'not-allowed' }}
+                              />
                             ) : (
                               <input
                                 type={field.type}
@@ -3741,7 +4010,7 @@ export default function DieOrderingSystem() {
                     return Object.entries(supplierLeadTimes)
                       .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
                       .sort((a, b) => a.avgDays - b.avgDays);
-                  })()} layout="vertical">
+                  })()} layout="vertical" margin={{ right: 50 }}>
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                     <Tooltip
@@ -3750,7 +4019,9 @@ export default function DieOrderingSystem() {
                       labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
                       formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Lead Time']}
                     />
-                    <Bar dataKey="avgDays" fill="#10B981" radius={[0, 6, 6, 0]} name="Avg Days" />
+                    <Bar dataKey="avgDays" fill="#10B981" radius={[0, 6, 6, 0]} name="Avg Days">
+                      <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -3783,14 +4054,16 @@ export default function DieOrderingSystem() {
                     return Object.entries(supplierTimes)
                       .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
                       .sort((a, b) => a.avgDays - b.avgDays);
-                  })()} layout="vertical">
+                  })()} layout="vertical" margin={{ right: 50 }}>
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
                       formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Approval Time']}
                     />
-                    <Bar dataKey="avgDays" fill="#8B5CF6" radius={[0, 6, 6, 0]} name="Avg Days" />
+                    <Bar dataKey="avgDays" fill="#8B5CF6" radius={[0, 6, 6, 0]} name="Avg Days">
+                      <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -3817,14 +4090,16 @@ export default function DieOrderingSystem() {
                     return monthOrder
                       .filter(m => monthTimes[m])
                       .map(month => ({ month, avgDays: Math.round(monthTimes[month].reduce((a, b) => a + b, 0) / monthTimes[month].length), count: monthTimes[month].length }));
-                  })()}>
+                  })()} margin={{ top: 20 }}>
                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
                       formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Days']}
                     />
-                    <Bar dataKey="avgDays" fill="#F59E0B" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="avgDays" fill="#F59E0B" radius={[6, 6, 0, 0]}>
+                      <LabelList dataKey="avgDays" position="top" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -3850,14 +4125,16 @@ export default function DieOrderingSystem() {
                     return Object.entries(plantTimes)
                       .map(([plant, times]) => ({ plant, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
                       .sort((a, b) => a.avgDays - b.avgDays);
-                  })()}>
+                  })()} margin={{ top: 20 }}>
                     <XAxis dataKey="plant" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
                       formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Days']}
                     />
-                    <Bar dataKey="avgDays" fill="#EC4899" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="avgDays" fill="#EC4899" radius={[6, 6, 0, 0]}>
+                      <LabelList dataKey="avgDays" position="top" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -4040,6 +4317,186 @@ export default function DieOrderingSystem() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+
+              {/* Budget Targets Section - full width */}
+              <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, marginTop: '0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}><TrendingUp size={20} /> Budget Targets</h3>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', color: theme.textDim }}>Year:</span>
+                      <input
+                        type="number"
+                        value={budgetYear}
+                        onChange={(e) => { setBudgetYear(e.target.value); setBudgetActivePlant(null); }}
+                        style={{ width: '80px', padding: '6px 10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem' }}
+                      />
+                    </div>
+                    <label style={{ padding: '7px 14px', background: 'linear-gradient(135deg, #0EA5E9, #06B6D4)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+                      Import CSV
+                      <input
+                        type="file"
+                        accept=".csv"
+                        style={{ display: 'none' }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const text = await file.text();
+                          const result = Papa.parse(text, { header: true, skipEmptyLines: true });
+                          const rows = (result.data || []).map(row => ({
+                            plant_name: (row.Plant || row.plant || '').trim(),
+                            year: parseInt(row.Year || row.year, 10),
+                            type: (row.Type || row.type || '').toLowerCase().trim(),
+                            values: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m => parseInt(row[m] || row[m.toLowerCase()]) || 0),
+                          })).filter(r => r.plant_name && r.year && ['backup','new'].includes(r.type));
+                          if (rows.length === 0) { alert('No valid rows found. Check CSV format.'); e.target.value = ''; return; }
+                          try {
+                            await plantBudgetsAPI.import(rows);
+                            await fetchPlantBudgets();
+                            setToast({ message: `Imported ${rows.length} budget rows`, type: 'success' });
+                            setTimeout(() => setToast(null), 3000);
+                          } catch (err) {
+                            setToast({ message: 'Import failed: ' + err.message, type: 'error' });
+                            setTimeout(() => setToast(null), 4000);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <button
+                      onClick={() => {
+                        const header = 'Year,Plant,Type,Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec';
+                        const sample = [
+                          `${budgetYear},GEX 1,backup,55,56,56,58,58,58,58,54,59,59,58,50`,
+                          `${budgetYear},GEX 1,new,35,35,35,36,36,36,37,34,37,37,37,31`,
+                          `${budgetYear},GEX 2,backup,31,31,31,33,32,32,33,30,33,33,33,28`,
+                          `${budgetYear},GEX 2,new,13,13,13,14,14,14,14,13,14,14,14,12`,
+                        ].join('\n');
+                        const blob = new Blob([header + '\n' + sample], { type: 'text/csv' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = `budget_template_${budgetYear}.csv`; a.click(); URL.revokeObjectURL(url);
+                      }}
+                      style={{ padding: '7px 14px', background: 'transparent', border: `1px solid ${theme.cardBorder}`, color: theme.textMuted, borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      Download Template
+                    </button>
+                  </div>
+                </div>
+
+                {/* Plant tabs */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                  {uniquePlants.map(plant => {
+                    const hasData = !!(plantBudgets[budgetYear]?.[plant]);
+                    return (
+                      <button
+                        key={plant}
+                        onClick={() => setBudgetActivePlant(budgetActivePlant === plant ? null : plant)}
+                        style={{
+                          padding: '8px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                          fontWeight: 600, fontSize: '0.875rem', transition: 'all 0.15s',
+                          background: budgetActivePlant === plant ? 'linear-gradient(135deg, #3B82F6, #8B5CF6)' : theme.inputBg,
+                          color: budgetActivePlant === plant ? 'white' : theme.textMuted,
+                          outline: hasData ? '2px solid #10B981' : 'none',
+                          outlineOffset: '2px',
+                        }}
+                      >
+                        {plant} {hasData && <span style={{ fontSize: '0.65rem', marginLeft: '4px' }}>✓</span>}
+                      </button>
+                    );
+                  })}
+                  {uniquePlants.length === 0 && <span style={{ fontSize: '0.8rem', color: theme.textDim }}>No plants configured. Add plants above first.</span>}
+                </div>
+
+                {/* Editable budget table */}
+                {budgetActivePlant && (() => {
+                  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                  const backupVals = budgetEdits.backup || Array(12).fill(0);
+                  const newVals = budgetEdits.new || Array(12).fill(0);
+                  return (
+                    <div>
+                      <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, background: theme.tableBg, borderRadius: '8px 0 0 0', minWidth: '110px', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase' }}>Type</th>
+                              {months.map(m => (
+                                <th key={m} style={{ padding: '10px 6px', textAlign: 'center', color: theme.textDim, background: theme.tableBg, fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', minWidth: '54px' }}>{m}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[{ key: 'backup', label: 'Backup Dies', color: '#F59E0B', vals: backupVals }, { key: 'new', label: 'New Dies', color: '#3B82F6', vals: newVals }].map(({ key, label, color, vals }) => (
+                              <tr key={key}>
+                                <td style={{ padding: '10px 12px', fontWeight: 600, color, borderTop: `1px solid ${theme.cardBorder}` }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '2px', background: color, display: 'inline-block' }} />
+                                    {label}
+                                  </span>
+                                </td>
+                                {vals.map((v, mi) => (
+                                  <td key={mi} style={{ padding: '6px 4px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={v}
+                                      onChange={(e) => {
+                                        const arr = [...vals];
+                                        arr[mi] = parseInt(e.target.value) || 0;
+                                        setBudgetEdits(prev => ({ ...prev, [key]: arr }));
+                                      }}
+                                      style={{
+                                        width: '48px', padding: '5px 4px', textAlign: 'center',
+                                        background: theme.inputBg, border: `1px solid ${theme.cardBorder}`,
+                                        borderRadius: '6px', color: theme.text, fontSize: '0.8rem',
+                                      }}
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <button
+                          disabled={budgetSaving}
+                          onClick={async () => {
+                            setBudgetSaving(true);
+                            try {
+                              await plantBudgetsAPI.save(budgetActivePlant, budgetYear, 'backup', backupVals);
+                              await plantBudgetsAPI.save(budgetActivePlant, budgetYear, 'new', newVals);
+                              await fetchPlantBudgets();
+                              setToast({ message: `Budget saved for ${budgetActivePlant} (${budgetYear})`, type: 'success' });
+                              setTimeout(() => setToast(null), 3000);
+                            } catch (err) {
+                              setToast({ message: 'Save failed: ' + err.message, type: 'error' });
+                              setTimeout(() => setToast(null), 4000);
+                            } finally {
+                              setBudgetSaving(false);
+                            }
+                          }}
+                          style={{ padding: '9px 22px', background: budgetSaving ? theme.cardBorder : 'linear-gradient(135deg, #10B981, #059669)', color: 'white', border: 'none', borderRadius: '8px', cursor: budgetSaving ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                        >
+                          {budgetSaving ? 'Saving…' : `Save ${budgetActivePlant} Budget`}
+                        </button>
+                        <span style={{ fontSize: '0.75rem', color: theme.textDim }}>
+                          {budgetActivePlant} · {budgetYear}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {!budgetActivePlant && uniquePlants.length > 0 && (
+                  <div style={{ padding: '2rem', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem', background: theme.inputBg, borderRadius: '10px' }}>
+                    Select a plant above to edit its monthly budget targets
+                  </div>
+                )}
+
+                <div style={{ marginTop: '1rem', padding: '10px 14px', background: theme.inputBg, borderRadius: '8px', fontSize: '0.75rem', color: theme.textDim, lineHeight: 1.6 }}>
+                  <strong style={{ color: theme.textMuted }}>CSV Format:</strong> Year, Plant, Type (backup/new), Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec — one row per plant/type combination.
                 </div>
               </div>
 
@@ -4350,6 +4807,7 @@ export default function DieOrderingSystem() {
             onClose={() => setRevisionOrder(null)}
             order={revisionOrder}
             onRevision={handleRevision}
+            sourceStatus={revisionOrder.STATUS}
             theme={theme}
           />
         )}

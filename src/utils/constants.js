@@ -1,3 +1,5 @@
+import { ShoppingCart, Pencil, Cpu, CheckSquare, FileText, Database, Send, Factory, Eye } from 'lucide-react';
+
 // Status configuration with colors and icons
 export const STATUS_CONFIG = {
   'AWAITING FOR DESIGN': { color: '#DC2626', bgColor: '#FEF2F2', label: 'Awaiting Design' },
@@ -58,15 +60,15 @@ export const TYPE_LABELS = {
 
 // Process flow tabs for sidebar navigation (ordered by workflow sequence)
 export const PROCESS_FLOW_TABS = [
-  { id: 'flow-pending-order', status: 'PENDING FOR ORDERING', label: 'Pending Order' },
-  { id: 'flow-awaiting-design', status: 'AWAITING FOR DESIGN', label: 'Awaiting Design' },
-  { id: 'flow-simulation', status: 'UNDER SIMULATION', label: 'Simulation' },
-  { id: 'flow-design-approval', status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval' },
-  { id: 'flow-pending-pr', status: 'PENDING FOR PR', label: 'Pending PR' },
-  { id: 'flow-oracle-entry', status: 'PENDING FOR ORACLE ENTRY', label: 'Oracle Entry' },
-  { id: 'flow-design-ems', status: 'PENDING FOR DESIGN TO EMS', label: 'Design to EMS' },
-  { id: 'flow-completed', status: 'DONE', label: 'In Manufacturing' },
-  { id: 'flow-sample-followup', status: null, label: 'Sample Followup' },
+  { id: 'flow-pending-order', status: 'PENDING FOR ORDERING', label: 'Pending Order', icon: ShoppingCart },
+  { id: 'flow-awaiting-design', status: 'AWAITING FOR DESIGN', label: 'Awaiting Design', icon: Pencil },
+  { id: 'flow-simulation', status: 'UNDER SIMULATION', label: 'Simulation', icon: Cpu },
+  { id: 'flow-design-approval', status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval', icon: CheckSquare },
+  { id: 'flow-pending-pr', status: 'PENDING FOR PR', label: 'Pending PR', icon: FileText },
+  { id: 'flow-oracle-entry', status: 'PENDING FOR ORACLE ENTRY', label: 'Oracle Entry', icon: Database },
+  { id: 'flow-design-ems', status: 'PENDING FOR DESIGN TO EMS', label: 'Design to EMS', icon: Send },
+  { id: 'flow-completed', status: 'DONE', label: 'In Manufacturing', icon: Factory },
+  { id: 'flow-sample-followup', status: null, label: 'Sample Followup', icon: Eye },
 ];
 
 // Backup request status configuration
