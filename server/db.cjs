@@ -146,16 +146,64 @@ const initializeDatabase = async () => {
         design_approved_date TEXT,
         delay INTEGER DEFAULT 0,
         pr_entry TEXT,
+        pr_number TEXT,
+        customer_name TEXT,
         oracle_entry TEXT,
         supplier TEXT,
         status TEXT,
         overall_delay INTEGER DEFAULT 0,
         eta TEXT,
         month TEXT,
+        die_received_date TEXT,
+        submission_date TEXT,
+        sample_approval_date TEXT,
+        no_of_trial INTEGER DEFAULT 0,
+        corrector TEXT,
+        press TEXT,
+        ascona_reference TEXT DEFAULT 'No',
+        sample_status TEXT DEFAULT 'Pending',
+        remark TEXT,
         created_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Add new optional columns to existing die_orders installs
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='pr_number') THEN
+          ALTER TABLE die_orders ADD COLUMN pr_number TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='customer_name') THEN
+          ALTER TABLE die_orders ADD COLUMN customer_name TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='die_received_date') THEN
+          ALTER TABLE die_orders ADD COLUMN die_received_date TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='submission_date') THEN
+          ALTER TABLE die_orders ADD COLUMN submission_date TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='sample_approval_date') THEN
+          ALTER TABLE die_orders ADD COLUMN sample_approval_date TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='no_of_trial') THEN
+          ALTER TABLE die_orders ADD COLUMN no_of_trial INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='corrector') THEN
+          ALTER TABLE die_orders ADD COLUMN corrector TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='press') THEN
+          ALTER TABLE die_orders ADD COLUMN press TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='ascona_reference') THEN
+          ALTER TABLE die_orders ADD COLUMN ascona_reference TEXT DEFAULT 'No';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='sample_status') THEN
+          ALTER TABLE die_orders ADD COLUMN sample_status TEXT DEFAULT 'Pending';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='remark') THEN
+          ALTER TABLE die_orders ADD COLUMN remark TEXT;
+        END IF;
+      END $$;
 
       -- Backup Die Requests table
       CREATE TABLE IF NOT EXISTS backup_die_requests (

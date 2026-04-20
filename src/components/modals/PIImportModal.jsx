@@ -479,6 +479,8 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     'Design Approved Date': existingOrder?.['Design Approved Date'] || null,
                     'Delay': existingOrder?.Delay || 0,
                     'PR Entry': existingOrder?.['PR Entry'] || null,
+                    'PR Number': prNumber || existingOrder?.['PR Number'] || null,
+                    'Customer Name': existingOrder?.['Customer Name'] || '',
                     'Oracle Entry': existingOrder?.['Oracle Entry'] || null,
                     'Supplier': supplier,
                     // PI import sets an Ordered date, which completes the "Pending for Ordering" stage.
@@ -672,6 +674,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Cavity</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Plant</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Supplier</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Customer</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Shipment</th>
                                                 <th style={{ padding: '10px 12px', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Actions</th>
                                             </tr>
@@ -720,6 +723,15 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                         </select>
                                                     </td>
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <input
+                                                            type="text"
+                                                            value={order['Customer Name'] || ''}
+                                                            onChange={(e) => handleEditOrder(index, 'Customer Name', e.target.value)}
+                                                            placeholder="Customer"
+                                                            style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem', width: '140px' }}
+                                                        />
+                                                    </td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <span style={{
                                                             padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,

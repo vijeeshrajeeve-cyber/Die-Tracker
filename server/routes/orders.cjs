@@ -70,15 +70,28 @@ const orderValidation = [
     body('Mandrels per Cavity').optional().isInt({ min: 0, max: 10000 }).withMessage('Invalid mandrels per cavity'),
     body('Total Mandrels').optional().isInt({ min: 0, max: 100000 }).withMessage('Invalid total mandrels'),
     body('Design Received Date').optional().customSanitizer(sanitizeString),
+    body('3D Model Received Date').optional().customSanitizer(sanitizeString),
+    body('simulationEnabled').optional().toBoolean(),
     body('Design Approved Date').optional().customSanitizer(sanitizeString),
     body('Delay').optional().isInt({ min: -10000, max: 10000 }).withMessage('Invalid delay value'),
     body('PR Entry').optional().customSanitizer(sanitizeString),
+    body('PR Number').optional().customSanitizer(sanitizeString),
+    body('Customer Name').optional().customSanitizer(sanitizeString),
     body('Oracle Entry').optional().customSanitizer(sanitizeString),
+    body('Die Received Date').optional().customSanitizer(sanitizeString),
+    body('Submission Date').optional().customSanitizer(sanitizeString),
+    body('Sample Approval Date').optional().customSanitizer(sanitizeString),
+    body('No of Trial').optional().isInt({ min: 0, max: 1000 }).withMessage('Invalid No of Trial'),
+    body('Corrector').optional().customSanitizer(sanitizeString),
     body('Supplier').optional().customSanitizer(sanitizeString),
     body('STATUS').optional().customSanitizer(sanitizeString),
     body('OVERALL DELAY').optional().isInt({ min: -10000, max: 10000 }).withMessage('Invalid overall delay'),
     body('ETA').optional().customSanitizer(sanitizeString),
     body('month').optional().customSanitizer(sanitizeString),
+    body('Press').optional().customSanitizer(sanitizeString),
+    body('Ascona Reference').optional().customSanitizer(sanitizeString),
+    body('Sample Status').optional().customSanitizer(sanitizeString),
+    body('Remark').optional().customSanitizer(sanitizeString),
 ];
 
 const orderIdValidation = [
@@ -104,15 +117,28 @@ router.get('/', async (req, res) => {
             'Mandrels per Cavity': order.mandrels_per_cavity,
             'Total Mandrels': order.total_mandrels,
             'Design Received Date': order.design_received_date,
+            '3D Model Received Date': order.three_d_model_received_date,
+            'simulationEnabled': !!order.simulation_enabled,
             'Design Approved Date': order.design_approved_date,
             'Delay': order.delay,
             'PR Entry': order.pr_entry,
+            'PR Number': order.pr_number,
+            'Customer Name': order.customer_name,
             'Oracle Entry': order.oracle_entry,
             'Supplier': order.supplier,
             'STATUS': order.status,
             'OVERALL DELAY': order.overall_delay,
             'ETA': order.eta,
-            'month': order.month
+            'month': order.month,
+            'Die Received Date': order.die_received_date,
+            'Submission Date': order.submission_date,
+            'Sample Approval Date': order.sample_approval_date,
+            'No of Trial': order.no_of_trial,
+            'Corrector': order.corrector,
+            'Press': order.press,
+            'Ascona Reference': order.ascona_reference,
+            'Sample Status': order.sample_status,
+            'Remark': order.remark
         }));
 
         res.json({ orders: formattedOrders });
@@ -131,9 +157,13 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             INSERT INTO die_orders (
                 plant, order_no, die_no, type, die_size, die_requested_date,
                 ordered_date, shipment_type, mandrels_per_cavity, total_mandrels,
-                design_received_date, design_approved_date, delay, pr_entry,
-                oracle_entry, supplier, status, overall_delay, eta, month, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                design_received_date, three_d_model_received_date, simulation_enabled,
+                design_approved_date, delay, pr_entry, pr_number, customer_name,
+                oracle_entry, supplier, status, overall_delay, eta, month,
+                die_received_date, submission_date, sample_approval_date, no_of_trial, corrector,
+                press, ascona_reference, sample_status, remark,
+                created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -147,15 +177,28 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             Math.round(order['Mandrels per Cavity'] || 0),
             Math.round(order['Total Mandrels'] || 0),
             sanitizeString(order['Design Received Date']),
+            sanitizeString(order['3D Model Received Date']),
+            order['simulationEnabled'] ? 1 : 0,
             sanitizeString(order['Design Approved Date']),
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
+            sanitizeString(order['PR Number']),
+            sanitizeString(order['Customer Name']),
             sanitizeString(order['Oracle Entry']),
             sanitizeString(order['Supplier']),
             sanitizeString(order['STATUS']),
             Math.round(order['OVERALL DELAY'] || 0),
             sanitizeString(order['ETA']),
             sanitizeString(order['month']),
+            sanitizeString(order['Die Received Date']),
+            sanitizeString(order['Submission Date']),
+            sanitizeString(order['Sample Approval Date']),
+            Math.round(order['No of Trial'] || 0),
+            sanitizeString(order['Corrector']),
+            sanitizeString(order['Press']),
+            sanitizeString(order['Ascona Reference']),
+            sanitizeString(order['Sample Status']),
+            sanitizeString(order['Remark']),
             req.user.id
         ]);
 
@@ -183,10 +226,15 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
                 plant = $1, order_no = $2, die_no = $3, type = $4, die_size = $5,
                 die_requested_date = $6, ordered_date = $7, shipment_type = $8,
                 mandrels_per_cavity = $9, total_mandrels = $10, design_received_date = $11,
-                design_approved_date = $12, delay = $13, pr_entry = $14, oracle_entry = $15,
-                supplier = $16, status = $17, overall_delay = $18, eta = $19, month = $20,
+                three_d_model_received_date = $12, simulation_enabled = $13,
+                design_approved_date = $14, delay = $15, pr_entry = $16, pr_number = $17,
+                customer_name = $18, oracle_entry = $19, supplier = $20, status = $21,
+                overall_delay = $22, eta = $23, month = $24,
+                die_received_date = $25, submission_date = $26, sample_approval_date = $27,
+                no_of_trial = $28, corrector = $29,
+                press = $30, ascona_reference = $31, sample_status = $32, remark = $33,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $21
+            WHERE id = $34
         `, [
             sanitizeString(order['Plant']),
             sanitizeString(order['Order No']),
@@ -199,15 +247,28 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             Math.round(order['Mandrels per Cavity'] || 0),
             Math.round(order['Total Mandrels'] || 0),
             sanitizeString(order['Design Received Date']),
+            sanitizeString(order['3D Model Received Date']),
+            order['simulationEnabled'] ? 1 : 0,
             sanitizeString(order['Design Approved Date']),
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
+            sanitizeString(order['PR Number']),
+            sanitizeString(order['Customer Name']),
             sanitizeString(order['Oracle Entry']),
             sanitizeString(order['Supplier']),
             sanitizeString(order['STATUS']),
             Math.round(order['OVERALL DELAY'] || 0),
             sanitizeString(order['ETA']),
             sanitizeString(order['month']),
+            sanitizeString(order['Die Received Date']),
+            sanitizeString(order['Submission Date']),
+            sanitizeString(order['Sample Approval Date']),
+            Math.round(order['No of Trial'] || 0),
+            sanitizeString(order['Corrector']),
+            sanitizeString(order['Press']),
+            sanitizeString(order['Ascona Reference']),
+            sanitizeString(order['Sample Status']),
+            sanitizeString(order['Remark']),
             id
         ]);
 

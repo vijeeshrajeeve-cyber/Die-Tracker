@@ -9,7 +9,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -65,7 +65,17 @@ const getMonthFromDate = (dateStr) => {
 
 const normalizeColumnName = (col) => {
   const mappings = {
-    'pr no.:': 'PR No.', 'pr no': 'PR No.', 'die no': 'DIE NO', 'order no': 'Order No',
+    'pr no.:': 'PR Number', 'pr no': 'PR Number', 'pr number': 'PR Number',
+    'customer name': 'Customer Name', 'customer': 'Customer Name',
+    'die received date': 'Die Received Date', 'submission date': 'Submission Date',
+    'sample approval date': 'Sample Approval Date',
+    'no of trial': 'No of Trial', 'no. of trial': 'No of Trial',
+    'corrector': 'Corrector',
+    'press': 'Press',
+    'ascona reference': 'Ascona Reference', 'ascona ref': 'Ascona Reference',
+    'sample status': 'Sample Status',
+    'remark': 'Remark', 'remarks': 'Remark',
+    'die no': 'DIE NO', 'order no': 'Order No',
     'die size': 'Die Size', 'die requested date': 'Die Requested Date', 'ordered date': 'Ordered date',
     'type of shipment': 'Type of shipment', 'mandrels per cavity': 'Mandrels per Cavity',
     'total mandrels': 'Total Mandrels', 'design received date': 'Design Received Date',
@@ -121,7 +131,7 @@ const ImportModal = ({ onClose, onImport }) => {
         if (normKey.toLowerCase().includes('date') || normKey === 'ETA' || normKey === 'PR Entry' || normKey === 'Oracle Entry') {
           value = parseExcelDate(value);
         }
-        if (['Delay', 'OVERALL DELAY', 'Mandrels per Cavity', 'Total Mandrels'].includes(normKey)) {
+        if (['Delay', 'OVERALL DELAY', 'Mandrels per Cavity', 'Total Mandrels', 'No of Trial'].includes(normKey)) {
           value = parseFloat(value) || 0;
         }
         normalized[normKey] = value === '' || value === undefined ? null : value;
@@ -691,6 +701,13 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       'Design Approved Date': null,
       Delay: 0,
       'PR Entry': null,
+      'PR Number': existingOrder?.['PR Number'] || null,
+      'Customer Name': existingOrder?.['Customer Name'] || '',
+      'Die Received Date': existingOrder?.['Die Received Date'] || null,
+      'Submission Date': existingOrder?.['Submission Date'] || null,
+      'Sample Approval Date': existingOrder?.['Sample Approval Date'] || null,
+      'No of Trial': existingOrder?.['No of Trial'] || 0,
+      'Corrector': existingOrder?.['Corrector'] || null,
       'Oracle Entry': null,
       Supplier: supplier || 'UNKNOWN',
       STATUS: existingOrder?.STATUS || 'PENDING FOR ORDERING',
@@ -1524,6 +1541,8 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               <InfoRow label="Total Mandrels" field="Total Mandrels" value={currentOrder['Total Mandrels'] || 0} />
               <InfoRow label="Shipment" field="Type of shipment" value={currentOrder['Type of shipment']} type="select" options={shipmentOptions} />
               <InfoRow label="Supplier" field="Supplier" value={currentOrder.Supplier} type="select" options={suppliers.map(s => s.name)} />
+              <InfoRow label="Customer" field="Customer Name" value={currentOrder['Customer Name']} />
+              <InfoRow label="PR Number" field="PR Number" value={currentOrder['PR Number']} />
               <InfoRow label="Status" field="STATUS" value={currentOrder.STATUS} type="select" options={statusOptions} />
             </div>
             <div style={{ background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
@@ -1536,6 +1555,11 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               <InfoRow label="Oracle Entry" field="Oracle Entry" value={currentOrder['Oracle Entry']} type="date" />
               <InfoRow label="Ordered" field="Ordered date" value={currentOrder['Ordered date']} type="date" />
               <InfoRow label="ETA" field="ETA" value={currentOrder.ETA} type="date" />
+              <InfoRow label="Die Received" field="Die Received Date" value={currentOrder['Die Received Date']} type="date" />
+              <InfoRow label="Submission" field="Submission Date" value={currentOrder['Submission Date']} type="date" />
+              <InfoRow label="Sample Approval" field="Sample Approval Date" value={currentOrder['Sample Approval Date']} type="date" />
+              <InfoRow label="No of Trial" field="No of Trial" value={currentOrder['No of Trial'] || 0} />
+              <InfoRow label="Corrector" field="Corrector" value={currentOrder['Corrector']} />
             </div>
           </div>
 
@@ -1703,11 +1727,10 @@ export default function DieOrderingSystem() {
   const [generatedKey, setGeneratedKey] = useState(null);
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [showEmailCompose, setShowEmailCompose] = useState(null); // null or { to, cc, subject, body, orderId }
-  const [sampleFollowups, setSampleFollowups] = useState([]);
   const [showSampleFollowupForm, setShowSampleFollowupForm] = useState(false);
   const [editingSampleFollowup, setEditingSampleFollowup] = useState(null);
   const [sampleFollowupForm, setSampleFollowupForm] = useState({
-    profile: '', press: '', supplier: '', customer: '', die_received_date: '',
+    die: '', press: '', supplier: '', customer: '', die_received_date: '',
     ascona_reference: 'No', submission_date: '', sample_approval_date: '',
     delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: ''
   });
@@ -1804,15 +1827,43 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
-  // Fetch sample followups
-  const fetchSampleFollowups = useCallback(async () => {
-    try {
-      const response = await sampleFollowupsAPI.getAll();
-      setSampleFollowups(response.sampleFollowups || []);
-    } catch (error) {
-      console.error('Failed to fetch sample followups:', error);
-    }
-  }, []);
+  // Sample followups are now derived from die_orders (no separate fetch).
+  // Kept as a named callback so existing fetchSampleFollowups() call-sites resolve to a no-op
+  // (the derived `sampleFollowups` memo updates automatically when `data` changes).
+  const fetchSampleFollowups = useCallback(() => {}, []);
+
+  // Profile = everything before the first "-" in DIE NO (e.g. "14716-235" → "14716"). Derived only.
+  const extractProfile = (dieNo) => {
+    if (!dieNo) return '';
+    const s = String(dieNo).trim();
+    const idx = s.indexOf('-');
+    return idx > 0 ? s.slice(0, idx) : s;
+  };
+
+  // SF rows are orders that have entered the sample-tracking stage (die received, or a sample status set).
+  // Each row's `id` is the die_order id so edit/delete operations target the same row.
+  const sampleFollowups = useMemo(() => {
+    return (data || [])
+      .filter(o => o['Die Received Date'] || o['Sample Status'] || o.STATUS === 'DIE RECEIVED')
+      .map(o => ({
+        id: o.id,
+        die: o['DIE NO'] || '',
+        profile: extractProfile(o['DIE NO']),
+        press: o['Press'] || o['Plant'] || '',
+        supplier: o['Supplier'] || '',
+        customer: o['Customer Name'] || '',
+        die_received_date: o['Die Received Date'] || '',
+        ascona_reference: o['Ascona Reference'] || 'No',
+        submission_date: o['Submission Date'] || '',
+        sample_approval_date: o['Sample Approval Date'] || '',
+        delay_days: 0,
+        status: o['Sample Status'] || 'Pending',
+        no_of_trial: o['No of Trial'] || 0,
+        remark: o['Remark'] || '',
+        corrector: o['Corrector'] || '',
+        _order: o,
+      }));
+  }, [data]);
 
   // Fetch API keys (admin only)
   const fetchApiKeys = useCallback(async () => {
@@ -1834,7 +1885,6 @@ export default function DieOrderingSystem() {
       fetchSuppliers();
       fetchPlants();
       fetchBackupRequests();
-      fetchSampleFollowups();
       fetchApiKeys();
       fetchPlantBudgets();
 
@@ -1845,7 +1895,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchPlantBudgets]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -3049,7 +3099,7 @@ export default function DieOrderingSystem() {
                   <table style={styles.table}>
                     <thead>
                       <tr>
-                        {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Supplier', label: 'Supplier' }, { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' }, { key: 'Delivery Lead Time', label: 'Delivery LT' }, { key: 'Mfg Lead Time', label: 'Mfg LT' }].map(col => (
+                        {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Supplier', label: 'Supplier' }, { key: 'Customer Name', label: 'Customer' }, { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' }, { key: 'Delivery Lead Time', label: 'Delivery LT' }, { key: 'Mfg Lead Time', label: 'Mfg LT' }].map(col => (
                           <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{col.label}{sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color="#3B82F6" /> : <ChevronDown size={14} color="#3B82F6" />) : <ChevronDown size={14} color="#64748B" />}</div>
                           </th>
@@ -3070,6 +3120,7 @@ export default function DieOrderingSystem() {
                           <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
                           <td style={styles.td}>{order.Supplier}</td>
+                          <td style={styles.td}>{order['Customer Name'] || <span style={{ color: '#64748B' }}>—</span>}</td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace', color: order['PR Number'] ? theme.text : '#64748B' }}>{order['PR Number'] || '—'}</span></td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{order['Mandrels per Cavity'] || 0}</span></td>
                           <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
@@ -3247,7 +3298,7 @@ export default function DieOrderingSystem() {
                       <table style={styles.table}>
                         <thead>
                           <tr>
-                            {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Diameter' }, { key: 'Thickness', label: 'Thickness' }, { key: 'Supplier', label: 'Supplier' }, ...(currentFlow.status === 'PENDING FOR ORDERING' ? [{ key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }] : [])].map(col => (
+                            {[{ key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' }, { key: 'Diameter', label: 'Diameter' }, { key: 'Thickness', label: 'Thickness' }, { key: 'Supplier', label: 'Supplier' }, ...(currentFlow.status === 'PENDING FOR ORDERING' ? [{ key: 'Customer Name', label: 'Customer' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }] : [])].map(col => (
                               <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   {col.label}
@@ -3351,6 +3402,17 @@ export default function DieOrderingSystem() {
                                 </td>
                                 {currentFlow.status === 'PENDING FOR ORDERING' && (
                                   <>
+                                    <td style={styles.td}>
+                                      <input
+                                        type="text"
+                                        defaultValue={order['Customer Name'] || ''}
+                                        onBlur={(e) => handleInlineFieldSave(order, 'Customer Name', e.target.value.trim())}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                        style={{ width: '130px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                                        placeholder="Customer"
+                                      />
+                                    </td>
                                     <td style={styles.td}>
                                       <input
                                         type="number"
@@ -3535,27 +3597,19 @@ export default function DieOrderingSystem() {
                         return;
                       }
                       try {
-                        // Create a sample followup record from the order
-                        await sampleFollowupsAPI.create({
-                          profile: dieReceivanceOrder['DIE NO'] || '',
-                          press: dieReceivanceOrder.Plant || '',
-                          supplier: dieReceivanceOrder.Supplier || '',
-                          customer: '',
-                          die_received_date: dieReceivanceForm.die_received_date,
-                          ascona_reference: 'No',
-                          submission_date: '',
-                          sample_approval_date: '',
-                          delay_days: 0,
-                          status: 'Pending',
-                          no_of_trial: 0,
-                          remark: `Order No: ${dieReceivanceOrder['Order No'] || ''}, Die Size: ${dieReceivanceOrder['Die Size'] || ''}, Type: ${dieReceivanceOrder.TYPE || ''}`,
-                          corrector: dieReceivanceForm.corrector.trim()
-                        });
-                        // Update order status to DIE RECEIVED so it leaves In Manufacturing
-                        const updatedOrder = { ...dieReceivanceOrder, STATUS: 'DIE RECEIVED', 'Die Received Date': dieReceivanceForm.die_received_date, 'Corrector': dieReceivanceForm.corrector.trim() };
+                        // Merge SF defaults directly into the die_order: it now carries all
+                        // sample-followup fields, so there's no separate SF row to create.
+                        const updatedOrder = {
+                          ...dieReceivanceOrder,
+                          STATUS: 'DIE RECEIVED',
+                          'Die Received Date': dieReceivanceForm.die_received_date,
+                          'Corrector': dieReceivanceForm.corrector.trim(),
+                          'Press': dieReceivanceOrder['Press'] || dieReceivanceOrder.Plant || '',
+                          'Ascona Reference': dieReceivanceOrder['Ascona Reference'] || 'No',
+                          'Sample Status': dieReceivanceOrder['Sample Status'] || 'Pending',
+                        };
                         await ordersAPI.update(dieReceivanceOrder.id, updatedOrder);
                         setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? updatedOrder : o));
-                        fetchSampleFollowups();
                         setDieReceivanceOrder(null);
                         setToast({ message: `Die ${dieReceivanceOrder['DIE NO']} confirmed & moved to Sample Followup`, type: 'success' });
                         // Navigate to Sample Followup page
@@ -3591,24 +3645,49 @@ export default function DieOrderingSystem() {
               return diff > 0 ? diff : 0;
             };
 
+            // Map the SF form shape to die_orders field names
+            const formToOrderFields = (form) => ({
+              'DIE NO': form.die || '',
+              'Press': form.press || '',
+              'Supplier': form.supplier || '',
+              'Customer Name': form.customer || '',
+              'Die Received Date': form.die_received_date || '',
+              'Ascona Reference': form.ascona_reference || 'No',
+              'Submission Date': form.submission_date || '',
+              'Sample Approval Date': form.sample_approval_date || '',
+              'Sample Status': form.status || 'Pending',
+              'No of Trial': form.no_of_trial || 0,
+              'Remark': form.remark || '',
+              'Corrector': form.corrector || '',
+            });
+
             const handleSampleFollowupSubmit = async () => {
               try {
-                const payload = {
-                  ...sampleFollowupForm,
-                  delay_days: computeSfDelay(sampleFollowupForm.die_received_date, sampleFollowupForm.submission_date),
-                };
+                const sfFields = formToOrderFields(sampleFollowupForm);
                 if (editingSampleFollowup) {
-                  await sampleFollowupsAPI.update(editingSampleFollowup.id, payload);
+                  // Edit: merge SF fields into the existing die_order
+                  const existing = data.find(o => o.id === editingSampleFollowup.id);
+                  if (!existing) throw new Error('Order not found');
+                  const updated = { ...existing, ...sfFields };
+                  await ordersAPI.update(existing.id, updated);
                   setToast({ message: 'Sample followup updated successfully', type: 'success' });
                 } else {
-                  await sampleFollowupsAPI.create(payload);
-                  setToast({ message: 'Sample followup created successfully', type: 'success' });
+                  // Create: if a die_order with this DIE NO exists, update it; otherwise create a new order
+                  const dieNo = (sampleFollowupForm.die || '').trim();
+                  const existing = dieNo ? data.find(o => (o['DIE NO'] || '').trim().toLowerCase() === dieNo.toLowerCase()) : null;
+                  if (existing) {
+                    const updated = { ...existing, ...sfFields };
+                    await ordersAPI.update(existing.id, updated);
+                  } else {
+                    await ordersAPI.create({ ...sfFields, 'Plant': sampleFollowupForm.press || '', STATUS: 'DIE RECEIVED' });
+                  }
+                  setToast({ message: 'Sample followup saved successfully', type: 'success' });
                 }
                 setTimeout(() => setToast(null), 3000);
                 setShowSampleFollowupForm(false);
                 setEditingSampleFollowup(null);
-                setSampleFollowupForm({ profile: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' });
-                fetchSampleFollowups();
+                setSampleFollowupForm({ die: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' });
+                fetchOrders();
               } catch (error) {
                 console.error('Sample followup error:', error);
                 setToast({ message: 'Failed: ' + error.message, type: 'error' });
@@ -3616,15 +3695,29 @@ export default function DieOrderingSystem() {
               }
             };
 
+            // Clear SF fields on the die_order; does NOT delete the order itself.
             const handleDeleteSampleFollowup = async (id) => {
-              if (!window.confirm('Delete this sample followup record? This cannot be undone.')) return;
+              if (!window.confirm('Clear the sample-followup data for this die? The underlying die order will remain; only sample/trial fields will be reset.')) return;
               try {
-                await sampleFollowupsAPI.delete(id);
-                setToast({ message: 'Sample followup deleted', type: 'success' });
+                const existing = data.find(o => o.id === id);
+                if (!existing) throw new Error('Order not found');
+                const cleared = {
+                  ...existing,
+                  'Die Received Date': '',
+                  'Submission Date': '',
+                  'Sample Approval Date': '',
+                  'Ascona Reference': 'No',
+                  'Sample Status': '',
+                  'No of Trial': 0,
+                  'Remark': '',
+                  'Press': '',
+                };
+                await ordersAPI.update(existing.id, cleared);
+                setToast({ message: 'Sample followup cleared', type: 'success' });
                 setTimeout(() => setToast(null), 3000);
-                fetchSampleFollowups();
+                fetchOrders();
               } catch (error) {
-                setToast({ message: 'Failed to delete: ' + error.message, type: 'error' });
+                setToast({ message: 'Failed to clear: ' + error.message, type: 'error' });
                 setTimeout(() => setToast(null), 5000);
               }
             };
@@ -3675,7 +3768,7 @@ export default function DieOrderingSystem() {
                       />
                     </div>
                     <button
-                      onClick={() => { setEditingSampleFollowup(null); setSampleFollowupForm({ profile: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' }); setShowSampleFollowupForm(true); }}
+                      onClick={() => { setEditingSampleFollowup(null); setSampleFollowupForm({ die: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' }); setShowSampleFollowupForm(true); }}
                       style={{ padding: '10px 20px', background: sfColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: `0 4px 12px ${sfColor}40` }}
                     >
                       + Add Record
@@ -3714,8 +3807,9 @@ export default function DieOrderingSystem() {
                       <table style={styles.table}>
                         <thead>
                           <tr>
-                            <th style={styles.th}>Profile</th>
-                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Press</th>
+                            <th style={styles.th}>Die</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Profile</th>
+                            <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Plant</th>
                             <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Supplier</th>
                             <th style={styles.th}>Customer</th>
                             <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Die Received Date</th>
@@ -3735,18 +3829,38 @@ export default function DieOrderingSystem() {
                             const statusStyle = sfStatusColors[sf.status] || { color: '#6B7280', bg: '#F3F4F6' };
                             return (
                               <tr key={sf.id}>
-                                <td style={{ ...styles.td, fontWeight: 600, color: theme.text }}>{sf.profile || '—'}</td>
+                                <td style={{ ...styles.td, fontWeight: 600, color: theme.text }}>{sf.die || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap', color: theme.textMuted }}>{sf.profile || '—'}</td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.press || '—'}</td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.supplier || '—'}</td>
                                 <td style={styles.td}>{sf.customer || '—'}</td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.die_received_date || '—'}</td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
-                                  <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: sf.ascona_reference === 'Yes' ? 'rgba(16,185,129,0.2)' : 'rgba(107,114,128,0.2)', color: sf.ascona_reference === 'Yes' ? '#10B981' : '#6B7280' }}>
-                                    {sf.ascona_reference || 'No'}
-                                  </span>
+                                  <select
+                                    defaultValue={sf.ascona_reference || 'No'}
+                                    onChange={(e) => handleInlineFieldSave(sf._order, 'Ascona Reference', e.target.value)}
+                                    style={{ padding: '4px 8px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
+                                  >
+                                    <option value="No">No</option>
+                                    <option value="Yes">Yes</option>
+                                  </select>
                                 </td>
-                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.submission_date || '—'}</td>
-                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.sample_approval_date || '—'}</td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                                  <input
+                                    type="date"
+                                    defaultValue={sf.submission_date || ''}
+                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'Submission Date', e.target.value)}
+                                    style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                                  />
+                                </td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                                  <input
+                                    type="date"
+                                    defaultValue={sf.sample_approval_date || ''}
+                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'Sample Approval Date', e.target.value)}
+                                    style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                                  />
+                                </td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}>
                                   {(() => {
                                     const d = computeSfDelay(sf.die_received_date, sf.submission_date);
@@ -3762,13 +3876,31 @@ export default function DieOrderingSystem() {
                                     {sf.status || 'Pending'}
                                   </span>
                                 </td>
-                                <td style={{ ...styles.td, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>{sf.no_of_trial || 0}</td>
-                                <td style={{ ...styles.td, maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sf.remark}>{sf.remark || '—'}</td>
+                                <td style={{ ...styles.td, textAlign: 'center' }}>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    defaultValue={sf.no_of_trial || 0}
+                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'No of Trial', parseInt(e.target.value, 10) || 0)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                                    style={{ width: '60px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', fontFamily: 'monospace' }}
+                                  />
+                                </td>
+                                <td style={{ ...styles.td, minWidth: '160px' }}>
+                                  <input
+                                    type="text"
+                                    defaultValue={sf.remark || ''}
+                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'Remark', e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                                    placeholder="—"
+                                    style={{ width: '100%', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                                  />
+                                </td>
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{sf.corrector || '—'}</td>
                                 <td style={{ ...styles.td, textAlign: 'center' }}>
                                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                                     <button
-                                      onClick={() => { setEditingSampleFollowup(sf); setSampleFollowupForm({ profile: sf.profile || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' }); setShowSampleFollowupForm(true); }}
+                                      onClick={() => { setEditingSampleFollowup(sf); setSampleFollowupForm({ die: sf.die || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' }); setShowSampleFollowupForm(true); }}
                                       style={{ padding: '6px', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
                                       title="Edit"
                                     >
@@ -3816,8 +3948,9 @@ export default function DieOrderingSystem() {
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         {[
-                          { key: 'profile', label: 'Profile', type: 'text' },
-                          { key: 'press', label: 'Press', type: 'text' },
+                          { key: 'die', label: 'Die', type: 'text' },
+                          { key: 'profile', label: 'Profile', type: 'readonly' },
+                          { key: 'press', label: 'Plant', type: 'text' },
                           { key: 'supplier', label: 'Supplier', type: 'text' },
                           { key: 'customer', label: 'Customer', type: 'text' },
                           { key: 'die_received_date', label: 'Die Received Date', type: 'date' },
@@ -3845,6 +3978,14 @@ export default function DieOrderingSystem() {
                                 value={computeSfDelay(sampleFollowupForm.die_received_date, sampleFollowupForm.submission_date)}
                                 readOnly
                                 title="Auto-calculated: submission date − die received date (or today − die received date if submission is empty)"
+                                style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', cursor: 'not-allowed' }}
+                              />
+                            ) : field.type === 'readonly' ? (
+                              <input
+                                type="text"
+                                value={extractProfile(sampleFollowupForm.die)}
+                                readOnly
+                                title="Auto-derived from Die (everything before the first '-')"
                                 style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', cursor: 'not-allowed' }}
                               />
                             ) : (
@@ -4619,7 +4760,7 @@ export default function DieOrderingSystem() {
                       <div style={{ marginTop: '1rem' }}>
                         <h5 style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' }}>Available Fields</h5>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'design_approved_date', 'delay', 'pr_entry', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month'].map(f => (
+                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'three_d_model_received_date', 'simulation_enabled', 'design_approved_date', 'delay', 'pr_entry', 'pr_number', 'customer_name', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month', 'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial', 'corrector'].map(f => (
                             <span key={f} style={{ fontSize: '0.65rem', padding: '2px 6px', background: theme.cardBg, color: theme.textDim, borderRadius: '3px', fontFamily: 'monospace' }}>{f}</span>
                           ))}
                         </div>

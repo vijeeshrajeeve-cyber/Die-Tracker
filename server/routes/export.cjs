@@ -22,12 +22,23 @@ const FIELD_MAP = {
     'design_approved_date': 'design_approved_date',
     'delay': 'delay',
     'pr_entry': 'pr_entry',
+    'pr_number': 'pr_number',
+    'customer_name': 'customer_name',
     'oracle_entry': 'oracle_entry',
     'supplier': 'supplier',
     'status': 'status',
     'overall_delay': 'overall_delay',
     'eta': 'eta',
-    'month': 'month'
+    'month': 'month',
+    'die_received_date': 'die_received_date',
+    'submission_date': 'submission_date',
+    'sample_approval_date': 'sample_approval_date',
+    'no_of_trial': 'no_of_trial',
+    'corrector': 'corrector',
+    'press': 'press',
+    'ascona_reference': 'ascona_reference',
+    'sample_status': 'sample_status',
+    'remark': 'remark'
 };
 
 // Display-friendly column headers
@@ -48,12 +59,23 @@ const DISPLAY_NAMES = {
     'design_approved_date': 'Design Approved Date',
     'delay': 'Delay',
     'pr_entry': 'PR Entry',
+    'pr_number': 'PR Number',
+    'customer_name': 'Customer Name',
     'oracle_entry': 'Oracle Entry',
     'supplier': 'Supplier',
     'status': 'STATUS',
     'overall_delay': 'OVERALL DELAY',
     'eta': 'ETA',
-    'month': 'Month'
+    'month': 'Month',
+    'die_received_date': 'Die Received Date',
+    'submission_date': 'Submission Date',
+    'sample_approval_date': 'Sample Approval Date',
+    'no_of_trial': 'No of Trial',
+    'corrector': 'Corrector',
+    'press': 'Press',
+    'ascona_reference': 'Ascona Reference',
+    'sample_status': 'Sample Status',
+    'remark': 'Remark'
 };
 
 // Extract API key from Authorization header, X-API-Key header, or query param (deprecated)
