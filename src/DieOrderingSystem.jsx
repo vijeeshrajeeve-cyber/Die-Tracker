@@ -9,7 +9,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -1737,6 +1737,7 @@ export default function DieOrderingSystem() {
   const [dieReceivanceOrder, setDieReceivanceOrder] = useState(null);
   const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
   const [sfStatusFilter, setSfStatusFilter] = useState('Pending');
+  const [sfPlantFilter, setSfPlantFilter] = useState('All');
 
   // Clipboard helper - falls back to execCommand for HTTP (non-localhost) contexts
   const copyToClipboard = async (text) => {
@@ -1827,10 +1828,17 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
-  // Sample followups are now derived from die_orders (no separate fetch).
-  // Kept as a named callback so existing fetchSampleFollowups() call-sites resolve to a no-op
-  // (the derived `sampleFollowups` memo updates automatically when `data` changes).
-  const fetchSampleFollowups = useCallback(() => {}, []);
+  // Standalone SF records live in sample_followups — rows entered manually via the SF page's
+  // "Add Record" button. Process-flow SF data lives on die_orders itself; both are merged below.
+  const [sampleFollowupsStandalone, setSampleFollowupsStandalone] = useState([]);
+  const fetchSampleFollowups = useCallback(async () => {
+    try {
+      const response = await sampleFollowupsAPI.getAll();
+      setSampleFollowupsStandalone(response.sampleFollowups || []);
+    } catch (error) {
+      console.error('Failed to fetch sample followups:', error);
+    }
+  }, []);
 
   // Profile = everything before the first "-" in DIE NO (e.g. "14716-235" → "14716"). Derived only.
   const extractProfile = (dieNo) => {
@@ -1840,13 +1848,17 @@ export default function DieOrderingSystem() {
     return idx > 0 ? s.slice(0, idx) : s;
   };
 
-  // SF rows are orders that have entered the sample-tracking stage (die received, or a sample status set).
-  // Each row's `id` is the die_order id so edit/delete operations target the same row.
+  // SF rows come from two sources:
+  //  - 'order': die_orders past the receiving stage (created by the normal process flow).
+  //  - 'standalone': rows in the sample_followups table (entered manually via the SF page's Add Record).
+  // The row's id is namespaced per source so edit/delete handlers can route correctly.
   const sampleFollowups = useMemo(() => {
-    return (data || [])
+    const fromOrders = (data || [])
       .filter(o => o['Die Received Date'] || o['Sample Status'] || o.STATUS === 'DIE RECEIVED')
       .map(o => ({
-        id: o.id,
+        id: `order-${o.id}`,
+        _source: 'order',
+        _order: o,
         die: o['DIE NO'] || '',
         profile: extractProfile(o['DIE NO']),
         press: o['Press'] || o['Plant'] || '',
@@ -1861,9 +1873,30 @@ export default function DieOrderingSystem() {
         no_of_trial: o['No of Trial'] || 0,
         remark: o['Remark'] || '',
         corrector: o['Corrector'] || '',
-        _order: o,
       }));
-  }, [data]);
+
+    const fromStandalone = (sampleFollowupsStandalone || []).map(sf => ({
+      id: `sf-${sf.id}`,
+      _source: 'standalone',
+      _raw: sf,
+      die: sf.profile || '',
+      profile: extractProfile(sf.profile),
+      press: sf.press || '',
+      supplier: sf.supplier || '',
+      customer: sf.customer || '',
+      die_received_date: sf.die_received_date || '',
+      ascona_reference: sf.ascona_reference || 'No',
+      submission_date: sf.submission_date || '',
+      sample_approval_date: sf.sample_approval_date || '',
+      delay_days: 0,
+      status: sf.status || 'Pending',
+      no_of_trial: sf.no_of_trial || 0,
+      remark: sf.remark || '',
+      corrector: sf.corrector || '',
+    }));
+
+    return [...fromOrders, ...fromStandalone];
+  }, [data, sampleFollowupsStandalone]);
 
   // Fetch API keys (admin only)
   const fetchApiKeys = useCallback(async () => {
@@ -1885,6 +1918,7 @@ export default function DieOrderingSystem() {
       fetchSuppliers();
       fetchPlants();
       fetchBackupRequests();
+      fetchSampleFollowups();
       fetchApiKeys();
       fetchPlantBudgets();
 
@@ -1895,7 +1929,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchPlantBudgets]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -3645,7 +3679,7 @@ export default function DieOrderingSystem() {
               return diff > 0 ? diff : 0;
             };
 
-            // Map the SF form shape to die_orders field names
+            // Map the SF form shape to die_orders field names (used for 'order'-source edits)
             const formToOrderFields = (form) => ({
               'DIE NO': form.die || '',
               'Press': form.press || '',
@@ -3661,33 +3695,49 @@ export default function DieOrderingSystem() {
               'Corrector': form.corrector || '',
             });
 
+            // Map the SF form shape to sample_followups (snake_case) columns.
+            // Note: the sample_followups table stores the full die number in its legacy `profile` column.
+            const formToSfFields = (form) => ({
+              profile: form.die || '',
+              press: form.press || '',
+              supplier: form.supplier || '',
+              customer: form.customer || '',
+              die_received_date: form.die_received_date || '',
+              ascona_reference: form.ascona_reference || 'No',
+              submission_date: form.submission_date || '',
+              sample_approval_date: form.sample_approval_date || '',
+              delay_days: computeSfDelay(form.die_received_date, form.submission_date),
+              status: form.status || 'Pending',
+              no_of_trial: form.no_of_trial || 0,
+              remark: form.remark || '',
+              corrector: form.corrector || '',
+            });
+
             const handleSampleFollowupSubmit = async () => {
               try {
-                const sfFields = formToOrderFields(sampleFollowupForm);
                 if (editingSampleFollowup) {
-                  // Edit: merge SF fields into the existing die_order
-                  const existing = data.find(o => o.id === editingSampleFollowup.id);
-                  if (!existing) throw new Error('Order not found');
-                  const updated = { ...existing, ...sfFields };
-                  await ordersAPI.update(existing.id, updated);
+                  // Edit: route by source — order-backed rows update die_orders, standalone rows update sample_followups
+                  if (editingSampleFollowup._source === 'order') {
+                    const existing = editingSampleFollowup._order;
+                    const updated = { ...existing, ...formToOrderFields(sampleFollowupForm) };
+                    await ordersAPI.update(existing.id, updated);
+                    fetchOrders();
+                  } else {
+                    const raw = editingSampleFollowup._raw;
+                    await sampleFollowupsAPI.update(raw.id, formToSfFields(sampleFollowupForm));
+                    fetchSampleFollowups();
+                  }
                   setToast({ message: 'Sample followup updated successfully', type: 'success' });
                 } else {
-                  // Create: if a die_order with this DIE NO exists, update it; otherwise create a new order
-                  const dieNo = (sampleFollowupForm.die || '').trim();
-                  const existing = dieNo ? data.find(o => (o['DIE NO'] || '').trim().toLowerCase() === dieNo.toLowerCase()) : null;
-                  if (existing) {
-                    const updated = { ...existing, ...sfFields };
-                    await ordersAPI.update(existing.id, updated);
-                  } else {
-                    await ordersAPI.create({ ...sfFields, 'Plant': sampleFollowupForm.press || '', STATUS: 'DIE RECEIVED' });
-                  }
-                  setToast({ message: 'Sample followup saved successfully', type: 'success' });
+                  // Add Record: always creates a standalone row in sample_followups.
+                  await sampleFollowupsAPI.create(formToSfFields(sampleFollowupForm));
+                  fetchSampleFollowups();
+                  setToast({ message: 'Sample followup created successfully', type: 'success' });
                 }
                 setTimeout(() => setToast(null), 3000);
                 setShowSampleFollowupForm(false);
                 setEditingSampleFollowup(null);
                 setSampleFollowupForm({ die: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' });
-                fetchOrders();
               } catch (error) {
                 console.error('Sample followup error:', error);
                 setToast({ message: 'Failed: ' + error.message, type: 'error' });
@@ -3695,12 +3745,24 @@ export default function DieOrderingSystem() {
               }
             };
 
-            // Clear SF fields on the die_order; does NOT delete the order itself.
-            const handleDeleteSampleFollowup = async (id) => {
+            const handleDeleteSampleFollowup = async (sf) => {
+              if (sf._source === 'standalone') {
+                if (!window.confirm('Delete this sample followup record? This cannot be undone.')) return;
+                try {
+                  await sampleFollowupsAPI.delete(sf._raw.id);
+                  setToast({ message: 'Sample followup deleted', type: 'success' });
+                  setTimeout(() => setToast(null), 3000);
+                  fetchSampleFollowups();
+                } catch (error) {
+                  setToast({ message: 'Failed to delete: ' + error.message, type: 'error' });
+                  setTimeout(() => setToast(null), 5000);
+                }
+                return;
+              }
+              // Order-backed row: clear SF fields on the die_order, keep the order itself.
               if (!window.confirm('Clear the sample-followup data for this die? The underlying die order will remain; only sample/trial fields will be reset.')) return;
               try {
-                const existing = data.find(o => o.id === id);
-                if (!existing) throw new Error('Order not found');
+                const existing = sf._order;
                 const cleared = {
                   ...existing,
                   'Die Received Date': '',
@@ -3722,6 +3784,38 @@ export default function DieOrderingSystem() {
               }
             };
 
+            // Inline save for the 5 editable cells — routes to the correct backend by source.
+            const SF_DISPLAY_TO_SNAKE = {
+              'Ascona Reference': 'ascona_reference',
+              'Submission Date': 'submission_date',
+              'Sample Approval Date': 'sample_approval_date',
+              'No of Trial': 'no_of_trial',
+              'Remark': 'remark',
+              'Sample Status': 'status',
+              'Corrector': 'corrector',
+            };
+            const handleSfInlineSave = async (sf, displayField, value) => {
+              if (sf._source === 'order') {
+                await handleInlineFieldSave(sf._order, displayField, value);
+                return;
+              }
+              const snake = SF_DISPLAY_TO_SNAKE[displayField];
+              if (!snake) return;
+              const raw = sf._raw;
+              if (raw[snake] === value) return;
+              try {
+                const updated = { ...raw, [snake]: value };
+                await sampleFollowupsAPI.update(raw.id, updated);
+                setSampleFollowupsStandalone(prev => prev.map(r => r.id === raw.id ? updated : r));
+                setToast({ message: `${displayField} saved`, type: 'success' });
+                setTimeout(() => setToast(null), 3000);
+              } catch (error) {
+                console.error(`${displayField} update error:`, error);
+                setToast({ message: `Failed to save ${displayField}`, type: 'error' });
+                setTimeout(() => setToast(null), 5000);
+              }
+            };
+
             const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
             const sfStatusColors = {
@@ -3732,14 +3826,17 @@ export default function DieOrderingSystem() {
               'On hold': { color: '#6B7280', bg: '#F3F4F6' },
             };
 
+            const sfPlants = Array.from(new Set(sampleFollowups.map(sf => (sf.press || '').trim()).filter(Boolean))).sort();
+
             const filteredFollowups = sampleFollowups.filter(sf => {
               const matchesStatus = sfStatusFilter === 'All' || (sf.status || 'Pending') === sfStatusFilter;
+              const matchesPlant = sfPlantFilter === 'All' || (sf.press || '').trim() === sfPlantFilter;
               const matchesSearch = !searchTerm ||
                 (sf.profile && sf.profile.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (sf.supplier && sf.supplier.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (sf.customer && sf.customer.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (sf.corrector && sf.corrector.toLowerCase().includes(searchTerm.toLowerCase()));
-              return matchesStatus && matchesSearch;
+              return matchesStatus && matchesPlant && matchesSearch;
             });
 
             return (
@@ -3776,28 +3873,50 @@ export default function DieOrderingSystem() {
                   </div>
                 </div>
 
-                {/* Status Filter Tabs */}
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                  {['All', ...SF_STATUSES].map(s => {
-                    const active = sfStatusFilter === s;
-                    const sc = sfStatusColors[s];
-                    const count = s === 'All' ? sampleFollowups.length : sampleFollowups.filter(sf => (sf.status || 'Pending') === s).length;
-                    return (
-                      <button
-                        key={s}
-                        onClick={() => setSfStatusFilter(s)}
-                        style={{
-                          padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
-                          cursor: 'pointer', border: `1px solid ${active ? (sc?.color || sfColor) : theme.cardBorder}`,
-                          background: active ? (sc?.bg || `${sfColor}20`) : 'transparent',
-                          color: active ? (sc?.color || sfColor) : theme.textMuted,
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        {s} <span style={{ marginLeft: '4px', opacity: 0.8 }}>({count})</span>
-                      </button>
-                    );
-                  })}
+                {/* Status Filter Tabs + Plant Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {['All', ...SF_STATUSES].map(s => {
+                      const active = sfStatusFilter === s;
+                      const sc = sfStatusColors[s];
+                      const count = s === 'All' ? sampleFollowups.length : sampleFollowups.filter(sf => (sf.status || 'Pending') === s).length;
+                      return (
+                        <button
+                          key={s}
+                          onClick={() => setSfStatusFilter(s)}
+                          style={{
+                            padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                            cursor: 'pointer', border: `1px solid ${active ? (sc?.color || sfColor) : theme.cardBorder}`,
+                            background: active ? (sc?.bg || `${sfColor}20`) : 'transparent',
+                            color: active ? (sc?.color || sfColor) : theme.textMuted,
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          {s} <span style={{ marginLeft: '4px', opacity: 0.8 }}>({count})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Plant</span>
+                    <select
+                      value={sfPlantFilter}
+                      onChange={(e) => setSfPlantFilter(e.target.value)}
+                      style={{
+                        padding: '6px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600,
+                        border: `1px solid ${sfPlantFilter === 'All' ? theme.cardBorder : sfColor}`,
+                        background: sfPlantFilter === 'All' ? 'transparent' : `${sfColor}15`,
+                        color: sfPlantFilter === 'All' ? theme.textMuted : sfColor,
+                        cursor: 'pointer', outline: 'none', minWidth: '120px'
+                      }}
+                    >
+                      <option value="All">All Plants ({sampleFollowups.length})</option>
+                      {sfPlants.map(p => {
+                        const count = sampleFollowups.filter(sf => (sf.press || '').trim() === p).length;
+                        return <option key={p} value={p}>{p} ({count})</option>;
+                      })}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Table */}
@@ -3838,7 +3957,7 @@ export default function DieOrderingSystem() {
                                 <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
                                   <select
                                     defaultValue={sf.ascona_reference || 'No'}
-                                    onChange={(e) => handleInlineFieldSave(sf._order, 'Ascona Reference', e.target.value)}
+                                    onChange={(e) => handleSfInlineSave(sf, 'Ascona Reference', e.target.value)}
                                     style={{ padding: '4px 8px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
                                   >
                                     <option value="No">No</option>
@@ -3849,7 +3968,7 @@ export default function DieOrderingSystem() {
                                   <input
                                     type="date"
                                     defaultValue={sf.submission_date || ''}
-                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'Submission Date', e.target.value)}
+                                    onBlur={(e) => handleSfInlineSave(sf, 'Submission Date', e.target.value)}
                                     style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                                   />
                                 </td>
@@ -3857,7 +3976,7 @@ export default function DieOrderingSystem() {
                                   <input
                                     type="date"
                                     defaultValue={sf.sample_approval_date || ''}
-                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'Sample Approval Date', e.target.value)}
+                                    onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
                                     style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                                   />
                                 </td>
@@ -3881,7 +4000,7 @@ export default function DieOrderingSystem() {
                                     type="number"
                                     min="0"
                                     defaultValue={sf.no_of_trial || 0}
-                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'No of Trial', parseInt(e.target.value, 10) || 0)}
+                                    onBlur={(e) => handleSfInlineSave(sf, 'No of Trial', parseInt(e.target.value, 10) || 0)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                                     style={{ width: '60px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', fontFamily: 'monospace' }}
                                   />
@@ -3890,7 +4009,7 @@ export default function DieOrderingSystem() {
                                   <input
                                     type="text"
                                     defaultValue={sf.remark || ''}
-                                    onBlur={(e) => handleInlineFieldSave(sf._order, 'Remark', e.target.value)}
+                                    onBlur={(e) => handleSfInlineSave(sf, 'Remark', e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                                     placeholder="—"
                                     style={{ width: '100%', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
@@ -3908,7 +4027,7 @@ export default function DieOrderingSystem() {
                                     </button>
                                     {user?.role === 'admin' && (
                                       <button
-                                        onClick={() => handleDeleteSampleFollowup(sf.id)}
+                                        onClick={() => handleDeleteSampleFollowup(sf)}
                                         style={{ padding: '6px', background: 'rgba(239,68,68,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#EF4444' }}
                                         title="Delete"
                                       >
