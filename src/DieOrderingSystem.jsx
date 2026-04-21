@@ -139,6 +139,14 @@ const ImportModal = ({ onClose, onImport }) => {
       if (!normalized.month && normalized['Die Requested Date']) {
         normalized.month = getMonthFromDate(normalized['Die Requested Date']);
       }
+      // Auto-mark SF as 'Sample Submitted' when a submission date is present
+      // and no meaningful sample status has been set yet.
+      if (normalized['Submission Date']) {
+        const cur = (normalized['Sample Status'] || '').toString().trim();
+        if (!cur || cur.toLowerCase() === 'pending') {
+          normalized['Sample Status'] = 'Sample Submitted';
+        }
+      }
       return normalized;
     }).filter(row => row['DIE NO'] || row['Order No']);
   };
@@ -2401,7 +2409,7 @@ export default function DieOrderingSystem() {
   const supplierData = useMemo(() => {
     const counts = {};
     analyticsData.forEach(o => { if (o.Supplier) counts[o.Supplier] = (counts[o.Supplier] || 0) + 1; });
-    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
+    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [analyticsData]);
 
   const typeData = useMemo(() => {
@@ -2914,7 +2922,7 @@ export default function DieOrderingSystem() {
                         if (hasBudget) { vals.push(d.backup_target || 0, d.new_target || 0); }
                         return vals;
                       });
-                      const yMax = Math.max(...allValues, 0) + 10;
+                      const yMax = Math.max(...allValues, 0) + 15;
                       return (
                         <div key={plant} style={styles.chartCard}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
@@ -4238,8 +4246,8 @@ export default function DieOrderingSystem() {
               <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Orders by Supplier</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={supplierData} layout="vertical">
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
+                  <BarChart data={supplierData} layout="vertical" margin={{ right: 60 }}>
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                     <Tooltip contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} />
                     <Bar dataKey="value" fill="#3B82F6" radius={[0, 6, 6, 0]}>
@@ -4270,8 +4278,8 @@ export default function DieOrderingSystem() {
                     return Object.entries(supplierLeadTimes)
                       .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
                       .sort((a, b) => a.avgDays - b.avgDays);
-                  })()} layout="vertical" margin={{ right: 50 }}>
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
+                  })()} layout="vertical" margin={{ right: 60 }}>
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
@@ -4314,8 +4322,8 @@ export default function DieOrderingSystem() {
                     return Object.entries(supplierTimes)
                       .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
                       .sort((a, b) => a.avgDays - b.avgDays);
-                  })()} layout="vertical" margin={{ right: 50 }}>
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
+                  })()} layout="vertical" margin={{ right: 60 }}>
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
@@ -4352,7 +4360,7 @@ export default function DieOrderingSystem() {
                       .map(month => ({ month, avgDays: Math.round(monthTimes[month].reduce((a, b) => a + b, 0) / monthTimes[month].length), count: monthTimes[month].length }));
                   })()} margin={{ top: 20 }}>
                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
                       formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Days']}
@@ -4387,7 +4395,7 @@ export default function DieOrderingSystem() {
                       .sort((a, b) => a.avgDays - b.avgDays);
                   })()} margin={{ top: 20 }}>
                     <XAxis dataKey="plant" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <Tooltip
                       contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
                       formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Days']}
@@ -4456,8 +4464,8 @@ export default function DieOrderingSystem() {
                           Days from Die Order Date to Die Received Date
                         </p>
                         <ResponsiveContainer width="100%" height={280}>
-                          <BarChart data={deliveryData} layout="vertical" margin={{ right: 50 }}>
-                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
+                          <BarChart data={deliveryData} layout="vertical" margin={{ right: 60 }}>
+                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                             <Tooltip
                               contentStyle={tooltipStyle}
@@ -4482,8 +4490,8 @@ export default function DieOrderingSystem() {
                           Days from Design Approval Date to Die Received Date
                         </p>
                         <ResponsiveContainer width="100%" height={280}>
-                          <BarChart data={mfgData} layout="vertical" margin={{ right: 50 }}>
-                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" />
+                          <BarChart data={mfgData} layout="vertical" margin={{ right: 60 }}>
+                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
                             <Tooltip
                               contentStyle={tooltipStyle}
