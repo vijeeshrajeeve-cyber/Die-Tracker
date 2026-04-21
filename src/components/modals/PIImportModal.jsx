@@ -161,12 +161,9 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         };
     };
 
-    // Parse the PI PDF content using position-based line grouping
+    // Parse the PI PDF content using position-based line grouping.
+    // Returns { orders, headerInfo, fileName, rawText } on success, or throws.
     const parsePIPDFContent = async (file) => {
-        setError(null);
-        setLoading(true);
-        setPreview(null);
-
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -499,45 +496,77 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                 };
             });
 
-            if (orders.length === 0) {
-                setError('No die orders found in the PDF. Please check if this is a valid Die Order PI document.');
+            return {
+                fileName: file.name,
+                orders,
+                headerInfo: { prNumber, orderNo, supplier, shipmentType, orderDate },
+                rawText: page1Text.substring(0, 500),
+            };
+        } catch (err) {
+            console.error('PI PDF parse error:', err);
+            throw new Error(`${file.name}: ${err.message}`);
+        }
+    };
+
+    // Process one or more PDF files: parse each, collate orders, split
+    // matched (existing in system) vs unmatched (skipped with alert).
+    const processFiles = async (files) => {
+        const pdfFiles = Array.from(files || []).filter(f => f && f.name.toLowerCase().endsWith('.pdf'));
+        if (pdfFiles.length === 0) {
+            setError('Please upload one or more PDF files');
+            return;
+        }
+
+        setError(null);
+        setPreview(null);
+        setLoading(true);
+
+        try {
+            const perFile = [];
+            const parseErrors = [];
+            for (const f of pdfFiles) {
+                try {
+                    const result = await parsePIPDFContent(f);
+                    perFile.push(result);
+                } catch (err) {
+                    parseErrors.push(err.message);
+                }
+            }
+
+            const allOrders = perFile.flatMap(r => r.orders);
+            const matched = allOrders.filter(o => o.isExisting);
+            const unmatched = allOrders.filter(o => !o.isExisting);
+
+            if (allOrders.length === 0) {
+                setError(
+                    parseErrors.length > 0
+                        ? `Parse errors:\n${parseErrors.join('\n')}`
+                        : 'No die orders found in the uploaded PDF(s). Please check they are valid Die Order PI documents.'
+                );
                 return;
             }
 
             setPreview({
-                orders,
-                headerInfo: {
-                    prNumber,
-                    orderNo,
-                    supplier,
-                    shipmentType,
-                    orderDate,
-                },
-                rawText: page1Text.substring(0, 500),
+                orders: matched,
+                unmatched,
+                files: perFile.map(r => ({ name: r.fileName, count: r.orders.length, ...r.headerInfo })),
+                parseErrors,
             });
-        } catch (err) {
-            console.error('PI PDF parse error:', err);
-            setError(`PDF parsing error: ${err.message}`);
         } finally {
             setLoading(false);
         }
     };
 
-    const processFile = useCallback((file) => {
-        if (!file) return;
-        if (!file.name.toLowerCase().endsWith('.pdf')) {
-            setError('Please upload a PDF file');
-            return;
-        }
-        parsePIPDFContent(file);
+    const processFilesCb = useCallback((files) => {
+        processFiles(files);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [existingOrders]);
 
     const handleDrop = useCallback((e) => {
         e.preventDefault();
         setDragActive(false);
-        const file = e.dataTransfer.files[0];
-        processFile(file);
-    }, [processFile]);
+        processFilesCb(e.dataTransfer.files);
+    }, [processFilesCb]);
 
     const handleRemoveOrder = (index) => {
         setPreview(prev => ({
@@ -616,13 +645,13 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                             onDrop={handleDrop}
                         >
                             <FileText size={48} color="#64748B" />
-                            <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop your PI PDF file here</p>
+                            <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop one or more PI PDF files here</p>
                             <p style={{ color: '#64748B', margin: '0.5rem 0' }}>or</p>
                             <label style={{ display: 'inline-block', padding: '0.75rem 1.5rem', background: 'linear-gradient(135deg, #10B981, #3B82F6)', color: 'white', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>
                                 Browse PI PDF Files
-                                <input type="file" accept=".pdf" onChange={(e) => processFile(e.target.files[0])} hidden />
+                                <input type="file" accept=".pdf" multiple onChange={(e) => processFilesCb(e.target.files)} hidden />
                             </label>
-                            <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>Supports Die Order PI documents with multiple orders</p>
+                            <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>PI import only updates existing dies — new die numbers are skipped</p>
                         </div>
                     )}
 
@@ -644,25 +673,71 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     {preview && (
                         <>
                             {/* Header Info */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(16,185,129,0.1)', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                                <CheckCircle size={20} color="#10B981" />
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: 'rgba(16,185,129,0.1)', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
+                                <CheckCircle size={20} color="#10B981" style={{ flexShrink: 0, marginTop: '2px' }} />
                                 <div style={{ flex: 1 }}>
-                                    <p style={{ fontWeight: 600, color: '#10B981' }}>PI Document Parsed Successfully</p>
-                                    <p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
-                                        Found {preview.orders.length} die order{preview.orders.length !== 1 ? 's' : ''} &bull; PR: {preview.headerInfo.prNumber || 'N/A'} &bull; Supplier: {preview.headerInfo.supplier} &bull; Shipment: {preview.headerInfo.shipmentType} &bull; Date: {preview.headerInfo.orderDate || 'N/A'}
+                                    <p style={{ fontWeight: 600, color: '#10B981' }}>
+                                        {preview.files.length} PI Document{preview.files.length !== 1 ? 's' : ''} Parsed
                                     </p>
-                                    {preview.orders.some(o => o.isExisting) && (
-                                        <p style={{ fontSize: '0.75rem', color: '#F59E0B', marginTop: '4px' }}>
-                                            {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
-                                        </p>
-                                    )}
+                                    <p style={{ fontSize: '0.8rem', color: '#94A3B8', marginTop: '4px' }}>
+                                        {preview.orders.length} existing order{preview.orders.length !== 1 ? 's' : ''} will be updated
+                                        {preview.unmatched.length > 0 && ` · ${preview.unmatched.length} unmatched order${preview.unmatched.length !== 1 ? 's' : ''} skipped`}
+                                    </p>
+                                    <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                                        {preview.files.map((f, i) => (
+                                            <span key={i}>
+                                                <span style={{ color: '#94A3B8' }}>{f.name}</span>
+                                                {' — '}{f.count} die{f.count !== 1 ? 's' : ''}
+                                                {f.prNumber && ` · PR ${f.prNumber}`}
+                                                {f.supplier && f.supplier !== 'UNKNOWN' && ` · ${f.supplier}`}
+                                            </span>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
+                            {/* Unmatched orders warning */}
+                            {preview.unmatched.length > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
+                                    <AlertTriangle size={20} color="#EF4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ fontWeight: 600, color: '#EF4444' }}>
+                                            {preview.unmatched.length} die{preview.unmatched.length !== 1 ? 's' : ''} not found in system — will be skipped
+                                        </p>
+                                        <p style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '4px' }}>
+                                            PI import only updates existing die orders. Create these dies first if you want to include them:
+                                        </p>
+                                        <div style={{ fontSize: '0.8rem', color: '#F1F5F9', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                            {preview.unmatched.map((o, i) => (
+                                                <span key={i} style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.15)', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                                                    {o['DIE NO']}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Parse errors (files that failed to read) */}
+                            {preview.parseErrors && preview.parseErrors.length > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
+                                    <AlertTriangle size={20} color="#F59E0B" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ fontWeight: 600, color: '#F59E0B' }}>
+                                            {preview.parseErrors.length} file{preview.parseErrors.length !== 1 ? 's' : ''} could not be parsed
+                                        </p>
+                                        <ul style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '6px', paddingLeft: '18px' }}>
+                                            {preview.parseErrors.map((m, i) => <li key={i}>{m}</li>)}
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Orders Table */}
+                            {preview.orders.length > 0 && (
                             <div style={{ background: '#0F172A', borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
                                 <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', padding: '1rem', borderBottom: '1px solid #334155' }}>
-                                    Extracted Die Orders ({preview.orders.length})
+                                    Orders to Update ({preview.orders.length})
                                 </h4>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -757,11 +832,13 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                 </div>
                             </div>
 
+                            )}
+
                             <button
                                 onClick={() => setPreview(null)}
                                 style={{ width: '100%', padding: '0.5rem', background: 'transparent', border: '1px solid #334155', borderRadius: '8px', color: '#94A3B8', cursor: 'pointer' }}
                             >
-                                Upload Different PI Document
+                                Upload Different PI Document(s)
                             </button>
                         </>
                     )}
@@ -785,7 +862,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                         }}
                     >
                         {importing && <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
-                        {importing ? 'Importing...' : `Import ${preview?.orders?.length || 0} Die Orders`}
+                        {importing ? 'Importing...' : `Update ${preview?.orders?.length || 0} Existing Die Order${(preview?.orders?.length || 0) !== 1 ? 's' : ''}`}
                     </button>
                 </div>
             </div>

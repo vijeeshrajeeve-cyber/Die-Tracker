@@ -2308,8 +2308,21 @@ export default function DieOrderingSystem() {
     const total = data.length, completed = data.filter(o => o.STATUS === 'DONE').length;
     const pending = data.filter(o => !['DONE', 'CANCELLED'].includes(o.STATUS)).length;
     const cancelled = data.filter(o => o.STATUS === 'CANCELLED').length;
-    const delayedOrders = data.filter(o => o.Delay > 0);
-    const avgDelay = delayedOrders.length > 0 ? (delayedOrders.reduce((sum, o) => sum + (o.Delay || 0), 0) / delayedOrders.length).toFixed(1) : '0';
+    // Avg design-approval time: for orders with both Design Received & Design Approved dates,
+    // excluding cancelled / on-hold orders.
+    const approvedDurations = [];
+    data.forEach(o => {
+      if (o.STATUS === 'CANCELLED' || o.STATUS === 'HOLD') return;
+      if (!o['Design Received Date'] || !o['Design Approved Date']) return;
+      const received = new Date(o['Design Received Date']);
+      const approved = new Date(o['Design Approved Date']);
+      if (isNaN(received) || isNaN(approved)) return;
+      const days = Math.round((approved - received) / (1000 * 60 * 60 * 24));
+      if (days >= 0) approvedDurations.push(days);
+    });
+    const avgDelay = approvedDurations.length > 0
+      ? (approvedDurations.reduce((s, d) => s + d, 0) / approvedDurations.length).toFixed(1)
+      : '0';
     return { total, completed, pending, cancelled, avgDelay };
   }, [data]);
 
