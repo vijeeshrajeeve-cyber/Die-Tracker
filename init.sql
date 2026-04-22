@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS suppliers (
     id SERIAL PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
+    region TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -28,6 +29,16 @@ CREATE TABLE IF NOT EXISTS plants (
     name TEXT UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Profile master (profile number → customer name)
+CREATE TABLE IF NOT EXISTS profiles (
+    id SERIAL PRIMARY KEY,
+    profile_number TEXT UNIQUE NOT NULL,
+    customer_name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_profiles_profile_number ON profiles(profile_number);
 
 -- Die Orders table
 CREATE TABLE IF NOT EXISTS die_orders (
@@ -111,10 +122,18 @@ CREATE TABLE IF NOT EXISTS sample_followups (
 );
 
 -- Seed suppliers
-INSERT INTO suppliers (name) VALUES 
-    ('PDTMC'), ('EKSTEK'), ('PHOENIX'), ('COMPES'), ('PHME'),
-    ('ADEX'), ('JIANGSU'), ('COMES'), ('ALMAX'), ('WEFA')
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO suppliers (name, region) VALUES
+    ('ADEX', 'Europe'),
+    ('ALMAX', 'Europe'),
+    ('COMES', 'Turkiye'),
+    ('COMPES', 'Europe'),
+    ('EKSTEK', 'Turkiye'),
+    ('JIANGSU', 'China'),
+    ('PDTMC', 'UAE'),
+    ('PHME', 'UAE'),
+    ('PHOENIX', 'Europe'),
+    ('WEFA', 'Europe')
+ON CONFLICT (name) DO UPDATE SET region = EXCLUDED.region;
 
 -- Seed plants
 INSERT INTO plants (name) VALUES 

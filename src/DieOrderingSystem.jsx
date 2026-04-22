@@ -9,7 +9,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -1721,9 +1721,14 @@ export default function DieOrderingSystem() {
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
   const [newSupplierShipment, setNewSupplierShipment] = useState('LAND');
+  const [newSupplierRegion, setNewSupplierRegion] = useState('');
   const [plants, setPlants] = useState([]);
   const [showAddPlant, setShowAddPlant] = useState(false);
   const [newPlantName, setNewPlantName] = useState('');
+  const [profileMeta, setProfileMeta] = useState({ count: 0, last_imported: null });
+  const [profileImportStatus, setProfileImportStatus] = useState(null); // { type, message } | null
+  const [profileImporting, setProfileImporting] = useState(false);
+  const [missingCustomerPrompt, setMissingCustomerPrompt] = useState(null); // { profiles: [{profile, dieNo}], values: {profile: customer}, onResolve, onCancel }
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
@@ -1806,6 +1811,19 @@ export default function DieOrderingSystem() {
       setPlants(response || []);
     } catch (error) {
       console.error('Failed to fetch plants:', error);
+    }
+  }, []);
+
+  // Fetch profile master metadata (count + last imported)
+  const fetchProfileMeta = useCallback(async () => {
+    try {
+      const response = await profilesAPI.getMeta();
+      setProfileMeta({
+        count: response?.count || 0,
+        last_imported: response?.last_imported || null,
+      });
+    } catch (error) {
+      console.error('Failed to fetch profile meta:', error);
     }
   }, []);
 
@@ -1929,6 +1947,7 @@ export default function DieOrderingSystem() {
       fetchSampleFollowups();
       fetchApiKeys();
       fetchPlantBudgets();
+      fetchProfileMeta();
 
       // Check if password change is required (persisted in localStorage)
       const currentUser = getUser();
@@ -1937,7 +1956,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -2238,12 +2257,146 @@ export default function DieOrderingSystem() {
   }, [fetchOrders]);
 
   // Handle PI Import with support for updating existing orders
+  // Parse a CSV/TSV file: returns [{ profile, customer }, ...]
+  const parseProfileFile = useCallback(async (file) => {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length === 0) return [];
+
+    // Detect delimiter (tab, comma, or 2+ spaces)
+    const detectDelim = (line) => {
+      if (line.includes('\t')) return '\t';
+      if (line.includes(',')) return ',';
+      return /\s{2,}/;
+    };
+    const delim = detectDelim(lines[0]);
+
+    // Header detection
+    const first = lines[0].split(delim).map(c => c.trim().toLowerCase());
+    const hasHeader = first.some(c => c === 'profile' || c === 'customer' || c === 'profile_number' || c === 'customer_name');
+    let profileIdx = 0, customerIdx = 1;
+    if (hasHeader) {
+      profileIdx = first.findIndex(c => c.startsWith('profile'));
+      customerIdx = first.findIndex(c => c.startsWith('customer'));
+      if (profileIdx === -1) profileIdx = 0;
+      if (customerIdx === -1) customerIdx = 1;
+    }
+
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+    return dataLines.map(line => {
+      const cols = line.split(delim).map(c => c.trim());
+      return { profile: cols[profileIdx] || '', customer: cols[customerIdx] || '' };
+    }).filter(r => r.profile && r.customer);
+  }, []);
+
+  const handleProfileImportFile = useCallback(async (file) => {
+    if (!file) return;
+    setProfileImporting(true);
+    setProfileImportStatus(null);
+    try {
+      const rows = await parseProfileFile(file);
+      if (rows.length === 0) {
+        setProfileImportStatus({ type: 'error', message: 'No valid rows found in file' });
+        return;
+      }
+      const result = await profilesAPI.importBulk(rows);
+      setProfileImportStatus({
+        type: 'success',
+        message: `Imported ${result.inserted} new, updated ${result.updated}${result.skipped ? `, skipped ${result.skipped}` : ''}`,
+      });
+      fetchProfileMeta();
+    } catch (error) {
+      console.error('Profile import failed:', error);
+      setProfileImportStatus({ type: 'error', message: 'Import failed: ' + error.message });
+    } finally {
+      setProfileImporting(false);
+    }
+  }, [parseProfileFile, fetchProfileMeta]);
+
+  // Look up missing customer names by profile (extracted from die_no).
+  // For misses, prompt the user to enter customer names; save back to profile master.
+  // Returns the records with Customer Name filled in (or unchanged if user cancelled).
+  const resolveCustomerNames = useCallback(async (records, getDie, getCustomer, setCustomer) => {
+    // Find records missing a customer name
+    const missing = [];
+    const profileToRecords = {};
+    for (const rec of records) {
+      const customer = (getCustomer(rec) || '').trim();
+      if (customer) continue;
+      const die = getDie(rec);
+      const profile = extractProfileFromDie(die);
+      if (!profile) continue;
+      if (!profileToRecords[profile]) profileToRecords[profile] = [];
+      profileToRecords[profile].push(rec);
+      missing.push({ profile, die });
+    }
+    if (missing.length === 0) return records;
+
+    // Lookup each unique profile in master
+    const uniqueProfiles = Array.from(new Set(missing.map(m => m.profile)));
+    const lookupResults = await Promise.all(uniqueProfiles.map(async p => {
+      const res = await profilesAPI.lookup(p);
+      return { profile: p, customer: res?.customer_name || null };
+    }));
+    const customerByProfile = {};
+    lookupResults.forEach(r => { customerByProfile[r.profile] = r.customer; });
+
+    // Apply hits
+    uniqueProfiles.forEach(p => {
+      if (customerByProfile[p]) {
+        (profileToRecords[p] || []).forEach(rec => setCustomer(rec, customerByProfile[p]));
+      }
+    });
+
+    // Identify still-missing profiles
+    const stillMissing = uniqueProfiles
+      .filter(p => !customerByProfile[p])
+      .map(p => ({ profile: p, dieNo: profileToRecords[p][0] && getDie(profileToRecords[p][0]) }));
+
+    if (stillMissing.length === 0) return records;
+
+    // Prompt user
+    const collected = await new Promise((resolve) => {
+      setMissingCustomerPrompt({
+        profiles: stillMissing,
+        values: stillMissing.reduce((acc, p) => ({ ...acc, [p.profile]: '' }), {}),
+        onResolve: (values) => { setMissingCustomerPrompt(null); resolve(values); },
+        onCancel: () => { setMissingCustomerPrompt(null); resolve(null); },
+      });
+    });
+
+    if (!collected) return records; // user cancelled — leave records unchanged
+
+    // Save to master + apply to records
+    const saves = Object.entries(collected)
+      .filter(([, v]) => v && v.trim())
+      .map(async ([profile, customer]) => {
+        const trimmed = customer.trim();
+        try { await profilesAPI.save(profile, trimmed); } catch (e) { console.error('Save profile failed:', e); }
+        (profileToRecords[profile] || []).forEach(rec => setCustomer(rec, trimmed));
+      });
+    await Promise.all(saves);
+    fetchProfileMeta();
+
+    return records;
+  }, [fetchProfileMeta]);
+
   const handlePIImport = useCallback(async (importData) => {
     try {
+      // Resolve customer names from profile master (with prompt for unknowns).
+      // Mutates the records in place via setCustomer.
+      const records = importData.map(r => ({ ...r }));
+      await resolveCustomerNames(
+        records,
+        (r) => r['DIE NO'] || r.die_no,
+        (r) => r['Customer Name'] || r.customer_name,
+        (r, v) => { r['Customer Name'] = v; if ('customer_name' in r) r.customer_name = v; }
+      );
+
       let created = 0;
       let updated = 0;
 
-      for (const record of importData) {
+      for (const record of records) {
         // Remove the isExisting flag before sending to API
         const { isExisting, ...orderData } = record;
         if (isExisting && orderData.id) {
@@ -2273,7 +2426,7 @@ export default function DieOrderingSystem() {
       setToast({ message: 'Failed to import: ' + error.message, type: 'error' });
       setTimeout(() => setToast(null), 5000);
     }
-  }, [fetchOrders]);
+  }, [fetchOrders, resolveCustomerNames]);
 
   const filteredData = useMemo(() => {
     return data.filter(order => {
@@ -2424,6 +2577,18 @@ export default function DieOrderingSystem() {
     analyticsData.forEach(o => { if (o.Supplier) counts[o.Supplier] = (counts[o.Supplier] || 0) + 1; });
     return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [analyticsData]);
+
+  const regionData = useMemo(() => {
+    const supplierRegionMap = {};
+    suppliers.forEach(s => { if (s.name) supplierRegionMap[s.name.toUpperCase()] = s.region || 'Unknown'; });
+    const counts = {};
+    analyticsData.forEach(o => {
+      if (!o.Supplier) return;
+      const region = supplierRegionMap[String(o.Supplier).toUpperCase()] || 'Unknown';
+      counts[region] = (counts[region] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [analyticsData, suppliers]);
 
   const typeData = useMemo(() => {
     const labels = { 'N': 'New', 'B': 'Backup', 'T': 'Tooling', 'C': 'Canceled', 'H': 'Hold' };
@@ -4270,6 +4435,27 @@ export default function DieOrderingSystem() {
                 </ResponsiveContainer>
               </div>
               <div style={styles.chartCard}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Die Order Distribution by Region</h3>
+                {regionData.length === 0 ? (
+                  <div style={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textDim, fontSize: '0.875rem' }}>No data available</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={regionData} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                        {regionData.map((entry, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
+                        itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
+                        labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
+                        formatter={(value, name) => { const total = regionData.reduce((s, d) => s + d.value, 0); return [`${value} (${Math.round(value / total * 100)}%)`, name]; }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '0.8rem', color: theme.textDim }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Avg Design Lead Time by Supplier</h3>
                 <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Ordered Date to Design Received Date</p>
                 <ResponsiveContainer width="100%" height={280}>
@@ -4571,6 +4757,7 @@ export default function DieOrderingSystem() {
                       <thead>
                         <tr>
                           <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Name</th>
+                          <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Region</th>
                           <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Shipment</th>
                           <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Actions</th>
                         </tr>
@@ -4579,6 +4766,21 @@ export default function DieOrderingSystem() {
                         {suppliers.map(supplier => (
                           <tr key={supplier.id}>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, fontWeight: 500, color: theme.text }}>{supplier.name}</td>
+                            <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                              <select
+                                value={supplier.region || ''}
+                                onChange={async (e) => { try { await suppliersAPI.update(supplier.id, { region: e.target.value }); fetchSuppliers(); } catch (error) { alert('Failed to update: ' + error.message); } }}
+                                style={{ padding: '4px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
+                              >
+                                <option value="">—</option>
+                                <option value="Europe">Europe</option>
+                                <option value="Turkiye">Turkiye</option>
+                                <option value="China">China</option>
+                                <option value="UAE">UAE</option>
+                                <option value="India">India</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </td>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
                               <select
                                 value={supplier.shipment_mode || 'LAND'}
@@ -4594,11 +4796,72 @@ export default function DieOrderingSystem() {
                             </td>
                           </tr>
                         ))}
-                        {suppliers.length === 0 && <tr><td colSpan={3} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
+                        {suppliers.length === 0 && <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
                       </tbody>
                     </table>
                   </div>
                 </div>
+              </div>
+
+              {/* Profile Master Section - full width */}
+              <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}><ClipboardList size={20} /> Profile Master</h3>
+                    <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '4px', marginBottom: 0 }}>
+                      Profile-number → Customer mapping. Used to auto-fill customer name on order/backup-request creation.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '0.85rem', color: theme.textMuted }}>
+                      <strong style={{ color: theme.text }}>{profileMeta.count.toLocaleString()}</strong> profiles
+                      {profileMeta.last_imported && (
+                        <span style={{ color: theme.textDim, marginLeft: '8px' }}>
+                          · Last updated {new Date(profileMeta.last_imported).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    <label style={{ padding: '8px 16px', background: profileImporting ? theme.cardBorder : 'linear-gradient(135deg, #0EA5E9, #06B6D4)', color: 'white', border: 'none', borderRadius: '8px', cursor: profileImporting ? 'wait' : 'pointer', fontSize: '0.85rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Upload size={14} />
+                      {profileImporting ? 'Importing…' : 'Import Profiles'}
+                      <input
+                        type="file"
+                        accept=".csv,.tsv,.txt"
+                        style={{ display: 'none' }}
+                        disabled={profileImporting}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleProfileImportFile(f); e.target.value = ''; }}
+                      />
+                    </label>
+                    {profileMeta.count > 0 && (
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm(`Clear all ${profileMeta.count} profiles? This cannot be undone.`)) return;
+                          try { await profilesAPI.clearAll(); fetchProfileMeta(); setProfileImportStatus({ type: 'success', message: 'All profiles cleared' }); }
+                          catch (error) { alert('Failed to clear: ' + error.message); }
+                        }}
+                        style={{ padding: '8px 14px', background: 'transparent', color: '#EF4444', border: '1px solid #EF4444', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: theme.textDim, marginTop: '8px' }}>
+                  Accepted file: CSV/TSV with columns <code>Profile</code> and <code>Customer</code> (header optional). Existing profiles are updated.
+                </div>
+                {profileImportStatus && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: profileImportStatus.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                    color: profileImportStatus.type === 'success' ? '#10B981' : '#EF4444',
+                    fontSize: '0.85rem',
+                    border: `1px solid ${profileImportStatus.type === 'success' ? '#10B981' : '#EF4444'}40`,
+                  }}>
+                    {profileImportStatus.message}
+                  </div>
+                )}
               </div>
 
               {/* Budget Targets Section - full width */}
@@ -4986,6 +5249,18 @@ export default function DieOrderingSystem() {
                       <input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter supplier name" />
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Region</label>
+                      <select value={newSupplierRegion} onChange={(e) => setNewSupplierRegion(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
+                        <option value="">— Select Region —</option>
+                        <option value="Europe">Europe</option>
+                        <option value="Turkiye">Turkiye</option>
+                        <option value="China">China</option>
+                        <option value="UAE">UAE</option>
+                        <option value="India">India</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
                       <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Mode of Shipment</label>
                       <select value={newSupplierShipment} onChange={(e) => setNewSupplierShipment(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
                         <option value="LAND">LAND</option>
@@ -4993,8 +5268,8 @@ export default function DieOrderingSystem() {
                       </select>
                     </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                      <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
+                      <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment, newSupplierRegion || null); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
                     </div>
                   </div>
                 </div>
@@ -5075,6 +5350,60 @@ export default function DieOrderingSystem() {
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
         {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}
+        {missingCustomerPrompt && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
+            <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', width: '560px', maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', border: `1px solid ${theme.cardBorder}` }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: theme.text, margin: 0 }}>Customer Names Required</h3>
+                <p style={{ fontSize: '0.85rem', color: theme.textDim, marginTop: '6px', marginBottom: 0 }}>
+                  These profiles are not in the Profile Master. Provide a customer name for each — they&apos;ll be saved to the master so future imports auto-fill.
+                </p>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', border: `1px solid ${theme.cardBorder}`, borderRadius: '10px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Profile</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>From Die</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Customer Name</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {missingCustomerPrompt.profiles.map(({ profile, dieNo }) => (
+                      <tr key={profile}>
+                        <td style={{ padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.text, fontWeight: 600 }}>{profile}</td>
+                        <td style={{ padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textMuted }}>{dieNo || '—'}</td>
+                        <td style={{ padding: '6px 12px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                          <input
+                            type="text"
+                            value={missingCustomerPrompt.values[profile] || ''}
+                            onChange={(e) => setMissingCustomerPrompt(prev => prev ? { ...prev, values: { ...prev.values, [profile]: e.target.value } } : prev)}
+                            placeholder="Enter customer name"
+                            style={{ width: '100%', padding: '6px 10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.85rem' }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1rem' }}>
+                <button
+                  onClick={() => missingCustomerPrompt.onCancel?.()}
+                  style={{ padding: '8px 18px', background: 'transparent', color: theme.text, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancel Import
+                </button>
+                <button
+                  onClick={() => missingCustomerPrompt.onResolve?.(missingCustomerPrompt.values)}
+                  style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
+                >
+                  Save &amp; Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {showPasswordChangeModal && (
           <PasswordChangeModal
             onClose={() => !forcePasswordChange && setShowPasswordChangeModal(false)}

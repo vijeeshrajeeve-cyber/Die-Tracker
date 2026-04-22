@@ -110,6 +110,7 @@ const initializeDatabase = async () => {
         id SERIAL PRIMARY KEY,
         name TEXT UNIQUE NOT NULL,
         shipment_mode TEXT DEFAULT 'LAND',
+        region TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -118,7 +119,25 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppliers' AND column_name='shipment_mode') THEN
           ALTER TABLE suppliers ADD COLUMN shipment_mode TEXT DEFAULT 'LAND';
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppliers' AND column_name='region') THEN
+          ALTER TABLE suppliers ADD COLUMN region TEXT;
+        END IF;
       END $$;
+
+      -- Backfill default regions for known suppliers when region is null
+      UPDATE suppliers SET region = v.region FROM (VALUES
+        ('ADEX', 'Europe'),
+        ('ALMAX', 'Europe'),
+        ('COMES', 'Turkiye'),
+        ('COMPES', 'Europe'),
+        ('EKSTEK', 'Turkiye'),
+        ('JIANGSU', 'China'),
+        ('PDTMC', 'UAE'),
+        ('PHME', 'UAE'),
+        ('PHOENIX', 'Europe'),
+        ('WEFA', 'Europe')
+      ) AS v(name, region)
+      WHERE suppliers.name = v.name AND (suppliers.region IS NULL OR suppliers.region = '');
 
       -- Plants table
       CREATE TABLE IF NOT EXISTS plants (
@@ -126,6 +145,16 @@ const initializeDatabase = async () => {
         name TEXT UNIQUE NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Profile master (profile number → customer name)
+      CREATE TABLE IF NOT EXISTS profiles (
+        id SERIAL PRIMARY KEY,
+        profile_number TEXT UNIQUE NOT NULL,
+        customer_name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_profiles_profile_number ON profiles(profile_number);
 
       -- Die Orders table
       CREATE TABLE IF NOT EXISTS die_orders (

@@ -158,10 +158,10 @@ export const suppliersAPI = {
         return apiRequest('/suppliers');
     },
 
-    create: async (name, shipment_mode = 'LAND') => {
+    create: async (name, shipment_mode = 'LAND', region = null) => {
         return apiRequest('/suppliers', {
             method: 'POST',
-            body: JSON.stringify({ name, shipment_mode }),
+            body: JSON.stringify({ name, shipment_mode, region }),
         });
     },
 
@@ -196,6 +196,50 @@ export const plantsAPI = {
         return apiRequest(`/plants/${id}`, {
             method: 'DELETE',
         });
+    },
+};
+
+// Helper: extract profile number from a die_no — part before "-", leading zeros stripped
+export const extractProfileFromDie = (dieNo) => {
+    if (dieNo === null || dieNo === undefined) return null;
+    const cleaned = String(dieNo).trim().split('-')[0].replace(/^0+/, '');
+    return cleaned || null;
+};
+
+// Profiles API (Profile master)
+export const profilesAPI = {
+    getMeta: async () => {
+        return apiRequest('/profiles');
+    },
+
+    lookup: async (profileOrDie) => {
+        const profile = extractProfileFromDie(profileOrDie);
+        if (!profile) return null;
+        try {
+            return await apiRequest(`/profiles/lookup?profile=${encodeURIComponent(profile)}`);
+        } catch (err) {
+            if (/not found/i.test(err.message)) return null;
+            throw err;
+        }
+    },
+
+    save: async (profileOrDie, customer_name) => {
+        const profile = extractProfileFromDie(profileOrDie);
+        return apiRequest('/profiles', {
+            method: 'POST',
+            body: JSON.stringify({ profile_number: profile, customer_name }),
+        });
+    },
+
+    importBulk: async (rows) => {
+        return apiRequest('/profiles/import', {
+            method: 'POST',
+            body: JSON.stringify({ rows }),
+        });
+    },
+
+    clearAll: async () => {
+        return apiRequest('/profiles', { method: 'DELETE' });
     },
 };
 

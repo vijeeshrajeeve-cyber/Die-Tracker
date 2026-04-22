@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
-import { backupRequestsAPI } from '../../api';
+import { backupRequestsAPI, profilesAPI, extractProfileFromDie } from '../../api';
 
 const StatusBadge = ({ status }) => {
   const config = BACKUP_REQUEST_STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
@@ -130,13 +130,53 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     setShowModal(true);
   };
 
+  const handleDieBlur = async () => {
+    const die = (formData['DIE NO'] || '').trim();
+    const existingCustomer = (formData['Customer'] || '').trim();
+    if (!die || existingCustomer) return;
+    try {
+      const result = await profilesAPI.lookup(die);
+      if (result?.customer_name) {
+        setFormData(prev => ({ ...prev, 'Customer': result.customer_name }));
+      }
+    } catch (e) {
+      console.error('Profile lookup failed:', e);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      const die = (formData['DIE NO'] || '').trim();
+      let customer = (formData['Customer'] || '').trim();
+      const profile = extractProfileFromDie(die);
+
+      // If die set but no customer, try lookup once
+      if (die && !customer && profile) {
+        try {
+          const result = await profilesAPI.lookup(die);
+          if (result?.customer_name) {
+            customer = result.customer_name;
+            setFormData(prev => ({ ...prev, 'Customer': customer }));
+          }
+        } catch (e) { console.error('Profile lookup failed:', e); }
+      }
+
+      // Still missing → ask the user
+      if (die && !customer && profile) {
+        const entered = window.prompt(`No customer found for profile ${profile} (die ${die}).\nEnter customer name to save to Profile Master:`);
+        if (entered === null) { setSaving(false); return; } // cancelled
+        customer = entered.trim();
+        if (!customer) { alert('Customer name is required.'); setSaving(false); return; }
+        try { await profilesAPI.save(die, customer); } catch (e) { console.error('Save profile failed:', e); }
+      }
+
+      const payload = { ...formData, 'Customer': customer };
+
       if (editingRequest) {
-        await backupRequestsAPI.update(editingRequest.id, formData);
+        await backupRequestsAPI.update(editingRequest.id, payload);
       } else {
-        await backupRequestsAPI.create(formData);
+        await backupRequestsAPI.create(payload);
       }
       setShowModal(false);
       onRefresh();
@@ -484,6 +524,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                   type="text"
                   value={formData['DIE NO']}
                   onChange={(e) => setFormData({ ...formData, 'DIE NO': e.target.value })}
+                  onBlur={handleDieBlur}
                   style={inputStyle}
                   placeholder="Enter die number"
                 />

@@ -17,7 +17,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // Add new supplier (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { name, shipment_mode } = req.body;
+        const { name, shipment_mode, region } = req.body;
 
         if (!name || !name.trim()) {
             return res.status(400).json({ error: 'Supplier name is required' });
@@ -25,6 +25,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 
         const trimmedName = name.trim().toUpperCase();
         const mode = (shipment_mode || 'LAND').toUpperCase();
+        const trimmedRegion = region && region.trim() ? region.trim() : null;
 
         if (!['AIR', 'LAND'].includes(mode)) {
             return res.status(400).json({ error: 'Shipment mode must be AIR or LAND' });
@@ -37,8 +38,8 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO suppliers (name, shipment_mode) VALUES ($1, $2) RETURNING *',
-            [trimmedName, mode]
+            'INSERT INTO suppliers (name, shipment_mode, region) VALUES ($1, $2, $3) RETURNING *',
+            [trimmedName, mode, trimmedRegion]
         );
 
         res.status(201).json(result.rows[0]);
@@ -52,21 +53,26 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const { shipment_mode } = req.body;
+        const { shipment_mode, region } = req.body;
 
         const existing = await pool.query('SELECT * FROM suppliers WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ error: 'Supplier not found' });
         }
 
-        const mode = (shipment_mode || 'LAND').toUpperCase();
+        const current = existing.rows[0];
+        const mode = (shipment_mode !== undefined ? shipment_mode : current.shipment_mode || 'LAND').toUpperCase();
         if (!['AIR', 'LAND'].includes(mode)) {
             return res.status(400).json({ error: 'Shipment mode must be AIR or LAND' });
         }
 
+        const newRegion = region !== undefined
+            ? (region && region.trim() ? region.trim() : null)
+            : current.region;
+
         const result = await pool.query(
-            'UPDATE suppliers SET shipment_mode = $1 WHERE id = $2 RETURNING *',
-            [mode, id]
+            'UPDATE suppliers SET shipment_mode = $1, region = $2 WHERE id = $3 RETURNING *',
+            [mode, newRegion, id]
         );
 
         res.json(result.rows[0]);
