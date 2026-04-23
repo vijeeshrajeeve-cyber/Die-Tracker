@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area, LabelList, ComposedChart, Line } from 'recharts';
-import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -62,6 +62,13 @@ const getMonthFromDate = (dateStr) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   try { return months[new Date(dateStr).getMonth()]; } catch { return null; }
 };
+
+const getYearFromDate = (dateStr) => {
+  if (!dateStr) return null;
+  try { const y = new Date(dateStr).getFullYear(); return isNaN(y) ? null : String(y); } catch { return null; }
+};
+
+const MONTH_ORDER = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const normalizeColumnName = (col) => {
   const mappings = {
@@ -212,6 +219,199 @@ const ImportModal = ({ onClose, onImport }) => {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: '1px solid #334155' }}>
           <button onClick={onClose} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button onClick={() => { if (preview?.data) { onImport(preview.data); onClose(); } }} disabled={!preview} style={{ padding: '0.75rem 1.5rem', background: preview ? 'linear-gradient(135deg, #3B82F6, #8B5CF6)' : '#475569', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: preview ? 'pointer' : 'not-allowed', opacity: preview ? 1 : 0.5 }}>Import {preview?.count || 0} Records</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Add Order Modal ───────────────────────────────────────────────────────────
+const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {} }) => {
+  const EMPTY_FORM = {
+    Plant: '', 'Order No': '', 'DIE NO': '', TYPE: 'N', 'Die Size': '',
+    'Die Requested Date': '', 'Ordered date': '', ETA: '',
+    Supplier: '', 'Customer Name': '',
+    STATUS: 'AWAITING FOR DESIGN', 'Type of shipment': 'AIR',
+    'Mandrels per Cavity': '', 'Total Mandrels': '', 'No of Trial': '',
+    Press: '', Corrector: '', 'PR Number': '',
+    'Ascona Reference': '', 'Sample Status': '', Remark: '',
+  };
+  const [form, setForm] = React.useState(EMPTY_FORM);
+  const [errors, setErrors] = React.useState({});
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+
+  const validate = () => {
+    const e = {};
+    if (!form['DIE NO'].trim()) e['DIE NO'] = 'Required';
+    if (!form.Plant) e.Plant = 'Required';
+    if (!form['Die Requested Date']) e['Die Requested Date'] = 'Required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      await onAdd({
+        ...form,
+        month: getMonthFromDate(form['Die Requested Date']),
+        'Mandrels per Cavity': Number(form['Mandrels per Cavity']) || 0,
+        'Total Mandrels': Number(form['Total Mandrels']) || 0,
+        'No of Trial': Number(form['No of Trial']) || 0,
+      });
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const bg = theme.cardBg || '#1E293B';
+  const border = theme.cardBorder || '#334155';
+  const textColor = theme.text || '#F1F5F9';
+  const textMuted = theme.textMuted || '#94A3B8';
+  const inputBg = theme.inputBg || '#0F172A';
+
+  const inputStyle = (hasError = false) => ({
+    width: '100%', padding: '9px 12px',
+    background: inputBg, border: `1px solid ${hasError ? '#EF4444' : border}`,
+    borderRadius: '8px', color: textColor, fontSize: '0.875rem',
+    outline: 'none', boxSizing: 'border-box',
+  });
+
+  const labelStyle = {
+    display: 'block', fontSize: '0.7rem', fontWeight: 600,
+    color: textMuted, textTransform: 'uppercase', letterSpacing: '0.06em',
+    marginBottom: '5px',
+  };
+
+  const sectionStyle = {
+    background: inputBg, borderRadius: '10px', padding: '1rem',
+    marginBottom: '0.875rem', border: `1px solid ${border}`,
+  };
+
+  const sectionTitle = {
+    fontSize: '0.65rem', fontWeight: 700, color: textMuted,
+    textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.75rem',
+    margin: '0 0 0.75rem 0',
+  };
+
+  const gridStyle = (cols) => ({
+    display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '10px',
+  });
+
+  const Field = ({ label, field, type = 'text', options, required, span }) => (
+    <div style={span ? { gridColumn: `span ${span}` } : {}}>
+      <label style={labelStyle}>{label}{required && <span style={{ color: '#EF4444' }}> *</span>}</label>
+      {type === 'select' ? (
+        <select value={form[field]} onChange={e => set(field, e.target.value)} style={inputStyle(!!errors[field])}>
+          <option value="">— select —</option>
+          {(options || []).map(o =>
+            typeof o === 'string'
+              ? <option key={o} value={o}>{o}</option>
+              : <option key={o.value} value={o.value}>{o.label}</option>
+          )}
+        </select>
+      ) : (
+        <input type={type} value={form[field]} onChange={e => set(field, e.target.value)} style={inputStyle(!!errors[field])} />
+      )}
+      {errors[field] && <span style={{ fontSize: '0.68rem', color: '#EF4444', marginTop: '3px', display: 'block' }}>{errors[field]}</span>}
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
+      <div style={{ background: bg, borderRadius: '20px', width: '100%', maxWidth: '720px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', border: `1px solid ${border}`, boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Plus size={22} color="white" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: textColor, margin: 0 }}>New Die Order</h2>
+              <p style={{ fontSize: '0.8rem', color: textMuted, margin: 0 }}>Manually create a new order entry</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: textMuted, cursor: 'pointer', padding: '8px', borderRadius: '8px' }}><X size={20} /></button>
+        </div>
+
+        {/* Scrollable Body */}
+        <div style={{ overflowY: 'auto', flex: 1, padding: '1.25rem 1.5rem' }}>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Core Information</p>
+            <div style={gridStyle(3)}>
+              <Field label="Plant" field="Plant" type="select" required options={plants.map(p => p.name)} />
+              <Field label="Order No" field="Order No" />
+              <Field label="Die No" field="DIE NO" required />
+              <Field label="Type" field="TYPE" type="select" options={[{ value: 'N', label: 'N — New' }, { value: 'B', label: 'B — Backup' }, { value: 'T', label: 'T — Tooling' }]} />
+              <Field label="Die Size" field="Die Size" span={2} />
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Supplier & Customer</p>
+            <div style={gridStyle(2)}>
+              <Field label="Supplier" field="Supplier" type="select" options={suppliers.map(s => s.name)} />
+              <Field label="Customer Name" field="Customer Name" />
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Dates</p>
+            <div style={gridStyle(3)}>
+              <Field label="Die Requested Date" field="Die Requested Date" type="date" required />
+              <Field label="Ordered Date" field="Ordered date" type="date" />
+              <Field label="ETA" field="ETA" type="date" />
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Status & Shipping</p>
+            <div style={gridStyle(2)}>
+              <Field label="Status" field="STATUS" type="select" options={Object.entries(STATUS_CONFIG).map(([v, c]) => ({ value: v, label: c.label || v }))} />
+              <Field label="Shipment Type" field="Type of shipment" type="select" options={['AIR', 'LAND']} />
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Technical Details</p>
+            <div style={gridStyle(3)}>
+              <Field label="Mandrels / Cavity" field="Mandrels per Cavity" type="number" />
+              <Field label="Total Mandrels" field="Total Mandrels" type="number" />
+              <Field label="No. of Trials" field="No of Trial" type="number" />
+              <Field label="Press" field="Press" />
+              <Field label="Corrector" field="Corrector" />
+              <Field label="PR Number" field="PR Number" />
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Additional Info</p>
+            <div style={{ ...gridStyle(2), marginBottom: '10px' }}>
+              <Field label="Ascona Reference" field="Ascona Reference" />
+              <Field label="Sample Status" field="Sample Status" />
+            </div>
+            <label style={labelStyle}>Remark</label>
+            <textarea
+              value={form.Remark}
+              onChange={e => set('Remark', e.target.value)}
+              rows={3}
+              style={{ ...inputStyle(false), resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '1rem 1.5rem', borderTop: `1px solid ${border}`, flexShrink: 0 }}>
+          <button onClick={onClose} style={{ padding: '9px 20px', background: 'transparent', color: textColor, border: `1px solid ${border}`, borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>Cancel</button>
+          <button onClick={handleSubmit} disabled={submitting} style={{ padding: '9px 24px', background: submitting ? '#475569' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '8px', opacity: submitting ? 0.7 : 1 }}>
+            <Plus size={16} />{submitting ? 'Saving…' : 'Create Order'}
+          </button>
         </div>
       </div>
     </div>
@@ -1651,12 +1851,13 @@ export default function DieOrderingSystem() {
   const [data, setData] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all' });
+  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' });
   const [sortConfig, setSortConfig] = useState({ key: 'Die Requested Date', direction: 'desc' });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showPDFImportModal, setShowPDFImportModal] = useState(false);
   const [showPIImportModal, setShowPIImportModal] = useState(false);
+  const [showAddOrderModal, setShowAddOrderModal] = useState(false);
   const [revisionOrder, setRevisionOrder] = useState(null); // For revision modal
   const [changelogOrder, setChangelogOrder] = useState(null); // For changelog modal
   const [currentPage, setCurrentPage] = useState(1);
@@ -2248,10 +2449,11 @@ export default function DieOrderingSystem() {
     try {
       await ordersAPI.create(newRecord);
       fetchOrders();
+      setToast({ message: `Order created: ${newRecord['DIE NO'] || 'New order'}`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
     } catch (error) {
-      alert(error.message);
-      // Fallback to local add
-      setData(prev => [newRecord, ...prev]);
+      setToast({ message: 'Failed to create order: ' + error.message, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
     }
     setCurrentPage(1);
   }, [fetchOrders]);
@@ -2433,7 +2635,8 @@ export default function DieOrderingSystem() {
       const matchesSearch = !searchTerm || order['DIE NO']?.toLowerCase().includes(searchTerm.toLowerCase()) || order['Order No']?.toString().toLowerCase().includes(searchTerm.toLowerCase()) || order.Supplier?.toLowerCase().includes(searchTerm.toLowerCase());
       const statusMatch = filters.status === 'all' ||
         (filters.status === 'active' ? !['DONE', 'CANCELLED'].includes(order.STATUS) : order.STATUS === filters.status);
-      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month);
+      const orderYear = getYearFromDate(order['Die Requested Date']);
+      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year);
     }).sort((a, b) => {
       const aVal = a[sortConfig.key] || '', bVal = b[sortConfig.key] || '';
       return (aVal > bVal ? 1 : -1) * (sortConfig.direction === 'asc' ? 1 : -1);
@@ -2461,6 +2664,11 @@ export default function DieOrderingSystem() {
     const total = data.length, completed = data.filter(o => o.STATUS === 'DONE').length;
     const pending = data.filter(o => !['DONE', 'CANCELLED'].includes(o.STATUS)).length;
     const cancelled = data.filter(o => o.STATUS === 'CANCELLED').length;
+    // Orders in manufacturing: design approved but die not yet received
+    const inManufacturing = data.filter(o =>
+      o['Design Approved Date'] && o['Design Approved Date'].toString().trim() !== '' &&
+      (!o['Die Received Date'] || o['Die Received Date'].toString().trim() === '')
+    ).length;
     // Avg design-approval time: for orders with both Design Received & Design Approved dates,
     // excluding cancelled / on-hold orders.
     const approvedDurations = [];
@@ -2476,7 +2684,7 @@ export default function DieOrderingSystem() {
     const avgDelay = approvedDurations.length > 0
       ? (approvedDurations.reduce((s, d) => s + d, 0) / approvedDurations.length).toFixed(1)
       : '0';
-    return { total, completed, pending, cancelled, avgDelay };
+    return { total, completed, pending, cancelled, avgDelay, inManufacturing };
   }, [data]);
 
   const statusChartData = useMemo(() => {
@@ -2601,7 +2809,8 @@ export default function DieOrderingSystem() {
   const uniqueStatuses = [...new Set(data.map(o => o.STATUS))].filter(Boolean);
   const uniqueSuppliers = [...new Set(data.map(o => o.Supplier))].filter(Boolean).sort();
   const uniqueTypes = [...new Set(data.map(o => o.TYPE))].filter(Boolean).sort();
-  const uniqueMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const uniqueMonths = MONTH_ORDER.filter(m => data.some(o => o.month === m));
+  const uniqueYears = [...new Set(data.map(o => getYearFromDate(o['Die Requested Date'])))].filter(Boolean).sort((a, b) => Number(b) - Number(a));
 
   // Map die_no → die_received_date from sample followups (for lead time columns)
   const dieReceivedDateMap = useMemo(() => {
@@ -3028,7 +3237,7 @@ export default function DieOrderingSystem() {
               <div style={styles.kpiGrid}>
                 {[
                   { title: 'Total Orders', value: stats.total, color: '#3B82F6', icon: Package, sub: 'Year to date', filter: 'all' },
-                  { title: 'In Manufacturing', value: stats.completed, color: '#10B981', icon: CheckCircle, sub: `${stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(0) : 0}% rate`, filter: 'DONE' },
+                  { title: 'In Manufacturing', value: stats.inManufacturing, color: '#10B981', icon: CheckCircle, sub: 'Approved · awaiting delivery', filter: 'active' },
                   { title: 'In Progress', value: stats.pending, color: '#F59E0B', icon: Clock, sub: 'Active orders', filter: 'active' },
                   { title: 'Cancelled', value: stats.cancelled, color: '#EF4444', icon: XCircle, sub: `${stats.total > 0 ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%`, filter: 'CANCELLED' },
                   { title: 'Avg Delay', value: `${stats.avgDelay}d`, color: '#8B5CF6', icon: AlertTriangle, sub: 'Design approval' },
@@ -3308,10 +3517,12 @@ export default function DieOrderingSystem() {
                   <select style={styles.filterSelect} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="all">All Status</option>{uniqueStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}</select>
                   <select style={styles.filterSelect} value={filters.supplier} onChange={(e) => setFilters({ ...filters, supplier: e.target.value })}><option value="all">All Suppliers</option>{uniqueSuppliers.map(s => <option key={s} value={s}>{s}</option>)}</select>
                   <select style={styles.filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                  <select style={styles.filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                  <select style={styles.filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
                   <span style={{ fontSize: '0.875rem', color: '#94A3B8' }}>Showing <strong style={{ color: '#F1F5F9' }}>{filteredData.length}</strong> orders</span>
-                  <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
+                  <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
                 </div>
               </div>
               <div style={styles.tableContainer}>
@@ -3499,15 +3710,25 @@ export default function DieOrderingSystem() {
                     </div>
                     <span style={{ background: config.color, color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600 }}>{flowOrders.length}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '280px' }}>
-                    <Search size={18} color={theme.textMuted} />
-                    <input
-                      type="text"
-                      placeholder="Search orders..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }}
-                    />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {currentFlow.status === 'PENDING FOR ORDERING' && (
+                      <button
+                        onClick={() => setShowAddOrderModal(true)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 18px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        <Plus size={16} /> New Order
+                      </button>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '280px' }}>
+                      <Search size={18} color={theme.textMuted} />
+                      <input
+                        type="text"
+                        placeholder="Search orders..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -5437,6 +5658,16 @@ export default function DieOrderingSystem() {
             }}
             theme={theme}
             prefill={showEmailCompose}
+          />
+        )}
+
+        {showAddOrderModal && (
+          <AddOrderModal
+            onClose={() => setShowAddOrderModal(false)}
+            onAdd={handleAddRecord}
+            plants={plants}
+            suppliers={suppliers}
+            theme={theme}
           />
         )}
 
