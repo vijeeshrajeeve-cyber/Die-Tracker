@@ -124,6 +124,24 @@ export const usersAPI = {
             body: JSON.stringify({ page_access: pageAccess }),
         });
     },
+
+    update: async (id, { username, role, pageAccess } = {}) => {
+        const body = {};
+        if (username !== undefined) body.username = username;
+        if (role !== undefined) body.role = role;
+        if (pageAccess !== undefined) body.page_access = pageAccess;
+        return apiRequest(`/users/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(body),
+        });
+    },
+
+    resetPassword: async (id, password) => {
+        return apiRequest(`/users/${id}/reset-password`, {
+            method: 'POST',
+            body: JSON.stringify({ password }),
+        });
+    },
 };
 
 // Orders API

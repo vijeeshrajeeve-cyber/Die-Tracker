@@ -470,6 +470,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     'Type of shipment': shipmentType,
                     'Mandrels per Cavity': row.mandrel || existingOrder?.['Mandrels per Cavity'] || 0,
                     'Total Mandrels': (row.mandrel * (row.cavity || 1)) || existingOrder?.['Total Mandrels'] || 0,
+                    'Cavity': row.cavity || existingOrder?.Cavity || 0,
                     'Design Received Date': existingOrder?.['Design Received Date'] || null,
                     '3D Model Received Date': existingOrder?.['3D Model Received Date'] || null,
                     'simulationEnabled': existingOrder?.simulationEnabled || false,

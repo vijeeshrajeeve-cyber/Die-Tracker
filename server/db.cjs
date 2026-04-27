@@ -169,6 +169,7 @@ const initializeDatabase = async () => {
         shipment_type TEXT,
         mandrels_per_cavity INTEGER DEFAULT 0,
         total_mandrels INTEGER DEFAULT 0,
+        cavity INTEGER DEFAULT 0,
         design_received_date TEXT,
         three_d_model_received_date TEXT,
         simulation_enabled INTEGER DEFAULT 0,
@@ -222,6 +223,9 @@ const initializeDatabase = async () => {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='press') THEN
           ALTER TABLE die_orders ADD COLUMN press TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='cavity') THEN
+          ALTER TABLE die_orders ADD COLUMN cavity INTEGER DEFAULT 0;
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='ascona_reference') THEN
           ALTER TABLE die_orders ADD COLUMN ascona_reference TEXT DEFAULT 'No';
@@ -348,6 +352,21 @@ const initializeDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(plant_name, year, type)
       );
+
+      -- App migrations marker table (one-time data migrations)
+      CREATE TABLE IF NOT EXISTS app_migrations (
+        id TEXT PRIMARY KEY,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- One-time: enforce first-login password reset for every existing user.
+      -- Admins who have already rotated their password will be asked to rotate again once.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'force_pwd_reset_all_users_v1') THEN
+          UPDATE users SET password_must_change = true;
+          INSERT INTO app_migrations (id) VALUES ('force_pwd_reset_all_users_v1');
+        END IF;
+      END $$;
 
       -- Sample Followups table
       CREATE TABLE IF NOT EXISTS sample_followups (

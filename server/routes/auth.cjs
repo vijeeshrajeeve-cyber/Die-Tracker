@@ -148,7 +148,7 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
         // Reset failed attempts on successful login
         await resetFailedAttempts(user.id);
 
-        const pageAccess = user.page_access ? JSON.parse(user.page_access) : null;
+        const pageAccess = parsePageAccess(user.page_access);
 
         const token = jwt.sign(
             {
@@ -223,7 +223,7 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
         );
 
         // Generate new token without passwordMustChange flag
-        const cpPageAccess = user.page_access ? JSON.parse(user.page_access) : null;
+        const cpPageAccess = parsePageAccess(user.page_access);
         const newToken = jwt.sign(
             {
                 id: user.id,
@@ -280,7 +280,7 @@ router.get('/me', async (req, res) => {
                 username: user.username,
                 role: user.role,
                 passwordMustChange: user.password_must_change,
-                pageAccess: user.page_access ? JSON.parse(user.page_access) : null,
+                pageAccess: parsePageAccess(user.page_access),
                 createdAt: user.created_at
             }
         });
@@ -293,8 +293,29 @@ router.get('/me', async (req, res) => {
     }
 });
 
-// Middleware to verify token
-const authMiddleware = (req, res, next) => {
+const parsePageAccess = (pageAccess) => {
+    if (!pageAccess) return null;
+    try {
+        const parsed = JSON.parse(pageAccess);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
+
+const canAccessPage = (user, pageIds) => {
+    if (user.role === 'admin') return true;
+    if (!user.pageAccess) return true; // null means all pages
+
+    const allowedPages = Array.isArray(pageIds) ? pageIds : [pageIds];
+    return allowedPages.some(pageId => (
+        user.pageAccess.includes(pageId) ||
+        (pageId.startsWith('flow-') && user.pageAccess.includes('process-flow'))
+    ));
+};
+
+// Middleware to verify token and refresh current user permissions from the DB
+const authMiddleware = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -303,11 +324,35 @@ const authMiddleware = (req, res, next) => {
 
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
+
+        const result = await pool.query(
+            'SELECT id, username, role, password_must_change, page_access FROM users WHERE id = $1',
+            [decoded.id]
+        );
+        const currentUser = result.rows[0];
+
+        if (!currentUser) {
+            return res.status(401).json({ error: 'User not found' });
+        }
+
+        req.user = {
+            id: currentUser.id,
+            username: currentUser.username,
+            role: currentUser.role,
+            passwordMustChange: currentUser.password_must_change,
+            pageAccess: parsePageAccess(currentUser.page_access)
+        };
         next();
     } catch (error) {
         return res.status(401).json({ error: 'Invalid or expired token' });
     }
+};
+
+const pageAccessMiddleware = (pageIds) => (req, res, next) => {
+    if (!canAccessPage(req.user, pageIds)) {
+        return res.status(403).json({ error: 'Page access required' });
+    }
+    next();
 };
 
 // Admin middleware
@@ -318,4 +363,4 @@ const adminMiddleware = (req, res, next) => {
     next();
 };
 
-module.exports = { router, authMiddleware, adminMiddleware };
+module.exports = { router, authMiddleware, adminMiddleware, pageAccessMiddleware };

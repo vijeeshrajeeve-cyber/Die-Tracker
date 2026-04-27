@@ -4,13 +4,14 @@
 
 const express = require('express');
 const emailService = require('../services/email.cjs');
-const { authMiddleware } = require('./auth.cjs');
+const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
+const emailPageAccess = pageAccessMiddleware('email-inbox');
 
 // ── Send email ──────────────────────────────────────────────────────────────
 
-router.post('/send', authMiddleware, async (req, res) => {
+router.post('/send', authMiddleware, emailPageAccess, async (req, res) => {
     try {
         const { to, cc, subject, body: emailBody, importance, orderId } = req.body;
         if (!to || !subject || !emailBody) {
@@ -33,7 +34,7 @@ router.post('/send', authMiddleware, async (req, res) => {
 
 // ── Inbox ───────────────────────────────────────────────────────────────────
 
-router.get('/inbox', authMiddleware, async (req, res) => {
+router.get('/inbox', authMiddleware, emailPageAccess, async (req, res) => {
     try {
         const page     = parseInt(req.query.page)     || 1;
         const pageSize = Math.min(parseInt(req.query.pageSize) || 20, 100);
@@ -49,7 +50,7 @@ router.get('/inbox', authMiddleware, async (req, res) => {
 
 // ── Thread ──────────────────────────────────────────────────────────────────
 
-router.get('/thread/:conversationId', authMiddleware, async (req, res) => {
+router.get('/thread/:conversationId', authMiddleware, emailPageAccess, async (req, res) => {
     try {
         const emails = await emailService.getEmailThread(req.params.conversationId);
         res.json({ emails });
@@ -61,7 +62,7 @@ router.get('/thread/:conversationId', authMiddleware, async (req, res) => {
 
 // ── Order emails ─────────────────────────────────────────────────────────────
 
-router.get('/order/:orderId', authMiddleware, async (req, res) => {
+router.get('/order/:orderId', authMiddleware, emailPageAccess, async (req, res) => {
     try {
         const orderId = parseInt(req.params.orderId);
         if (!orderId || orderId < 1) {
@@ -77,7 +78,7 @@ router.get('/order/:orderId', authMiddleware, async (req, res) => {
 
 // ── Link email to order ───────────────────────────────────────────────────────
 
-router.post('/link', authMiddleware, async (req, res) => {
+router.post('/link', authMiddleware, emailPageAccess, async (req, res) => {
     try {
         const { emailId, orderId } = req.body;
         if (!emailId || !orderId) {
@@ -93,7 +94,7 @@ router.post('/link', authMiddleware, async (req, res) => {
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
-router.get('/templates', authMiddleware, async (req, res) => {
+router.get('/templates', authMiddleware, emailPageAccess, async (req, res) => {
     try {
         const templates = await emailService.getEmailTemplates();
         res.json({ templates });

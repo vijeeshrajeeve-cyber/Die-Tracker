@@ -3,25 +3,22 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
-// Configure PDF.js worker (Vite-compatible approach)
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
-import { PIImportModal, RevisionModal, ChangeLogModal } from './components/modals';
+import { PDFImportModal, PIImportModal, MissingCustomerPromptModal, RevisionModal, ChangeLogModal } from './components/modals';
 import BackupDieRequests from './components/backup/BackupDieRequests';
 import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
 import AddUserModal from './components/modals/AddUserModal';
+import ResetPasswordModal from './components/modals/ResetPasswordModal';
 import { CONTROLLABLE_PAGES, MONTHS, BACKUP_REQUEST_STATUS_CONFIG } from './utils/constants';
 import { parseDateDMY } from './utils/helpers';
+import usePIImport from './hooks/usePIImport';
 
 
 
@@ -44,6 +41,29 @@ const CHART_COLORS = ['#0EA5E9', '#8B5CF6', '#F59E0B', '#10B981', '#EF4444', '#E
 const PLANT_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#EF4444', '#EC4899', '#06B6D4', '#F97316', '#84CC16', '#A855F7', '#F43F5E'];
 const PLANT_COLOR_MAP = { 'GEX 1': '#32a838', 'GEX 2': '#3234a8' };
 const getPlantColor = (plant, index) => PLANT_COLOR_MAP[plant] || PLANT_COLORS[index % PLANT_COLORS.length];
+
+const ERP_PRESS_CODE_MAP = {
+  '2': 'B',
+  '3': 'C',
+  '4': 'D',
+  '5': 'E',
+  '6': 'F',
+  '7': '25',
+  '8': '35',
+};
+
+const getERPPressCode = (press) => {
+  const raw = (press || '').toString().trim().toUpperCase();
+  if (!raw) return '';
+  const normalizedPress = raw.replace(/^PRESS\s*/i, '').replace(/^P\s*/, '').trim();
+  return ERP_PRESS_CODE_MAP[normalizedPress] || raw.replace(/\s+/g, '');
+};
+
+const isSimulationEnabled = (value) => {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') return /^(true|1|yes|ok|required)$/i.test(value.trim());
+  return false;
+};
 
 // Utility functions for data import
 const parseExcelDate = (value) => {
@@ -85,6 +105,7 @@ const normalizeColumnName = (col) => {
     'die no': 'DIE NO', 'order no': 'Order No',
     'die size': 'Die Size', 'die requested date': 'Die Requested Date', 'ordered date': 'Ordered date',
     'type of shipment': 'Type of shipment', 'mandrels per cavity': 'Mandrels per Cavity',
+    'cavity': 'Cavity', 'no of cav': 'Cavity', 'no. of cav': 'Cavity', 'cav': 'Cavity',
     'total mandrels': 'Total Mandrels', 'design received date': 'Design Received Date',
     'design approved date': 'Design Approved Date', 'pr entry': 'PR Entry', 'oracle entry': 'Oracle Entry',
     'overall delay': 'OVERALL DELAY', 'status': 'STATUS', 'plant': 'Plant', 'type': 'TYPE',
@@ -102,7 +123,7 @@ const StatusBadge = ({ status }) => {
 const ProgressPipeline = ({ order }) => {
   // Include 3D Model stage only if simulation is enabled for this order
   const baseStages = ['Ordered date', 'Design Received Date'];
-  const simulationStage = order.simulationEnabled ? ['3D Model Received Date'] : [];
+  const simulationStage = isSimulationEnabled(order.simulationEnabled) ? ['3D Model Received Date'] : [];
   const endStages = ['Design Approved Date', 'PR Entry', 'Oracle Entry'];
   const stages = [...baseStages, ...simulationStage, ...endStages];
 
@@ -138,7 +159,7 @@ const ImportModal = ({ onClose, onImport }) => {
         if (normKey.toLowerCase().includes('date') || normKey === 'ETA' || normKey === 'PR Entry' || normKey === 'Oracle Entry') {
           value = parseExcelDate(value);
         }
-        if (['Delay', 'OVERALL DELAY', 'Mandrels per Cavity', 'Total Mandrels', 'No of Trial'].includes(normKey)) {
+        if (['Delay', 'OVERALL DELAY', 'Mandrels per Cavity', 'Total Mandrels', 'No of Trial', 'Cavity'].includes(normKey)) {
           value = parseFloat(value) || 0;
         }
         normalized[normKey] = value === '' || value === undefined ? null : value;
@@ -232,7 +253,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
     'Die Requested Date': '', 'Ordered date': '', ETA: '',
     Supplier: '', 'Customer Name': '',
     STATUS: 'AWAITING FOR DESIGN', 'Type of shipment': 'AIR',
-    'Mandrels per Cavity': '', 'Total Mandrels': '', 'No of Trial': '',
+    Cavity: '', 'Mandrels per Cavity': '', 'Total Mandrels': '', 'No of Trial': '',
     Press: '', Corrector: '', 'PR Number': '',
     'Ascona Reference': '', 'Sample Status': '', Remark: '',
   };
@@ -258,6 +279,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
       await onAdd({
         ...form,
         month: getMonthFromDate(form['Die Requested Date']),
+        Cavity: Number(form.Cavity) || 0,
         'Mandrels per Cavity': Number(form['Mandrels per Cavity']) || 0,
         'Total Mandrels': Number(form['Total Mandrels']) || 0,
         'No of Trial': Number(form['No of Trial']) || 0,
@@ -302,8 +324,8 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
     display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '10px',
   });
 
-  const Field = ({ label, field, type = 'text', options, required, span }) => (
-    <div style={span ? { gridColumn: `span ${span}` } : {}}>
+  const renderField = ({ label, field, type = 'text', options, required, span }) => (
+    <div key={field} style={span ? { gridColumn: `span ${span}` } : {}}>
       <label style={labelStyle}>{label}{required && <span style={{ color: '#EF4444' }}> *</span>}</label>
       {type === 'select' ? (
         <select value={form[field]} onChange={e => set(field, e.target.value)} style={inputStyle(!!errors[field])}>
@@ -345,56 +367,57 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
           <div style={sectionStyle}>
             <p style={sectionTitle}>Core Information</p>
             <div style={gridStyle(3)}>
-              <Field label="Plant" field="Plant" type="select" required options={plants.map(p => p.name)} />
-              <Field label="Order No" field="Order No" />
-              <Field label="Die No" field="DIE NO" required />
-              <Field label="Type" field="TYPE" type="select" options={[{ value: 'N', label: 'N — New' }, { value: 'B', label: 'B — Backup' }, { value: 'T', label: 'T — Tooling' }]} />
-              <Field label="Die Size" field="Die Size" span={2} />
+              {renderField({ label: 'Plant', field: 'Plant', type: 'select', required: true, options: plants.map(p => p.name) })}
+              {renderField({ label: 'Order No', field: 'Order No' })}
+              {renderField({ label: 'Die No', field: 'DIE NO', required: true })}
+              {renderField({ label: 'Type', field: 'TYPE', type: 'select', options: [{ value: 'N', label: 'N — New' }, { value: 'B', label: 'B — Backup' }, { value: 'T', label: 'T — Tooling' }] })}
+              {renderField({ label: 'Die Size', field: 'Die Size', span: 2 })}
             </div>
           </div>
 
           <div style={sectionStyle}>
             <p style={sectionTitle}>Supplier & Customer</p>
             <div style={gridStyle(2)}>
-              <Field label="Supplier" field="Supplier" type="select" options={suppliers.map(s => s.name)} />
-              <Field label="Customer Name" field="Customer Name" />
+              {renderField({ label: 'Supplier', field: 'Supplier', type: 'select', options: suppliers.map(s => s.name) })}
+              {renderField({ label: 'Customer Name', field: 'Customer Name' })}
             </div>
           </div>
 
           <div style={sectionStyle}>
             <p style={sectionTitle}>Dates</p>
             <div style={gridStyle(3)}>
-              <Field label="Die Requested Date" field="Die Requested Date" type="date" required />
-              <Field label="Ordered Date" field="Ordered date" type="date" />
-              <Field label="ETA" field="ETA" type="date" />
+              {renderField({ label: 'Die Requested Date', field: 'Die Requested Date', type: 'date', required: true })}
+              {renderField({ label: 'Ordered Date', field: 'Ordered date', type: 'date' })}
+              {renderField({ label: 'ETA', field: 'ETA', type: 'date' })}
             </div>
           </div>
 
           <div style={sectionStyle}>
             <p style={sectionTitle}>Status & Shipping</p>
             <div style={gridStyle(2)}>
-              <Field label="Status" field="STATUS" type="select" options={Object.entries(STATUS_CONFIG).map(([v, c]) => ({ value: v, label: c.label || v }))} />
-              <Field label="Shipment Type" field="Type of shipment" type="select" options={['AIR', 'LAND']} />
+              {renderField({ label: 'Status', field: 'STATUS', type: 'select', options: Object.entries(STATUS_CONFIG).map(([v, c]) => ({ value: v, label: c.label || v })) })}
+              {renderField({ label: 'Shipment Type', field: 'Type of shipment', type: 'select', options: ['AIR', 'LAND'] })}
             </div>
           </div>
 
           <div style={sectionStyle}>
             <p style={sectionTitle}>Technical Details</p>
             <div style={gridStyle(3)}>
-              <Field label="Mandrels / Cavity" field="Mandrels per Cavity" type="number" />
-              <Field label="Total Mandrels" field="Total Mandrels" type="number" />
-              <Field label="No. of Trials" field="No of Trial" type="number" />
-              <Field label="Press" field="Press" />
-              <Field label="Corrector" field="Corrector" />
-              <Field label="PR Number" field="PR Number" />
+              {renderField({ label: 'Cavity', field: 'Cavity', type: 'number' })}
+              {renderField({ label: 'Mandrels / Cavity', field: 'Mandrels per Cavity', type: 'number' })}
+              {renderField({ label: 'Total Mandrels', field: 'Total Mandrels', type: 'number' })}
+              {renderField({ label: 'No. of Trials', field: 'No of Trial', type: 'number' })}
+              {renderField({ label: 'Press', field: 'Press' })}
+              {renderField({ label: 'Corrector', field: 'Corrector' })}
+              {renderField({ label: 'PR Number', field: 'PR Number' })}
             </div>
           </div>
 
           <div style={sectionStyle}>
             <p style={sectionTitle}>Additional Info</p>
             <div style={{ ...gridStyle(2), marginBottom: '10px' }}>
-              <Field label="Ascona Reference" field="Ascona Reference" />
-              <Field label="Sample Status" field="Sample Status" />
+              {renderField({ label: 'Ascona Reference', field: 'Ascona Reference' })}
+              {renderField({ label: 'Sample Status', field: 'Sample Status' })}
             </div>
             <label style={labelStyle}>Remark</label>
             <textarea
@@ -418,837 +441,6 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
   );
 };
 
-// PDF Import Modal Component - PRESS to Plant mapping
-const PRESS_TO_PLANT_PDF = {
-  '25': 'GEX 2', 'P25': 'GEX 2',
-  '35': 'GEX 2', 'P35': 'GEX 2',
-  '2': 'GEX 1', 'P2': 'GEX 1',
-  '4': 'GEX 1', 'P4': 'GEX 1',
-  '5': 'GEX 1', 'P5': 'GEX 1',
-  '6': 'GEX 1', 'P6': 'GEX 1',
-  'B': 'GEX 1', 'D': 'GEX 1', 'E': 'GEX 1', 'F': 'GEX 1',
-};
-
-// Known die supplier names for PDF extraction
-const KNOWN_SUPPLIERS = ['PDTMC', 'PHME', 'EKSTEK', 'COMPES', 'ADEX', 'WEFA', 'JIANGSU', 'COMES', 'PHOENIX', 'PRESSMETAL', 'AIT'];
-// Map common PDF typos/variants to canonical supplier names
-const SUPPLIER_ALIASES = { 'GIANGSU': 'JIANGSU', 'GIANSUN': 'JIANGSU', 'JIANSU': 'JIANGSU' };
-
-// PDF Import Modal Component
-const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [] }) => {
-  const [dragActive, setDragActive] = useState(false);
-  const [errors, setErrors] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
-  const [importing, setImporting] = useState(false);
-  const [preview, setPreview] = useState(null); // { orders: [] }
-
-  // Extract metadata from filename
-  const extractFilenameMetadata = (filename) => {
-    const name = filename.replace(/\.pdf$/i, '');
-    const dieNoMatch = name.match(/(\d{3,6}[-_]\d{2,4})/);
-    return {
-      dieNo: dieNoMatch ? dieNoMatch[1].replace('_', '-') : name,
-      isUrgent: /[-\s](urgent|urgetn)/i.test(name),
-      isDiePlateOnly: /die\s*plate\s*only/i.test(name),
-      isInsertMandrelOnly: /insert\s*mandrel\s*only/i.test(name),
-      isRevision: /-R(?:\.|$)/i.test(filename) || /[-_]\d{2,4}-R/i.test(name),
-    };
-  };
-
-  // Parse a single PDF file and return structured order data
-  // Handles two PDF formats:
-  //   Format A: Labels + values as text (e.g., "SUPPLIER - PDTMC DATE - 03/01/2025")
-  //   Format B: Values-only, labels are form graphics (e.g., "PDTMC 22/01/2026", "Dia 220X130", "1 P4")
-  const parseSinglePDF = async (file, batchIndex = 0) => {
-    const meta = extractFilenameMetadata(file.name);
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-    // Get page 1 text content with positional data
-    const page1 = await pdf.getPage(1);
-    const textContent = await page1.getTextContent();
-
-    // Group text items by Y position to reconstruct lines
-    const linesByY = {};
-    for (const item of textContent.items) {
-      const y = Math.round(item.transform[5]);
-      if (!linesByY[y]) linesByY[y] = [];
-      linesByY[y].push({ text: item.str, x: Math.round(item.transform[4]) });
-    }
-
-    // Merge nearby Y positions (within 3px tolerance for text wrapping)
-    const sortedYsRaw = Object.keys(linesByY).map(Number).sort((a, b) => b - a);
-    const mergedLinesByY = {};
-    let currentY = null;
-    for (const y of sortedYsRaw) {
-      if (currentY !== null && currentY - y <= 3) {
-        mergedLinesByY[currentY].push(...linesByY[y]);
-      } else {
-        currentY = y;
-        mergedLinesByY[y] = [...(linesByY[y] || [])];
-      }
-    }
-
-    const sortedYs = Object.keys(mergedLinesByY).map(Number).sort((a, b) => b - a);
-    const lines = sortedYs.map(y => {
-      const items = mergedLinesByY[y].sort((a, b) => a.x - b.x);
-      return { y, text: items.map(i => i.text).join(' ').trim(), items };
-    });
-
-    // Extracted fields
-    let supplier = null;
-    let requestedDate = null;
-    let dieSize = null;
-    let cavity = null;
-    let pressCode = null;
-    let simulationEnabled = false;
-    let dieNo = meta.dieNo;
-
-    // ── Detect format: check if any line has info box LABELS as text ──
-    const fullText = lines.map(l => l.text).join(' ');
-    const hasLabels = /\bSUPPLIER\b/.test(fullText) || /\bDIE SIZE\b/i.test(fullText) || /\bMODE OF SHIPMENT\b/i.test(fullText);
-
-    // ── Check if Format A labels have actual VALUES filled in (not just empty dashes) ──
-    // Some PDFs have labels (SUPPLIER, DIE SIZE, PRESS) but no values filled in —
-    // the values were hand-written or added as annotation overlays that pdf.js can't extract.
-    // Detect this by checking if the SUPPLIER line has any value after the dash.
-    let labelsHaveValues = false;
-    if (hasLabels) {
-      for (const line of lines) {
-        const upper = line.text.toUpperCase();
-        // Check if any label line has a value (not just "SUPPLIER - DATE -" with nothing after)
-        if (upper.includes('SUPPLIER')) {
-          // Count non-label, non-separator content after SUPPLIER
-          const afterLabels = line.text.replace(/SUPPLIER|DATE|[-:\s]/gi, '').trim();
-          // If there's a date or supplier name, values are filled
-          if (/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/.test(line.text) || afterLabels.length >= 2) {
-            labelsHaveValues = true;
-          }
-          break;
-        }
-      }
-    }
-
-    if (hasLabels && labelsHaveValues) {
-      // ═══ FORMAT A: Labels + values as text ═══
-      // Lines look like: "SUPPLIER - PDTMC DATE - 12/01/2026"
-      //                  "DIE SIZE - Dia 280X160"
-      //                  "No OF CAV - 2 PRESS - P 25"
-      // Some PDFs have supplier name on a SEPARATE line above the SUPPLIER label line
-      for (let i = 0; i < lines.length; i++) {
-        const lineText = lines[i].text;
-        const upperLine = lineText.toUpperCase();
-
-        // SUPPLIER + DATE extraction
-        // The SUPPLIER line may be merged with unrelated text (e.g., "MINIMUM ELECTRICAL... SUPPLIER - PDTMC DATE - 12/01/2026")
-        // Use positional items: only consider items at X >= first "SUPPLIER" item X position
-        if (upperLine.includes('SUPPLIER') && !supplier) {
-          // Extract only the info-box portion (items with X >= first "SUPPLIER" item X position)
-          const supplierItem = lines[i].items.find(it => it.text.toUpperCase().includes('SUPPLIER'));
-          const infoBoxX = supplierItem ? supplierItem.x : 0;
-          const infoBoxItems = lines[i].items.filter(it => it.x >= infoBoxX);
-          const infoBoxText = infoBoxItems.map(it => it.text).join(' ').trim();
-          const infoBoxUpper = infoBoxText.toUpperCase();
-
-          // Look for known supplier name in the info box portion
-          for (const s of KNOWN_SUPPLIERS) {
-            if (infoBoxUpper.includes(s)) {
-              supplier = s;
-              break;
-            }
-          }
-          // Fallback: look for uppercase word between SUPPLIER and DATE
-          if (!supplier) {
-            const afterSupplier = infoBoxText.replace(/.*SUPPLIER\s*[-:]?\s*/i, '');
-            const beforeDate = afterSupplier.replace(/\s*DATE\s*.*/i, '');
-            const candidate = beforeDate.replace(/^[-\s]+/, '').trim();
-            if (candidate && candidate.length >= 2 && /^[A-Za-z]+$/.test(candidate)) {
-              supplier = candidate.toUpperCase();
-            }
-          }
-          // Fallback: check the line ABOVE for a standalone supplier name
-          // (some PDFs put "PDTMC" on its own line above "SUPPLIER - DATE - 07/01/2026")
-          if (!supplier && i > 0) {
-            const prevLine = lines[i - 1].text.trim().toUpperCase();
-            for (const s of KNOWN_SUPPLIERS) {
-              if (prevLine.includes(s)) {
-                supplier = s;
-                break;
-              }
-            }
-          }
-          // Fallback: check the line BELOW for a standalone supplier name
-          // (some PDFs put "PDTMC" on its own line below "SUPPLIER - DATE 12/01/2026 -")
-          if (!supplier && i + 1 < lines.length) {
-            const nextLine = lines[i + 1].text.trim().toUpperCase();
-            for (const s of KNOWN_SUPPLIERS) {
-              if (nextLine.includes(s) && nextLine.length < 30) {
-                supplier = s;
-                break;
-              }
-            }
-          }
-
-          // Extract date from supplier line or adjacent lines
-          for (let j = Math.max(0, i - 1); j <= Math.min(i + 2, lines.length - 1); j++) {
-            const dm = lines[j].text.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/);
-            if (dm && !requestedDate) {
-              requestedDate = parseDateDMY(dm[1]);
-              break;
-            }
-          }
-        }
-
-        // DIE SIZE extraction
-        if (upperLine.includes('DIE SIZE') && !dieSize) {
-          const sizeMatch = lineText.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
-          if (sizeMatch) {
-            dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
-          }
-          if (!dieSize && i + 1 < lines.length) {
-            const nextMatch = lines[i + 1].text.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
-            if (nextMatch) dieSize = nextMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
-          }
-        }
-
-        // No OF CAV + PRESS extraction (often on same line: "No OF CAV - 2 PRESS - P 25")
-        // But sometimes cavity is on a SEPARATE line below (e.g., "No OF CAV - PRESS - P25" then "1" on next line)
-        if ((upperLine.includes('NO OF CAV') || upperLine.includes('NO. OF CAV') || upperLine.includes('CAVIT')) && cavity === null) {
-          // Extract cavity: digit(s) between "CAV" and "PRESS"
-          const cavPressMatch = lineText.match(/CAV\w*\s*[-:.]?\s*(\d+)\s*(?:PRESS|$)/i);
-          if (cavPressMatch) {
-            cavity = parseInt(cavPressMatch[1], 10);
-          }
-          // Also try next line for cavity digit (may be standalone "1", "- 2", or "4 P5" combined)
-          if (cavity === null && i + 1 < lines.length) {
-            const nextText = lines[i + 1].text.trim();
-            // Try combined "4 P5" format first
-            const nextCombined = nextText.match(/^[-\s]*(\d{1,2})\s+(P?\s*\d+|[A-F])(?:\s|$)/i);
-            if (nextCombined) {
-              cavity = parseInt(nextCombined[1], 10);
-              if (!pressCode) pressCode = nextCombined[2].trim();
-            } else {
-              // Match standalone digit (e.g., "1") or separator + digit (e.g., "- 2")
-              const nextCav = nextText.match(/^[-\s]*(\d{1,2})(?:\s|$)/);
-              if (nextCav) cavity = parseInt(nextCav[1], 10);
-            }
-          }
-          // Also try 2 lines down (in case next line is something else)
-          if (cavity === null && i + 2 < lines.length) {
-            const next2Text = lines[i + 2].text.trim();
-            const next2Cav = next2Text.match(/^[-\s]*(\d{1,2})(?:\s|$)/);
-            if (next2Cav) cavity = parseInt(next2Cav[1], 10);
-          }
-        }
-
-        // PRESS extraction (on same line as CAV or standalone)
-        // Formats: "PRESS - P25", "PRESS - P 25", "No OF CAV - 2 PRESS - P5"
-        // Avoid matching stray letters from notes (e.g., "for powder coating" → "f")
-        if (upperLine.includes('PRESS') && !upperLine.includes('SHIPMENT') && !pressCode) {
-          const pressMatch = lineText.match(/PRESS\s*[-:=]?\s*(P\s*\d+|\d+|[A-F])(?:\s|$)/i);
-          if (pressMatch) {
-            // Validate: single letters [A-F] are ok, but avoid matching first letter of unrelated words
-            const candidate = pressMatch[1].trim();
-            // Only accept single-letter press codes if they appear right after PRESS separator
-            if (candidate.length === 1 && /^[a-f]$/i.test(candidate)) {
-              // Check it's not just the start of a word like "for"
-              const afterPress = lineText.substring(lineText.toUpperCase().indexOf('PRESS') + 5).replace(/^[\s\-:=]+/, '');
-              if (/^[A-F]\s*$/i.test(afterPress) || /^[A-F]\b/i.test(afterPress) && afterPress.length <= 2) {
-                pressCode = candidate.toUpperCase();
-              }
-            } else {
-              pressCode = candidate;
-            }
-          }
-          if (!pressCode && i + 1 < lines.length) {
-            const nextText = lines[i + 1].text.trim();
-            // Next line: try "- P25", "P5", "4 P5" (cavity+press on next line)
-            const nextPress = nextText.match(/^[-\s]*(?:\d{1,2}\s+)?(P\s*\d+|[A-F])$/i);
-            if (nextPress) pressCode = nextPress[1].trim();
-          }
-        }
-
-        // 3D MODULE FOR SIMULATION
-        if ((upperLine.includes('3D MODULE') || upperLine.includes('SIMULATION')) && !simulationEnabled) {
-          if (/\b(yes|ok)\b/i.test(lineText)) simulationEnabled = true;
-          if (!simulationEnabled && i + 1 < lines.length && /\b(yes|ok)\b/i.test(lines[i + 1].text)) {
-            simulationEnabled = true;
-          }
-        }
-
-        // MODE OF SHIPMENT - now derived from supplier table (see supplier lookup below)
-      }
-    } else if (hasLabels && !labelsHaveValues) {
-      // ═══ FORMAT C: Labels exist but values are empty (hand-filled, not extractable) ═══
-      // The info box has SUPPLIER, DIE SIZE, PRESS labels but all values are blank dashes.
-      // Values may have been filled in by hand/annotation overlays that pdf.js can't read.
-      // We can only extract metadata from filename and any standalone text elsewhere.
-      // Nothing to extract from info box — rely on fallbacks below
-    } else {
-      // ═══ FORMAT B: Values-only (labels are form graphics/images, not text) ═══
-      // The info box values appear as short lines in sequential Y order:
-      //   1. Supplier + Date (e.g., "PDTMC 22/01/2026" or just "16/01/2026")
-      //   2. Die Size (e.g., "Dia 220X130" or "Dia 250X160")
-      //   3. Cavity + Press (e.g., "1 P4" or "8 P4" or "1 P25")
-      //      OR Cavity and Press on SEPARATE lines: "1" then "P5"
-      //   4. Solid/Hollow, Insert No, Size, Delivery Date, Simulation, Shipment, Weight
-      // Find the die size line as anchor - it's the most reliable pattern
-      let anchorIdx = -1;
-      for (let i = 0; i < lines.length; i++) {
-        if (/(?:Dia\s*)?\d{2,4}\s*[Xx\u00D7]\s*\d{2,4}/i.test(lines[i].text)) {
-          anchorIdx = i;
-          break;
-        }
-      }
-
-      if (anchorIdx >= 0) {
-        // Die size from anchor
-        const sizeMatch = lines[anchorIdx].text.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
-        if (sizeMatch) dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
-
-        // Line BEFORE die size = Supplier + Date
-        if (anchorIdx > 0) {
-          const supplierLine = lines[anchorIdx - 1].text.trim();
-          // Extract date first
-          const dateMatch = supplierLine.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/);
-          if (dateMatch) requestedDate = parseDateDMY(dateMatch[1]);
-          // Supplier = text before the date (or the whole line if no date)
-          const supplierPart = dateMatch ? supplierLine.replace(dateMatch[0], '').replace(/[-\s]+$/, '').trim() : supplierLine;
-          if (supplierPart && /^[A-Za-z]/.test(supplierPart)) {
-            // Check known suppliers
-            const upperPart = supplierPart.toUpperCase();
-            const knownMatch = KNOWN_SUPPLIERS.find(s => upperPart.includes(s));
-            supplier = knownMatch || upperPart;
-          }
-        }
-
-        // Line AFTER die size = Cavity + Press (e.g., "1 P4", "8 P4", "1 P25", "2 P 25")
-        // OR cavity and press on separate lines: "1" then "P5" or REVERSE: "P2" then "1"
-        if (anchorIdx + 1 < lines.length) {
-          const cavPressLine = lines[anchorIdx + 1].text.trim();
-          const cpMatch = cavPressLine.match(/^(\d+)\s+(P?\s*\d+|[A-F])\b/i);
-          if (cpMatch) {
-            cavity = parseInt(cpMatch[1], 10);
-            pressCode = cpMatch[2].trim();
-          } else {
-            // Try: cavity on this line alone, press on next line
-            const cavOnlyMatch = cavPressLine.match(/^(\d{1,2})$/);
-            if (cavOnlyMatch) {
-              cavity = parseInt(cavOnlyMatch[1], 10);
-              // Check next line for press code
-              if (anchorIdx + 2 < lines.length) {
-                const pressLine = lines[anchorIdx + 2].text.trim();
-                const pressOnlyMatch = pressLine.match(/^(P?\s*\d+|[A-F])$/i);
-                if (pressOnlyMatch) pressCode = pressOnlyMatch[1].trim();
-              }
-            } else {
-              // REVERSE order: press on this line, cavity on next line (e.g., "P2" then "1")
-              const pressFirstMatch = cavPressLine.match(/^(P\s*\d+|[A-F])$/i);
-              if (pressFirstMatch) {
-                pressCode = pressFirstMatch[1].trim();
-                if (anchorIdx + 2 < lines.length) {
-                  const cavLine = lines[anchorIdx + 2].text.trim();
-                  const cavMatch = cavLine.match(/^(\d{1,2})$/);
-                  if (cavMatch) cavity = parseInt(cavMatch[1], 10);
-                }
-              }
-            }
-          }
-        }
-
-        // Lines after cav+press: Solid/Hollow, Insert No, Size, Delivery Date, Simulation, Shipment
-        // Walk sequentially from anchorIdx + 2 (or +3 if cav/press were split across 2 lines)
-        const cavPressOnOneLine = lines[anchorIdx + 1]?.text.trim().match(/^(\d+)\s+(P?\s*\d+|[A-F])\b/i);
-        const startIdx = (cavity !== null && pressCode && !cavPressOnOneLine)
-          ? anchorIdx + 3  // cav and press were on separate lines
-          : anchorIdx + 2; // cav+press on same line
-        const remaining = lines.slice(startIdx).map(l => l.text.trim()).filter(t => t.length > 0);
-
-        for (const val of remaining) {
-          // Delivery date: DD/MM/YYYY or DD-MM-YYYY
-          if (!requestedDate && /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/.test(val)) {
-            // Skip dates that look like old revision dates (< 2020)
-            const yearMatch = val.match(/(\d{4})/);
-            if (yearMatch && parseInt(yearMatch[1], 10) >= 2020) {
-              requestedDate = parseDateDMY(val.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/)[1]);
-            }
-          }
-          // Simulation: standalone "Yes" or "No" (but not "Old"/"New"/"Solid"/"Hollow")
-          if (!simulationEnabled && /^(yes|ok)$/i.test(val)) {
-            simulationEnabled = true;
-          }
-          // Shipment: now derived from supplier table (no PDF extraction needed)
-        }
-      }
-    }
-
-    // ── Normalize supplier aliases (typo corrections) ──
-    if (supplier) {
-      const upperSupplier = supplier.toUpperCase();
-      if (SUPPLIER_ALIASES[upperSupplier]) supplier = SUPPLIER_ALIASES[upperSupplier];
-    }
-
-    // ── Freeform PDF fallback (very short PDFs with key-value pairs) ──
-    // Some PDFs are freeform notes (e.g., "Supplier :- PDTMC", "Press-5", "Size 440X200")
-    // Also runs when supplier looks like garbage (too long = probably not a real supplier name)
-    const supplierLooksInvalid = supplier && supplier.length > 15 && !KNOWN_SUPPLIERS.includes(supplier.toUpperCase());
-    if (lines.length <= 10 && (!supplier || supplierLooksInvalid)) {
-      for (const line of lines) {
-        const text = line.text.trim();
-        // "Supplier :- PDTMC" or "Supplier Phoenix"
-        const supplierMatch = text.match(/Supplier\s*[:\-]*\s*(\w+)/i);
-        if (supplierMatch) {
-          const name = supplierMatch[1].toUpperCase();
-          const known = KNOWN_SUPPLIERS.find(s => name.includes(s));
-          supplier = known || (SUPPLIER_ALIASES[name] || name);
-        }
-        // "Press - 5" or "Press-4" (freeform format, not a label-based PRESS)
-        const pressMatch = text.match(/Press\s*[-:]*\s*(\d+)/i);
-        if (pressMatch && (!pressCode || supplierLooksInvalid)) {
-          pressCode = 'P' + pressMatch[1];
-        }
-        // "Size 440X200" or "insert Size 45x28"
-        if (!dieSize) {
-          const sizeMatch = text.match(/(?:Size|Dia)\s*(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
-          if (sizeMatch) dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
-        }
-      }
-    }
-
-    // ── Global fallbacks (both formats) ──
-
-    // Fallback: die size from any line
-    if (!dieSize) {
-      for (const line of lines) {
-        const sizeMatch = line.text.match(/(?:Dia\s*)?(\d{2,4}\s*[Xx\u00D7]\s*\d{2,4})/i);
-        if (sizeMatch) {
-          dieSize = sizeMatch[1].replace(/\s+/g, '').toUpperCase().replace('\u00D7', 'X');
-          break;
-        }
-      }
-    }
-
-    // Fallback: date from any line
-    if (!requestedDate) {
-      for (const line of lines) {
-        const dm = line.text.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/);
-        if (dm) {
-          const yearMatch = dm[1].match(/(\d{4})/);
-          if (yearMatch && parseInt(yearMatch[1], 10) >= 2020) {
-            requestedDate = parseDateDMY(dm[1]);
-            break;
-          }
-        }
-      }
-    }
-
-    // Fallback: supplier from any line containing a known supplier name
-    if (!supplier) {
-      for (const line of lines) {
-        const upperText = line.text.toUpperCase();
-        for (const s of KNOWN_SUPPLIERS) {
-          if (upperText.includes(s)) {
-            supplier = s;
-            break;
-          }
-        }
-        if (supplier) break;
-        // Also check aliases
-        for (const [alias, canonical] of Object.entries(SUPPLIER_ALIASES)) {
-          if (upperText.includes(alias)) {
-            supplier = canonical;
-            break;
-          }
-        }
-        if (supplier) break;
-      }
-    }
-
-    // Shipment mode: lookup from supplier table instead of PDF extraction
-    const supplierRecord = suppliers.find(s => s.name === (supplier || '').toUpperCase());
-    const shipmentFromSupplier = supplierRecord?.shipment_mode || 'LAND';
-
-    // Confirm die number from PDF text
-    const pdfDieMatch = fullText.match(/\b(\d{3,6}[-]\d{2,4})\b/);
-    if (pdfDieMatch && !meta.dieNo.match(/^\d{3,6}-\d{2,4}$/)) {
-      dieNo = pdfDieMatch[1];
-    }
-
-    // Normalize press code: add "P" prefix if it's just a bare number (e.g., "6" → "P6")
-    if (pressCode) {
-      pressCode = pressCode.replace(/\s+/g, '').toUpperCase();
-      if (/^\d+$/.test(pressCode)) pressCode = 'P' + pressCode;
-    }
-
-    // Determine plant from press code
-    let plantFromPress = null;
-    if (pressCode) {
-      plantFromPress = PRESS_TO_PLANT_PDF[pressCode] || null;
-    }
-
-    // Check if order already exists
-    const existingOrder = existingOrders.find(o => o['DIE NO'] === dieNo);
-
-    return {
-      id: existingOrder?.id || null,
-      isExisting: !!existingOrder,
-      Plant: plantFromPress || existingOrder?.Plant || 'GEX 1',
-      'Order No': existingOrder?.['Order No'] || '',
-      'DIE NO': dieNo,
-      TYPE: existingOrder?.TYPE || null,
-      'Die Size': dieSize || 'N/A',
-      'Die Requested Date': requestedDate || null,
-      'Ordered date': null,
-      'Type of shipment': shipmentFromSupplier,
-      'Mandrels per Cavity': cavity || 0,
-      'Total Mandrels': 0,
-      'Design Received Date': null,
-      '3D Model Received Date': null,
-      simulationEnabled: simulationEnabled || false,
-      'Design Approved Date': null,
-      Delay: 0,
-      'PR Entry': null,
-      'PR Number': existingOrder?.['PR Number'] || null,
-      'Customer Name': existingOrder?.['Customer Name'] || '',
-      'Die Received Date': existingOrder?.['Die Received Date'] || null,
-      'Submission Date': existingOrder?.['Submission Date'] || null,
-      'Sample Approval Date': existingOrder?.['Sample Approval Date'] || null,
-      'No of Trial': existingOrder?.['No of Trial'] || 0,
-      'Corrector': existingOrder?.['Corrector'] || null,
-      'Oracle Entry': null,
-      Supplier: supplier || 'UNKNOWN',
-      STATUS: existingOrder?.STATUS || 'PENDING FOR ORDERING',
-      'OVERALL DELAY': 0,
-      ETA: null,
-      month: requestedDate ? MONTHS[parseInt(requestedDate.split('-')[1], 10) - 1] : null,
-      // Display-only metadata (stripped before import)
-      _urgency: meta.isUrgent ? 'URGENT' : null,
-      _componentType: meta.isDiePlateOnly ? 'DIE PLATE ONLY' : meta.isInsertMandrelOnly ? 'INSERT MANDREL ONLY' : null,
-      _isRevision: meta.isRevision,
-      _cavity: cavity,
-    };
-  };
-
-  // Process multiple PDF files
-  const processFiles = useCallback(async (files) => {
-    const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-    if (pdfFiles.length === 0) {
-      setErrors(prev => [...prev, 'No PDF files found in selection']);
-      return;
-    }
-
-    setLoading(true);
-    setErrors([]);
-    setLoadingProgress({ current: 0, total: pdfFiles.length });
-
-    const newOrders = [];
-    const newErrors = [];
-
-    for (let i = 0; i < pdfFiles.length; i++) {
-      setLoadingProgress({ current: i + 1, total: pdfFiles.length });
-      try {
-        const order = await parseSinglePDF(pdfFiles[i], i);
-        newOrders.push(order);
-      } catch (err) {
-        console.error(`PDF Import - Failed to parse ${pdfFiles[i].name}:`, err);
-        newErrors.push(`${pdfFiles[i].name}: ${err.message}`);
-      }
-    }
-
-    if (newErrors.length > 0) {
-      setErrors(newErrors);
-    }
-
-    if (newOrders.length > 0) {
-      setPreview(prev => ({
-        orders: [...(prev?.orders || []), ...newOrders],
-      }));
-    }
-
-    setLoading(false);
-  }, [existingOrders]);
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setDragActive(false);
-    processFiles(e.dataTransfer.files);
-  }, [processFiles]);
-
-  const handleRemoveOrder = (index) => {
-    setPreview(prev => {
-      if (!prev) return null;
-      const updated = prev.orders.filter((_, i) => i !== index);
-      return updated.length > 0 ? { orders: updated } : null;
-    });
-  };
-
-  const handleEditOrder = (index, field, value) => {
-    setPreview(prev => ({
-      ...prev,
-      orders: prev.orders.map((order, i) =>
-        i === index ? { ...order, [field]: value } : order
-      ),
-    }));
-  };
-
-  const handleImportAll = async () => {
-    if (preview?.orders?.length > 0) {
-      setImporting(true);
-      try {
-        // Strip internal display-only fields before importing
-        const cleanOrders = preview.orders.map(({ _urgency, _componentType, _isRevision, _cavity, ...order }) => order);
-        await onImportRecords(cleanOrders);
-        onClose();
-      } catch (err) {
-        console.error('PDF Import failed:', err);
-        setErrors([`Import failed: ${err.message}`]);
-      } finally {
-        setImporting(false);
-      }
-    }
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '1100px',
-          maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid #334155' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileText size={24} color="white" />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import Die Order PDFs</h2>
-              <p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload die ordering request PDFs</p>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div style={{ padding: '1.5rem', overflowY: 'auto', maxHeight: '65vh' }}>
-          {/* Drop zone - show when no preview or when adding more */}
-          {!preview && !loading && (
-            <div
-              style={{
-                border: `2px dashed ${dragActive ? '#F59E0B' : '#334155'}`,
-                borderRadius: '16px', padding: '2.5rem', textAlign: 'center',
-                background: dragActive ? 'rgba(245,158,11,0.1)' : 'transparent', marginBottom: '1rem',
-              }}
-              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-              onDragLeave={() => setDragActive(false)}
-              onDrop={handleDrop}
-            >
-              <FileText size={48} color="#64748B" />
-              <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop your PDF files here</p>
-              <p style={{ color: '#64748B', margin: '0.5rem 0' }}>or</p>
-              <label style={{ display: 'inline-block', padding: '0.75rem 1.5rem', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', color: 'white', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>
-                Browse PDF Files
-                <input type="file" accept=".pdf" multiple onChange={(e) => processFiles(e.target.files)} hidden />
-              </label>
-              <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>Select multiple PDF files at once. Fields extracted from PDF info box.</p>
-            </div>
-          )}
-
-          {/* Loading state */}
-          {loading && (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>
-              <div style={{ width: '40px', height: '40px', border: '3px solid #334155', borderTopColor: '#F59E0B', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
-              <p style={{ color: '#94A3B8', marginTop: '1rem' }}>Parsing {loadingProgress.current} of {loadingProgress.total} PDFs...</p>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
-          )}
-
-          {/* Errors */}
-          {errors.length > 0 && (
-            <div style={{ background: 'rgba(244,63,94,0.1)', padding: '0.875rem 1rem', borderRadius: '10px', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#F43F5E', marginBottom: errors.length > 1 ? '8px' : 0 }}>
-                <AlertTriangle size={18} />
-                <span style={{ fontWeight: 600 }}>{errors.length} file{errors.length !== 1 ? 's' : ''} failed to parse</span>
-              </div>
-              {errors.map((err, i) => (
-                <p key={i} style={{ fontSize: '0.8rem', color: '#F43F5E', marginLeft: '26px', marginTop: '4px' }}>{err}</p>
-              ))}
-            </div>
-          )}
-
-          {/* Preview table */}
-          {preview && preview.orders.length > 0 && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(245,158,11,0.1)', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                <CheckCircle size={20} color="#F59E0B" />
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontWeight: 600, color: '#F59E0B' }}>PDFs Parsed Successfully</p>
-                  <p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
-                    Found {preview.orders.length} die order{preview.orders.length !== 1 ? 's' : ''}
-                  </p>
-                  {preview.orders.some(o => o.isExisting) && (
-                    <p style={{ fontSize: '0.75rem', color: '#F59E0B', marginTop: '4px' }}>
-                      {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Orders Table */}
-              <div style={{ background: '#0F172A', borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
-                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', padding: '1rem', borderBottom: '1px solid #334155' }}>
-                  Extracted Die Orders ({preview.orders.length})
-                </h4>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                      <tr style={{ background: '#1E293B' }}>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Die No</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Size</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Supplier</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Plant</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Type</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Cavity</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Mandrels/Cav</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Total Mandrels</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Shipment</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Req Date</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.orders.map((order, index) => (
-                        <tr key={index} style={{ borderBottom: '1px solid #334155', background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <span>{order['DIE NO']}</span>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                {order.isExisting && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', borderRadius: '4px' }}>UPDATE</span>}
-                                {order._urgency && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(239,68,68,0.2)', color: '#EF4444', borderRadius: '4px' }}>{order._urgency}</span>}
-                                {order._componentType === 'DIE PLATE ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(59,130,246,0.2)', color: '#3B82F6', borderRadius: '4px' }}>DIE PLATE ONLY</span>}
-                                {order._componentType === 'INSERT MANDREL ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(139,92,246,0.2)', color: '#8B5CF6', borderRadius: '4px' }}>INSERT MANDREL ONLY</span>}
-                                {order._isRevision && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(148,163,184,0.2)', color: '#94A3B8', borderRadius: '4px' }}>REVISION</span>}
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <select
-                              value={order.Plant || ''}
-                              onChange={(e) => handleEditOrder(index, 'Plant', e.target.value || null)}
-                              style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
-                            >
-                              <option value="">--</option>
-                              <option value="GEX 1">GEX 1</option>
-                              <option value="GEX 2">GEX 2</option>
-                            </select>
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <select
-                              value={order.TYPE || ''}
-                              onChange={(e) => handleEditOrder(index, 'TYPE', e.target.value || null)}
-                              style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
-                            >
-                              <option value="">--</option>
-                              <option value="N">N - New</option>
-                              <option value="B">B - Backup</option>
-                              <option value="T">T - Tooling</option>
-                              <option value="C">C - Cancelled</option>
-                              <option value="H">H - Hold</option>
-                            </select>
-                          </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order._cavity || '-'}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <input
-                              type="number"
-                              min="0"
-                              value={order['Mandrels per Cavity'] || 0}
-                              onChange={(e) => {
-                                const mpc = parseInt(e.target.value, 10) || 0;
-                                const cavities = order._cavity || 1;
-                                handleEditOrder(index, 'Mandrels per Cavity', mpc);
-                                handleEditOrder(index, 'Total Mandrels', mpc * cavities);
-                              }}
-                              style={{ width: '50px', padding: '4px 6px', background: '#334155', border: 'none', borderRadius: '4px', color: '#F1F5F9', fontSize: '0.8rem', textAlign: 'center' }}
-                            />
-                          </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <span style={{
-                              padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
-                              background: order['Type of shipment'] === 'AIR' ? 'rgba(14,165,233,0.2)' : 'rgba(16,185,129,0.2)',
-                              color: order['Type of shipment'] === 'AIR' ? '#0EA5E9' : '#10B981',
-                            }}>
-                              {order['Type of shipment']}
-                            </span>
-                          </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontSize: '0.8rem' }}>{order['Die Requested Date'] || '-'}</td>
-                          <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleRemoveOrder(index)}
-                              style={{ padding: '6px', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px', color: '#EF4444', cursor: 'pointer' }}
-                              title="Remove this order"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Upload More button */}
-              <label style={{
-                display: 'block', width: '100%', padding: '0.5rem', background: 'transparent',
-                border: '1px solid #334155', borderRadius: '8px', color: '#94A3B8', cursor: 'pointer',
-                textAlign: 'center', fontSize: '0.875rem',
-              }}>
-                Upload More PDFs
-                <input type="file" accept=".pdf" multiple onChange={(e) => processFiles(e.target.files)} hidden />
-              </label>
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: '1px solid #334155' }}>
-          <button onClick={onClose} disabled={importing} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.5 : 1 }}>
-            Cancel
-          </button>
-          <button
-            onClick={handleImportAll}
-            disabled={!preview || preview.orders.length === 0 || importing}
-            style={{
-              padding: '0.75rem 1.5rem',
-              background: (preview?.orders?.length > 0 && !importing) ? 'linear-gradient(135deg, #F59E0B, #EF4444)' : '#475569',
-              color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600,
-              cursor: (preview?.orders?.length > 0 && !importing) ? 'pointer' : 'not-allowed',
-              opacity: (preview?.orders?.length > 0 && !importing) ? 1 : 0.5,
-              display: 'flex', alignItems: 'center', gap: '8px',
-            }}
-          >
-            {importing && <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
-            {importing ? 'Importing...' : `Import ${preview?.orders?.length || 0} Die Orders`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // Password Change Modal - Input Styles (defined outside to prevent re-render)
 const passwordInputStyle = {
@@ -1918,6 +1110,8 @@ export default function DieOrderingSystem() {
   const [users, setUsers] = useState([]);
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user', pageAccess: null });
+  const [editingUser, setEditingUser] = useState(null);
+  const [resettingUser, setResettingUser] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
@@ -1929,7 +1123,6 @@ export default function DieOrderingSystem() {
   const [profileMeta, setProfileMeta] = useState({ count: 0, last_imported: null });
   const [profileImportStatus, setProfileImportStatus] = useState(null); // { type, message } | null
   const [profileImporting, setProfileImporting] = useState(false);
-  const [missingCustomerPrompt, setMissingCustomerPrompt] = useState(null); // { profiles: [{profile, dieNo}], values: {profile: customer}, onResolve, onCancel }
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
@@ -2027,6 +1220,17 @@ export default function DieOrderingSystem() {
       console.error('Failed to fetch profile meta:', error);
     }
   }, []);
+
+  const {
+    handlePIImport,
+    missingCustomerPrompt,
+    setMissingCustomerPrompt,
+  } = usePIImport({
+    fetchOrders,
+    fetchProfileMeta,
+    setCurrentPage,
+    setToast,
+  });
 
   // Fetch plant budget targets
   const fetchPlantBudgets = useCallback(async () => {
@@ -2355,17 +1559,24 @@ export default function DieOrderingSystem() {
     }
   };
 
-  // Copy order details to clipboard in ERP format: Die Number, Dia DxT; CAV n; SF/PH
+  // Copy order details to clipboard in ERP format: [Press,]Die Number, Dia DxT; CAV n; SF/PH
   const copyForERP = async (order) => {
     const parsed = parseDieSize(order['Die Size']);
     const diameter = parsed.diameter || '';
     const thickness = parsed.thickness || '';
-    const cavities = order['Mandrels per Cavity'] || 1;
+    // CAV is the actual cavity count from the PDF "No OF CAV" field, persisted in `cavity`.
+    // Falls back to `_cavity` (preview-only metadata) and finally to 1 for legacy orders.
+    const cavities = order['Cavity'] || order['_cavity'] || 1;
     // SF = Solid (T type), PH = Hollow (others)
     const dieType = order.TYPE === 'T' ? 'SF' : 'PH';
 
-    // Format: 30533_201,Dia 355X200; CAV 1; PH
-    const erpString = `${order['DIE NO']},Dia ${diameter}X${thickness}; CAV ${cavities}; ${dieType}`;
+    // ERP expects press code, so press names/numbers are mapped first (2 -> B, 7 -> 25, etc.).
+    // When Press is missing, the prefix (and its comma) are omitted so we never produce a leading comma.
+    const press = getERPPressCode(order['Press']);
+    const pressPrefix = press ? `${press},` : '';
+
+    // Format: [B,]30533_201,Dia 355X200; CAV 1; PH
+    const erpString = `${pressPrefix}${order['DIE NO']},Dia ${diameter}X${thickness}; CAV ${cavities}; ${dieType}`;
 
     try {
       await copyToClipboard(erpString);
@@ -2414,7 +1625,8 @@ export default function DieOrderingSystem() {
   // Handle mandrels per cavity change - auto-calculates Total Mandrels
   const handleMandrelsChange = async (order, mandrelsPerCavity) => {
     const mpc = parseInt(mandrelsPerCavity, 10) || 0;
-    const cavities = order._cavity || 1;
+    // Prefer the persisted Cavity column; fall back to preview-only _cavity, then 1.
+    const cavities = order['Cavity'] || order._cavity || 1;
     const totalMandrels = mpc * cavities;
     if (order['Mandrels per Cavity'] === mpc && order['Total Mandrels'] === totalMandrels) return;
     try {
@@ -2514,121 +1726,6 @@ export default function DieOrderingSystem() {
       setProfileImporting(false);
     }
   }, [parseProfileFile, fetchProfileMeta]);
-
-  // Look up missing customer names by profile (extracted from die_no).
-  // For misses, prompt the user to enter customer names; save back to profile master.
-  // Returns the records with Customer Name filled in (or unchanged if user cancelled).
-  const resolveCustomerNames = useCallback(async (records, getDie, getCustomer, setCustomer) => {
-    // Find records missing a customer name
-    const missing = [];
-    const profileToRecords = {};
-    for (const rec of records) {
-      const customer = (getCustomer(rec) || '').trim();
-      if (customer) continue;
-      const die = getDie(rec);
-      const profile = extractProfileFromDie(die);
-      if (!profile) continue;
-      if (!profileToRecords[profile]) profileToRecords[profile] = [];
-      profileToRecords[profile].push(rec);
-      missing.push({ profile, die });
-    }
-    if (missing.length === 0) return records;
-
-    // Lookup each unique profile in master
-    const uniqueProfiles = Array.from(new Set(missing.map(m => m.profile)));
-    const lookupResults = await Promise.all(uniqueProfiles.map(async p => {
-      const res = await profilesAPI.lookup(p);
-      return { profile: p, customer: res?.customer_name || null };
-    }));
-    const customerByProfile = {};
-    lookupResults.forEach(r => { customerByProfile[r.profile] = r.customer; });
-
-    // Apply hits
-    uniqueProfiles.forEach(p => {
-      if (customerByProfile[p]) {
-        (profileToRecords[p] || []).forEach(rec => setCustomer(rec, customerByProfile[p]));
-      }
-    });
-
-    // Identify still-missing profiles
-    const stillMissing = uniqueProfiles
-      .filter(p => !customerByProfile[p])
-      .map(p => ({ profile: p, dieNo: profileToRecords[p][0] && getDie(profileToRecords[p][0]) }));
-
-    if (stillMissing.length === 0) return records;
-
-    // Prompt user
-    const collected = await new Promise((resolve) => {
-      setMissingCustomerPrompt({
-        profiles: stillMissing,
-        values: stillMissing.reduce((acc, p) => ({ ...acc, [p.profile]: '' }), {}),
-        onResolve: (values) => { setMissingCustomerPrompt(null); resolve(values); },
-        onCancel: () => { setMissingCustomerPrompt(null); resolve(null); },
-      });
-    });
-
-    if (!collected) return records; // user cancelled — leave records unchanged
-
-    // Save to master + apply to records
-    const saves = Object.entries(collected)
-      .filter(([, v]) => v && v.trim())
-      .map(async ([profile, customer]) => {
-        const trimmed = customer.trim();
-        try { await profilesAPI.save(profile, trimmed); } catch (e) { console.error('Save profile failed:', e); }
-        (profileToRecords[profile] || []).forEach(rec => setCustomer(rec, trimmed));
-      });
-    await Promise.all(saves);
-    fetchProfileMeta();
-
-    return records;
-  }, [fetchProfileMeta]);
-
-  const handlePIImport = useCallback(async (importData) => {
-    try {
-      // Resolve customer names from profile master (with prompt for unknowns).
-      // Mutates the records in place via setCustomer.
-      const records = importData.map(r => ({ ...r }));
-      await resolveCustomerNames(
-        records,
-        (r) => r['DIE NO'] || r.die_no,
-        (r) => r['Customer Name'] || r.customer_name,
-        (r, v) => { r['Customer Name'] = v; if ('customer_name' in r) r.customer_name = v; }
-      );
-
-      let created = 0;
-      let updated = 0;
-
-      for (const record of records) {
-        // Remove the isExisting flag before sending to API
-        const { isExisting, ...orderData } = record;
-        if (isExisting && orderData.id) {
-          // Update existing order
-          await ordersAPI.update(orderData.id, orderData);
-          updated++;
-        } else {
-          // Create new order
-          await ordersAPI.create(orderData);
-          created++;
-        }
-      }
-
-      // Refresh orders from database
-      await fetchOrders();
-      setCurrentPage(1);
-
-      // Show appropriate message
-      const messages = [];
-      if (created > 0) messages.push(`${created} new order(s) created`);
-      if (updated > 0) messages.push(`${updated} order(s) updated`);
-      const msg = `PI Import successful: ${messages.join(', ')}`;
-      setToast({ message: msg, type: 'success' });
-      setTimeout(() => setToast(null), 5000); // Auto-hide after 5 seconds
-    } catch (error) {
-      console.error('PI Import error:', error);
-      setToast({ message: 'Failed to import: ' + error.message, type: 'error' });
-      setTimeout(() => setToast(null), 5000);
-    }
-  }, [fetchOrders, resolveCustomerNames]);
 
   const filteredData = useMemo(() => {
     return data.filter(order => {
@@ -3682,12 +2779,15 @@ export default function DieOrderingSystem() {
               if (!workflow || !workflow.nextStatus) return;
 
               const today = new Date().toISOString().split('T')[0];
-              const updatedOrder = { ...order, STATUS: workflow.nextStatus, [workflow.dateField]: today };
+              const nextStatus = currentFlow.status === 'AWAITING FOR DESIGN' && isSimulationEnabled(order.simulationEnabled)
+                ? 'UNDER SIMULATION'
+                : workflow.nextStatus;
+              const updatedOrder = { ...order, STATUS: nextStatus, [workflow.dateField]: today };
 
               try {
                 await ordersAPI.update(order.id, updatedOrder);
                 setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
-                setToast({ message: `Order ${order['DIE NO']} moved to ${STATUS_CONFIG[workflow.nextStatus]?.label || workflow.nextStatus}`, type: 'success' });
+                setToast({ message: `Order ${order['DIE NO']} moved to ${STATUS_CONFIG[nextStatus]?.label || nextStatus}`, type: 'success' });
                 setTimeout(() => setToast(null), 3000);
               } catch (error) {
                 console.error('Complete step error:', error);
@@ -5540,7 +4640,30 @@ export default function DieOrderingSystem() {
                           )}
                         </td>
                         <td style={styles.td}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}</td>
-                        <td style={styles.td}>{u.id !== user.id && <button onClick={() => handleDeleteUser(u.id)} style={{ padding: '6px 12px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}>Delete</button>}</td>
+                        <td style={styles.td}>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <button
+                              onClick={() => setEditingUser(u)}
+                              style={{ padding: '6px 12px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setResettingUser(u)}
+                              style={{ padding: '6px 12px', background: '#F59E0B', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Reset Password
+                            </button>
+                            {u.id !== user.id && (
+                              <button
+                                onClick={() => handleDeleteUser(u.id)}
+                                style={{ padding: '6px 12px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -5563,6 +4686,42 @@ export default function DieOrderingSystem() {
                   theme={theme}
                 />
               )}
+
+              {/* Edit User Modal */}
+              {editingUser && (
+                <AddUserModal
+                  mode="edit"
+                  initialUser={editingUser}
+                  onClose={() => setEditingUser(null)}
+                  onSubmit={async (userData) => {
+                    try {
+                      await usersAPI.update(editingUser.id, {
+                        username: userData.username,
+                        role: userData.role,
+                        pageAccess: userData.role === 'admin' ? null : userData.pageAccess,
+                      });
+                      setEditingUser(null);
+                      fetchUsers();
+                    } catch (error) {
+                      alert(error.message);
+                    }
+                  }}
+                  theme={theme}
+                />
+              )}
+
+              {/* Reset Password Modal */}
+              {resettingUser && (
+                <ResetPasswordModal
+                  user={resettingUser}
+                  onClose={() => setResettingUser(null)}
+                  onSubmit={async (password) => {
+                    await usersAPI.resetPassword(resettingUser.id, password);
+                    setResettingUser(null);
+                    fetchUsers();
+                  }}
+                />
+              )}
             </div>
           )}
         </main>
@@ -5571,60 +4730,7 @@ export default function DieOrderingSystem() {
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
         {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}
-        {missingCustomerPrompt && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
-            <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', width: '560px', maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', border: `1px solid ${theme.cardBorder}` }}>
-              <div style={{ marginBottom: '1rem' }}>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: theme.text, margin: 0 }}>Customer Names Required</h3>
-                <p style={{ fontSize: '0.85rem', color: theme.textDim, marginTop: '6px', marginBottom: 0 }}>
-                  These profiles are not in the Profile Master. Provide a customer name for each — they&apos;ll be saved to the master so future imports auto-fill.
-                </p>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', border: `1px solid ${theme.cardBorder}`, borderRadius: '10px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Profile</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>From Die</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Customer Name</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {missingCustomerPrompt.profiles.map(({ profile, dieNo }) => (
-                      <tr key={profile}>
-                        <td style={{ padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.text, fontWeight: 600 }}>{profile}</td>
-                        <td style={{ padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textMuted }}>{dieNo || '—'}</td>
-                        <td style={{ padding: '6px 12px', borderTop: `1px solid ${theme.cardBorder}` }}>
-                          <input
-                            type="text"
-                            value={missingCustomerPrompt.values[profile] || ''}
-                            onChange={(e) => setMissingCustomerPrompt(prev => prev ? { ...prev, values: { ...prev.values, [profile]: e.target.value } } : prev)}
-                            placeholder="Enter customer name"
-                            style={{ width: '100%', padding: '6px 10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.85rem' }}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1rem' }}>
-                <button
-                  onClick={() => missingCustomerPrompt.onCancel?.()}
-                  style={{ padding: '8px 18px', background: 'transparent', color: theme.text, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}
-                >
-                  Cancel Import
-                </button>
-                <button
-                  onClick={() => missingCustomerPrompt.onResolve?.(missingCustomerPrompt.values)}
-                  style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
-                >
-                  Save &amp; Continue
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <MissingCustomerPromptModal prompt={missingCustomerPrompt} setPrompt={setMissingCustomerPrompt} theme={theme} />
         {showPasswordChangeModal && (
           <PasswordChangeModal
             onClose={() => !forcePasswordChange && setShowPasswordChangeModal(false)}

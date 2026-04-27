@@ -8,7 +8,7 @@ const rateLimit = require('express-rate-limit');
 const { pool, initializeDatabase } = require('./db.cjs');
 
 // Import routes
-const { router: authRouter, authMiddleware, adminMiddleware } = require('./routes/auth.cjs');
+const { router: authRouter, authMiddleware, adminMiddleware, pageAccessMiddleware } = require('./routes/auth.cjs');
 const usersRouter = require('./routes/users.cjs');
 const ordersRouter = require('./routes/orders.cjs');
 const suppliersRouter = require('./routes/suppliers.cjs');
@@ -68,13 +68,26 @@ app.use('/api/email', emailRouter);
 
 // Protected routes
 app.use('/api/users', authMiddleware, adminMiddleware, usersRouter);
-app.use('/api/orders', authMiddleware, ordersRouter);
+app.use('/api/orders', authMiddleware, pageAccessMiddleware([
+    'dashboard',
+    'orders',
+    'analytics',
+    'flow-pending-order',
+    'flow-awaiting-design',
+    'flow-simulation',
+    'flow-design-approval',
+    'flow-pending-pr',
+    'flow-oracle-entry',
+    'flow-design-ems',
+    'flow-completed',
+    'flow-sample-followup'
+]), ordersRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/plants', plantsRouter);
 app.use('/api/profiles', profilesRouter);
-app.use('/api/backup-requests', authMiddleware, backupRequestsRouter);
+app.use('/api/backup-requests', authMiddleware, pageAccessMiddleware('backup-requests'), backupRequestsRouter);
 app.use('/api/api-keys', authMiddleware, adminMiddleware, apiKeysRouter);
-app.use('/api/sample-followups', authMiddleware, sampleFollowupsRouter);
+app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleFollowupsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
 
 

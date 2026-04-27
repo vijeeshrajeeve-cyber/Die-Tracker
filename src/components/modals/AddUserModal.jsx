@@ -33,8 +33,19 @@ const ROLE_CONFIG = {
   },
 };
 
-const AddUserModal = ({ onClose, onSubmit, theme }) => {
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user', pageAccess: null });
+const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser = null }) => {
+  const isEdit = mode === 'edit';
+  const [newUser, setNewUser] = useState(() => {
+    if (isEdit && initialUser) {
+      return {
+        username: initialUser.username || '',
+        password: '',
+        role: initialUser.role || 'user',
+        pageAccess: initialUser.page_access ?? null,
+      };
+    }
+    return { username: '', password: '', role: 'user', pageAccess: null };
+  });
   const [showPassword, setShowPassword] = useState(false);
 
   const flowPages = CONTROLLABLE_PAGES.filter(p => p.group === 'Process Flow');
@@ -142,7 +153,7 @@ const AddUserModal = ({ onClose, onSubmit, theme }) => {
             fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase',
             letterSpacing: '0.5px',
           }}>
-            <Shield size={12} /> User Provisioning
+            <Shield size={12} /> {isEdit ? 'Edit User' : 'User Provisioning'}
           </span>
           <button
             type="button"
@@ -169,10 +180,12 @@ const AddUserModal = ({ onClose, onSubmit, theme }) => {
                 {/* Title */}
                 <div>
                   <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f1f5f9', margin: '0 0 6px' }}>
-                    Add new user
+                    {isEdit ? 'Edit user' : 'Add new user'}
                   </h2>
                   <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0, lineHeight: 1.5 }}>
-                    Create an account, assign a working role, and shape access to the exact sections this user needs.
+                    {isEdit
+                      ? 'Update this account’s role and shape access to the exact sections they should see.'
+                      : 'Create an account, assign a working role, and shape access to the exact sections this user needs.'}
                   </p>
                 </div>
 
@@ -223,44 +236,54 @@ const AddUserModal = ({ onClose, onSubmit, theme }) => {
                   </div>
 
                   {/* Password */}
-                  <div>
-                    <label style={{
-                      display: 'block', fontSize: '0.7rem', fontWeight: 700,
-                      color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}>Password</label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={newUser.password}
-                        onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                        placeholder="Min 6 characters"
-                        required
-                        minLength={6}
-                        style={{
-                          width: '100%', padding: '11px 44px 11px 14px',
-                          background: '#0a1220', border: '1px solid #1e293b',
-                          borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
-                          outline: 'none', transition: 'border 0.2s',
-                          boxSizing: 'border-box',
-                        }}
-                        onFocus={e => e.target.style.borderColor = '#334155'}
-                        onBlur={e => e.target.style.borderColor = '#1e293b'}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        style={{
-                          position: 'absolute', right: '10px', top: '50%',
-                          transform: 'translateY(-50%)', background: 'none',
-                          border: 'none', cursor: 'pointer', color: '#64748b',
-                          display: 'flex', alignItems: 'center', padding: '4px',
-                        }}
-                      >
-                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
+                  {!isEdit && (
+                    <div>
+                      <label style={{
+                        display: 'block', fontSize: '0.7rem', fontWeight: 700,
+                        color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>Password</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={newUser.password}
+                          onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                          placeholder="Min 8 chars · upper, lower, number"
+                          required
+                          minLength={8}
+                          style={{
+                            width: '100%', padding: '11px 44px 11px 14px',
+                            background: '#0a1220', border: '1px solid #1e293b',
+                            borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
+                            outline: 'none', transition: 'border 0.2s',
+                            boxSizing: 'border-box',
+                          }}
+                          onFocus={e => e.target.style.borderColor = '#334155'}
+                          onBlur={e => e.target.style.borderColor = '#1e293b'}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          style={{
+                            position: 'absolute', right: '10px', top: '50%',
+                            transform: 'translateY(-50%)', background: 'none',
+                            border: 'none', cursor: 'pointer', color: '#64748b',
+                            display: 'flex', alignItems: 'center', padding: '4px',
+                          }}
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '8px', marginBottom: 0, lineHeight: 1.4 }}>
+                        The user will be required to change this password on first login.
+                      </p>
                     </div>
-                  </div>
+                  )}
+                  {isEdit && (
+                    <p style={{ fontSize: '0.72rem', color: '#64748b', margin: 0, lineHeight: 1.5 }}>
+                      Use <strong style={{ color: '#94a3b8' }}>Reset Password</strong> from the user table to issue a new password.
+                    </p>
+                  )}
                 </div>
 
                 {/* Access Summary Card */}
@@ -544,7 +567,7 @@ const AddUserModal = ({ onClose, onSubmit, theme }) => {
                 onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(14,165,233,0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 15px rgba(14,165,233,0.35)'; e.currentTarget.style.transform = 'translateY(0)'; }}
               >
-                Create user
+                {isEdit ? 'Save changes' : 'Create user'}
               </button>
             </div>
           </form>
