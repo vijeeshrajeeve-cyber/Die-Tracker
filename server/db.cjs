@@ -193,6 +193,9 @@ const initializeDatabase = async () => {
         ascona_reference TEXT DEFAULT 'No',
         sample_status TEXT DEFAULT 'Pending',
         remark TEXT,
+        urgency TEXT DEFAULT 'NORMAL',
+        special_follow_up BOOLEAN DEFAULT false,
+        change_log TEXT DEFAULT '[]',
         created_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -235,6 +238,15 @@ const initializeDatabase = async () => {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='remark') THEN
           ALTER TABLE die_orders ADD COLUMN remark TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='change_log') THEN
+          ALTER TABLE die_orders ADD COLUMN change_log TEXT DEFAULT '[]';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='urgency') THEN
+          ALTER TABLE die_orders ADD COLUMN urgency TEXT DEFAULT 'NORMAL';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='special_follow_up') THEN
+          ALTER TABLE die_orders ADD COLUMN special_follow_up BOOLEAN DEFAULT false;
         END IF;
       END $$;
 

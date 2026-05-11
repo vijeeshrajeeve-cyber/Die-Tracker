@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, BarChart3, TrendingUp, Settings, Clock, Factory, ChevronLeft, ChevronRight, ClipboardList, Mail } from 'lucide-react';
+import { Package, BarChart3, TrendingUp, Settings, Clock, ChevronLeft, ChevronRight, ClipboardList, Mail } from 'lucide-react';
 import { PROCESS_FLOW_TABS, STATUS_CONFIG } from '../../utils/constants';
 
 const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed }) => {
@@ -111,29 +111,33 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
             transition: 'width 0.2s ease',
             boxSizing: 'border-box'
         }}>
-            {/* Logo */}
+            {/* Brand + company logo (public/company-logo.png) */}
             <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: collapsed ? 'center' : 'flex-start',
                 gap: collapsed ? 0 : '12px',
                 marginBottom: '2.5rem',
-                paddingLeft: collapsed ? 0 : '8px'
+                paddingLeft: collapsed ? 0 : '8px',
+                minHeight: collapsed ? '40px' : 'auto'
             }}>
-                <div style={{
-                    width: '40px', height: '40px',
-                    background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
-                    borderRadius: '12px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-                }}>
-                    <Factory size={22} color="white" />
-                </div>
+                <img
+                    src="/company-logo.png"
+                    alt="Company"
+                    style={{
+                        display: 'block',
+                        flexShrink: 0,
+                        height: collapsed ? 36 : 40,
+                        width: collapsed ? 36 : 'auto',
+                        maxWidth: collapsed ? 40 : 152,
+                        objectFit: 'contain',
+                        objectPosition: collapsed ? 'center' : 'left center'
+                    }}
+                />
                 <div style={{
                     opacity: collapsed ? 0 : 1,
-                    width: collapsed ? 0 : '140px',
+                    width: collapsed ? 0 : '148px',
                     overflow: 'hidden',
-                    whiteSpace: 'nowrap',
                     transition: 'opacity 0.2s ease, width 0.2s ease'
                 }}>
                     <h1 style={{ fontSize: '1.2rem', fontWeight: 700, color: theme.text, lineHeight: 1.2 }}>Die Ordering</h1>

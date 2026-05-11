@@ -65,6 +65,69 @@ const isSimulationEnabled = (value) => {
   return false;
 };
 
+const hasDieReceivedDate = (order) => {
+  const d = order?.['Die Received Date'];
+  return d != null && String(d).trim() !== '';
+};
+
+/** Stored/API values: NORMAL | URGENT | TOP_URGENT */
+const normalizeOrderUrgency = (raw) => {
+  const s = String(raw ?? 'NORMAL').trim().toUpperCase().replace(/\s+/g, '_');
+  if (s === 'TOP_URGENT' || s === 'TOPURGENT') return 'TOP_URGENT';
+  if (s === 'URGENT') return 'URGENT';
+  return 'NORMAL';
+};
+
+const coerceImportedSpecialFollowUp = (raw) => {
+  if (raw === true || raw === 1) return true;
+  if (raw === false || raw === 0 || raw == null || raw === '') return false;
+  const t = String(raw).trim().toLowerCase();
+  return /^(yes|y|true|1)$/i.test(t);
+};
+
+/** Show attention strip above die number only for top urgency or flagged follow-up. */
+const orderShowsAttentionAboveDieNo = (order) =>
+  normalizeOrderUrgency(order?.Urgency) === 'TOP_URGENT' ||
+  !!(order?.specialFollowUp === true || order?.specialFollowUp === 1);
+
+const DieAttentionLabels = ({ order, dense }) => {
+  if (!orderShowsAttentionAboveDieNo(order)) return null;
+  const top = normalizeOrderUrgency(order.Urgency) === 'TOP_URGENT';
+  const spec = !!(order.specialFollowUp === true || order.specialFollowUp === 1);
+  const chipBase = {
+    display: 'inline-block',
+    borderRadius: dense ? '4px' : '6px',
+    fontWeight: 700,
+    letterSpacing: '0.03em',
+    textTransform: 'uppercase',
+    fontSize: dense ? '0.58rem' : '0.65rem',
+    padding: dense ? '2px 5px' : '3px 8px',
+  };
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: dense ? 3 : 6, alignItems: 'center', marginBottom: dense ? 2 : 4, lineHeight: 1.2 }}>
+      {top && <span style={{ ...chipBase, background: 'rgba(239,68,68,0.22)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.35)' }}>Top urgent</span>}
+      {spec && <span style={{ ...chipBase, background: 'rgba(245,158,11,0.18)', color: '#FBBF24', border: '1px solid rgba(245,158,11,0.35)' }}>Special follow-up</span>}
+    </div>
+  );
+};
+
+const URGENCY_FORM_OPTIONS = [
+  { value: 'NORMAL', label: 'Normal' },
+  { value: 'URGENT', label: 'Urgent' },
+  { value: 'TOP_URGENT', label: 'Top urgent' },
+];
+
+const formatUrgencyForDisplay = (raw) =>
+  ({ NORMAL: 'Normal', URGENT: 'Urgent', TOP_URGENT: 'Top urgent' }[normalizeOrderUrgency(raw)] || 'Normal');
+
+/** Spreadsheet imports often set STATUS=DONE while Die Received Date is present; those completes belong in DIE RECEIVED, not the In Manufacturing flow. */
+const normalizeManufacturingStatusOnImportRow = (row) => {
+  if (!row || typeof row !== 'object') return row;
+  const st = String(row.STATUS ?? '').trim().toUpperCase();
+  if (st !== 'DONE' || !hasDieReceivedDate(row)) return row;
+  return { ...row, STATUS: 'DIE RECEIVED' };
+};
+
 // Utility functions for data import
 const parseExcelDate = (value) => {
   if (!value) return null;
@@ -76,6 +139,46 @@ const parseExcelDate = (value) => {
   if (value instanceof Date) return value.toISOString().split('T')[0];
   return null;
 };
+
+/** YYYY-MM-DD if value is a real calendar date; ignores placeholders and junk in date columns (common in imports). */
+const parseOrderCalendarDate = (raw) => {
+  if (raw == null) return null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const iso = parseExcelDate(raw);
+    return iso && !Number.isNaN(Date.parse(iso)) ? iso : null;
+  }
+  const s0 = String(raw).trim();
+  if (!s0) return null;
+  const compact = s0.replace(/\s+/g, '');
+  if (/^(?:-|—|n\/a|na|none|tbd|\.|\?|_+)$/i.test(compact)) return null;
+
+  if (/^\d+(\.\d+)?$/.test(compact)) {
+    const n = Number(compact);
+    if (n > 20000 && n < 1000000) {
+      const iso = parseExcelDate(n);
+      if (iso && !Number.isNaN(Date.parse(iso))) return iso;
+    }
+  }
+
+  const dmy = parseDateDMY(s0);
+  if (dmy) return dmy;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(s0)) {
+    const head = s0.slice(0, 10);
+    if (!Number.isNaN(Date.parse(head))) return head;
+  }
+
+  const t = Date.parse(s0);
+  if (!Number.isNaN(t)) {
+    const d = new Date(t);
+    const y = d.getFullYear();
+    if (y >= 1990 && y <= 2100) return d.toISOString().slice(0, 10);
+  }
+  return null;
+};
+
+const hasDesignApprovedDate = (order) =>
+  parseOrderCalendarDate(order?.['Design Approved Date'] ?? order?.design_approved_date) != null;
 
 const getMonthFromDate = (dateStr) => {
   if (!dateStr) return null;
@@ -110,6 +213,11 @@ const normalizeColumnName = (col) => {
     'design approved date': 'Design Approved Date', 'pr entry': 'PR Entry', 'oracle entry': 'Oracle Entry',
     'overall delay': 'OVERALL DELAY', 'status': 'STATUS', 'plant': 'Plant', 'type': 'TYPE',
     'supplier': 'Supplier', 'eta': 'ETA', 'delay': 'Delay',
+    'urgency': 'Urgency',
+    'special follow-up': 'specialFollowUp',
+    'special follow up': 'specialFollowUp',
+    'special_follow_up': 'specialFollowUp',
+    'specialfollowup': 'specialFollowUp',
   };
   return mappings[col.toLowerCase().trim()] || col;
 };
@@ -175,7 +283,15 @@ const ImportModal = ({ onClose, onImport }) => {
           normalized['Sample Status'] = 'Sample Submitted';
         }
       }
-      return normalized;
+      if (normalized.Urgency != null) {
+        normalized.Urgency = normalizeOrderUrgency(normalized.Urgency);
+      }
+      if ('specialFollowUp' in normalized) {
+        normalized.specialFollowUp = coerceImportedSpecialFollowUp(normalized.specialFollowUp);
+      } else {
+        normalized.specialFollowUp = false;
+      }
+      return normalizeManufacturingStatusOnImportRow(normalized);
     }).filter(row => row['DIE NO'] || row['Order No']);
   };
 
@@ -253,6 +369,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
     'Die Requested Date': '', 'Ordered date': '', ETA: '',
     Supplier: '', 'Customer Name': '',
     STATUS: 'AWAITING FOR DESIGN', 'Type of shipment': 'AIR',
+    Urgency: 'NORMAL', specialFollowUp: false,
     Cavity: '', 'Mandrels per Cavity': '', 'Total Mandrels': '', 'No of Trial': '',
     Press: '', Corrector: '', 'PR Number': '',
     'Ascona Reference': '', 'Sample Status': '', Remark: '',
@@ -398,6 +515,22 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
               {renderField({ label: 'Status', field: 'STATUS', type: 'select', options: Object.entries(STATUS_CONFIG).map(([v, c]) => ({ value: v, label: c.label || v })) })}
               {renderField({ label: 'Shipment Type', field: 'Type of shipment', type: 'select', options: ['AIR', 'LAND'] })}
             </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Priority</p>
+            <div style={gridStyle(2)}>
+              {renderField({ label: 'Urgency level', field: 'Urgency', type: 'select', options: URGENCY_FORM_OPTIONS })}
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', cursor: 'pointer', color: textColor, fontSize: '0.875rem', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={!!form.specialFollowUp}
+                onChange={(e) => set('specialFollowUp', e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: '#F59E0B', cursor: 'pointer' }}
+              />
+              Special follow-up
+            </label>
           </div>
 
           <div style={sectionStyle}>
@@ -700,6 +833,16 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
   const [pendingStatusLog, setPendingStatusLog] = useState(null);
 
+  useEffect(() => {
+    setEditedOrder({
+      ...order,
+      Urgency: order.Urgency ?? 'NORMAL',
+      specialFollowUp: !!(order.specialFollowUp === true || order.specialFollowUp === 1),
+    });
+    setIsEditing(false);
+    setPendingStatusLog(null);
+  }, [order.id]);
+
   const handleFileChange = (field, file) => {
     setEditedOrder(prev => ({ ...prev, [field]: file }));
   };
@@ -725,6 +868,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
 
     // Check dates in reverse order of progress to find current stage
     if (orderData['Oracle Entry'] && orderData['PR Entry'] && orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
+      if (hasDieReceivedDate(orderData)) return 'DIE RECEIVED';
       return 'DONE';
     }
     if (orderData['PR Entry'] && orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
@@ -800,7 +944,11 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   };
 
   const handleCancel = () => {
-    setEditedOrder({ ...order });
+    setEditedOrder({
+      ...order,
+      Urgency: order.Urgency ?? 'NORMAL',
+      specialFollowUp: !!(order.specialFollowUp === true || order.specialFollowUp === 1),
+    });
     setIsEditing(false);
     setPendingStatusLog(null);
   };
@@ -911,7 +1059,11 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}`, background: `${config.color}10` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: config.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><StatusIcon size={24} color="white" /></div>
-            <div><h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme?.text || '#F1F5F9' }}>{order['DIE NO']}</h2><p style={{ color: theme?.textDim || '#64748B' }}>Order #{order['Order No']}</p></div>
+            <div>
+              <DieAttentionLabels order={currentOrder} dense={false} />
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme?.text || '#F1F5F9', margin: 0 }}>{currentOrder['DIE NO']}</h2>
+              <p style={{ color: theme?.textDim || '#64748B', margin: '4px 0 0 0' }}>Order #{currentOrder['Order No']}</p>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {!isEditing ? (
@@ -943,13 +1095,64 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               <InfoRow label="Supplier" field="Supplier" value={currentOrder.Supplier} type="select" options={suppliers.map(s => s.name)} />
               <InfoRow label="Customer" field="Customer Name" value={currentOrder['Customer Name']} />
               <InfoRow label="PR Number" field="PR Number" value={currentOrder['PR Number']} />
+              <InfoRow label="Press" field="Press" value={currentOrder.Press} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
+                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>Simulation</span>
+                {isEditing ? (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: theme?.text || '#F1F5F9', fontSize: '0.875rem', fontWeight: 500 }}>
+                    <input
+                      type="checkbox"
+                      checked={isSimulationEnabled(editedOrder.simulationEnabled)}
+                      onChange={(e) => handleFieldChange('simulationEnabled', e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#3B82F6', cursor: 'pointer' }}
+                    />
+                    Required
+                  </label>
+                ) : (
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{isSimulationEnabled(currentOrder.simulationEnabled) ? 'Yes' : 'No'}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
+                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '96px' }}>Urgency</span>
+                {isEditing ? (
+                  <select
+                    style={selectStyle}
+                    value={normalizeOrderUrgency(editedOrder.Urgency)}
+                    onChange={(e) => handleFieldChange('Urgency', e.target.value)}
+                  >
+                    {URGENCY_FORM_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{formatUrgencyForDisplay(currentOrder.Urgency)}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
+                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '96px' }}>Special follow-up</span>
+                {isEditing ? (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: theme?.text || '#F1F5F9', fontSize: '0.875rem', fontWeight: 500 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!(editedOrder.specialFollowUp === true || editedOrder.specialFollowUp === 1)}
+                      onChange={(e) => handleFieldChange('specialFollowUp', e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#F59E0B', cursor: 'pointer' }}
+                    />
+                    Flagged
+                  </label>
+                ) : (
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>
+                    {(currentOrder.specialFollowUp === true || currentOrder.specialFollowUp === 1) ? 'Yes' : 'No'}
+                  </span>
+                )}
+              </div>
               <InfoRow label="Status" field="STATUS" value={currentOrder.STATUS} type="select" options={statusOptions} />
             </div>
             <div style={{ background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
               <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Timeline</h3>
               <InfoRow label="Requested" field="Die Requested Date" value={currentOrder['Die Requested Date']} type="date" />
               <InfoRow label="Design Received" field="Design Received Date" value={currentOrder['Design Received Date']} type="date" />
-              {currentOrder.simulationEnabled && <InfoRow label="3D Model Received" field="3D Model Received Date" value={currentOrder['3D Model Received Date']} type="date" />}
+              {isSimulationEnabled(currentOrder.simulationEnabled) && <InfoRow label="3D Model Received" field="3D Model Received Date" value={currentOrder['3D Model Received Date']} type="date" />}
               <InfoRow label="Design Approved" field="Design Approved Date" value={currentOrder['Design Approved Date']} type="date" />
               <InfoRow label="PR Entry" field="PR Entry" value={currentOrder['PR Entry']} type="date" />
               <InfoRow label="Oracle Entry" field="Oracle Entry" value={currentOrder['Oracle Entry']} type="date" />
@@ -1646,7 +1849,7 @@ export default function DieOrderingSystem() {
     try {
       // Save each imported record to the database
       for (const record of newData) {
-        await ordersAPI.create(record);
+        await ordersAPI.create(normalizeManufacturingStatusOnImportRow(record));
       }
       // Refresh orders from database
       await fetchOrders();
@@ -1730,8 +1933,12 @@ export default function DieOrderingSystem() {
   const filteredData = useMemo(() => {
     return data.filter(order => {
       const matchesSearch = !searchTerm || order['DIE NO']?.toLowerCase().includes(searchTerm.toLowerCase()) || order['Order No']?.toString().toLowerCase().includes(searchTerm.toLowerCase()) || order.Supplier?.toLowerCase().includes(searchTerm.toLowerCase());
-      const statusMatch = filters.status === 'all' ||
-        (filters.status === 'active' ? !['DONE', 'CANCELLED'].includes(order.STATUS) : order.STATUS === filters.status);
+      const statusMatch = filters.status === 'all'
+        || (filters.status === 'pre-approval'
+          ? order.STATUS !== 'CANCELLED' && !hasDesignApprovedDate(order)
+          : filters.status === 'active'
+            ? !['DONE', 'CANCELLED'].includes(order.STATUS)
+            : order.STATUS === filters.status);
       const orderYear = getYearFromDate(order['Die Requested Date']);
       return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year);
     }).sort((a, b) => {
@@ -1759,16 +1966,17 @@ export default function DieOrderingSystem() {
 
   const stats = useMemo(() => {
     const total = data.length, completed = data.filter(o => o.STATUS === 'DONE').length;
-    const pending = data.filter(o => !['DONE', 'CANCELLED'].includes(o.STATUS)).length;
+    const pending = data.filter(o => o.STATUS !== 'CANCELLED' && !hasDesignApprovedDate(o)).length;
     const cancelled = data.filter(o => o.STATUS === 'CANCELLED').length;
-    // Orders in manufacturing: design approved but die not yet received
+    // Orders in manufacturing: DONE (awaiting physical die) — blank die received only
     const inManufacturing = data.filter(o =>
-      o['Design Approved Date'] && o['Design Approved Date'].toString().trim() !== '' &&
-      (!o['Die Received Date'] || o['Die Received Date'].toString().trim() === '')
+      o.STATUS === 'DONE' && !hasDieReceivedDate(o)
     ).length;
-    // Avg design-approval time: for orders with both Design Received & Design Approved dates,
-    // excluding cancelled / on-hold orders.
-    const approvedDurations = [];
+    const dieReceivedCount = data.filter(o => hasDieReceivedDate(o)).length;
+    // Avg design-approval lead time (days from Design Received → Design Approved), excluding cancelled / hold.
+    // Split by simulation flag: non-simulation vs simulation-enabled orders.
+    const durationsNoSimulation = [];
+    const durationsSimulation = [];
     data.forEach(o => {
       if (o.STATUS === 'CANCELLED' || o.STATUS === 'HOLD') return;
       if (!o['Design Received Date'] || !o['Design Approved Date']) return;
@@ -1776,12 +1984,16 @@ export default function DieOrderingSystem() {
       const approved = new Date(o['Design Approved Date']);
       if (isNaN(received) || isNaN(approved)) return;
       const days = Math.round((approved - received) / (1000 * 60 * 60 * 24));
-      if (days >= 0) approvedDurations.push(days);
+      if (days < 0) return;
+      if (isSimulationEnabled(o.simulationEnabled)) durationsSimulation.push(days);
+      else durationsNoSimulation.push(days);
     });
-    const avgDelay = approvedDurations.length > 0
-      ? (approvedDurations.reduce((s, d) => s + d, 0) / approvedDurations.length).toFixed(1)
+    const avgOf = (arr) => arr.length > 0
+      ? (arr.reduce((s, d) => s + d, 0) / arr.length).toFixed(1)
       : '0';
-    return { total, completed, pending, cancelled, avgDelay, inManufacturing };
+    const avgDelay = avgOf(durationsNoSimulation);
+    const avgDelayDesignApprovalSimulation = avgOf(durationsSimulation);
+    return { total, completed, pending, cancelled, avgDelay, avgDelayDesignApprovalSimulation, inManufacturing, dieReceivedCount };
   }, [data]);
 
   const statusChartData = useMemo(() => {
@@ -2088,8 +2300,27 @@ export default function DieOrderingSystem() {
         }} />
         <div style={{ background: '#1E293B', borderRadius: '20px', padding: '2.5rem', width: '100%', maxWidth: '400px', border: '1px solid #334155', position: 'relative', zIndex: 1 }}>
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <div style={{ width: '64px', height: '64px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-              <Factory size={32} color="white" />
+            <div style={{
+              margin: '0 auto 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '64px',
+              padding: '0 0.25rem',
+            }}>
+              <img
+                src="/company-logo.png"
+                alt="Company logo"
+                style={{
+                  display: 'block',
+                  maxHeight: '72px',
+                  maxWidth: 'min(260px, 100%)',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  objectPosition: 'center',
+                }}
+              />
             </div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 700, background: 'linear-gradient(135deg, #60A5FA, #A78BFA)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Die Ordering System</h1>
             <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '0.5rem' }}>Sign in to continue</p>
@@ -2335,9 +2566,11 @@ export default function DieOrderingSystem() {
                 {[
                   { title: 'Total Orders', value: stats.total, color: '#3B82F6', icon: Package, sub: 'Year to date', filter: 'all' },
                   { title: 'In Manufacturing', value: stats.inManufacturing, color: '#10B981', icon: CheckCircle, sub: 'Approved · awaiting delivery', filter: 'active' },
-                  { title: 'In Progress', value: stats.pending, color: '#F59E0B', icon: Clock, sub: 'Active orders', filter: 'active' },
+                  { title: 'Dies Received', value: stats.dieReceivedCount, color: '#0891B2', icon: Truck, sub: 'Orders with die received date' },
+                  { title: 'In Progress', value: stats.pending, color: '#F59E0B', icon: Clock, sub: 'Not cancelled · no design approval date', filter: 'pre-approval' },
                   { title: 'Cancelled', value: stats.cancelled, color: '#EF4444', icon: XCircle, sub: `${stats.total > 0 ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%`, filter: 'CANCELLED' },
-                  { title: 'Avg Delay', value: `${stats.avgDelay}d`, color: '#8B5CF6', icon: AlertTriangle, sub: 'Design approval' },
+                  { title: 'Avg Delay', value: `${stats.avgDelay}d`, color: '#8B5CF6', icon: AlertTriangle, sub: 'Design received → approved · no simulation' },
+                  { title: 'Avg Delay (Simulation)', value: `${stats.avgDelayDesignApprovalSimulation}d`, color: '#7C3AED', icon: Layers, sub: 'Design received → approved' },
                 ].map((kpi, index) => {
                   // Fallback drill-down flow page when user lacks Orders access
                   const flowFallback = { 'DONE': 'flow-completed' }[kpi.filter];
@@ -2346,7 +2579,7 @@ export default function DieOrderingSystem() {
                   const clickable = canUseOrders || canUseFlow;
                   return (
                   <div
-                    key={kpi.title}
+                    key={`${kpi.title}-${kpi.sub || index}`}
                     style={{
                       ...styles.kpiCard,
                       cursor: clickable ? 'pointer' : 'default',
@@ -2476,7 +2709,10 @@ export default function DieOrderingSystem() {
                         {(() => {
                           const statusCounts = {};
                           data.forEach(o => { if (o.STATUS) statusCounts[o.STATUS] = (statusCounts[o.STATUS] || 0) + 1; });
-                          const total = data.length;
+                          const doneAwaitingDie = data.filter(o => o.STATUS === 'DONE' && !hasDieReceivedDate(o)).length;
+                          const doneWithDieReceived = data.filter(o => o.STATUS === 'DONE' && hasDieReceivedDate(o)).length;
+                          statusCounts['DONE'] = doneAwaitingDie;
+                          statusCounts['DIE RECEIVED'] = (statusCounts['DIE RECEIVED'] || 0) + doneWithDieReceived;
                           const statusColors = {
                             'DONE': '#10B981', 'DIE RECEIVED': '#0891B2', 'CANCELLED': '#6B7280', 'AWAITING DESIGN': '#EF4444',
                             'DESIGN APPROVAL': '#F59E0B', 'PENDING ORDER': '#8B5CF6', 'ORACLE ENTRY': '#3B82F6',
@@ -2486,7 +2722,11 @@ export default function DieOrderingSystem() {
                             'DONE': 'In Manufacturing',
                             'DIE RECEIVED': 'Sample Followup',
                           };
-                          return Object.entries(statusCounts)
+                          const statusHiddenFromDistribution = new Set(['DIE RECEIVED']);
+                          const visibleEntries = Object.entries(statusCounts)
+                            .filter(([status]) => !statusHiddenFromDistribution.has(status));
+                          const displayedTotal = visibleEntries.reduce((acc, [, c]) => acc + c, 0);
+                          return visibleEntries
                             .sort((a, b) => b[1] - a[1])
                             .map(([status, count]) => (
                               <tr key={status} style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -2499,7 +2739,7 @@ export default function DieOrderingSystem() {
                                 <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600, color: theme.text }}>{count}</td>
                                 <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                                   <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: `${statusColors[status] || '#94A3B8'}20`, color: statusColors[status] || '#94A3B8' }}>
-                                    {total > 0 ? ((count / total) * 100).toFixed(1) : 0}%
+                                    {displayedTotal > 0 ? ((count / displayedTotal) * 100).toFixed(1) : 0}%
                                   </span>
                                 </td>
                               </tr>
@@ -2595,7 +2835,13 @@ export default function DieOrderingSystem() {
                           <span style={{ fontSize: '0.8rem', fontWeight: 600, color: config.color }}>{config.label}</span>
                           <span style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 700, color: config.color }}>{count}</span>
                         </div>
-                        {orders.map(order => (<div key={order['DIE NO']} style={styles.pipelineItem} onClick={() => setSelectedOrder(order)}><div style={{ fontWeight: 600, fontSize: '0.875rem', color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</div><div style={{ fontSize: '0.75rem', color: theme.textDim, marginTop: '4px' }}>{order.Supplier}</div></div>))}
+                        {orders.map(order => (
+                          <div key={order['DIE NO']} style={styles.pipelineItem} onClick={() => setSelectedOrder(order)}>
+                            <DieAttentionLabels order={order} dense />
+                            <div style={{ fontWeight: 600, fontSize: '0.875rem', color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</div>
+                            <div style={{ fontSize: '0.75rem', color: theme.textDim, marginTop: '4px' }}>{order.Supplier}</div>
+                          </div>
+                        ))}
                         {count === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: '#64748B', fontSize: '0.8rem' }}>No orders</div>}
                       </div>
                     );
@@ -2611,7 +2857,7 @@ export default function DieOrderingSystem() {
                 <div style={styles.filterRow}>
 
                   <select style={styles.filterSelect} value={filters.plant} onChange={(e) => setFilters({ ...filters, plant: e.target.value })}><option value="all">All Plants</option>{uniquePlants.map(p => <option key={p} value={p}>{p}</option>)}</select>
-                  <select style={styles.filterSelect} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="all">All Status</option>{uniqueStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}</select>
+                  <select style={styles.filterSelect} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="all">All Status</option><option value="pre-approval">Pre–design approval (not cancelled)</option>{uniqueStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}</select>
                   <select style={styles.filterSelect} value={filters.supplier} onChange={(e) => setFilters({ ...filters, supplier: e.target.value })}><option value="all">All Suppliers</option>{uniqueSuppliers.map(s => <option key={s} value={s}>{s}</option>)}</select>
                   <select style={styles.filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}</select>
                   <select style={styles.filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
@@ -2641,7 +2887,12 @@ export default function DieOrderingSystem() {
                     <tbody>
                       {paginatedData.map((order, idx) => (
                         <tr key={`${order['DIE NO']}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedOrder(order)}>
-                          <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
+                          <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
+                              <DieAttentionLabels order={order} dense />
+                              <span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
+                            </div>
+                          </td>
                           <td style={styles.td}>{order['Order No']}</td>
                           <td style={{ ...styles.td, whiteSpace: 'nowrap' }}><span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span></td>
                           <td style={styles.td}>{order.TYPE}</td>
@@ -2759,7 +3010,12 @@ export default function DieOrderingSystem() {
 
             const config = STATUS_CONFIG[currentFlow.status] || { color: '#6B7280', label: currentFlow.status };
             const StatusIcon = config.icon || Package;
-            const flowOrders = data.filter(o => o.STATUS === currentFlow.status);
+            const flowOrders = data.filter(o => {
+              if (currentFlow.status === 'DONE') {
+                return o.STATUS === 'DONE' && !hasDieReceivedDate(o);
+              }
+              return o.STATUS === currentFlow.status;
+            });
 
             // Workflow steps configuration
             const WORKFLOW_STEPS = {
@@ -2855,6 +3111,7 @@ export default function DieOrderingSystem() {
                               <>
                                 <th style={{ ...styles.th, textAlign: 'center' }}>Copy ERP</th>
                                 <th style={{ ...styles.th, textAlign: 'center' }}>PR Number</th>
+                                <th style={{ ...styles.th, textAlign: 'center' }}>Change Log</th>
                               </>
                             )}
                             {workflow && workflow.nextStatus && <th style={{ ...styles.th, textAlign: 'center' }}>Complete</th>}
@@ -2874,7 +3131,12 @@ export default function DieOrderingSystem() {
                             })
                             .map((order, idx) => (
                               <tr key={`${order['DIE NO']}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedOrder(order)}>
-                                <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}><span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span></td>
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
+                              <DieAttentionLabels order={order} dense />
+                              <span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
+                            </div>
+                          </td>
                                 {/* Order No - editable on Pending Ordering */}
                                 <td style={styles.td}>
                                   {currentFlow.status === 'PENDING FOR ORDERING' ? (
@@ -3012,6 +3274,20 @@ export default function DieOrderingSystem() {
                                         placeholder="PR-XXXX"
                                       />
                                     </td>
+                                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                                      {order['Change Log'] && order['Change Log'].length > 0 ? (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setChangelogOrder(order); }}
+                                          style={{ padding: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                          title={`${order['Change Log'].length} change(s) logged - Click to view`}
+                                        >
+                                          <History size={14} />
+                                          <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order['Change Log'].length}</span>
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: '#64748B', fontSize: '0.8rem' }}>—</span>
+                                      )}
+                                    </td>
                                   </>
                                 )}
                                 {workflow && workflow.nextStatus && (
@@ -3080,6 +3356,7 @@ export default function DieOrderingSystem() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                   <div>
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>Confirm Die Receivance</h2>
+                    <DieAttentionLabels order={dieReceivanceOrder} dense />
                     <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Die No: <strong style={{ color: theme.text, fontFamily: 'monospace' }}>{dieReceivanceOrder['DIE NO']}</strong></p>
                   </div>
                   <button onClick={() => setDieReceivanceOrder(null)} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}>
@@ -3721,17 +3998,18 @@ export default function DieOrderingSystem() {
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Supplier Performance</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={styles.table}>
-                    <thead><tr><th style={styles.th}>Supplier</th><th style={{ ...styles.th, textAlign: 'center' }}>Total</th><th style={{ ...styles.th, textAlign: 'center' }}>Completed</th><th style={{ ...styles.th, textAlign: 'center' }}>In Progress</th><th style={styles.th}>Completion Rate</th></tr></thead>
+                    <thead><tr><th style={styles.th}>Supplier</th><th style={{ ...styles.th, textAlign: 'center' }}>Total</th><th style={{ ...styles.th, textAlign: 'center' }} title="Die received date recorded">Completed</th><th style={{ ...styles.th, textAlign: 'center' }} title="Awaiting die receivance (no die received date)">In Progress</th><th style={styles.th}>Completion Rate</th></tr></thead>
                     <tbody>
                       {[...new Set(analyticsData.map(o => o.Supplier))].filter(Boolean).sort().map(supplier => {
-                        const supplierOrders = analyticsData.filter(o => o.Supplier === supplier);
-                        const completed = supplierOrders.filter(o => o.STATUS === 'DONE').length;
-                        const inProgress = supplierOrders.filter(o => !['DONE', 'CANCELLED'].includes(o.STATUS)).length;
-                        const rate = supplierOrders.length > 0 ? ((completed / supplierOrders.length) * 100).toFixed(0) : 0;
+                        const supplierOrders = analyticsData.filter(o => o.Supplier === supplier && o.STATUS !== 'CANCELLED');
+                        const completed = supplierOrders.filter(o => hasDieReceivedDate(o)).length;
+                        const inProgress = supplierOrders.filter(o => !hasDieReceivedDate(o)).length;
+                        const total = supplierOrders.length;
+                        const rate = total > 0 ? ((completed / total) * 100).toFixed(0) : 0;
                         return (
                           <tr key={supplier}>
                             <td style={styles.td}><span style={{ fontWeight: 600, color: theme.text }}>{supplier}</span></td>
-                            <td style={{ ...styles.td, textAlign: 'center' }}>{supplierOrders.length}</td>
+                            <td style={{ ...styles.td, textAlign: 'center' }}>{total}</td>
                             <td style={{ ...styles.td, textAlign: 'center' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#F0FDF4', color: '#16A34A' }}>{completed}</span></td>
                             <td style={{ ...styles.td, textAlign: 'center' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#FFFBEB', color: '#D97706' }}>{inProgress}</span></td>
                             <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><div style={{ flex: 1, height: '6px', background: theme.cardBorder, borderRadius: '3px', overflow: 'hidden' }}><div style={{ height: '100%', width: `${rate}%`, background: '#10B981', borderRadius: '3px' }} /></div><span style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, minWidth: '40px' }}>{rate}%</span></div></td>
@@ -3822,11 +4100,12 @@ export default function DieOrderingSystem() {
               {/* Design Approval Lead Time Charts */}
               <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Lead Time by Supplier</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Design Approved</p>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Design Approved · excludes simulation orders</p>
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={(() => {
                     const supplierTimes = {};
                     analyticsData.forEach(o => {
+                      if (isSimulationEnabled(o.simulationEnabled)) return;
                       if (o.Supplier && o['Design Received Date'] && o['Design Approved Date']) {
                         const receivedDate = new Date(o['Design Received Date']);
                         const approvedDate = new Date(o['Design Approved Date']);
@@ -3857,12 +4136,13 @@ export default function DieOrderingSystem() {
               </div>
               <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Time by Month</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved</p>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders</p>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={(() => {
                     const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                     const monthTimes = {};
                     analyticsData.forEach(o => {
+                      if (isSimulationEnabled(o.simulationEnabled)) return;
                       if (o.month && o['Design Received Date'] && o['Design Approved Date']) {
                         const receivedDate = new Date(o['Design Received Date']);
                         const approvedDate = new Date(o['Design Approved Date']);
@@ -3893,11 +4173,12 @@ export default function DieOrderingSystem() {
               </div>
               <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Time by Plant</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved</p>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders</p>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={(() => {
                     const plantTimes = {};
                     analyticsData.forEach(o => {
+                      if (isSimulationEnabled(o.simulationEnabled)) return;
                       if (o.Plant && o['Design Received Date'] && o['Design Approved Date']) {
                         const receivedDate = new Date(o['Design Received Date']);
                         const approvedDate = new Date(o['Design Approved Date']);
@@ -3927,37 +4208,38 @@ export default function DieOrderingSystem() {
                 </ResponsiveContainer>
               </div>
 
-              {/* Delivery & Manufacturing Lead Time — computed once, split into two charts */}
+              {/* Delivery & Manufacturing Lead Time — all orders with die received date (respects analytics filters) */}
               {(() => {
                 const supplierDelivery = {};
                 const supplierMfg = {};
 
-                sampleFollowups.forEach(sf => {
-                  if (!sf.die_received_date || !sf.supplier) return;
-                  const receivedDate = new Date(sf.die_received_date);
-                  if (isNaN(receivedDate)) return;
+                analyticsData.forEach(o => {
+                  if (!o.Supplier?.trim()) return;
+                  const receivedIso = parseOrderCalendarDate(o['Die Received Date']);
+                  if (!receivedIso) return;
+                  const receivedDate = new Date(receivedIso);
+                  if (Number.isNaN(receivedDate.getTime())) return;
 
-                  const order = data.find(o => o['DIE NO'] && sf.profile && o['DIE NO'].trim() === sf.profile.trim());
-                  if (!order) return;
-
-                  if (order['Ordered date']) {
-                    const orderedDate = new Date(order['Ordered date']);
-                    if (!isNaN(orderedDate)) {
+                  const orderedIso = parseOrderCalendarDate(o['Ordered date']);
+                  if (orderedIso) {
+                    const orderedDate = new Date(orderedIso);
+                    if (!Number.isNaN(orderedDate.getTime())) {
                       const days = Math.round((receivedDate - orderedDate) / (1000 * 60 * 60 * 24));
                       if (days >= 0) {
-                        if (!supplierDelivery[sf.supplier]) supplierDelivery[sf.supplier] = [];
-                        supplierDelivery[sf.supplier].push(days);
+                        if (!supplierDelivery[o.Supplier]) supplierDelivery[o.Supplier] = [];
+                        supplierDelivery[o.Supplier].push(days);
                       }
                     }
                   }
 
-                  if (order['Design Approved Date']) {
-                    const approvedDate = new Date(order['Design Approved Date']);
-                    if (!isNaN(approvedDate)) {
+                  const approvedIso = parseOrderCalendarDate(o['Design Approved Date'] ?? o.design_approved_date);
+                  if (approvedIso) {
+                    const approvedDate = new Date(approvedIso);
+                    if (!Number.isNaN(approvedDate.getTime())) {
                       const days = Math.round((receivedDate - approvedDate) / (1000 * 60 * 60 * 24));
                       if (days >= 0) {
-                        if (!supplierMfg[sf.supplier]) supplierMfg[sf.supplier] = [];
-                        supplierMfg[sf.supplier].push(days);
+                        if (!supplierMfg[o.Supplier]) supplierMfg[o.Supplier] = [];
+                        supplierMfg[o.Supplier].push(days);
                       }
                     }
                   }
@@ -3981,7 +4263,7 @@ export default function DieOrderingSystem() {
                           Avg Delivery Lead Time by Supplier
                         </h3>
                         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>
-                          Days from Die Order Date to Die Received Date
+                          Days from Die Order Date to Die Received Date · orders with a recorded die received date
                         </p>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={deliveryData} layout="vertical" margin={{ right: 60 }}>
@@ -3991,7 +4273,7 @@ export default function DieOrderingSystem() {
                               contentStyle={tooltipStyle}
                               itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
                               labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
-                              formatter={(value, _, props) => [`${value} days (${props.payload.count} dies)`, 'Avg Delivery Lead Time']}
+                              formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Delivery Lead Time']}
                             />
                             <Bar dataKey="avgDays" fill="#0EA5E9" radius={[0, 6, 6, 0]}>
                               <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
@@ -4007,7 +4289,7 @@ export default function DieOrderingSystem() {
                           Avg Manufacturing Lead Time by Supplier
                         </h3>
                         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>
-                          Days from Design Approval Date to Die Received Date
+                          Days from Design Approval Date to Die Received Date · orders with both dates recorded
                         </p>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={mfgData} layout="vertical" margin={{ right: 60 }}>
@@ -4017,7 +4299,7 @@ export default function DieOrderingSystem() {
                               contentStyle={tooltipStyle}
                               itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
                               labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
-                              formatter={(value, _, props) => [`${value} days (${props.payload.count} dies)`, 'Avg Manufacturing Lead Time']}
+                              formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Manufacturing Lead Time']}
                             />
                             <Bar dataKey="avgDays" fill="#F59E0B" radius={[0, 6, 6, 0]}>
                               <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
@@ -4484,7 +4766,7 @@ export default function DieOrderingSystem() {
                       <div style={{ marginTop: '1rem' }}>
                         <h5 style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' }}>Available Fields</h5>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'three_d_model_received_date', 'simulation_enabled', 'design_approved_date', 'delay', 'pr_entry', 'pr_number', 'customer_name', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month', 'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial', 'corrector'].map(f => (
+                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'three_d_model_received_date', 'simulation_enabled', 'design_approved_date', 'delay', 'pr_entry', 'pr_number', 'customer_name', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month', 'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial', 'corrector', 'urgency', 'special_follow_up'].map(f => (
                             <span key={f} style={{ fontSize: '0.65rem', padding: '2px 6px', background: theme.cardBg, color: theme.textDim, borderRadius: '3px', fontFamily: 'monospace' }}>{f}</span>
                           ))}
                         </div>

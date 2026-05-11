@@ -30,6 +30,49 @@ const sanitizeString = (value) => {
     return value.trim().substring(0, 500); // Limit string length
 };
 
+// NORMAL | URGENT | TOP_URGENT — accepts "TOP URGENT", "top_urgent", etc.
+const normalizeUrgencyInput = (value) => {
+    if (value == null || value === '') return 'NORMAL';
+    const s = String(value).trim().toUpperCase().replace(/\s+/g, '_');
+    if (s === 'TOP_URGENT' || s === 'TOPURGENT') return 'TOP_URGENT';
+    if (s === 'URGENT') return 'URGENT';
+    return 'NORMAL';
+};
+
+const parseSpecialFollowUpInput = (value) => {
+    if (value === true || value === 1) return true;
+    if (value === false || value === 0 || value === null || value === undefined) return false;
+    if (typeof value === 'string') {
+        const t = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'y'].includes(t)) return true;
+        if (['false', '0', 'no', 'n'].includes(t)) return false;
+    }
+    return false;
+};
+
+const MAX_CHANGE_LOG_ENTRIES = 500;
+
+const parseChangeLog = (raw) => {
+    if (raw == null || raw === '') return [];
+    try {
+        if (typeof raw === 'object' && typeof raw !== 'string') return Array.isArray(raw) ? raw : [];
+        const p = JSON.parse(String(raw));
+        return Array.isArray(p) ? p : [];
+    } catch {
+        return [];
+    }
+};
+
+const serializeChangeLogFromArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return '[]';
+    const clipped = arr.length > MAX_CHANGE_LOG_ENTRIES ? arr.slice(-MAX_CHANGE_LOG_ENTRIES) : arr;
+    try {
+        return JSON.stringify(clipped);
+    } catch {
+        return '[]';
+    }
+};
+
 // Auto-update matching backup die requests when a die order is created/updated
 const autoUpdateBackupRequests = async (dieNo, orderedDate) => {
     if (!dieNo) return;
@@ -92,6 +135,18 @@ const orderValidation = [
     body('Ascona Reference').optional().customSanitizer(sanitizeString),
     body('Sample Status').optional().customSanitizer(sanitizeString),
     body('Remark').optional().customSanitizer(sanitizeString),
+    body('Urgency').optional().trim().custom((value) => {
+        const n = normalizeUrgencyInput(value);
+        if (!['NORMAL', 'URGENT', 'TOP_URGENT'].includes(n)) {
+            throw new Error('Invalid urgency');
+        }
+        return true;
+    }),
+    body('specialFollowUp').optional().isBoolean(),
+    body('Change Log').optional({ nullable: true }).custom((value) => {
+        if (value === undefined || value === null || Array.isArray(value)) return true;
+        throw new Error('Change Log must be an array');
+    }),
 ];
 
 const orderIdValidation = [
@@ -139,7 +194,10 @@ router.get('/', async (req, res) => {
             'Cavity': order.cavity,
             'Ascona Reference': order.ascona_reference,
             'Sample Status': order.sample_status,
-            'Remark': order.remark
+            'Remark': order.remark,
+            'Urgency': order.urgency || 'NORMAL',
+            'specialFollowUp': !!order.special_follow_up,
+            'Change Log': parseChangeLog(order.change_log),
         }));
 
         res.json({ orders: formattedOrders });
@@ -162,9 +220,10 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 design_approved_date, delay, pr_entry, pr_number, customer_name,
                 oracle_entry, supplier, status, overall_delay, eta, month,
                 die_received_date, submission_date, sample_approval_date, no_of_trial, corrector,
-                press, cavity, ascona_reference, sample_status, remark,
+                press, cavity, ascona_reference, sample_status, remark, change_log,
+                urgency, special_follow_up,
                 created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -201,6 +260,9 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['Ascona Reference']),
             sanitizeString(order['Sample Status']),
             sanitizeString(order['Remark']),
+            serializeChangeLogFromArray(Array.isArray(order['Change Log']) ? order['Change Log'] : []),
+            normalizeUrgencyInput(order['Urgency']),
+            parseSpecialFollowUpInput(order.specialFollowUp),
             req.user.id
         ]);
 
@@ -221,7 +283,18 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
     try {
         const { id } = req.params;
         const order = req.body;
-        // Debug logging removed
+
+        let changeLogForDb;
+        if (Object.prototype.hasOwnProperty.call(order, 'Change Log')) {
+            changeLogForDb = serializeChangeLogFromArray(Array.isArray(order['Change Log']) ? order['Change Log'] : []);
+        } else {
+            const existingRow = await pool.query('SELECT change_log FROM die_orders WHERE id = $1', [id]);
+            if (existingRow.rows.length === 0) {
+                return res.status(404).json({ error: 'Order not found' });
+            }
+            const prev = existingRow.rows[0].change_log;
+            changeLogForDb = (prev == null || prev === '') ? '[]' : String(prev);
+        }
 
         const result = await pool.query(`
             UPDATE die_orders SET
@@ -235,8 +308,10 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
                 die_received_date = $25, submission_date = $26, sample_approval_date = $27,
                 no_of_trial = $28, corrector = $29,
                 press = $30, cavity = $31, ascona_reference = $32, sample_status = $33, remark = $34,
+                change_log = $35,
+                urgency = $36, special_follow_up = $37,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $35
+            WHERE id = $38
         `, [
             sanitizeString(order['Plant']),
             sanitizeString(order['Order No']),
@@ -272,6 +347,9 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['Ascona Reference']),
             sanitizeString(order['Sample Status']),
             sanitizeString(order['Remark']),
+            changeLogForDb,
+            normalizeUrgencyInput(order['Urgency']),
+            parseSpecialFollowUpInput(order.specialFollowUp),
             id
         ]);
 

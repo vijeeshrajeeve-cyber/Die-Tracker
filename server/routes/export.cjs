@@ -38,7 +38,9 @@ const FIELD_MAP = {
     'press': 'press',
     'ascona_reference': 'ascona_reference',
     'sample_status': 'sample_status',
-    'remark': 'remark'
+    'remark': 'remark',
+    'urgency': 'urgency',
+    'special_follow_up': 'special_follow_up'
 };
 
 // Display-friendly column headers
@@ -75,7 +77,9 @@ const DISPLAY_NAMES = {
     'press': 'Press',
     'ascona_reference': 'Ascona Reference',
     'sample_status': 'Sample Status',
-    'remark': 'Remark'
+    'remark': 'Remark',
+    'urgency': 'Urgency',
+    'special_follow_up': 'Special Follow-Up'
 };
 
 // Extract API key from Authorization header, X-API-Key header, or query param (deprecated)

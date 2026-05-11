@@ -104,7 +104,60 @@ services:
           memory: 64m
     networks:
       - die-ordering-network
+# Supabase Meta — required by Studio to read DB schema
+  supabase-meta:
+    image: supabase/postgres-meta:v0.83.0
+    container_name: die-ordering-meta
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: ${POSTGRES_DB:-die_ordering}
+      PG_META_DB_USER: ${POSTGRES_USER:-postgres}
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+    networks:
+      - die-ordering-network
 
+  # Supabase Studio — DB management web UI
+  supabase-studio:
+    image: supabase/studio:20250113-83c9420
+    container_name: die-ordering-studio
+    ports:
+      - "${STUDIO_PORT:-8082}:3000"
+    environment:
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      DEFAULT_ORGANIZATION_NAME: "Gulf Extrusions Die Shop"
+      DEFAULT_PROJECT_NAME: "Die Tracker IO"
+      # Supabase Studio needs these even without GoTrue auth — use dummy values for Phase 1
+      SUPABASE_URL: http://localhost:8082
+      SUPABASE_PUBLIC_URL: http://localhost:8082
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-phase1-placeholder-anon-key}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-phase1-placeholder-service-key}
+      AUTH_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+    depends_on:
+      - supabase-meta
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+    networks:
+      - die-ordering-network
 volumes:
   postgres_data:
     driver: local
