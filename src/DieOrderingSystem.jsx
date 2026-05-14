@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area, LabelList, ComposedChart, Line } from 'recharts';
-import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList, Plus } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Plane, Factory, TrendingUp, Layers, ArrowRight, X, Eye, EyeOff, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, FileText, Sun, Moon, Settings, Trash2, BarChart3, User, Bell, Key, Lock, ShieldCheck, RotateCcw, History, Copy, ClipboardList, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
@@ -1308,6 +1308,7 @@ export default function DieOrderingSystem() {
   const [isLoggedIn, setIsLoggedIn] = useState(checkLoggedIn());
   const [user, setUser] = useState(getUser());
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginPasswordVisible, setLoginPasswordVisible] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [users, setUsers] = useState([]);
@@ -1576,6 +1577,7 @@ export default function DieOrderingSystem() {
       setUser(response.user);
       setIsLoggedIn(true);
       setLoginForm({ username: '', password: '' });
+      setLoginPasswordVisible(false);
 
       // Check if password change is required
       if (response.user?.passwordMustChange) {
@@ -2332,7 +2334,48 @@ export default function DieOrderingSystem() {
             </div>
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>Password</label>
-              <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} style={{ width: '100%', padding: '12px 16px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#F1F5F9', fontSize: '0.875rem' }} placeholder="Enter password" required />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={loginPasswordVisible ? 'text' : 'password'}
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '12px 44px 12px 16px',
+                    background: '#0F172A',
+                    border: '1px solid #334155',
+                    borderRadius: '10px',
+                    color: '#F1F5F9',
+                    fontSize: '0.875rem',
+                    boxSizing: 'border-box',
+                  }}
+                  placeholder="Enter password"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setLoginPasswordVisible((v) => !v)}
+                  aria-label={loginPasswordVisible ? 'Hide password' : 'Show password'}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    padding: 6,
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: 8,
+                    color: '#64748B',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {loginPasswordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             {loginError && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(244,63,94,0.1)', color: '#F43F5E', padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.875rem' }}><AlertTriangle size={16} />{loginError}</div>}
             <button type="submit" disabled={loginLoading} style={{ width: '100%', padding: '12px', background: loginLoading ? '#475569' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: loginLoading ? 'not-allowed' : 'pointer' }}>{loginLoading ? 'Signing in...' : 'Sign In'}</button>
@@ -2565,8 +2608,8 @@ export default function DieOrderingSystem() {
               <div style={styles.kpiGrid}>
                 {[
                   { title: 'Total Orders', value: stats.total, color: '#3B82F6', icon: Package, sub: 'Year to date', filter: 'all' },
-                  { title: 'In Manufacturing', value: stats.inManufacturing, color: '#10B981', icon: CheckCircle, sub: 'Approved · awaiting delivery', filter: 'active' },
                   { title: 'Dies Received', value: stats.dieReceivedCount, color: '#0891B2', icon: Truck, sub: 'Orders with die received date' },
+                  { title: 'In Manufacturing', value: stats.inManufacturing, color: '#10B981', icon: CheckCircle, sub: 'Approved · awaiting delivery', filter: 'active' },
                   { title: 'In Progress', value: stats.pending, color: '#F59E0B', icon: Clock, sub: 'Not cancelled · no design approval date', filter: 'pre-approval' },
                   { title: 'Cancelled', value: stats.cancelled, color: '#EF4444', icon: XCircle, sub: `${stats.total > 0 ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%`, filter: 'CANCELLED' },
                   { title: 'Avg Delay', value: `${stats.avgDelay}d`, color: '#8B5CF6', icon: AlertTriangle, sub: 'Design received → approved · no simulation' },

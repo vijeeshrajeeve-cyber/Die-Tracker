@@ -447,6 +447,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           const rLine = remainingLines[ri];
           const val = rLine.text.trim();
           // Extract Bolster/Insert IDs (patterns like "I-30602", "B-12345", "BOL-30587", "INS-22772")
+          // Also refs like "35IC1-120154" (leading digits + alphanumeric before hyphen) common on supplier PDFs
           if (!bolsterNo && !insertNo) {
             const idMatch = val.match(/^([A-Za-z]{1,4})[-](\d{3,6})$/i);
             if (idMatch) {
@@ -455,6 +456,11 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
               if (prefix === 'I' || prefix === 'INS') insertNo = fullId;
               else if (prefix === 'B' || prefix === 'BOL') bolsterNo = fullId;
               else insertNo = fullId; // Default to insert for unknown prefixes
+              continue;
+            }
+            const broadIdMatch = val.match(/^(\d+[A-Za-z][A-Za-z0-9]*-\d{3,})$/i);
+            if (broadIdMatch) {
+              insertNo = broadIdMatch[1];
               continue;
             }
           }
