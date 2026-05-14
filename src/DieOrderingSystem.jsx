@@ -1939,7 +1939,7 @@ export default function DieOrderingSystem() {
         || (filters.status === 'pre-approval'
           ? order.STATUS !== 'CANCELLED' && !hasDesignApprovedDate(order)
           : filters.status === 'active'
-            ? !['DONE', 'CANCELLED'].includes(order.STATUS)
+            ? order.STATUS !== 'CANCELLED' && hasDesignApprovedDate(order) && !hasDieReceivedDate(order)
             : order.STATUS === filters.status);
       const orderYear = getYearFromDate(order['Die Requested Date']);
       return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year);
@@ -1972,7 +1972,7 @@ export default function DieOrderingSystem() {
     const cancelled = data.filter(o => o.STATUS === 'CANCELLED').length;
     // Orders in manufacturing: DONE (awaiting physical die) — blank die received only
     const inManufacturing = data.filter(o =>
-      o.STATUS === 'DONE' && !hasDieReceivedDate(o)
+      o.STATUS !== 'CANCELLED' && hasDesignApprovedDate(o) && !hasDieReceivedDate(o)
     ).length;
     const dieReceivedCount = data.filter(o => hasDieReceivedDate(o)).length;
     // Avg design-approval lead time (days from Design Received → Design Approved), excluding cancelled / hold.
@@ -2906,8 +2906,8 @@ export default function DieOrderingSystem() {
                   <select style={styles.filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
                   <select style={styles.filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                  <span style={{ fontSize: '0.875rem', color: '#94A3B8' }}>Showing <strong style={{ color: '#F1F5F9' }}>{filteredData.length}</strong> orders</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: `1px solid ${theme.cardBorder}` }}>
+                  <span style={{ fontSize: '0.875rem', color: theme.textMuted }}>Showing <strong style={{ color: theme.text }}>{filteredData.length}</strong> orders</span>
                   <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
                 </div>
               </div>
