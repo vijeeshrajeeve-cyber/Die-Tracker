@@ -256,6 +256,7 @@ const initializeDatabase = async () => {
         plant TEXT,
         die_no TEXT,
         customer TEXT,
+        press TEXT,
         requested_date TEXT,
         die_available TEXT,
         drawing_requested TEXT,
@@ -268,6 +269,27 @@ const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='backup_die_requests' AND column_name='press') THEN
+          ALTER TABLE backup_die_requests ADD COLUMN press TEXT;
+        END IF;
+      END $$;
+
+      -- Press master (press name → code)
+      CREATE TABLE IF NOT EXISTS presses (
+        id SERIAL PRIMARY KEY,
+        press_name TEXT UNIQUE NOT NULL,
+        press_code TEXT NOT NULL,
+        plant TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='presses' AND column_name='plant') THEN
+          ALTER TABLE presses ADD COLUMN plant TEXT;
+        END IF;
+      END $$;
 
       -- API Keys table for external data access (e.g. Excel Power Query)
       CREATE TABLE IF NOT EXISTS api_keys (
@@ -350,9 +372,20 @@ const initializeDatabase = async () => {
         subject_template TEXT NOT NULL,
         body_template TEXT NOT NULL,
         category TEXT,
+        default_to TEXT,
+        default_cc TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_templates' AND column_name='default_to') THEN
+          ALTER TABLE email_templates ADD COLUMN default_to TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_templates' AND column_name='default_cc') THEN
+          ALTER TABLE email_templates ADD COLUMN default_cc TEXT;
+        END IF;
+      END $$;
 
       -- Plant budget targets for monthly trend charts
       CREATE TABLE IF NOT EXISTS plant_budgets (
@@ -429,12 +462,27 @@ const initializeDatabase = async () => {
     // Seed plants if table is empty
     const plantCount = await client.query('SELECT COUNT(*) as count FROM plants');
     if (parseInt(plantCount.rows[0].count) === 0) {
-      const plants = ['EXT 1', 'EXT 2'];
+      const plants = ['GEX 01', 'GEX 02'];
       for (const name of plants) {
         await client.query('INSERT INTO plants (name) VALUES ($1)', [name]);
       }
       console.log('Seeded plants table with default plants');
     }
+
+    // Seed / sync default presses with their assigned plant
+    await client.query(`
+      INSERT INTO presses (press_name, press_code, plant) VALUES
+        ('PRESS 2', 'B', 'GEX 01'),
+        ('PRESS 4', 'D', 'GEX 01'),
+        ('PRESS 5', 'E', 'GEX 01'),
+        ('PRESS 6', 'F', 'GEX 01'),
+        ('PRESS 7', 'P25', 'GEX 02'),
+        ('PRESS 8', 'P35', 'GEX 02'),
+        ('PRESS 9', 'I', 'GEX 02')
+      ON CONFLICT (press_name) DO UPDATE SET
+        press_code = EXCLUDED.press_code,
+        plant = EXCLUDED.plant
+    `);
 
     // Seed default email templates if table is empty
     const templateCount = await client.query('SELECT COUNT(*) as count FROM email_templates');
@@ -450,6 +498,14 @@ const initializeDatabase = async () => {
       `);
       console.log('Seeded email_templates with default templates');
     }
+
+    await client.query(`
+      INSERT INTO email_templates (name, subject_template, body_template, category) VALUES
+      ('PDF Drawing Request', 'URGENT: PDF Drawing Request for {{requestCount}} Backup Die Request(s)',
+       'Dear Design Team,\n\nPlease provide PDF drawings for the selected backup die request(s).\n\nBest regards,\nDie Ordering Team',
+       'pdf_drawing_request')
+      ON CONFLICT (name) DO NOTHING
+    `);
 
     console.log('Database initialized successfully');
   } catch (error) {

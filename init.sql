@@ -84,12 +84,34 @@ CREATE TABLE IF NOT EXISTS die_orders (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Press master (press name → code)
+CREATE TABLE IF NOT EXISTS presses (
+    id SERIAL PRIMARY KEY,
+    press_name TEXT UNIQUE NOT NULL,
+    press_code TEXT NOT NULL,
+    plant TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO presses (press_name, press_code, plant) VALUES
+    ('PRESS 2', 'B', 'GEX 01'),
+    ('PRESS 4', 'D', 'GEX 01'),
+    ('PRESS 5', 'E', 'GEX 01'),
+    ('PRESS 6', 'F', 'GEX 01'),
+    ('PRESS 7', 'P25', 'GEX 02'),
+    ('PRESS 8', 'P35', 'GEX 02'),
+    ('PRESS 9', 'I', 'GEX 02')
+ON CONFLICT (press_name) DO UPDATE SET
+    press_code = EXCLUDED.press_code,
+    plant = EXCLUDED.plant;
+
 -- Backup Die Requests table
 CREATE TABLE IF NOT EXISTS backup_die_requests (
     id SERIAL PRIMARY KEY,
     plant TEXT,
     die_no TEXT,
     customer TEXT,
+    press TEXT,
     requested_date TEXT,
     die_available TEXT,
     drawing_requested TEXT,
@@ -140,7 +162,7 @@ ON CONFLICT (name) DO UPDATE SET region = EXCLUDED.region;
 
 -- Seed plants
 INSERT INTO plants (name) VALUES 
-    ('GEX 1'), ('GEX 2')
+    ('GEX 01'), ('GEX 02')
 ON CONFLICT (name) DO NOTHING;
 
 -- Email configuration (SMTP/IMAP direct integration)
@@ -186,8 +208,45 @@ CREATE TABLE IF NOT EXISTS email_templates (
     subject_template TEXT NOT NULL,
     body_template TEXT NOT NULL,
     category TEXT,
+    default_to TEXT,
+    default_cc TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+INSERT INTO email_templates (name, subject_template, body_template, category) VALUES
+    ('Design Reminder', 'URGENT: Design Pending for {{orderCount}} Die Order(s) - {{supplier}}',
+     'Dear {{supplier}} Team,
+
+This is a reminder that the following die order(s) have been awaiting design for more than 48 hours:
+
+{{orderList}}
+
+Please provide the design drawings at the earliest to avoid further delays in production.
+
+Best regards,
+Die Ordering Team',
+     'design_reminder'),
+    ('Ordering Reminder', 'URGENT: {{orderCount}} Die Order(s) Pending Ordering - {{plant}}',
+     'Dear Purchase Team,
+
+The following die order(s) for {{plant}} have been pending ordering for more than 24 hours:
+
+{{orderList}}
+
+Please process these orders at the earliest to avoid production delays.
+
+Best regards,
+Die Ordering Team',
+     'ordering_reminder'),
+    ('PDF Drawing Request', 'URGENT: PDF Drawing Request for {{requestCount}} Backup Die Request(s)',
+     'Dear Design Team,
+
+Please provide PDF drawings for the selected backup die request(s).
+
+Best regards,
+Die Ordering Team',
+     'pdf_drawing_request')
+ON CONFLICT (name) DO NOTHING;
 
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing

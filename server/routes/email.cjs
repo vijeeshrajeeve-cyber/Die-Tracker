@@ -104,6 +104,31 @@ router.get('/templates', authMiddleware, emailPageAccess, async (req, res) => {
     }
 });
 
+router.put('/templates/:id/recipients', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const id = parseInt(req.params.id, 10);
+        if (!id || id < 1) {
+            return res.status(400).json({ error: 'Invalid template ID' });
+        }
+
+        const defaultTo = typeof req.body.default_to === 'string' ? req.body.default_to.trim().substring(0, 1000) : '';
+        const defaultCc = typeof req.body.default_cc === 'string' ? req.body.default_cc.trim().substring(0, 1000) : '';
+        const template = await emailService.updateEmailTemplateRecipients(id, { defaultTo, defaultCc });
+        if (!template) {
+            return res.status(404).json({ error: 'Template not found' });
+        }
+
+        res.json({ template });
+    } catch (error) {
+        console.error('Update template recipients error:', error);
+        res.status(500).json({ error: 'Failed to update template recipients' });
+    }
+});
+
 // ── Config (admin only) ───────────────────────────────────────────────────────
 
 router.get('/config', authMiddleware, async (req, res) => {

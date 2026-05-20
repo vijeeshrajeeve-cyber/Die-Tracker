@@ -197,6 +197,11 @@ export const suppliersAPI = {
     },
 };
 
+// Presses API
+export const pressesAPI = {
+    getAll: async () => apiRequest('/presses'),
+};
+
 // Plants API
 export const plantsAPI = {
     getAll: async () => {
@@ -340,6 +345,13 @@ export const emailAPI = {
 
     getTemplates: async () => {
         return apiRequest('/email/templates');
+    },
+
+    updateTemplateRecipients: async (id, { default_to, default_cc }) => {
+        return apiRequest(`/email/templates/${id}/recipients`, {
+            method: 'PUT',
+            body: JSON.stringify({ default_to, default_cc }),
+        });
     },
 
     getConfig: async () => {

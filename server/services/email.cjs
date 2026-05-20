@@ -352,6 +352,17 @@ async function getEmailTemplates() {
     return result.rows;
 }
 
+async function updateEmailTemplateRecipients(id, { defaultTo = '', defaultCc = '' }) {
+    const result = await pool.query(
+        `UPDATE email_templates
+         SET default_to = $1, default_cc = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3
+         RETURNING *`,
+        [defaultTo, defaultCc, id]
+    );
+    return result.rows[0] || null;
+}
+
 function applyTemplate(template, variables) {
     let result = template;
     for (const [key, value] of Object.entries(variables)) {
@@ -376,5 +387,6 @@ module.exports = {
     getEmailThread,
     linkEmailToOrder,
     getEmailTemplates,
+    updateEmailTemplateRecipients,
     applyTemplate
 };

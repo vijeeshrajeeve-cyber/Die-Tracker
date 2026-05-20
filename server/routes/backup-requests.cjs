@@ -26,6 +26,7 @@ const requestValidation = [
     body('Plant').optional().customSanitizer(sanitizeString),
     body('DIE NO').optional().customSanitizer(sanitizeString),
     body('Customer').optional().customSanitizer(sanitizeString),
+    body('Press').optional().customSanitizer(sanitizeString),
     body('Requested Date').optional().customSanitizer(sanitizeString),
     body('Die Available').optional().customSanitizer(sanitizeString),
     body('Drawing Requested').optional().customSanitizer(sanitizeString),
@@ -50,6 +51,7 @@ router.get('/', async (req, res) => {
             'Plant': row.plant,
             'DIE NO': row.die_no,
             'Customer': row.customer,
+            'Press': row.press,
             'Requested Date': row.requested_date,
             'Die Available': row.die_available,
             'Drawing Requested': row.drawing_requested,
@@ -74,15 +76,16 @@ router.post('/', requestValidation, handleValidationErrors, async (req, res) => 
 
         const result = await pool.query(`
             INSERT INTO backup_die_requests (
-                plant, die_no, customer, requested_date,
+                plant, die_no, customer, press, requested_date,
                 die_available, drawing_requested, ordered_date, status,
                 reason, order_received_last_year, remarks, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
         `, [
             sanitizeString(data['Plant']),
             sanitizeString(data['DIE NO']),
             sanitizeString(data['Customer']),
+            sanitizeString(data['Press']),
             sanitizeString(data['Requested Date']),
             sanitizeString(data['Die Available']),
             sanitizeString(data['Drawing Requested']),
@@ -117,16 +120,17 @@ router.put('/:id', requestIdValidation, requestValidation, handleValidationError
 
         const result = await pool.query(`
             UPDATE backup_die_requests SET
-                plant = $1, die_no = $2, customer = $3,
-                requested_date = $4, die_available = $5, drawing_requested = $6,
-                ordered_date = $7, status = $8, reason = $9,
-                order_received_last_year = $10, remarks = $11,
+                plant = $1, die_no = $2, customer = $3, press = $4,
+                requested_date = $5, die_available = $6, drawing_requested = $7,
+                ordered_date = $8, status = $9, reason = $10,
+                order_received_last_year = $11, remarks = $12,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $12
+            WHERE id = $13
         `, [
             sanitizeString(data['Plant']),
             sanitizeString(data['DIE NO']),
             sanitizeString(data['Customer']),
+            sanitizeString(data['Press']),
             sanitizeString(data['Requested Date']),
             sanitizeString(data['Die Available']),
             sanitizeString(data['Drawing Requested']),

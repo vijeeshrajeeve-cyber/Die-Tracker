@@ -1338,6 +1338,8 @@ export default function DieOrderingSystem() {
   const [generatedKey, setGeneratedKey] = useState(null);
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [showEmailCompose, setShowEmailCompose] = useState(null); // null or { to, cc, subject, body, orderId }
+  const [emailTemplates, setEmailTemplates] = useState([]);
+  const [savingTemplateId, setSavingTemplateId] = useState(null);
   const [showSampleFollowupForm, setShowSampleFollowupForm] = useState(false);
   const [editingSampleFollowup, setEditingSampleFollowup] = useState(null);
   const [sampleFollowupForm, setSampleFollowupForm] = useState({
@@ -1463,6 +1465,15 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
+  const fetchEmailTemplates = useCallback(async () => {
+    try {
+      const response = await emailAPI.getTemplates();
+      setEmailTemplates(response.templates || []);
+    } catch (error) {
+      console.error('Failed to fetch email templates:', error);
+    }
+  }, []);
+
   // Standalone SF records live in sample_followups — rows entered manually via the SF page's
   // "Add Record" button. Process-flow SF data lives on die_orders itself; both are merged below.
   const [sampleFollowupsStandalone, setSampleFollowupsStandalone] = useState([]);
@@ -1557,6 +1568,7 @@ export default function DieOrderingSystem() {
       fetchApiKeys();
       fetchPlantBudgets();
       fetchProfileMeta();
+      fetchEmailTemplates();
 
       // Check if password change is required (persisted in localStorage)
       const currentUser = getUser();
@@ -1565,7 +1577,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -2442,6 +2454,8 @@ export default function DieOrderingSystem() {
     const sendEmailDirect = (type, key, orders) => {
       const dieList = orders.map(o => `  - ${o['DIE NO']} | Order No: ${o['Order No']} (${o.Plant})`).join('\n');
       let subject, body;
+      const templateName = type === 'design' ? 'Design Reminder' : 'Ordering Reminder';
+      const templateRecipients = emailTemplates.find(template => template.name === templateName) || {};
       if (type === 'design') {
         subject = `URGENT: Design Pending for ${orders.length} Die Order(s) - ${key}`;
         body = `Dear ${key} Team,\n\nThis is a reminder that the following die order(s) have been awaiting design for more than 48 hours:\n\n${dieList}\n\nPlease provide the design drawings at the earliest to avoid further delays in production.\n\nBest regards,\nDie Ordering Team`;
@@ -2449,7 +2463,13 @@ export default function DieOrderingSystem() {
         subject = `URGENT: ${orders.length} Die Order(s) Pending Ordering - ${key}`;
         body = `Dear Purchase Team,\n\nThe following die order(s) for ${key} have been pending ordering for more than 24 hours:\n\n${dieList}\n\nPlease process these orders at the earliest to avoid production delays.\n\nBest regards,\nDie Ordering Team`;
       }
-      setShowEmailCompose({ to: '', subject, body, importance: 'high' });
+      setShowEmailCompose({
+        to: templateRecipients.default_to || '',
+        cc: templateRecipients.default_cc || '',
+        subject,
+        body,
+        importance: 'high',
+      });
     };
 
     return (
@@ -3982,6 +4002,8 @@ export default function DieOrderingSystem() {
               onRefresh={fetchBackupRequests}
               plants={plants}
               user={user}
+              onCompose={(prefill) => setShowEmailCompose(prefill || {})}
+              emailTemplates={emailTemplates}
             />
           )}
 
@@ -4446,6 +4468,82 @@ export default function DieOrderingSystem() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+
+              {/* Email Template Recipients Section - full width */}
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, marginTop: '1.5rem' }}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}><FileText size={20} /> Email Template Recipients</h3>
+                  <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '4px', marginBottom: 0 }}>
+                    Set default To and CC recipients used when each email template opens in Compose.
+                  </p>
+                </div>
+                <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Template</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Default To</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Default CC</th>
+                        <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {emailTemplates.map(template => (
+                        <tr key={template.id}>
+                          <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.text }}>
+                            <div style={{ fontWeight: 600 }}>{template.name}</div>
+                            <div style={{ fontSize: '0.75rem', color: theme.textDim, marginTop: '2px' }}>{template.category || 'general'}</div>
+                          </td>
+                          <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                            <input
+                              type="text"
+                              value={template.default_to || ''}
+                              onChange={(e) => setEmailTemplates(prev => prev.map(item => item.id === template.id ? { ...item, default_to: e.target.value } : item))}
+                              placeholder="design.team@company.com"
+                              style={{ width: '100%', padding: '8px 10px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }}
+                            />
+                          </td>
+                          <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                            <input
+                              type="text"
+                              value={template.default_cc || ''}
+                              onChange={(e) => setEmailTemplates(prev => prev.map(item => item.id === template.id ? { ...item, default_cc: e.target.value } : item))}
+                              placeholder="optional cc recipients"
+                              style={{ width: '100%', padding: '8px 10px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }}
+                            />
+                          </td>
+                          <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
+                            <button
+                              onClick={async () => {
+                                setSavingTemplateId(template.id);
+                                try {
+                                  const response = await emailAPI.updateTemplateRecipients(template.id, {
+                                    default_to: template.default_to || '',
+                                    default_cc: template.default_cc || '',
+                                  });
+                                  setEmailTemplates(prev => prev.map(item => item.id === template.id ? response.template : item));
+                                  setToast({ message: `${template.name} recipients saved`, type: 'success' });
+                                  setTimeout(() => setToast(null), 3000);
+                                } catch (error) {
+                                  setToast({ message: 'Failed to save recipients: ' + error.message, type: 'error' });
+                                  setTimeout(() => setToast(null), 4000);
+                                } finally {
+                                  setSavingTemplateId(null);
+                                }
+                              }}
+                              disabled={savingTemplateId === template.id}
+                              style={{ padding: '8px 14px', background: savingTemplateId === template.id ? theme.cardBorder : theme.primary, color: theme.primaryText, border: 'none', borderRadius: '8px', cursor: savingTemplateId === template.id ? 'wait' : 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                            >
+                              {savingTemplateId === template.id ? 'Saving...' : 'Save'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {emailTemplates.length === 0 && <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No email templates configured</td></tr>}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 

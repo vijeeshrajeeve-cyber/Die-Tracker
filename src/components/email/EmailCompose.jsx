@@ -3,6 +3,7 @@ import { X, Send, Paperclip, ChevronDown } from 'lucide-react';
 import { emailAPI } from '../../api';
 
 const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
+    const [isHtmlBody] = useState(!!prefill.isHtml);
     const [form, setForm] = useState({
         to: prefill.to || '',
         cc: prefill.cc || '',
@@ -134,19 +135,38 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
                     {/* Body */}
                     <div style={{ flex: 1 }}>
                         <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>Body</label>
-                        <textarea
-                            value={form.body}
-                            onChange={(e) => setForm({ ...form, body: e.target.value })}
-                            placeholder="Email content..."
-                            style={{
-                                ...inputStyle,
-                                minHeight: '200px',
-                                resize: 'vertical',
-                                fontFamily: 'inherit',
-                                lineHeight: 1.6
-                            }}
-                            required
-                        />
+                        {isHtmlBody ? (
+                            <div
+                                contentEditable
+                                suppressContentEditableWarning
+                                onInput={(e) => setForm({ ...form, body: e.currentTarget.innerHTML })}
+                                dangerouslySetInnerHTML={{ __html: form.body }}
+                                style={{
+                                    ...inputStyle,
+                                    minHeight: '220px',
+                                    maxHeight: '360px',
+                                    overflow: 'auto',
+                                    resize: 'vertical',
+                                    lineHeight: 1.5,
+                                    background: '#FFFFFF',
+                                    color: '#0F172A',
+                                }}
+                            />
+                        ) : (
+                            <textarea
+                                value={form.body}
+                                onChange={(e) => setForm({ ...form, body: e.target.value })}
+                                placeholder="Email content..."
+                                style={{
+                                    ...inputStyle,
+                                    minHeight: '200px',
+                                    resize: 'vertical',
+                                    fontFamily: 'inherit',
+                                    lineHeight: 1.6
+                                }}
+                                required
+                            />
+                        )}
                     </div>
 
                     {/* Linked Order */}
