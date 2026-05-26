@@ -507,6 +507,70 @@ const initializeDatabase = async () => {
       ON CONFLICT (name) DO NOTHING
     `);
 
+    // Migration: order_changes table (replaces change_log TEXT column)
+    const ocExists = await client.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name='order_changes'`
+    );
+    if (ocExists.rows.length === 0) {
+      await client.query(`
+        CREATE TABLE order_changes (
+          id SERIAL PRIMARY KEY,
+          order_id INTEGER REFERENCES die_orders(id) ON DELETE CASCADE,
+          user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          changed_by_name TEXT,
+          changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          field_name TEXT NOT NULL,
+          old_value TEXT,
+          new_value TEXT,
+          reason TEXT,
+          stage TEXT
+        );
+        CREATE INDEX idx_order_changes_order_id ON order_changes(order_id);
+      `);
+      console.log('Created order_changes table');
+
+      // Migrate existing change_log JSON into order_changes
+      const rows = await client.query(
+        `SELECT id, change_log FROM die_orders WHERE change_log IS NOT NULL AND change_log != '[]'`
+      );
+      let migrated = 0;
+      for (const row of rows.rows) {
+        let entries;
+        try { entries = JSON.parse(row.change_log); } catch { continue; }
+        if (!Array.isArray(entries)) continue;
+        for (const e of entries) {
+          if (!e || !e.field) continue;
+          const changedAt = e.date ? new Date(e.date) : new Date();
+          await client.query(
+            `INSERT INTO order_changes
+              (order_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [
+              row.id,
+              e.changedBy || null,
+              isNaN(changedAt) ? new Date() : changedAt,
+              String(e.field),
+              e.oldValue != null ? String(e.oldValue) : null,
+              e.newValue != null ? String(e.newValue) : null,
+              e.reason || null,
+              e.stage || null,
+            ]
+          );
+          migrated++;
+        }
+      }
+      console.log(`Migrated ${migrated} change log entries to order_changes`);
+
+      // Drop change_log column now that data is migrated
+      const clColExists = await client.query(
+        `SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='change_log'`
+      );
+      if (clColExists.rows.length > 0) {
+        await client.query(`ALTER TABLE die_orders DROP COLUMN change_log`);
+        console.log('Dropped die_orders.change_log column');
+      }
+    }
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
