@@ -101,6 +101,7 @@ const orderValidation = [
     body('Ordered date').optional().customSanitizer(sanitizeString),
     body('Type of shipment').optional().customSanitizer(sanitizeString),
     body('Mandrels per Cavity').optional().isInt({ min: 0, max: 10000 }).withMessage('Invalid mandrels per cavity'),
+    body('Cavity').optional().isInt({ min: 0, max: 10000 }).withMessage('Invalid cavity count'),
     body('Total Mandrels').optional().isInt({ min: 0, max: 100000 }).withMessage('Invalid total mandrels'),
     body('Design Received Date').optional().customSanitizer(sanitizeString),
     body('3D Model Received Date').optional().customSanitizer(sanitizeString),
@@ -270,7 +271,7 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
         });
     } catch (error) {
         console.error('Create order error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error', detail: error.message });
     }
 });
 
