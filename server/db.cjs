@@ -571,6 +571,67 @@ const initializeDatabase = async () => {
       }
     }
 
+    // Migration: TEXT date columns → DATE
+    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='date_columns_to_date_v1'`)).rows.length) {
+      const dieDateCols = [
+        'die_requested_date','ordered_date','design_received_date',
+        'three_d_model_received_date','design_approved_date','die_received_date',
+        'submission_date','sample_approval_date'
+      ];
+      for (const col of dieDateCols) {
+        const exists = await client.query(
+          `SELECT data_type FROM information_schema.columns WHERE table_name='die_orders' AND column_name=$1`, [col]
+        );
+        if (exists.rows.length > 0 && exists.rows[0].data_type === 'text') {
+          await client.query(`
+            ALTER TABLE die_orders
+              ALTER COLUMN ${col} TYPE DATE
+              USING CASE
+                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ${col}::DATE
+                ELSE NULL
+              END
+          `);
+        }
+      }
+
+      const backupDateCols = ['requested_date','die_available','drawing_requested','ordered_date'];
+      for (const col of backupDateCols) {
+        const exists = await client.query(
+          `SELECT data_type FROM information_schema.columns WHERE table_name='backup_die_requests' AND column_name=$1`, [col]
+        );
+        if (exists.rows.length > 0 && exists.rows[0].data_type === 'text') {
+          await client.query(`
+            ALTER TABLE backup_die_requests
+              ALTER COLUMN ${col} TYPE DATE
+              USING CASE
+                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ${col}::DATE
+                ELSE NULL
+              END
+          `);
+        }
+      }
+
+      const followupDateCols = ['die_received_date','submission_date','sample_approval_date'];
+      for (const col of followupDateCols) {
+        const exists = await client.query(
+          `SELECT data_type FROM information_schema.columns WHERE table_name='sample_followups' AND column_name=$1`, [col]
+        );
+        if (exists.rows.length > 0 && exists.rows[0].data_type === 'text') {
+          await client.query(`
+            ALTER TABLE sample_followups
+              ALTER COLUMN ${col} TYPE DATE
+              USING CASE
+                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ${col}::DATE
+                ELSE NULL
+              END
+          `);
+        }
+      }
+
+      await client.query(`INSERT INTO app_migrations (id) VALUES ('date_columns_to_date_v1')`);
+      console.log('Converted TEXT date columns to DATE type');
+    }
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
