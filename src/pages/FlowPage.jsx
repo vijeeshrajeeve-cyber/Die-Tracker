@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, X } from 'lucide-react';
 import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
 import { ordersAPI } from '../api';
+import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 
 const FLOW_TABS = [
@@ -72,6 +73,7 @@ export default function FlowPage({
   setSelectedOrder, setShowAddOrderModal, setRevisionOrder, setChangelogOrder,
   setData, setToast, setActiveTab,
   handleInlineFieldSave, handleSizeChange, handleMandrelsChange, handlePRNumberChange, copyForERP,
+  handleCavityChange,
 }) {
   const [dieReceivanceOrder, setDieReceivanceOrder] = useState(null);
   const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
@@ -130,6 +132,7 @@ export default function FlowPage({
   const isSimOrApproval = currentFlow.status === 'UNDER SIMULATION' || currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
   const isPR = currentFlow.status === 'PENDING FOR PR';
   const isDone = currentFlow.status === 'DONE';
+  const isDesignApproval = currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
 
   const columns = [
     { key: 'DIE NO', label: 'Die No' },
@@ -138,6 +141,7 @@ export default function FlowPage({
     { key: 'TYPE', label: 'Type' },
     { key: 'Diameter', label: 'Diameter' },
     { key: 'Thickness', label: 'Thickness' },
+    { key: 'Cavity', label: 'Cav' },
     { key: 'Supplier', label: 'Supplier' },
     ...(isPendingOrder ? [{ key: 'Customer Name', label: 'Customer' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }] : []),
   ];
@@ -229,6 +233,9 @@ export default function FlowPage({
                       ) : <span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span>}
                     </td>
                     <td style={styles.td}>
+                      <span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span>
+                    </td>
+                    <td style={styles.td}>
                       {isPendingOrder ? (
                         <select defaultValue={order.Supplier || ''} onChange={(e) => handleInlineFieldSave(order, 'Supplier', e.target.value)} onClick={(e) => e.stopPropagation()} style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer', maxWidth: '120px' }}>
                           <option value="">—</option>
@@ -245,7 +252,7 @@ export default function FlowPage({
                           <input type="number" min="0" defaultValue={order['Mandrels per Cavity'] || 0} onBlur={(e) => handleMandrelsChange(order, e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} style={{ width: '55px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }} />
                         </td>
                         <td style={styles.td}><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
-                        <td style={styles.td}>{order['Die Requested Date']}</td>
+                        <td style={styles.td}>{formatDate(order['Die Requested Date'])}</td>
                         <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
                       </>
                     )}
