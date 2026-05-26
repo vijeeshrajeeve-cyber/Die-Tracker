@@ -50,28 +50,6 @@ const parseSpecialFollowUpInput = (value) => {
     return false;
 };
 
-const MAX_CHANGE_LOG_ENTRIES = 500;
-
-const parseChangeLog = (raw) => {
-    if (raw == null || raw === '') return [];
-    try {
-        if (typeof raw === 'object' && typeof raw !== 'string') return Array.isArray(raw) ? raw : [];
-        const p = JSON.parse(String(raw));
-        return Array.isArray(p) ? p : [];
-    } catch {
-        return [];
-    }
-};
-
-const serializeChangeLogFromArray = (arr) => {
-    if (!Array.isArray(arr) || arr.length === 0) return '[]';
-    const clipped = arr.length > MAX_CHANGE_LOG_ENTRIES ? arr.slice(-MAX_CHANGE_LOG_ENTRIES) : arr;
-    try {
-        return JSON.stringify(clipped);
-    } catch {
-        return '[]';
-    }
-};
 
 // Auto-update matching backup die requests when a die order is created/updated
 const autoUpdateBackupRequests = async (dieNo, orderedDate) => {
@@ -143,10 +121,7 @@ const orderValidation = [
         return true;
     }),
     body('specialFollowUp').optional().isBoolean(),
-    body('Change Log').optional({ nullable: true }).custom((value) => {
-        if (value === undefined || value === null || Array.isArray(value)) return true;
-        throw new Error('Change Log must be an array');
-    }),
+    body('Change Log').optional({ nullable: true }).isArray().withMessage('Change Log must be an array'),
 ];
 
 const orderIdValidation = [
@@ -197,7 +172,6 @@ router.get('/', async (req, res) => {
             'Remark': order.remark,
             'Urgency': order.urgency || 'NORMAL',
             'specialFollowUp': !!order.special_follow_up,
-            'Change Log': parseChangeLog(order.change_log),
         }));
 
         res.json({ orders: formattedOrders });
@@ -220,10 +194,10 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 design_approved_date, delay, pr_entry, pr_number, customer_name,
                 oracle_entry, supplier, status, overall_delay, eta, month,
                 die_received_date, submission_date, sample_approval_date, no_of_trial, corrector,
-                press, cavity, ascona_reference, sample_status, remark, change_log,
+                press, cavity, ascona_reference, sample_status, remark,
                 urgency, special_follow_up,
                 created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -231,15 +205,15 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['DIE NO']),
             sanitizeString(order['TYPE']),
             sanitizeString(order['Die Size']),
-            sanitizeString(order['Die Requested Date']),
-            sanitizeString(order['Ordered date']),
+            sanitizeString(order['Die Requested Date']) || null,
+            sanitizeString(order['Ordered date']) || null,
             sanitizeString(order['Type of shipment']),
             Math.round(order['Mandrels per Cavity'] || 0),
             Math.round(order['Total Mandrels'] || 0),
-            sanitizeString(order['Design Received Date']),
-            sanitizeString(order['3D Model Received Date']),
+            sanitizeString(order['Design Received Date']) || null,
+            sanitizeString(order['3D Model Received Date']) || null,
             order['simulationEnabled'] ? 1 : 0,
-            sanitizeString(order['Design Approved Date']),
+            sanitizeString(order['Design Approved Date']) || null,
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
             sanitizeString(order['PR Number']),
@@ -250,9 +224,9 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             Math.round(order['OVERALL DELAY'] || 0),
             sanitizeString(order['ETA']),
             sanitizeString(order['month']),
-            sanitizeString(order['Die Received Date']),
-            sanitizeString(order['Submission Date']),
-            sanitizeString(order['Sample Approval Date']),
+            sanitizeString(order['Die Received Date']) || null,
+            sanitizeString(order['Submission Date']) || null,
+            sanitizeString(order['Sample Approval Date']) || null,
             Math.round(order['No of Trial'] || 0),
             sanitizeString(order['Corrector']),
             sanitizeString(order['Press']),
@@ -260,7 +234,6 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['Ascona Reference']),
             sanitizeString(order['Sample Status']),
             sanitizeString(order['Remark']),
-            serializeChangeLogFromArray(Array.isArray(order['Change Log']) ? order['Change Log'] : []),
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
             req.user.id
@@ -284,18 +257,6 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
         const { id } = req.params;
         const order = req.body;
 
-        let changeLogForDb;
-        if (Object.prototype.hasOwnProperty.call(order, 'Change Log')) {
-            changeLogForDb = serializeChangeLogFromArray(Array.isArray(order['Change Log']) ? order['Change Log'] : []);
-        } else {
-            const existingRow = await pool.query('SELECT change_log FROM die_orders WHERE id = $1', [id]);
-            if (existingRow.rows.length === 0) {
-                return res.status(404).json({ error: 'Order not found' });
-            }
-            const prev = existingRow.rows[0].change_log;
-            changeLogForDb = (prev == null || prev === '') ? '[]' : String(prev);
-        }
-
         const result = await pool.query(`
             UPDATE die_orders SET
                 plant = $1, order_no = $2, die_no = $3, type = $4, die_size = $5,
@@ -308,25 +269,24 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
                 die_received_date = $25, submission_date = $26, sample_approval_date = $27,
                 no_of_trial = $28, corrector = $29,
                 press = $30, cavity = $31, ascona_reference = $32, sample_status = $33, remark = $34,
-                change_log = $35,
-                urgency = $36, special_follow_up = $37,
+                urgency = $35, special_follow_up = $36,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $38
+            WHERE id = $37
         `, [
             sanitizeString(order['Plant']),
             sanitizeString(order['Order No']),
             sanitizeString(order['DIE NO']),
             sanitizeString(order['TYPE']),
             sanitizeString(order['Die Size']),
-            sanitizeString(order['Die Requested Date']),
-            sanitizeString(order['Ordered date']),
+            sanitizeString(order['Die Requested Date']) || null,
+            sanitizeString(order['Ordered date']) || null,
             sanitizeString(order['Type of shipment']),
             Math.round(order['Mandrels per Cavity'] || 0),
             Math.round(order['Total Mandrels'] || 0),
-            sanitizeString(order['Design Received Date']),
-            sanitizeString(order['3D Model Received Date']),
+            sanitizeString(order['Design Received Date']) || null,
+            sanitizeString(order['3D Model Received Date']) || null,
             order['simulationEnabled'] ? 1 : 0,
-            sanitizeString(order['Design Approved Date']),
+            sanitizeString(order['Design Approved Date']) || null,
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
             sanitizeString(order['PR Number']),
@@ -337,9 +297,9 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             Math.round(order['OVERALL DELAY'] || 0),
             sanitizeString(order['ETA']),
             sanitizeString(order['month']),
-            sanitizeString(order['Die Received Date']),
-            sanitizeString(order['Submission Date']),
-            sanitizeString(order['Sample Approval Date']),
+            sanitizeString(order['Die Received Date']) || null,
+            sanitizeString(order['Submission Date']) || null,
+            sanitizeString(order['Sample Approval Date']) || null,
             Math.round(order['No of Trial'] || 0),
             sanitizeString(order['Corrector']),
             sanitizeString(order['Press']),
@@ -347,7 +307,6 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['Ascona Reference']),
             sanitizeString(order['Sample Status']),
             sanitizeString(order['Remark']),
-            changeLogForDb,
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
             id
@@ -355,6 +314,29 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Insert new change entries into order_changes
+        const newEntries = Array.isArray(order['Change Log']) ? order['Change Log'] : [];
+        for (const entry of newEntries) {
+            if (!entry || !entry.field) continue;
+            const changedAt = entry.date ? new Date(entry.date) : new Date();
+            await pool.query(
+                `INSERT INTO order_changes
+                  (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                [
+                    id,
+                    req.user?.id || null,
+                    req.user?.username || entry.changedBy || null,
+                    isNaN(changedAt) ? new Date() : changedAt,
+                    String(entry.field),
+                    entry.oldValue != null ? String(entry.oldValue) : null,
+                    entry.newValue != null ? String(entry.newValue) : null,
+                    entry.reason || null,
+                    entry.stage || null,
+                ]
+            );
         }
 
         await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
