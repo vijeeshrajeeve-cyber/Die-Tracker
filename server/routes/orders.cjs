@@ -384,4 +384,24 @@ router.delete('/:id', orderIdValidation, handleValidationErrors, async (req, res
     }
 });
 
+// Get change log for a specific order
+router.get('/:id/change-log', orderIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT oc.id, oc.field_name, oc.old_value, oc.new_value,
+                   oc.changed_at, oc.reason, oc.stage,
+                   COALESCE(u.username, oc.changed_by_name, 'Unknown') AS changed_by
+            FROM order_changes oc
+            LEFT JOIN users u ON u.id = oc.user_id
+            WHERE oc.order_id = $1
+            ORDER BY oc.changed_at DESC
+        `, [id]);
+        res.json({ changes: result.rows });
+    } catch (error) {
+        console.error('Get change log error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;
