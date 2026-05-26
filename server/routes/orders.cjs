@@ -128,12 +128,20 @@ const orderIdValidation = [
     param('id').isInt({ min: 1 }).withMessage('Invalid order ID')
 ];
 
-// Get all orders
+// Get all orders (paginated)
 router.get('/', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM die_orders ORDER BY created_at DESC');
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 50));
+        const offset = (page - 1) * limit;
 
-        // Convert from snake_case to the format frontend expects
+        const [result, countResult] = await Promise.all([
+            pool.query('SELECT * FROM die_orders ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
+            pool.query('SELECT COUNT(*)::int AS total FROM die_orders'),
+        ]);
+
+        const total = countResult.rows[0].total;
+
         const formattedOrders = result.rows.map(order => ({
             id: order.id,
             'Plant': order.plant,
@@ -174,7 +182,10 @@ router.get('/', async (req, res) => {
             'specialFollowUp': !!order.special_follow_up,
         }));
 
-        res.json({ orders: formattedOrders });
+        res.json({
+            orders: formattedOrders,
+            pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+        });
     } catch (error) {
         console.error('Get orders error:', error);
         res.status(500).json({ error: 'Internal server error' });
