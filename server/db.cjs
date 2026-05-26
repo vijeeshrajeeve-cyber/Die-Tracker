@@ -632,6 +632,28 @@ const initializeDatabase = async () => {
       console.log('Converted TEXT date columns to DATE type');
     }
 
+    // Migration: UNIQUE constraint on die_orders.order_no
+    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='unique_order_no_v1'`)).rows.length) {
+      // Mark duplicate order_no rows as CANCELLED (keep lowest id)
+      await client.query(`
+        UPDATE die_orders SET status = 'CANCELLED'
+        WHERE id NOT IN (
+          SELECT MIN(id) FROM die_orders WHERE order_no IS NOT NULL AND order_no != '' GROUP BY order_no
+        ) AND order_no IS NOT NULL AND order_no != ''
+      `);
+
+      const constraintExists = await client.query(`
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name='die_orders' AND constraint_name='uq_order_no'
+      `);
+      if (constraintExists.rows.length === 0) {
+        await client.query(`ALTER TABLE die_orders ADD CONSTRAINT uq_order_no UNIQUE (order_no)`);
+      }
+
+      await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v1')`);
+      console.log('Added UNIQUE constraint on die_orders.order_no');
+    }
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
