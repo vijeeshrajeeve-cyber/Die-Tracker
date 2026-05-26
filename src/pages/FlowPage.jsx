@@ -77,6 +77,8 @@ export default function FlowPage({
 }) {
   const [dieReceivanceOrder, setDieReceivanceOrder] = useState(null);
   const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
+  const [cavityEdit, setCavityEdit] = useState(null);
+  const [cavityReason, setCavityReason] = useState('');
 
   const currentFlow = FLOW_TABS.find(f => f.id === activeTab);
   if (!currentFlow) return null;
@@ -233,7 +235,25 @@ export default function FlowPage({
                       ) : <span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span>}
                     </td>
                     <td style={styles.td}>
-                      <span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span>
+                      {isDesignApproval ? (
+                        <input
+                          type="number"
+                          min="1"
+                          defaultValue={order['Cavity'] || ''}
+                          onBlur={(e) => {
+                            const newVal = parseInt(e.target.value, 10);
+                            if (!isNaN(newVal) && newVal !== (order['Cavity'] || 0)) {
+                              setCavityEdit({ order, newValue: newVal, rect: e.target.getBoundingClientRect() });
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                          style={{ width: '55px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                          placeholder="Cav"
+                        />
+                      ) : (
+                        <span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span>
+                      )}
                     </td>
                     <td style={styles.td}>
                       {isPendingOrder ? (
@@ -373,6 +393,78 @@ export default function FlowPage({
                 style={{ padding: '10px 24px', background: '#0891B2', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', boxShadow: '0 4px 12px rgba(8,145,178,0.4)', display: 'flex', alignItems: 'center', gap: '8px' }}
               >
                 <CheckCircle size={18} /> Confirm Receivance
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cavityEdit && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1999 }}
+          onClick={() => { setCavityEdit(null); setCavityReason(''); }}
+        >
+          <div
+            style={{
+              position: 'fixed',
+              top: cavityEdit.rect.bottom + 8,
+              left: cavityEdit.rect.left,
+              zIndex: 2000,
+              background: theme.cardBg || '#1E293B',
+              border: `1px solid ${theme.border || '#334155'}`,
+              borderRadius: '10px',
+              padding: '12px 14px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              minWidth: '260px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: '0.8rem', color: theme.textMuted || '#94A3B8', marginBottom: '8px' }}>
+              Cavity change:{' '}
+              <span style={{ fontFamily: 'monospace', color: '#EF4444', textDecoration: 'line-through' }}>
+                {cavityEdit.order['Cavity'] || 0}
+              </span>
+              {' → '}
+              <span style={{ fontFamily: 'monospace', color: '#10B981', fontWeight: 700 }}>
+                {cavityEdit.newValue}
+              </span>
+            </div>
+            <textarea
+              autoFocus
+              placeholder="Reason for change…"
+              value={cavityReason}
+              onChange={(e) => setCavityReason(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                background: theme.inputBg || '#0F172A',
+                border: `1px solid ${theme.border || '#334155'}`,
+                borderRadius: '6px',
+                color: theme.text,
+                fontSize: '0.8rem',
+                resize: 'none',
+                height: '60px',
+                boxSizing: 'border-box',
+                outline: 'none',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+              <button
+                onClick={() => { setCavityEdit(null); setCavityReason(''); }}
+                style={{ padding: '5px 12px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.textMuted || '#94A3B8', fontSize: '0.8rem', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!cavityReason.trim()}
+                onClick={async () => {
+                  await handleCavityChange(cavityEdit.order, cavityEdit.newValue, cavityReason.trim());
+                  setCavityEdit(null);
+                  setCavityReason('');
+                }}
+                style={{ padding: '5px 12px', background: cavityReason.trim() ? '#3B82F6' : '#334155', border: 'none', borderRadius: '6px', color: cavityReason.trim() ? 'white' : '#64748B', fontSize: '0.8rem', fontWeight: 600, cursor: cavityReason.trim() ? 'pointer' : 'not-allowed' }}
+              >
+                Save
               </button>
             </div>
           </div>
