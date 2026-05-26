@@ -14,7 +14,7 @@ import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
 import { CONTROLLABLE_PAGES } from './utils/constants';
-import { parseDateDMY } from './utils/helpers';
+import { parseDateDMY, formatDate } from './utils/helpers';
 import usePIImport from './hooks/usePIImport';
 import DashboardPage from './pages/DashboardPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -984,7 +984,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           <input
             type="date"
             style={dateInputStyle}
-            value={editedOrder[field] || ''}
+            value={editedOrder[field] ? String(editedOrder[field]).split('T')[0] : ''}
             onChange={(e) => handleFieldChange(field, e.target.value)}
             onClick={(e) => e.target.showPicker && e.target.showPicker()}
           />
@@ -992,7 +992,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           <input type="text" style={inputStyle} value={editedOrder[field] || ''} onChange={(e) => handleFieldChange(field, e.target.value)} />
         )
       ) : (
-        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{value || '—'}</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{type === 'date' ? formatDate(value) : (value || '—')}</span>
       )}
     </div>
   );
@@ -1850,6 +1850,36 @@ export default function DieOrderingSystem() {
     }
   };
 
+  const handleCavityChange = async (order, newCavity, reason) => {
+    const oldValue = order['Cavity'] || 0;
+    if (oldValue === newCavity) return;
+    const changeLogEntry = {
+      date: new Date().toISOString().split('T')[0],
+      field: 'Cavity',
+      oldValue,
+      newValue: newCavity,
+      changedBy: user?.username || 'unknown',
+      stage: order.STATUS,
+      reason,
+    };
+    const totalMandrels = (order['Mandrels per Cavity'] || 0) * newCavity;
+    const updatedOrder = {
+      ...order,
+      'Cavity': newCavity,
+      'Total Mandrels': totalMandrels,
+      'Change Log': [changeLogEntry],
+    };
+    try {
+      await ordersAPI.update(order.id, updatedOrder);
+      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      setToast({ message: `Cavity updated: ${oldValue} → ${newCavity}`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      setToast({ message: 'Failed to update cavity: ' + error.message, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
   const handleImport = useCallback(async (newData) => {
     try {
       // Save each imported record to the database
@@ -2509,6 +2539,7 @@ export default function DieOrderingSystem() {
               setData={setData} setToast={setToast} setActiveTab={setActiveTab}
               handleInlineFieldSave={handleInlineFieldSave} handleSizeChange={handleSizeChange}
               handleMandrelsChange={handleMandrelsChange} handlePRNumberChange={handlePRNumberChange}
+              handleCavityChange={handleCavityChange}
               copyForERP={copyForERP}
             />
           )}
