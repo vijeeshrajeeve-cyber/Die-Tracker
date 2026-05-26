@@ -146,8 +146,18 @@ export const usersAPI = {
 
 // Orders API
 export const ordersAPI = {
-    getAll: async () => {
-        return apiRequest('/orders');
+    // Load all orders (high limit) — used by dashboard, analytics, flow pages
+    getAll: async ({ page = 1, limit = 500 } = {}) => {
+        return apiRequest(`/orders?page=${page}&limit=${limit}`);
+    },
+
+    // Load a single page — used by OrdersPage
+    getPage: async (page = 1, limit = 50) => {
+        return apiRequest(`/orders?page=${page}&limit=${limit}`);
+    },
+
+    getChangeLog: async (orderId) => {
+        return apiRequest(`/orders/${orderId}/change-log`);
     },
 
     create: async (order) => {
