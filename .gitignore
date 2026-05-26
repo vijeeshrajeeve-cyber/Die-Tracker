@@ -54,3 +54,6 @@ TestData/
 
 # Debug/analysis scripts output
 pi_analysis_output.txt
+
+# Git worktrees
+.worktrees/
