@@ -1,17 +1,17 @@
-import { ShoppingCart, Pencil, Cpu, CheckSquare, FileText, Database, Send, Factory, Eye } from 'lucide-react';
+import { ShoppingCart, Pencil, Cpu, CheckSquare, FileText, Database, Send, Factory, Eye, Clock, AlertTriangle, Package, TrendingUp, Truck, XCircle, Layers } from 'lucide-react';
 
-// Status configuration with colors and icons
+// Status configuration with colors, icons, and labels
 export const STATUS_CONFIG = {
-  'AWAITING FOR DESIGN': { color: '#DC2626', bgColor: '#FEF2F2', label: 'Awaiting Design' },
-  'PENDING FOR DESIGN APPROVAL': { color: '#EA580C', bgColor: '#FFF7ED', label: 'Design Approval' },
-  'UNDER SIMULATION': { color: '#7C3AED', bgColor: '#F5F3FF', label: 'Simulation' },
-  'PENDING FOR DESIGN TO EMS': { color: '#2563EB', bgColor: '#EFF6FF', label: 'Design to EMS' },
-  'PENDING FOR PR': { color: '#D97706', bgColor: '#FFFBEB', label: 'Pending PR' },
-  'PENDING FOR ORACLE ENTRY': { color: '#C2410C', bgColor: '#FFF7ED', label: 'Oracle Entry' },
-  'PENDING FOR ORDERING': { color: '#0D9488', bgColor: '#F0FDFA', label: 'Pending Order' },
-  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', label: 'In Manufacturing' },
-  'CANCELLED': { color: '#6B7280', bgColor: '#F3F4F6', label: 'Cancelled' },
-  'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', label: 'On Hold' },
+  'AWAITING FOR DESIGN': { color: '#DC2626', bgColor: '#FEF2F2', icon: Clock, label: 'Awaiting Design' },
+  'PENDING FOR DESIGN APPROVAL': { color: '#EA580C', bgColor: '#FFF7ED', icon: AlertTriangle, label: 'Design Approval' },
+  'UNDER SIMULATION': { color: '#7C3AED', bgColor: '#F5F3FF', icon: Layers, label: 'Simulation' },
+  'PENDING FOR DESIGN TO EMS': { color: '#2563EB', bgColor: '#EFF6FF', icon: Package, label: 'Design to EMS' },
+  'PENDING FOR PR': { color: '#D97706', bgColor: '#FFFBEB', icon: TrendingUp, label: 'Pending PR' },
+  'PENDING FOR ORACLE ENTRY': { color: '#C2410C', bgColor: '#FFF7ED', icon: Factory, label: 'Oracle Entry' },
+  'PENDING FOR ORDERING': { color: '#0D9488', bgColor: '#F0FDFA', icon: Truck, label: 'Pending Order' },
+  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', icon: CheckSquare, label: 'In Manufacturing' },
+  'CANCELLED': { color: '#6B7280', bgColor: '#F3F4F6', icon: XCircle, label: 'Cancelled' },
+  'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', icon: AlertTriangle, label: 'On Hold' },
 };
 
 export const CHART_COLORS = [

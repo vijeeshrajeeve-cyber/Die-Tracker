@@ -1,0 +1,507 @@
+import React, { useState } from 'react';
+import { Search, X, Eye, Trash2, ClipboardList } from 'lucide-react';
+import { ordersAPI, sampleFollowupsAPI } from '../api';
+
+const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
+
+const sfStatusColors = {
+  'Pending': { color: '#F59E0B', bg: '#FFFBEB' },
+  'Sample Submitted': { color: '#3B82F6', bg: '#EFF6FF' },
+  'Approved': { color: '#16A34A', bg: '#F0FDF4' },
+  'Rejected': { color: '#EF4444', bg: '#FEF2F2' },
+  'On hold': { color: '#6B7280', bg: '#F3F4F6' },
+};
+
+const SF_DISPLAY_TO_SNAKE = {
+  'Ascona Reference': 'ascona_reference',
+  'Submission Date': 'submission_date',
+  'Sample Approval Date': 'sample_approval_date',
+  'No of Trial': 'no_of_trial',
+  'Remark': 'remark',
+  'Sample Status': 'status',
+  'Corrector': 'corrector',
+};
+
+const sfColor = '#0891B2';
+
+const computeSfDelay = (received, submission) => {
+  if (!received) return 0;
+  const start = new Date(received);
+  if (isNaN(start)) return 0;
+  const end = submission ? new Date(submission) : new Date();
+  if (isNaN(end)) return 0;
+  const diff = Math.floor((end.setHours(0, 0, 0, 0) - start.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
+  return diff > 0 ? diff : 0;
+};
+
+const extractProfile = (dieNo) => {
+  if (!dieNo) return '';
+  const s = String(dieNo).trim();
+  const idx = s.indexOf('-');
+  return idx > 0 ? s.slice(0, idx) : s;
+};
+
+const formToOrderFields = (form) => ({
+  'DIE NO': form.die || '',
+  'Press': form.press || '',
+  'Supplier': form.supplier || '',
+  'Customer Name': form.customer || '',
+  'Die Received Date': form.die_received_date || '',
+  'Ascona Reference': form.ascona_reference || 'No',
+  'Submission Date': form.submission_date || '',
+  'Sample Approval Date': form.sample_approval_date || '',
+  'Sample Status': form.status || 'Pending',
+  'No of Trial': form.no_of_trial || 0,
+  'Remark': form.remark || '',
+  'Corrector': form.corrector || '',
+});
+
+const formToSfFields = (form) => ({
+  profile: form.die || '',
+  press: form.press || '',
+  supplier: form.supplier || '',
+  customer: form.customer || '',
+  die_received_date: form.die_received_date || '',
+  ascona_reference: form.ascona_reference || 'No',
+  submission_date: form.submission_date || '',
+  sample_approval_date: form.sample_approval_date || '',
+  delay_days: computeSfDelay(form.die_received_date, form.submission_date),
+  status: form.status || 'Pending',
+  no_of_trial: form.no_of_trial || 0,
+  remark: form.remark || '',
+  corrector: form.corrector || '',
+});
+
+const EMPTY_FORM = { die: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' };
+
+export default function SampleFollowupPage({
+  sampleFollowups,
+  sfStatusFilter, setSfStatusFilter,
+  sfPlantFilter, setSfPlantFilter,
+  searchTerm, setSearchTerm,
+  showSampleFollowupForm, setShowSampleFollowupForm,
+  editingSampleFollowup, setEditingSampleFollowup,
+  sampleFollowupForm, setSampleFollowupForm,
+  sampleFollowupsStandalone, setSampleFollowupsStandalone,
+  user,
+  theme,
+  setToast,
+  handleInlineFieldSave,
+  fetchOrders,
+  fetchSampleFollowups,
+}) {
+  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
+  const tableStyle = { width: '100%', borderCollapse: 'collapse' };
+  const th = { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` };
+  const td = { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text };
+
+  const handleSampleFollowupSubmit = async () => {
+    try {
+      if (editingSampleFollowup) {
+        if (editingSampleFollowup._source === 'order') {
+          const existing = editingSampleFollowup._order;
+          const updated = { ...existing, ...formToOrderFields(sampleFollowupForm) };
+          await ordersAPI.update(existing.id, updated);
+          fetchOrders();
+        } else {
+          const raw = editingSampleFollowup._raw;
+          await sampleFollowupsAPI.update(raw.id, formToSfFields(sampleFollowupForm));
+          fetchSampleFollowups();
+        }
+        setToast({ message: 'Sample followup updated successfully', type: 'success' });
+      } else {
+        await sampleFollowupsAPI.create(formToSfFields(sampleFollowupForm));
+        fetchSampleFollowups();
+        setToast({ message: 'Sample followup created successfully', type: 'success' });
+      }
+      setTimeout(() => setToast(null), 3000);
+      setShowSampleFollowupForm(false);
+      setEditingSampleFollowup(null);
+      setSampleFollowupForm(EMPTY_FORM);
+    } catch (error) {
+      console.error('Sample followup error:', error);
+      setToast({ message: 'Failed: ' + error.message, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  const handleDeleteSampleFollowup = async (sf) => {
+    if (sf._source === 'standalone') {
+      if (!window.confirm('Delete this sample followup record? This cannot be undone.')) return;
+      try {
+        await sampleFollowupsAPI.delete(sf._raw.id);
+        setToast({ message: 'Sample followup deleted', type: 'success' });
+        setTimeout(() => setToast(null), 3000);
+        fetchSampleFollowups();
+      } catch (error) {
+        setToast({ message: 'Failed to delete: ' + error.message, type: 'error' });
+        setTimeout(() => setToast(null), 5000);
+      }
+      return;
+    }
+    if (!window.confirm('Clear the sample-followup data for this die? The underlying die order will remain; only sample/trial fields will be reset.')) return;
+    try {
+      const existing = sf._order;
+      const cleared = {
+        ...existing,
+        'Die Received Date': '',
+        'Submission Date': '',
+        'Sample Approval Date': '',
+        'Ascona Reference': 'No',
+        'Sample Status': '',
+        'No of Trial': 0,
+        'Remark': '',
+        'Press': '',
+      };
+      await ordersAPI.update(existing.id, cleared);
+      setToast({ message: 'Sample followup cleared', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+      fetchOrders();
+    } catch (error) {
+      setToast({ message: 'Failed to clear: ' + error.message, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  const handleSfInlineSave = async (sf, displayField, value) => {
+    if (sf._source === 'order') {
+      await handleInlineFieldSave(sf._order, displayField, value);
+      return;
+    }
+    const snake = SF_DISPLAY_TO_SNAKE[displayField];
+    if (!snake) return;
+    const raw = sf._raw;
+    if (raw[snake] === value) return;
+    try {
+      const updated = { ...raw, [snake]: value };
+      await sampleFollowupsAPI.update(raw.id, updated);
+      setSampleFollowupsStandalone(prev => prev.map(r => r.id === raw.id ? updated : r));
+      setToast({ message: `${displayField} saved`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error(`${displayField} update error:`, error);
+      setToast({ message: `Failed to save ${displayField}`, type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  const sfPlants = Array.from(new Set(sampleFollowups.map(sf => (sf.press || '').trim()).filter(Boolean))).sort();
+
+  const filteredFollowups = sampleFollowups.filter(sf => {
+    const matchesStatus = sfStatusFilter === 'All' || (sf.status || 'Pending') === sfStatusFilter;
+    const matchesPlant = sfPlantFilter === 'All' || (sf.press || '').trim() === sfPlantFilter;
+    const matchesSearch = !searchTerm ||
+      (sf.profile && sf.profile.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (sf.supplier && sf.supplier.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (sf.customer && sf.customer.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (sf.corrector && sf.corrector.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesStatus && matchesPlant && matchesSearch;
+  });
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${sfColor}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ClipboardList size={24} color={sfColor} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: theme.text, margin: 0 }}>Sample Followup</h1>
+            <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Track sample submissions, approvals and trials</p>
+          </div>
+          <span style={{ background: sfColor, color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600 }}>{filteredFollowups.length}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '240px' }}>
+            <Search size={18} color={theme.textMuted} />
+            <input
+              type="text"
+              placeholder="Search followups..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }}
+            />
+          </div>
+          <button
+            onClick={() => { setEditingSampleFollowup(null); setSampleFollowupForm(EMPTY_FORM); setShowSampleFollowupForm(true); }}
+            style={{ padding: '10px 20px', background: sfColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: `0 4px 12px ${sfColor}40` }}
+          >
+            + Add Record
+          </button>
+        </div>
+      </div>
+
+      {/* Status Filter Tabs + Plant Filter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {['All', ...SF_STATUSES].map(s => {
+            const active = sfStatusFilter === s;
+            const sc = sfStatusColors[s];
+            const count = s === 'All' ? sampleFollowups.length : sampleFollowups.filter(sf => (sf.status || 'Pending') === s).length;
+            return (
+              <button
+                key={s}
+                onClick={() => setSfStatusFilter(s)}
+                style={{
+                  padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                  cursor: 'pointer', border: `1px solid ${active ? (sc?.color || sfColor) : theme.cardBorder}`,
+                  background: active ? (sc?.bg || `${sfColor}20`) : 'transparent',
+                  color: active ? (sc?.color || sfColor) : theme.textMuted,
+                  transition: 'all 0.15s'
+                }}
+              >
+                {s} <span style={{ marginLeft: '4px', opacity: 0.8 }}>({count})</span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Plant</span>
+          <select
+            value={sfPlantFilter}
+            onChange={(e) => setSfPlantFilter(e.target.value)}
+            style={{
+              padding: '6px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600,
+              border: `1px solid ${sfPlantFilter === 'All' ? theme.cardBorder : sfColor}`,
+              background: sfPlantFilter === 'All' ? 'transparent' : `${sfColor}15`,
+              color: sfPlantFilter === 'All' ? theme.textMuted : sfColor,
+              cursor: 'pointer', outline: 'none', minWidth: '120px'
+            }}
+          >
+            <option value="All">All Plants ({sampleFollowups.length})</option>
+            {sfPlants.map(p => {
+              const count = sampleFollowups.filter(sf => (sf.press || '').trim() === p).length;
+              return <option key={p} value={p}>{p} ({count})</option>;
+            })}
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={tableContainer}>
+        {filteredFollowups.length > 0 ? (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={th}>Die</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Profile</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Plant</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Supplier</th>
+                  <th style={th}>Customer</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Die Received Date</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Ascona Ref</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Submission Date</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Sample Approval Date</th>
+                  <th style={{ ...th, textAlign: 'center', whiteSpace: 'nowrap' }}>Delay Days</th>
+                  <th style={th}>Status</th>
+                  <th style={{ ...th, textAlign: 'center', whiteSpace: 'nowrap' }}>No. of Trial</th>
+                  <th style={th}>Remark</th>
+                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Corrector</th>
+                  <th style={{ ...th, textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFollowups.map((sf) => {
+                  const statusStyle = sfStatusColors[sf.status] || { color: '#6B7280', bg: '#F3F4F6' };
+                  return (
+                    <tr key={sf.id}>
+                      <td style={{ ...td, fontWeight: 600, color: theme.text }}>{sf.die || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap', color: theme.textMuted }}>{sf.profile || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.press || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.supplier || '—'}</td>
+                      <td style={td}>{sf.customer || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.die_received_date || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <select
+                          defaultValue={sf.ascona_reference || 'No'}
+                          onChange={(e) => handleSfInlineSave(sf, 'Ascona Reference', e.target.value)}
+                          style={{ padding: '4px 8px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
+                        >
+                          <option value="No">No</option>
+                          <option value="Yes">Yes</option>
+                        </select>
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <input
+                          type="date"
+                          defaultValue={sf.submission_date || ''}
+                          onBlur={(e) => handleSfInlineSave(sf, 'Submission Date', e.target.value)}
+                          style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <input
+                          type="date"
+                          defaultValue={sf.sample_approval_date || ''}
+                          onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
+                          style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td style={{ ...td, textAlign: 'center' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: computeSfDelay(sf.die_received_date, sf.submission_date) > 0 ? '#EF4444' : '#10B981' }}>
+                          {computeSfDelay(sf.die_received_date, sf.submission_date)}
+                        </span>
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: statusStyle.bg, color: statusStyle.color }}>
+                          {sf.status || 'Pending'}
+                        </span>
+                      </td>
+                      <td style={{ ...td, textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          defaultValue={sf.no_of_trial || 0}
+                          onBlur={(e) => handleSfInlineSave(sf, 'No of Trial', parseInt(e.target.value, 10) || 0)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                          style={{ width: '60px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', fontFamily: 'monospace' }}
+                        />
+                      </td>
+                      <td style={{ ...td, minWidth: '160px' }}>
+                        <input
+                          type="text"
+                          defaultValue={sf.remark || ''}
+                          onBlur={(e) => handleSfInlineSave(sf, 'Remark', e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                          placeholder="—"
+                          style={{ width: '100%', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.corrector || '—'}</td>
+                      <td style={{ ...td, textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button
+                            onClick={() => {
+                              setEditingSampleFollowup(sf);
+                              setSampleFollowupForm({ die: sf.die || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' });
+                              setShowSampleFollowupForm(true);
+                            }}
+                            style={{ padding: '6px', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
+                            title="Edit"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          {user?.role === 'admin' && (
+                            <button
+                              onClick={() => handleDeleteSampleFollowup(sf)}
+                              style={{ padding: '6px', background: 'rgba(239,68,68,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#EF4444' }}
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '4rem 2rem', color: theme.textMuted }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: `${sfColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <ClipboardList size={28} color={sfColor} />
+            </div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: theme.text, marginBottom: '0.5rem' }}>No Sample Followup Records</h3>
+            <p style={{ fontSize: '0.9rem', color: theme.textMuted }}>Click "Add Record" to create a new sample followup entry</p>
+          </div>
+        )}
+      </div>
+
+      {/* Add/Edit Modal */}
+      {showSampleFollowupForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '90%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>
+                {editingSampleFollowup ? 'Edit Sample Followup' : 'New Sample Followup'}
+              </h2>
+              <button onClick={() => { setShowSampleFollowupForm(false); setEditingSampleFollowup(null); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              {[
+                { key: 'die', label: 'Die', type: 'text' },
+                { key: 'profile', label: 'Profile', type: 'readonly' },
+                { key: 'press', label: 'Plant', type: 'text' },
+                { key: 'supplier', label: 'Supplier', type: 'text' },
+                { key: 'customer', label: 'Customer', type: 'text' },
+                { key: 'die_received_date', label: 'Die Received Date', type: 'date' },
+                { key: 'ascona_reference', label: 'Ascona Reference', type: 'select', options: ['Yes', 'No'] },
+                { key: 'submission_date', label: 'Submission Date', type: 'date' },
+                { key: 'sample_approval_date', label: 'Sample Approval Date', type: 'date' },
+                { key: 'delay_days', label: 'Delay Days', type: 'number' },
+                { key: 'status', label: 'Status', type: 'select', options: SF_STATUSES },
+                { key: 'no_of_trial', label: 'No. of Trial', type: 'number' },
+                { key: 'corrector', label: 'Corrector', type: 'text' },
+              ].map(field => (
+                <div key={field.key}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
+                  {field.type === 'select' ? (
+                    <select
+                      value={sampleFollowupForm[field.key] || ''}
+                      onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: e.target.value })}
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none' }}
+                    >
+                      {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  ) : field.key === 'delay_days' ? (
+                    <input
+                      type="number"
+                      value={computeSfDelay(sampleFollowupForm.die_received_date, sampleFollowupForm.submission_date)}
+                      readOnly
+                      title="Auto-calculated: submission date − die received date (or today − die received date if submission is empty)"
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', cursor: 'not-allowed' }}
+                    />
+                  ) : field.type === 'readonly' ? (
+                    <input
+                      type="text"
+                      value={extractProfile(sampleFollowupForm.die)}
+                      readOnly
+                      title="Auto-derived from Die (everything before the first '-')"
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', cursor: 'not-allowed' }}
+                    />
+                  ) : (
+                    <input
+                      type={field.type}
+                      value={sampleFollowupForm[field.key] || ''}
+                      onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: field.type === 'number' ? parseInt(e.target.value, 10) || 0 : e.target.value })}
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  )}
+                </div>
+              ))}
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Remark</label>
+                <textarea
+                  value={sampleFollowupForm.remark || ''}
+                  onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, remark: e.target.value })}
+                  rows={3}
+                  style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
+              <button
+                onClick={() => { setShowSampleFollowupForm(false); setEditingSampleFollowup(null); }}
+                style={{ padding: '10px 20px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSampleFollowupSubmit}
+                style={{ padding: '10px 24px', background: sfColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', boxShadow: `0 4px 12px ${sfColor}40` }}
+              >
+                {editingSampleFollowup ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
