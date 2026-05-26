@@ -2,6 +2,7 @@ import React from 'react';
 import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload } from 'lucide-react';
 import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI } from '../api';
 import Papa from 'papaparse';
+import ExistingDataPage from './ExistingDataPage';
 
 export default function SettingsPage({
   theme, setToast,
@@ -247,6 +248,9 @@ export default function SettingsPage({
                   </div>
                 )}
               </div>
+
+              {/* Existing Data Import Section - full width */}
+              <ExistingDataPage plants={plants} theme={theme} setToast={setToast} />
 
               {/* Budget Targets Section - full width */}
               <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, marginTop: '0' }}>

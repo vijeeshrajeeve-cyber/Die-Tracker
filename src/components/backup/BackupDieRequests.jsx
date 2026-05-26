@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, extractProfileFromDie } from '../../api';
 import DatePickerField from '../DatePickerField';
@@ -82,6 +82,13 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [saving, setSaving] = useState(false);
   const [presses, setPresses] = useState([]);
   const [selectedRequestIds, setSelectedRequestIds] = useState([]);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [orderRow, setOrderRow] = useState(null);
+  const [orderValues, setOrderValues] = useState(null);
+  const [orderFileHandle, setOrderFileHandle] = useState(null);
+  const [orderFileName, setOrderFileName] = useState('');
+  const [orderBusy, setOrderBusy] = useState(false);
+  const [orderError, setOrderError] = useState('');
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -340,6 +347,88 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     }
   };
 
+  const openOrderModal = (request) => {
+    setOrderRow(request);
+    setOrderFileHandle(null);
+    setOrderFileName('');
+    setOrderError('');
+    setOrderValues({
+      SUPPLIER: '',
+      DATE: getTodayDateString(),
+      DIE_SIZE: '',
+      NO_OF_CAV: '',
+      PRESS: request['Press'] || '',
+      SOLID: '',
+      HOLLOW: '',
+      BOLSTER_NO: '',
+      INSERT_NO: '',
+      BOLSTER_SIZE: '',
+      INSERT_SIZE: '',
+      DELIVERY_DATE: request['Requested Date'] || '',
+      THREE_D_MODULE: '',
+      SHIPMENT: '',
+      PROFILE_WEIGHT_PCT: '',
+      FINISH_MILL: false,
+      FINISH_ANODIZING: false,
+      FINISH_POWDER: false,
+    });
+    setShowOrderModal(true);
+  };
+
+  const handlePickProfileDrawing = async () => {
+    if (typeof window.showOpenFilePicker !== 'function') {
+      setOrderError('This browser cannot save back to a chosen file. Please use Chrome or Edge.');
+      return;
+    }
+
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        mode: 'readwrite',
+        multiple: false,
+        types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+      });
+      setOrderFileHandle(handle);
+      setOrderFileName(handle.name);
+      setOrderError('');
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setOrderError(err.message || String(err));
+      }
+    }
+  };
+
+  const handleGenerateOrderPdf = async () => {
+    if (!orderFileHandle || !orderRow) return;
+
+    setOrderBusy(true);
+    setOrderError('');
+    try {
+      const permOpts = { mode: 'readwrite' };
+      if (orderFileHandle.queryPermission) {
+        let permission = await orderFileHandle.queryPermission(permOpts);
+        if (permission !== 'granted' && orderFileHandle.requestPermission) {
+          permission = await orderFileHandle.requestPermission(permOpts);
+        }
+        if (permission !== 'granted') {
+          throw new Error('Permission to overwrite the file was denied.');
+        }
+      }
+
+      const file = await orderFileHandle.getFile();
+      const generated = await backupRequestsAPI.generateOrderPdf(orderRow.id, file, orderValues);
+      const writable = await orderFileHandle.createWritable();
+      await writable.write(generated);
+      await writable.close();
+
+      setShowOrderModal(false);
+      alert(`Die order saved to "${orderFileHandle.name}". The original file has been replaced.`);
+    } catch (error) {
+      setOrderError(error.message || String(error));
+    } finally {
+      setOrderBusy(false);
+    }
+  };
+
   const uniquePlants = useMemo(() => {
     const set = new Set((backupRequests || []).map(r => r['Plant']).filter(Boolean));
     return [...set].sort();
@@ -510,21 +599,19 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     </div>
                   </th>
                 ))}
-                {user?.role === 'admin' && (
-                  <th style={{
-                    padding: '1rem', textAlign: 'center', fontSize: '0.7rem',
-                    fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-                    color: theme.textDim, background: theme.tableBg,
-                  }}>
-                    Actions
-                  </th>
-                )}
+                <th style={{
+                  padding: '1rem', textAlign: 'center', fontSize: '0.7rem',
+                  fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
+                  color: theme.textDim, background: theme.tableBg,
+                }}>
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1 + (user?.role === 'admin' ? 1 : 0)} style={{
+                  <td colSpan={COLUMNS.length + 2} style={{
                     padding: '3rem', textAlign: 'center', color: theme.textMuted, fontSize: '0.95rem',
                   }}>
                     No backup requests found
@@ -598,9 +685,17 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {request['Remarks'] || '—'}
                     </td>
-                    {user?.role === 'admin' && (
-                      <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openOrderModal(request); }}
+                          style={{ padding: '6px', background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#10B981' }}
+                          title="Generate die order PDF"
+                        >
+                          <FileText size={14} />
+                        </button>
+                        {user?.role === 'admin' && (
+                          <>
                           <button
                             onClick={(e) => { e.stopPropagation(); openEditModal(request); }}
                             style={{ padding: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
@@ -615,9 +710,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                           >
                             <Trash2 size={14} />
                           </button>
-                        </div>
-                      </td>
-                    )}
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -879,6 +975,192 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 }}
               >
                 {saving ? 'Saving...' : (editingRequest ? 'Update' : 'Create')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Die Order PDF Modal */}
+      {showOrderModal && orderValues && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{
+            background: theme.cardBg, borderRadius: '20px', padding: '2rem',
+            width: '100%', maxWidth: '780px', maxHeight: '92vh', overflowY: 'auto',
+            border: `1px solid ${theme.cardBorder}`,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>
+                  Generate Die Order PDF
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: theme.textMuted, marginTop: '4px' }}>
+                  Die {orderRow?.['DIE NO'] || '-'} · {orderRow?.['Customer'] || '-'} · {orderRow?.['Plant'] || '-'}
+                </p>
+              </div>
+              <button
+                onClick={() => !orderBusy && setShowOrderModal(false)}
+                disabled={orderBusy}
+                style={{ padding: '8px', background: 'transparent', border: 'none', cursor: orderBusy ? 'not-allowed' : 'pointer', color: theme.textMuted, borderRadius: '8px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '12px 14px', borderRadius: '12px',
+              background: theme.inputBg, border: `1px dashed ${theme.cardBorder}`,
+              marginBottom: '1rem',
+            }}>
+              <button
+                onClick={handlePickProfileDrawing}
+                disabled={orderBusy}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '8px 14px', borderRadius: '8px',
+                  background: theme.primary, color: theme.primaryText,
+                  border: 'none', cursor: orderBusy ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, fontSize: '0.85rem',
+                }}
+              >
+                <FolderOpen size={16} /> {orderFileHandle ? 'Choose different PDF' : 'Select Profile Drawing PDF'}
+              </button>
+              <span style={{ fontSize: '0.85rem', color: orderFileHandle ? theme.text : theme.textMuted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {orderFileHandle ? orderFileName : 'No file selected. The output will overwrite the chosen PDF.'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+              <div>
+                <label style={labelStyle}>SUPPLIER</label>
+                <input type="text" value={orderValues.SUPPLIER} onChange={(e) => setOrderValues({ ...orderValues, SUPPLIER: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>DATE</label>
+                <input type="text" value={orderValues.DATE} onChange={(e) => setOrderValues({ ...orderValues, DATE: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>DIE SIZE</label>
+                <input type="text" value={orderValues.DIE_SIZE} onChange={(e) => setOrderValues({ ...orderValues, DIE_SIZE: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>No OF CAV</label>
+                <input type="text" value={orderValues.NO_OF_CAV} onChange={(e) => setOrderValues({ ...orderValues, NO_OF_CAV: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>PRESS</label>
+                <input type="text" value={orderValues.PRESS} onChange={(e) => setOrderValues({ ...orderValues, PRESS: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>SOLID</label>
+                <input type="text" value={orderValues.SOLID} onChange={(e) => setOrderValues({ ...orderValues, SOLID: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>HOLLOW</label>
+                <input type="text" value={orderValues.HOLLOW} onChange={(e) => setOrderValues({ ...orderValues, HOLLOW: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>BOLSTER No</label>
+                <input type="text" value={orderValues.BOLSTER_NO} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_NO: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>INSERT No</label>
+                <input type="text" value={orderValues.INSERT_NO} onChange={(e) => setOrderValues({ ...orderValues, INSERT_NO: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>BOLSTER SIZE</label>
+                <input type="text" value={orderValues.BOLSTER_SIZE} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_SIZE: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>INSERT SIZE</label>
+                <input type="text" value={orderValues.INSERT_SIZE} onChange={(e) => setOrderValues({ ...orderValues, INSERT_SIZE: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>REQUESTED DELIVERY DATE</label>
+                <input type="text" value={orderValues.DELIVERY_DATE} onChange={(e) => setOrderValues({ ...orderValues, DELIVERY_DATE: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>3D MODULE FOR SIMULATION</label>
+                <input type="text" value={orderValues.THREE_D_MODULE} onChange={(e) => setOrderValues({ ...orderValues, THREE_D_MODULE: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>MODE OF SHIPMENT</label>
+                <input type="text" value={orderValues.SHIPMENT} onChange={(e) => setOrderValues({ ...orderValues, SHIPMENT: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>PROFILE WEIGHT START %</label>
+                <input type="text" value={orderValues.PROFILE_WEIGHT_PCT} onChange={(e) => setOrderValues({ ...orderValues, PROFILE_WEIGHT_PCT: e.target.value })} style={inputStyle} placeholder="e.g. 85" />
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>FINISH</label>
+                <div style={{ display: 'flex', gap: '1.25rem', padding: '10px 14px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: theme.text, fontSize: '0.875rem' }}>
+                    <input type="checkbox" checked={orderValues.FINISH_MILL} onChange={(e) => setOrderValues({ ...orderValues, FINISH_MILL: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
+                    Mill
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: theme.text, fontSize: '0.875rem' }}>
+                    <input type="checkbox" checked={orderValues.FINISH_ANODIZING} onChange={(e) => setOrderValues({ ...orderValues, FINISH_ANODIZING: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
+                    Anodizing
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: theme.text, fontSize: '0.875rem' }}>
+                    <input type="checkbox" checked={orderValues.FINISH_POWDER} onChange={(e) => setOrderValues({ ...orderValues, FINISH_POWDER: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
+                    Powder coating
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {orderError && (
+              <div style={{
+                marginTop: '1rem', padding: '10px 14px', borderRadius: '10px',
+                background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)',
+                color: '#FCA5A5', fontSize: '0.85rem',
+              }}>
+                {orderError}
+              </div>
+            )}
+
+            <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: theme.textMuted }}>
+              The generated die-order template will be stamped on the first page of the selected PDF, and the file will be overwritten in place.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: `1px solid ${theme.cardBorder}` }}>
+              <button
+                onClick={() => setShowOrderModal(false)}
+                disabled={orderBusy}
+                style={{
+                  padding: '10px 20px', borderRadius: '10px',
+                  background: theme.inputBg, border: `1px solid ${theme.cardBorder}`,
+                  color: theme.text, cursor: orderBusy ? 'not-allowed' : 'pointer',
+                  fontWeight: 500, fontSize: '0.875rem',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateOrderPdf}
+                disabled={orderBusy || !orderFileHandle}
+                style={{
+                  padding: '10px 24px', borderRadius: '10px',
+                  background: (orderBusy || !orderFileHandle) ? '#475569' : theme.primary,
+                  border: 'none', color: theme.primaryText,
+                  cursor: (orderBusy || !orderFileHandle) ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, fontSize: '0.875rem',
+                }}
+              >
+                {orderBusy ? 'Generating...' : 'Generate & Save'}
               </button>
             </div>
           </div>

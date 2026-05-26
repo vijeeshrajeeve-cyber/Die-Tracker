@@ -22,6 +22,7 @@ const emailRouter = require('./routes/email.cjs');
 const emailService = require('./services/email.cjs');
 const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
 const plantBudgetsRouter = require('./routes/plant-budgets.cjs');
+const existingDataRouter = require('./routes/existing-data.cjs');
 
 
 const app = express();
@@ -91,6 +92,7 @@ app.use('/api/backup-requests', authMiddleware, pageAccessMiddleware('backup-req
 app.use('/api/api-keys', authMiddleware, adminMiddleware, apiKeysRouter);
 app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleFollowupsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
+app.use('/api/existing-data', existingDataRouter);
 
 
 // Health check

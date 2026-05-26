@@ -249,4 +249,39 @@ Die Ordering Team',
      'pdf_drawing_request')
 ON CONFLICT (name) DO NOTHING;
 
+-- Uploaded existing die master data by plant
+CREATE TABLE IF NOT EXISTS existing_die_details (
+    id SERIAL PRIMARY KEY,
+    plant TEXT NOT NULL,
+    die_no TEXT,
+    profile_number TEXT,
+    customer TEXT,
+    die_size TEXT,
+    press TEXT,
+    raw_data JSONB NOT NULL DEFAULT '{}',
+    source_file TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_existing_die_details_plant ON existing_die_details(plant);
+CREATE INDEX IF NOT EXISTS idx_existing_die_details_die_no ON existing_die_details(die_no);
+
+-- Uploaded existing production data by plant
+CREATE TABLE IF NOT EXISTS existing_production_data (
+    id SERIAL PRIMARY KEY,
+    plant TEXT NOT NULL,
+    die_no TEXT,
+    profile_number TEXT,
+    customer TEXT,
+    production_date TEXT,
+    quantity INTEGER,
+    press TEXT,
+    raw_data JSONB NOT NULL DEFAULT '{}',
+    source_file TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_existing_production_data_plant ON existing_production_data(plant);
+CREATE INDEX IF NOT EXISTS idx_existing_production_data_die_no ON existing_production_data(die_no);
+
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing

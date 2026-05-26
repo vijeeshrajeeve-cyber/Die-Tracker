@@ -1,8 +1,11 @@
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
+const { generateBackupOrderPdf, VALUE_KEYS } = require('../services/dieOrderTemplate.cjs');
 
 const router = express.Router();
+
+const PDF_GEN_MAX_BYTES = 20 * 1024 * 1024;
 
 const VALID_STATUSES = ['Pending', 'Completed', 'HOLD', 'Not required'];
 
@@ -170,5 +173,66 @@ router.delete('/:id', requestIdValidation, handleValidationErrors, async (req, r
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+const ALLOWED_VALUE_KEYS = new Set(VALUE_KEYS);
+
+const sanitizeValues = (raw) => {
+    if (!raw || typeof raw !== 'object') return {};
+    const out = {};
+    for (const [key, value] of Object.entries(raw)) {
+        if (!ALLOWED_VALUE_KEYS.has(key)) continue;
+        if (typeof value === 'boolean') {
+            out[key] = value;
+        } else if (value == null) {
+            out[key] = '';
+        } else {
+            out[key] = String(value).slice(0, 200);
+        }
+    }
+    return out;
+};
+
+// Generate filled die-order overlay PDF from a backup request.
+// Body: raw PDF bytes (application/pdf). Form values arrive as JSON in
+// the `X-Form-Values` request header (URL-encoded). Response: the
+// resulting PDF as application/pdf.
+router.post(
+    '/:id/generate-order-pdf',
+    requestIdValidation,
+    handleValidationErrors,
+    express.raw({ type: 'application/pdf', limit: PDF_GEN_MAX_BYTES }),
+    async (req, res) => {
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+            return res.status(400).json({ error: 'Expected application/pdf body with the profile drawing' });
+        }
+
+        let values = {};
+        try {
+            const header = req.get('X-Form-Values');
+            if (header) {
+                values = sanitizeValues(JSON.parse(decodeURIComponent(header)));
+            }
+        } catch (err) {
+            return res.status(400).json({ error: 'Invalid X-Form-Values header (must be URL-encoded JSON)' });
+        }
+
+        const { id } = req.params;
+        const existsResult = await pool.query('SELECT 1 FROM backup_die_requests WHERE id = $1', [id]);
+        if (existsResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Backup request not found' });
+        }
+
+        try {
+            const pdfBuffer = await generateBackupOrderPdf(req.body, values);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Length', pdfBuffer.length);
+            res.setHeader('Content-Disposition', `attachment; filename="backup-die-order-${id}.pdf"`);
+            res.send(pdfBuffer);
+        } catch (error) {
+            console.error('Generate order PDF error:', error);
+            res.status(500).json({ error: 'Failed to generate die order PDF', detail: error.message });
+        }
+    }
+);
 
 module.exports = router;

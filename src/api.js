@@ -276,6 +276,27 @@ export const profilesAPI = {
     },
 };
 
+// Existing Data API
+export const existingDataAPI = {
+    getMeta: async () => {
+        return apiRequest('/existing-data/meta');
+    },
+
+    importDieDetails: async ({ plant, rows, sourceFile }) => {
+        return apiRequest('/existing-data/die-details/import', {
+            method: 'POST',
+            body: JSON.stringify({ plant, rows, sourceFile }),
+        });
+    },
+
+    importProduction: async ({ plant, rows, sourceFile }) => {
+        return apiRequest('/existing-data/production/import', {
+            method: 'POST',
+            body: JSON.stringify({ plant, rows, sourceFile }),
+        });
+    },
+};
+
 // Backup Requests API
 export const backupRequestsAPI = {
     getAll: async () => {
@@ -300,6 +321,36 @@ export const backupRequestsAPI = {
         return apiRequest(`/backup-requests/${id}`, {
             method: 'DELETE',
         });
+    },
+
+    // Send a profile-drawing PDF + filled-in template values to the backend;
+    // returns the generated die-order PDF as a Blob so the caller can write
+    // it back to the user's chosen file via the File System Access API.
+    generateOrderPdf: async (id, pdfFileOrBlob, values) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/backup-requests/${id}/generate-order-pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/pdf',
+                'X-Form-Values': encodeURIComponent(JSON.stringify(values || {})),
+                ...(token && { Authorization: `Bearer ${token}` }),
+            },
+            body: pdfFileOrBlob,
+        });
+        if (!response.ok) {
+            if (response.status === 401) {
+                logout();
+                window.location.reload();
+            }
+            let errMsg = `PDF generation failed (HTTP ${response.status})`;
+            try {
+                const j = await response.json();
+                if (j?.error) errMsg = j.error;
+                if (j?.detail) errMsg += `: ${j.detail}`;
+            } catch (_) { /* response wasn't JSON */ }
+            throw new Error(errMsg);
+        }
+        return await response.blob();
     },
 };
 
