@@ -3,7 +3,7 @@ import { ChevronUp, ChevronDown, Plane, Truck, Eye, Trash2, ChevronLeft, Chevron
 import { STATUS_CONFIG } from '../utils/constants';
 import { ordersAPI } from '../api';
 import DieAttentionLabels from '../components/DieAttentionLabels';
-import { parseDateDMY } from '../utils/helpers';
+import { parseDateDMY, formatDate } from '../utils/helpers';
 
 const StatusBadge = ({ status }) => {
   const config = STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
@@ -115,7 +115,7 @@ export default function OrdersPage({
                 {[
                   { key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' },
                   { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' },
-                  { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' },
+                  { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Cavity', label: 'Cav' },
                   { key: 'Supplier', label: 'Supplier' }, { key: 'Customer Name', label: 'Customer' },
                   { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' },
                   { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' },
@@ -151,12 +151,13 @@ export default function OrdersPage({
                   <td style={td}>{order.TYPE}</td>
                   <td style={td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
                   <td style={td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
+                  <td style={td}><span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span></td>
                   <td style={td}>{order.Supplier}</td>
                   <td style={td}>{order['Customer Name'] || <span style={{ color: '#64748B' }}>—</span>}</td>
                   <td style={td}><span style={{ fontFamily: 'monospace', color: order['PR Number'] ? theme.text : '#64748B' }}>{order['PR Number'] || '—'}</span></td>
                   <td style={td}><span style={{ fontFamily: 'monospace' }}>{order['Mandrels per Cavity'] || 0}</span></td>
                   <td style={td}><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
-                  <td style={td}>{order['Die Requested Date']}</td>
+                  <td style={td}>{formatDate(order['Die Requested Date'])}</td>
                   <td style={td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}
