@@ -10,6 +10,16 @@ const sanitizeString = (value) => {
     return value.trim().substring(0, 500);
 };
 
+const sanitizeDate = (value) => {
+    if (!value) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return null;
+};
+
 // Validation error handler
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
@@ -70,10 +80,10 @@ router.post('/', followupValidation, handleValidationErrors, async (req, res) =>
             sanitizeString(data.press),
             sanitizeString(data.supplier),
             sanitizeString(data.customer),
-            sanitizeString(data.die_received_date),
+            sanitizeDate(data.die_received_date),
             sanitizeString(data.ascona_reference || 'No'),
-            sanitizeString(data.submission_date),
-            sanitizeString(data.sample_approval_date),
+            sanitizeDate(data.submission_date),
+            sanitizeDate(data.sample_approval_date),
             Math.round(data.delay_days || 0),
             sanitizeString(data.status || 'Pending'),
             Math.round(data.no_of_trial || 0),
@@ -111,10 +121,10 @@ router.put('/:id', idValidation, followupValidation, handleValidationErrors, asy
             sanitizeString(data.press),
             sanitizeString(data.supplier),
             sanitizeString(data.customer),
-            sanitizeString(data.die_received_date),
+            sanitizeDate(data.die_received_date),
             sanitizeString(data.ascona_reference || 'No'),
-            sanitizeString(data.submission_date),
-            sanitizeString(data.sample_approval_date),
+            sanitizeDate(data.submission_date),
+            sanitizeDate(data.sample_approval_date),
             Math.round(data.delay_days || 0),
             sanitizeString(data.status || 'Pending'),
             Math.round(data.no_of_trial || 0),

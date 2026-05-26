@@ -14,6 +14,16 @@ const sanitizeString = (value) => {
     return value.trim().substring(0, 500);
 };
 
+const sanitizeDate = (value) => {
+    if (!value) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return null;
+};
+
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -89,10 +99,10 @@ router.post('/', requestValidation, handleValidationErrors, async (req, res) => 
             sanitizeString(data['DIE NO']),
             sanitizeString(data['Customer']),
             sanitizeString(data['Press']),
-            sanitizeString(data['Requested Date']),
-            sanitizeString(data['Die Available']),
-            sanitizeString(data['Drawing Requested']),
-            sanitizeString(data['Ordered Date']),
+            sanitizeDate(data['Requested Date']),
+            sanitizeDate(data['Die Available']),
+            sanitizeDate(data['Drawing Requested']),
+            sanitizeDate(data['Ordered Date']),
             'Pending',
             sanitizeString(data['Reason']),
             sanitizeString(data['Order Received Last Year']),
@@ -134,10 +144,10 @@ router.put('/:id', requestIdValidation, requestValidation, handleValidationError
             sanitizeString(data['DIE NO']),
             sanitizeString(data['Customer']),
             sanitizeString(data['Press']),
-            sanitizeString(data['Requested Date']),
-            sanitizeString(data['Die Available']),
-            sanitizeString(data['Drawing Requested']),
-            sanitizeString(data['Ordered Date']),
+            sanitizeDate(data['Requested Date']),
+            sanitizeDate(data['Die Available']),
+            sanitizeDate(data['Drawing Requested']),
+            sanitizeDate(data['Ordered Date']),
             status || 'Pending',
             sanitizeString(data['Reason']),
             sanitizeString(data['Order Received Last Year']),

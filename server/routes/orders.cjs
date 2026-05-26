@@ -30,6 +30,18 @@ const sanitizeString = (value) => {
     return value.trim().substring(0, 500); // Limit string length
 };
 
+// Normalise any incoming date string to YYYY-MM-DD for PostgreSQL DATE columns.
+// Accepts: YYYY-MM-DD (passthrough), DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY.
+const sanitizeDate = (value) => {
+    if (!value) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return null; // unparseable — store as NULL rather than error
+};
+
 // NORMAL | URGENT | TOP_URGENT — accepts "TOP URGENT", "top_urgent", etc.
 const normalizeUrgencyInput = (value) => {
     if (value == null || value === '') return 'NORMAL';
@@ -216,15 +228,15 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['DIE NO']),
             sanitizeString(order['TYPE']),
             sanitizeString(order['Die Size']),
-            sanitizeString(order['Die Requested Date']) || null,
-            sanitizeString(order['Ordered date']) || null,
+            sanitizeDate(order['Die Requested Date']),
+            sanitizeDate(order['Ordered date']),
             sanitizeString(order['Type of shipment']),
             Math.round(order['Mandrels per Cavity'] || 0),
             Math.round(order['Total Mandrels'] || 0),
-            sanitizeString(order['Design Received Date']) || null,
-            sanitizeString(order['3D Model Received Date']) || null,
+            sanitizeDate(order['Design Received Date']),
+            sanitizeDate(order['3D Model Received Date']),
             order['simulationEnabled'] ? 1 : 0,
-            sanitizeString(order['Design Approved Date']) || null,
+            sanitizeDate(order['Design Approved Date']),
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
             sanitizeString(order['PR Number']),
@@ -235,9 +247,9 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             Math.round(order['OVERALL DELAY'] || 0),
             sanitizeString(order['ETA']),
             sanitizeString(order['month']),
-            sanitizeString(order['Die Received Date']) || null,
-            sanitizeString(order['Submission Date']) || null,
-            sanitizeString(order['Sample Approval Date']) || null,
+            sanitizeDate(order['Die Received Date']),
+            sanitizeDate(order['Submission Date']),
+            sanitizeDate(order['Sample Approval Date']),
             Math.round(order['No of Trial'] || 0),
             sanitizeString(order['Corrector']),
             sanitizeString(order['Press']),
@@ -289,15 +301,15 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['DIE NO']),
             sanitizeString(order['TYPE']),
             sanitizeString(order['Die Size']),
-            sanitizeString(order['Die Requested Date']) || null,
-            sanitizeString(order['Ordered date']) || null,
+            sanitizeDate(order['Die Requested Date']),
+            sanitizeDate(order['Ordered date']),
             sanitizeString(order['Type of shipment']),
             Math.round(order['Mandrels per Cavity'] || 0),
             Math.round(order['Total Mandrels'] || 0),
-            sanitizeString(order['Design Received Date']) || null,
-            sanitizeString(order['3D Model Received Date']) || null,
+            sanitizeDate(order['Design Received Date']),
+            sanitizeDate(order['3D Model Received Date']),
             order['simulationEnabled'] ? 1 : 0,
-            sanitizeString(order['Design Approved Date']) || null,
+            sanitizeDate(order['Design Approved Date']),
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
             sanitizeString(order['PR Number']),
@@ -308,9 +320,9 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             Math.round(order['OVERALL DELAY'] || 0),
             sanitizeString(order['ETA']),
             sanitizeString(order['month']),
-            sanitizeString(order['Die Received Date']) || null,
-            sanitizeString(order['Submission Date']) || null,
-            sanitizeString(order['Sample Approval Date']) || null,
+            sanitizeDate(order['Die Received Date']),
+            sanitizeDate(order['Submission Date']),
+            sanitizeDate(order['Sample Approval Date']),
             Math.round(order['No of Trial'] || 0),
             sanitizeString(order['Corrector']),
             sanitizeString(order['Press']),
