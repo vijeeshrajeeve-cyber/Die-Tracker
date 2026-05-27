@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, extractProfileFromDie } from '../../api';
+import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
 
 const StatusBadge = ({ status }) => {
@@ -27,6 +28,7 @@ const COLUMNS = [
   { key: 'DIE NO', label: 'DIE NO' },
   { key: 'Customer', label: 'CUSTOMER' },
   { key: 'Press', label: 'PRESS' },
+  { key: 'Cavity', label: 'CAV' },
   { key: 'Requested Date', label: 'REQUESTED DATE' },
   { key: 'Die Available', label: 'DIE AVAILABLE' },
   { key: 'Drawing Requested', label: 'DRAWING REQUESTED' },
@@ -42,6 +44,7 @@ const EMPTY_FORM = {
   'DIE NO': '',
   'Customer': '',
   'Press': '',
+  'Cavity': '',
   'Requested Date': '',
   'Die Available': '',
   'Drawing Requested': '',
@@ -268,6 +271,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       'DIE NO': request['DIE NO'] || '',
       'Customer': request['Customer'] || '',
       'Press': request['Press'] || '',
+      'Cavity': request['Cavity'] ?? '',
       'Requested Date': request['Requested Date'] || '',
       'Die Available': request['Die Available'] || '',
       'Drawing Requested': request['Drawing Requested'] || '',
@@ -662,16 +666,16 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                         : '—'}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {request['Requested Date'] || '—'}
+                      {formatDate(request['Requested Date'])}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {request['Die Available'] || '—'}
+                      {formatDate(request['Die Available'])}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {request['Drawing Requested'] || '—'}
+                      {formatDate(request['Drawing Requested'])}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {request['Ordered Date'] || '—'}
+                      {formatDate(request['Ordered Date'])}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem' }}>
                       <StatusBadge status={request['Status']} />

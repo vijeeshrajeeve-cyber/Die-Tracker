@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:brainstorming:*)",
+      "Bash(where python *)",
+      "Bash(python -c \"import reportlab, PyPDF2; print\\('OK', reportlab.__version__, PyPDF2.__version__\\)\")",
+      "Bash(python -c \"import die_order_template; print\\('python module imports OK'\\); print\\('has create_filled_overlay:', hasattr\\(die_order_template, 'create_filled_overlay'\\)\\); print\\('has add_filled_template_to_pdf:', hasattr\\(die_order_template, 'add_filled_template_to_pdf'\\)\\)\")",
+      "Bash(node -e \"require\\('./server/routes/backup-requests.cjs'\\); console.log\\('backup-requests route loads OK'\\)\")",
+      "Bash(node --check server/routes/backup-requests.cjs)",
+      "Bash(node --check src/api.js)",
+      "Bash(node --check src/components/backup/BackupDieRequests.jsx)",
+      "Bash(python -c ' *)",
+      "Bash(python die_order_template.py --mode backup --input test_input.pdf --output test_output.pdf --values '{\"SUPPLIER\":\"ACME DIES\",\"DATE\":\"2026-05-20\",\"DIE_SIZE\":\"210\",\"NO_OF_CAV\":\"2\",\"PRESS\":\"P7\",\"SOLID\":\"Yes\",\"HOLLOW\":\"\",\"BOLSTER_NO\":\"B-101\",\"INSERT_NO\":\"I-22\",\"BOLSTER_SIZE\":\"180\",\"INSERT_SIZE\":\"100\",\"DELIVERY_DATE\":\"2026-06-15\",\"THREE_D_MODULE\":\"Yes\",\"SHIPMENT\":\"Air\",\"PROFILE_WEIGHT_PCT\":\"85\",\"FINISH_MILL\":true,\"FINISH_ANODIZING\":false,\"FINISH_POWDER\":true}')",
+      "Bash(python die_order_template.py --mode blank --input test_input.pdf --output test_blank.pdf)",
+      "Bash(npm install *)",
+      "Bash(node -e \"const { PDFDocument, StandardFonts } = require\\('pdf-lib'\\); console.log\\('pdf-lib loaded:', typeof PDFDocument, typeof StandardFonts\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(node --check server/services/dieOrderTemplate.cjs)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(ls -d .worktrees)",
+      "Bash(ls -d worktrees)",
+      "Bash(git commit *)",
+      "Bash(git worktree *)",
+      "Bash(npm run *)",
+      "Bash(git merge *)",
+      "Bash(git stash *)",
+      "Bash(git branch *)",
+      "Bash(bash *)"
+    ]
+  }
+}

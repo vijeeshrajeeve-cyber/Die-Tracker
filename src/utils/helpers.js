@@ -78,18 +78,20 @@ export const parseDateDMY = (dateStr) => {
   return null;
 };
 
-// Format date for display
+// Format date for display — strips time/timezone before parsing to avoid day shifts
 export const formatDate = (dateStr) => {
   if (!dateStr) return '-';
   try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-GB', {
+    const datePart = String(dateStr).split('T')[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return String(dateStr);
+    const [year, month, day] = datePart.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
     });
   } catch {
-    return dateStr;
+    return String(dateStr);
   }
 };
 

@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle, FileText, Trash2, X } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
-import { parseDateDMY } from '../../utils/helpers';
+import { parseDateDMY, formatDate } from '../../utils/helpers';
 
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -962,7 +962,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               {order['Type of shipment']}
                             </span>
                           </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontSize: '0.8rem' }}>{order['Die Requested Date'] || '-'}</td>
+                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontSize: '0.8rem' }}>{formatDate(order['Die Requested Date'])}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                             <button
                               onClick={() => handleRemoveOrder(index)}

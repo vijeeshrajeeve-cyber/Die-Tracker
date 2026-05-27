@@ -274,6 +274,9 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='backup_die_requests' AND column_name='press') THEN
           ALTER TABLE backup_die_requests ADD COLUMN press TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='backup_die_requests' AND column_name='cavity') THEN
+          ALTER TABLE backup_die_requests ADD COLUMN cavity INTEGER DEFAULT 0;
+        END IF;
       END $$;
 
       -- Press master (press name → code)
@@ -687,6 +690,38 @@ const initializeDatabase = async () => {
 
       await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v1')`);
       console.log('Added UNIQUE constraint on die_orders.order_no');
+    }
+
+    // Migration: replace plain UNIQUE constraint with partial index (exclude NULL + empty)
+    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='unique_order_no_v2'`)).rows.length) {
+      const constraintExists = await client.query(`
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name='die_orders' AND constraint_name='uq_order_no'
+      `);
+      if (constraintExists.rows.length > 0) {
+        await client.query(`ALTER TABLE die_orders DROP CONSTRAINT uq_order_no`);
+      }
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_order_no
+        ON die_orders (order_no)
+        WHERE order_no IS NOT NULL AND order_no <> ''
+      `);
+      await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v2')`);
+      console.log('Replaced uq_order_no constraint with partial unique index');
+    }
+
+    // Migration: remove all uniqueness on order_no (one order_no can span multiple rows)
+    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='unique_order_no_v3'`)).rows.length) {
+      const constraintExists = await client.query(`
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name='die_orders' AND constraint_name='uq_order_no'
+      `);
+      if (constraintExists.rows.length > 0) {
+        await client.query(`ALTER TABLE die_orders DROP CONSTRAINT uq_order_no`);
+      }
+      await client.query(`DROP INDEX IF EXISTS uq_order_no`);
+      await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v3')`);
+      console.log('Removed all uniqueness restriction on die_orders.order_no');
     }
 
     console.log('Database initialized successfully');

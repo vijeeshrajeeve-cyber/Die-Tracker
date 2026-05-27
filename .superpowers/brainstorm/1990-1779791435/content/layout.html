@@ -1,0 +1,101 @@
+<h2>Existing Data Import — Card Layout</h2>
+<p class="subtitle">This will live in Settings (admin-only), as a new collapsible section alongside Profile Master, Budget, etc. Which layout works best for the card?</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:1rem;background:#0f172a;border-radius:8px;font-family:monospace;font-size:0.8rem;color:#94a3b8">
+      <div style="background:#1e293b;border-radius:6px;padding:10px 14px;margin-bottom:8px">
+        <div style="color:#f1f5f9;font-weight:700;font-size:0.85rem;margin-bottom:6px">📁 Existing Data Import</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <span style="background:#334155;border-radius:4px;padding:2px 8px;font-size:0.7rem">Die Details</span>
+          <span style="background:#1e3a5f;border-radius:4px;padding:2px 8px;font-size:0.7rem;color:#60a5fa">Production Data</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+          <div style="background:#0f172a;border-radius:4px;padding:6px 8px;font-size:0.7rem">
+            <div style="color:#64748b">Plant</div>
+            <select style="background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:4px;width:100%;padding:2px;margin-top:2px;font-size:0.7rem">
+              <option>GEX 1</option><option>GEX 2</option>
+            </select>
+          </div>
+          <div style="background:#0f172a;border-radius:4px;padding:6px 8px;font-size:0.7rem">
+            <div style="color:#64748b">File</div>
+            <div style="background:#1e293b;border:1px dashed #334155;border-radius:4px;padding:3px 6px;margin-top:2px;color:#64748b;font-size:0.65rem">📎 Choose CSV / Excel</div>
+          </div>
+        </div>
+        <div style="background:#1e3a5f;border-radius:4px;padding:5px 10px;font-size:0.7rem;color:#60a5fa;text-align:center">▶ Import</div>
+        <div style="margin-top:8px;border-top:1px solid #334155;padding-top:6px;font-size:0.65rem;color:#64748b">
+          GEX 1: 1,204 rows · last imported 20 May<br>GEX 2: 852 rows · last imported 18 May
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Tabbed (Die Details / Production)</h3>
+      <p>Two tabs switch between import types. Plant + file selectors inside each tab. Status table at the bottom shows per-plant counts for the active type.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:1rem;background:#0f172a;border-radius:8px;font-family:monospace;font-size:0.8rem;color:#94a3b8">
+      <div style="background:#1e293b;border-radius:6px;padding:10px 14px">
+        <div style="color:#f1f5f9;font-weight:700;font-size:0.85rem;margin-bottom:8px">📁 Existing Data Import</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="background:#0f172a;border-radius:6px;padding:8px;border:1px solid #334155">
+            <div style="color:#60a5fa;font-weight:600;font-size:0.75rem;margin-bottom:4px">Die Details</div>
+            <select style="background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:4px;width:100%;padding:2px;margin-bottom:4px;font-size:0.65rem">
+              <option>GEX 1</option>
+            </select>
+            <div style="background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:3px 6px;color:#64748b;font-size:0.6rem;margin-bottom:4px">📎 CSV / Excel</div>
+            <div style="background:#1e3a5f;border-radius:4px;padding:3px;font-size:0.65rem;color:#60a5fa;text-align:center">Import</div>
+            <div style="margin-top:4px;font-size:0.6rem;color:#64748b">GEX 1: 1,204 rows</div>
+          </div>
+          <div style="background:#0f172a;border-radius:6px;padding:8px;border:1px solid #334155">
+            <div style="color:#a78bfa;font-weight:600;font-size:0.75rem;margin-bottom:4px">Production Data</div>
+            <select style="background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:4px;width:100%;padding:2px;margin-bottom:4px;font-size:0.65rem">
+              <option>GEX 1</option>
+            </select>
+            <div style="background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:3px 6px;color:#64748b;font-size:0.6rem;margin-bottom:4px">📎 CSV / Excel</div>
+            <div style="background:#2e1a5f;border-radius:4px;padding:3px;font-size:0.65rem;color:#a78bfa;text-align:center">Import</div>
+            <div style="margin-top:4px;font-size:0.6rem;color:#64748b">GEX 1: 852 rows</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Side by Side</h3>
+      <p>Die Details and Production Data shown in two columns simultaneously. Each column has its own plant selector, file picker, and import button. Compact at-a-glance view.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:1rem;background:#0f172a;border-radius:8px;font-family:monospace;font-size:0.8rem;color:#94a3b8">
+      <div style="background:#1e293b;border-radius:6px;padding:10px 14px">
+        <div style="color:#f1f5f9;font-weight:700;font-size:0.85rem;margin-bottom:6px">📁 Existing Data Import</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+          <div style="color:#64748b;font-size:0.7rem">Type:</div>
+          <select style="background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:4px;padding:2px 6px;font-size:0.7rem">
+            <option>Die Details</option><option>Production Data</option>
+          </select>
+          <div style="color:#64748b;font-size:0.7rem">Plant:</div>
+          <select style="background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:4px;padding:2px 6px;font-size:0.7rem">
+            <option>GEX 1</option><option>GEX 2</option>
+          </select>
+        </div>
+        <div style="background:#0f172a;border:2px dashed #334155;border-radius:6px;padding:12px;text-align:center;color:#64748b;font-size:0.7rem;margin-bottom:8px">
+          📎 Drop CSV / Excel here or click to browse
+        </div>
+        <div style="background:#1e3a5f;border-radius:6px;padding:5px;font-size:0.75rem;color:#60a5fa;text-align:center;font-weight:600">▶ Import 1,204 rows into GEX 1</div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:0.6rem">
+          <div style="background:#0f172a;padding:4px;border-radius:4px;text-align:center;color:#64748b">GEX 1<br><span style="color:#f1f5f9">1,204</span></div>
+          <div style="background:#0f172a;padding:4px;border-radius:4px;text-align:center;color:#64748b">GEX 2<br><span style="color:#f1f5f9">852</span></div>
+          <div style="background:#0f172a;padding:4px;border-radius:4px;text-align:center;color:#64748b">GEX 3<br><span style="color:#f1f5f9">—</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Single Form (Type + Plant dropdowns)</h3>
+      <p>One unified form with a "Type" dropdown (Die Details / Production) and a "Plant" dropdown. Big drop zone for the file. Status grid shows all plants at a glance below.</p>
+    </div>
+  </div>
+
+</div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, X, Eye, Trash2, ClipboardList } from 'lucide-react';
 import { ordersAPI, sampleFollowupsAPI } from '../api';
+import { formatDate } from '../utils/helpers';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
@@ -312,7 +313,7 @@ export default function SampleFollowupPage({
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.press || '—'}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.supplier || '—'}</td>
                       <td style={td}>{sf.customer || '—'}</td>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.die_received_date || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(sf.die_received_date)}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
                         <select
                           defaultValue={sf.ascona_reference || 'No'}
@@ -326,7 +327,7 @@ export default function SampleFollowupPage({
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
                         <input
                           type="date"
-                          defaultValue={sf.submission_date || ''}
+                          defaultValue={sf.submission_date ? String(sf.submission_date).split('T')[0] : ''}
                           onBlur={(e) => handleSfInlineSave(sf, 'Submission Date', e.target.value)}
                           style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                         />
@@ -334,7 +335,7 @@ export default function SampleFollowupPage({
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
                         <input
                           type="date"
-                          defaultValue={sf.sample_approval_date || ''}
+                          defaultValue={sf.sample_approval_date ? String(sf.sample_approval_date).split('T')[0] : ''}
                           onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
                           style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                         />
@@ -468,7 +469,7 @@ export default function SampleFollowupPage({
                   ) : (
                     <input
                       type={field.type}
-                      value={sampleFollowupForm[field.key] || ''}
+                      value={field.type === 'date' && sampleFollowupForm[field.key] ? String(sampleFollowupForm[field.key]).split('T')[0] : (sampleFollowupForm[field.key] || '')}
                       onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: field.type === 'number' ? parseInt(e.target.value, 10) || 0 : e.target.value })}
                       style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
                     />

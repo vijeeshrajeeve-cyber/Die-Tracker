@@ -34,7 +34,7 @@ Insert after **Thickness** column on all three views.
 
 ## Edit Flow (Design Approval tab)
 
-1. Cavity renders as `<input type="number">` — same style as existing Diameter/Thickness inputs (`isSimOrApproval = true`).
+1. Cavity renders as `<input type="number">` — same style as existing Diameter/Thickness inputs. Use a dedicated `isDesignApproval` flag (`currentFlow.status === 'PENDING FOR DESIGN APPROVAL'`) rather than `isSimOrApproval`, so Cavity is NOT editable on the Simulation tab.
 2. On **blur**, if value differs from `order['Cavity']`: capture `{ order, newValue, rect: inputEl.getBoundingClientRect() }` into `cavityEdit` state local to `FlowPage`.
 3. A **popover** renders fixed-positioned, anchored below the input:
    - Summary line: `Old → New`

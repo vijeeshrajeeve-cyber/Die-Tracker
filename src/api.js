@@ -61,7 +61,7 @@ const apiRequest = async (endpoint, options = {}) => {
             logout();
             window.location.reload();
         }
-        throw new Error(data.error || 'API request failed');
+        throw new Error(data.detail || data.error || 'API request failed');
     }
 
     return data;
