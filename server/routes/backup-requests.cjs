@@ -2,6 +2,7 @@ const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { generateBackupOrderPdf, VALUE_KEYS } = require('../services/dieOrderTemplate.cjs');
+const { generateJFilePdf } = require('../services/jFileTemplate.cjs');
 
 const router = express.Router();
 
@@ -24,6 +25,13 @@ const sanitizeDate = (value) => {
     return null;
 };
 
+const sanitizeCavity = (value) => {
+    if (value == null || value === '') return 0;
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n) || n < 0 || n > 10000) return 0;
+    return n;
+};
+
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -40,6 +48,7 @@ const requestValidation = [
     body('DIE NO').optional().customSanitizer(sanitizeString),
     body('Customer').optional().customSanitizer(sanitizeString),
     body('Press').optional().customSanitizer(sanitizeString),
+    body('Cavity').optional().isInt({ min: 0, max: 10000 }).withMessage('Invalid cavity count'),
     body('Requested Date').optional().customSanitizer(sanitizeString),
     body('Die Available').optional().customSanitizer(sanitizeString),
     body('Drawing Requested').optional().customSanitizer(sanitizeString),
@@ -65,6 +74,7 @@ router.get('/', async (req, res) => {
             'DIE NO': row.die_no,
             'Customer': row.customer,
             'Press': row.press,
+            'Cavity': row.cavity ?? 0,
             'Requested Date': row.requested_date,
             'Die Available': row.die_available,
             'Drawing Requested': row.drawing_requested,
@@ -89,16 +99,17 @@ router.post('/', requestValidation, handleValidationErrors, async (req, res) => 
 
         const result = await pool.query(`
             INSERT INTO backup_die_requests (
-                plant, die_no, customer, press, requested_date,
+                plant, die_no, customer, press, cavity, requested_date,
                 die_available, drawing_requested, ordered_date, status,
                 reason, order_received_last_year, remarks, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id
         `, [
             sanitizeString(data['Plant']),
             sanitizeString(data['DIE NO']),
             sanitizeString(data['Customer']),
             sanitizeString(data['Press']),
+            sanitizeCavity(data['Cavity']),
             sanitizeDate(data['Requested Date']),
             sanitizeDate(data['Die Available']),
             sanitizeDate(data['Drawing Requested']),
@@ -133,17 +144,18 @@ router.put('/:id', requestIdValidation, requestValidation, handleValidationError
 
         const result = await pool.query(`
             UPDATE backup_die_requests SET
-                plant = $1, die_no = $2, customer = $3, press = $4,
-                requested_date = $5, die_available = $6, drawing_requested = $7,
-                ordered_date = $8, status = $9, reason = $10,
-                order_received_last_year = $11, remarks = $12,
+                plant = $1, die_no = $2, customer = $3, press = $4, cavity = $5,
+                requested_date = $6, die_available = $7, drawing_requested = $8,
+                ordered_date = $9, status = $10, reason = $11,
+                order_received_last_year = $12, remarks = $13,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $13
+            WHERE id = $14
         `, [
             sanitizeString(data['Plant']),
             sanitizeString(data['DIE NO']),
             sanitizeString(data['Customer']),
             sanitizeString(data['Press']),
+            sanitizeCavity(data['Cavity']),
             sanitizeDate(data['Requested Date']),
             sanitizeDate(data['Die Available']),
             sanitizeDate(data['Drawing Requested']),
@@ -227,17 +239,36 @@ router.post(
         }
 
         const { id } = req.params;
-        const existsResult = await pool.query('SELECT 1 FROM backup_die_requests WHERE id = $1', [id]);
-        if (existsResult.rowCount === 0) {
+        const requestResult = await pool.query('SELECT * FROM backup_die_requests WHERE id = $1', [id]);
+        if (requestResult.rowCount === 0) {
             return res.status(404).json({ error: 'Backup request not found' });
         }
+        const backupRequest = requestResult.rows[0];
 
         try {
-            const pdfBuffer = await generateBackupOrderPdf(req.body, values);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Length', pdfBuffer.length);
-            res.setHeader('Content-Disposition', `attachment; filename="backup-die-order-${id}.pdf"`);
-            res.send(pdfBuffer);
+            const [orderSettled, jFileSettled] = await Promise.allSettled([
+                generateBackupOrderPdf(req.body, values),
+                generateJFilePdf(backupRequest, values, pool),
+            ]);
+
+            // Order PDF is required — propagate failure
+            if (orderSettled.status === 'rejected') throw orderSettled.reason;
+
+            const orderPdf = orderSettled.value.toString('base64');
+
+            let jFilePdf = null;
+            let jFileError;
+            if (jFileSettled.status === 'fulfilled') {
+                jFilePdf = jFileSettled.value.toString('base64');
+            } else {
+                jFileError = jFileSettled.reason?.message || 'J-file generation failed';
+                console.error('J-file generation error:', jFileSettled.reason);
+            }
+
+            const jFileName = (backupRequest.die_no || 'backup') + ' J.pdf';
+            const response = { orderPdf, jFilePdf, jFileName };
+            if (jFileError) response.jFileError = jFileError;
+            res.json(response);
         } catch (error) {
             console.error('Generate order PDF error:', error);
             res.status(500).json({ error: 'Failed to generate die order PDF', detail: error.message });
