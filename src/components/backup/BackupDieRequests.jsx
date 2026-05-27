@@ -360,7 +360,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       SUPPLIER: '',
       DATE: getTodayDateString(),
       DIE_SIZE: '',
-      NO_OF_CAV: '',
+      NO_OF_CAV: request['Cavity'] ? String(request['Cavity']) : '',
       PRESS: request['Press'] || '',
       SOLID: '',
       HOLLOW: '',
@@ -375,6 +375,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       FINISH_MILL: false,
       FINISH_ANODIZING: false,
       FINISH_POWDER: false,
+      PENDING_ORDER_KG: '0',
     });
     setShowOrderModal(true);
   };
@@ -419,13 +420,33 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       }
 
       const file = await orderFileHandle.getFile();
-      const generated = await backupRequestsAPI.generateOrderPdf(orderRow.id, file, orderValues);
+      const { orderPdfBlob, jFilePdfBlob, jFileName, jFileError } =
+        await backupRequestsAPI.generateOrderPdf(orderRow.id, file, orderValues);
+
+      // Write die-order stamp back to the chosen file
       const writable = await orderFileHandle.createWritable();
-      await writable.write(generated);
+      await writable.write(orderPdfBlob);
       await writable.close();
 
+      // Trigger J-file browser download
+      if (jFilePdfBlob) {
+        const url = URL.createObjectURL(jFilePdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = jFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
       setShowOrderModal(false);
-      alert(`Die order saved to "${orderFileHandle.name}". The original file has been replaced.`);
+
+      if (jFileError) {
+        alert(`Order PDF saved to "${orderFileHandle.name}".\n\nWarning: J-file could not be generated: ${jFileError}`);
+      } else {
+        alert(`Die order saved to "${orderFileHandle.name}" and J-file downloaded as "${jFileName}".`);
+      }
     } catch (error) {
       setOrderError(error.message || String(error));
     } finally {
@@ -665,6 +686,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                         ? `${request['Press']}${pressCodeByName[request['Press']] ? ` (${pressCodeByName[request['Press']]})` : ''}`
                         : '—'}
                     </td>
+                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, fontFamily: 'monospace', textAlign: 'center' }}>
+                      {request['Cavity'] || '—'}
+                    </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
                       {formatDate(request['Requested Date'])}
                     </td>
@@ -850,6 +874,19 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Cavity */}
+              <div>
+                <label style={labelStyle}>Cavity</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData['Cavity']}
+                  onChange={(e) => setFormData({ ...formData, 'Cavity': e.target.value })}
+                  style={inputStyle}
+                  placeholder="No. of cavities"
+                />
               </div>
 
               {/* Requested Date */}
@@ -1106,6 +1143,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 <label style={labelStyle}>PROFILE WEIGHT START %</label>
                 <input type="text" value={orderValues.PROFILE_WEIGHT_PCT} onChange={(e) => setOrderValues({ ...orderValues, PROFILE_WEIGHT_PCT: e.target.value })} style={inputStyle} placeholder="e.g. 85" />
               </div>
+              <div>
+                <label style={labelStyle}>PENDING ORDER (KG)</label>
+                <input type="text" value={orderValues.PENDING_ORDER_KG} onChange={(e) => setOrderValues({ ...orderValues, PENDING_ORDER_KG: e.target.value })} style={inputStyle} placeholder="e.g. 16280" />
+              </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>FINISH</label>
@@ -1137,7 +1178,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             )}
 
             <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: theme.textMuted }}>
-              The generated die-order template will be stamped on the first page of the selected PDF, and the file will be overwritten in place.
+              The die-order template will be stamped onto the first page of the selected PDF (overwritten in place). The J-file (BACK UP DIE ORDERING FORM) will be auto-generated and downloaded as a separate file.
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: `1px solid ${theme.cardBorder}` }}>
