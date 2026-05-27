@@ -297,6 +297,14 @@ export const existingDataAPI = {
     },
 };
 
+// Convert a base64 string to a Blob (used for J-file and order PDF download)
+const base64ToBlob = (b64, mimeType) => {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+};
+
 // Backup Requests API
 export const backupRequestsAPI = {
     getAll: async () => {
@@ -323,9 +331,9 @@ export const backupRequestsAPI = {
         });
     },
 
-    // Send a profile-drawing PDF + filled-in template values to the backend;
-    // returns the generated die-order PDF as a Blob so the caller can write
-    // it back to the user's chosen file via the File System Access API.
+    // Send a profile-drawing PDF + filled-in template values to the backend.
+    // Returns { orderPdfBlob, jFilePdfBlob, jFileName, jFileError } where
+    // jFilePdfBlob is null and jFileError is set if J-file generation failed.
     generateOrderPdf: async (id, pdfFileOrBlob, values) => {
         const token = getToken();
         const response = await fetch(`${API_BASE_URL}/backup-requests/${id}/generate-order-pdf`, {
@@ -350,7 +358,13 @@ export const backupRequestsAPI = {
             } catch (_) { /* response wasn't JSON */ }
             throw new Error(errMsg);
         }
-        return await response.blob();
+        const data = await response.json();
+        return {
+            orderPdfBlob: base64ToBlob(data.orderPdf, 'application/pdf'),
+            jFilePdfBlob: data.jFilePdf ? base64ToBlob(data.jFilePdf, 'application/pdf') : null,
+            jFileName: data.jFileName,
+            jFileError: data.jFileError,
+        };
     },
 };
 
