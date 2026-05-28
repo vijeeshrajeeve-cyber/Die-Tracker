@@ -73,14 +73,44 @@ Dies with `DescrStatus` indicating scrapped or inactive are excluded.
 
 ### 4.2 Demand Forecast
 
-For each active die:
+Demand is estimated using two complementary signals that are combined to produce a single conservative estimate.
 
-1. Filter order booking for rows where `OrderLineStatus` is pending/open and `DateDelivery` (or `DateRevisedDelivery` if set) falls within the next **90 days** (configurable: `FORECAST_WINDOW_DAYS` in `config.py`).
+#### 4.2.1 Confirmed Demand (orders already booked)
+
+1. Filter order booking for rows where `OrderLineStatus` is pending/open and `DateDelivery` (or `DateRevisedDelivery` if set) falls within the forecast horizon (`lead_time_days × SAFETY_FACTOR` days from today).
 2. Map `IDProfile` → `IDDie` via die list. When multiple active dies share the same `IDProfile`, demand is assigned to the die whose `IDPressPrimary` matches the press most recently used for that profile in extrusion data. If still tied, demand is split proportionally by `NumCavities`.
-3. Sum `QtyKg` per die → `projected_demand_kg`.
-4. `forecast_daily_demand = projected_demand_kg ÷ FORECAST_WINDOW_DAYS`.
+3. Sum `QtyKg` per die → `confirmed_demand_kg`.
 
-When both historical consumption and forecast demand are available, the alert uses `max(avg_daily_consumption, forecast_daily_demand)` as the effective demand rate, ensuring the stricter of the two signals drives the alert.
+#### 4.2.2 Frequency-Predicted Demand (orders not yet booked)
+
+Using the full order booking history per profile:
+
+1. For each `IDProfile`, extract all historical orders sorted by `TimeStampCreation`.
+2. Compute intervals between consecutive orders → `avg_interval_days`, `stddev_interval_days`. Requires at least **3 historical orders** to activate (configurable: `MIN_ORDERS_FOR_FREQUENCY`); profiles with fewer fall back to confirmed-only.
+3. `days_since_last_order = today − max(TimeStampCreation)` for the profile.
+4. `days_until_next_predicted = max(0, avg_interval_days − days_since_last_order)`.
+5. Count predicted orders in the forecast horizon:
+   `predicted_order_count = floor((horizon_days − days_until_next_predicted) / avg_interval_days) + 1` (capped at 0 if `days_until_next_predicted > horizon_days`).
+6. `avg_order_kg = mean(QtyKg)` from order history for this profile.
+7. `frequency_predicted_kg = predicted_order_count × avg_order_kg`.
+
+#### 4.2.3 Combined Demand Signal
+
+To avoid double-counting orders that are both predicted by frequency and already confirmed in the booking system:
+
+```
+unbooked_predicted_kg = max(0, frequency_predicted_kg − confirmed_demand_kg)
+combined_demand_kg    = confirmed_demand_kg + unbooked_predicted_kg
+                      = max(confirmed_demand_kg, frequency_predicted_kg)
+```
+
+The effective demand rate used in the alert engine:
+
+```
+effective_daily_demand = combined_demand_kg ÷ horizon_days
+```
+
+This ensures the model uses whichever signal is stricter — confirmed bookings when they are larger than the frequency baseline (e.g. an unexpectedly large order), or the frequency prediction when bookings lag behind the historical pattern.
 
 ### 4.3 Alert Logic
 
@@ -152,11 +182,12 @@ Results are written to `reports/backtest_YYYY-MM-DD.xlsx`.
 
 | Scenario | Description |
 |---|---|
-| `high_demand` | Large order spike for a profile — alert should trigger earlier |
-| `low_demand` | No pending orders — alert should relax relative to consumption-only baseline |
+| `high_demand` | Large confirmed order spike for a profile — alert should trigger earlier |
+| `low_demand` | No confirmed orders AND frequency model predicts next order is far away — alert should relax |
+| `frequency_overrides_confirmed` | No confirmed orders but frequency model predicts an order is imminent — alert should still fire |
 | `slow_supplier` | Supplier with >90-day lead time — RED threshold widens |
 | `high_failure_die` | Die from supplier with poor failure history — scored lower |
-| `cold_start` | New profile with no extrusion history — model falls back to consumption = 0, demand-only |
+| `cold_start` | New profile with <3 historical orders — frequency model inactive, confirmed-only fallback |
 | `multi_die_same_profile` | Two active dies for one profile — model alerts on the one closer to exhaustion |
 
 Each scenario is a self-contained function in `testing/scenarios.py` that injects synthetic overrides on top of real data, so results are reproducible without modifying source files.
@@ -183,9 +214,10 @@ Output to console is a formatted table. All runs also write to `reports/`.
 ```python
 DATA_DIR = r"C:\path\to\excel\files"   # absolute path to Excel data folder
 
-FORECAST_WINDOW_DAYS = 90
-SAFETY_FACTOR = 1.5
-MIN_SUPPLIER_DIES = 2
+FORECAST_WINDOW_DAYS = 90       # days of confirmed-order lookahead
+SAFETY_FACTOR = 1.5             # AMBER threshold multiplier on lead time
+MIN_SUPPLIER_DIES = 2           # minimum dies per supplier to include in scoring
+MIN_ORDERS_FOR_FREQUENCY = 3    # minimum historical orders to activate frequency model
 
 SUPPLIER_WEIGHTS = {
     "die_life":      1/6,
