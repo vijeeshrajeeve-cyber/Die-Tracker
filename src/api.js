@@ -147,7 +147,7 @@ export const usersAPI = {
 // Orders API
 export const ordersAPI = {
     // Load all orders (high limit) — used by dashboard, analytics, flow pages
-    getAll: async ({ page = 1, limit = 500 } = {}) => {
+    getAll: async ({ page = 1, limit = 5000 } = {}) => {
         return apiRequest(`/orders?page=${page}&limit=${limit}`);
     },
 
