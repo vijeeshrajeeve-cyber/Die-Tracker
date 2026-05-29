@@ -1085,6 +1085,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               <InfoRow label="Plant" field="Plant" value={currentOrder.Plant} type="select" options={plants.map(p => p.name)} />
               <InfoRow label="Type" field="TYPE" value={currentOrder.TYPE} type="select" options={typeOptions} />
               <InfoRow label="Die Size" field="Die Size" value={currentOrder['Die Size']} />
+              <InfoRow label="Cavity" field="Cavity" value={currentOrder['Cavity'] || 0} />
               <InfoRow label="Mandrels/Cav" field="Mandrels per Cavity" value={currentOrder['Mandrels per Cavity'] || 0} />
               <InfoRow label="Total Mandrels" field="Total Mandrels" value={currentOrder['Total Mandrels'] || 0} />
               <InfoRow label="Shipment" field="Type of shipment" value={currentOrder['Type of shipment']} type="select" options={shipmentOptions} />

@@ -216,15 +216,13 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
 
             // ── Extract header information from known Y positions ──
 
-            // PR Number - look for "PR NNNN-NN" pattern
+            // Order number - extracted from "PR NNNN-NN" reference on the PI document (e.g. "8469-26")
+            // This becomes the Order No in the system; the separate PR Number field is filled later by the user.
             let prNumber = null;
-            let orderNo = null;
             for (const line of lines) {
                 const prMatch = line.text.match(/PR\s*(\d{4}[-]\d{1,2})/i);
                 if (prMatch) {
                     prNumber = prMatch[1];
-                    const noMatch = prNumber.match(/(\d{4})/);
-                    orderNo = noMatch ? noMatch[1] : null;
                     break;
                 }
             }
@@ -461,7 +459,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     'id': existingOrder?.id || null,
                     'isExisting': !!existingOrder,
                     'Plant': row.plant || existingOrder?.Plant || 'GEX 1',
-                    'Order No': orderNo || existingOrder?.['Order No'] || `PI-${Date.now().toString().slice(-6)}`,
+                    'Order No': prNumber || existingOrder?.['Order No'] || null,
                     'DIE NO': row.dieNo,
                     'TYPE': row.type || existingOrder?.TYPE || null,
                     'Die Size': row.dieSize || existingOrder?.['Die Size'] || 'N/A',
@@ -477,7 +475,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     'Design Approved Date': existingOrder?.['Design Approved Date'] || null,
                     'Delay': existingOrder?.Delay || 0,
                     'PR Entry': existingOrder?.['PR Entry'] || null,
-                    'PR Number': prNumber || existingOrder?.['PR Number'] || null,
+                    'PR Number': existingOrder?.['PR Number'] || null,
                     'Customer Name': existingOrder?.['Customer Name'] || '',
                     'Oracle Entry': existingOrder?.['Oracle Entry'] || null,
                     'Supplier': supplier,
@@ -500,7 +498,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
             return {
                 fileName: file.name,
                 orders,
-                headerInfo: { prNumber, orderNo, supplier, shipmentType, orderDate },
+                headerInfo: { prNumber, supplier, shipmentType, orderDate },
                 rawText: page1Text.substring(0, 500),
             };
         } catch (err) {
@@ -689,7 +687,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                             <span key={i}>
                                                 <span style={{ color: '#94A3B8' }}>{f.name}</span>
                                                 {' — '}{f.count} die{f.count !== 1 ? 's' : ''}
-                                                {f.prNumber && ` · PR ${f.prNumber}`}
+                                                {f.prNumber && ` · Order No ${f.prNumber}`}
                                                 {f.supplier && f.supplier !== 'UNKNOWN' && ` · ${f.supplier}`}
                                             </span>
                                         ))}

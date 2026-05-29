@@ -257,6 +257,7 @@ const initializeDatabase = async () => {
         die_no TEXT,
         customer TEXT,
         press TEXT,
+        cavity INTEGER DEFAULT 0,
         requested_date TEXT,
         die_available TEXT,
         drawing_requested TEXT,
@@ -670,59 +671,6 @@ const initializeDatabase = async () => {
       console.log('Converted TEXT date columns to DATE type');
     }
 
-    // Migration: UNIQUE constraint on die_orders.order_no
-    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='unique_order_no_v1'`)).rows.length) {
-      // Mark duplicate order_no rows as CANCELLED (keep lowest id)
-      await client.query(`
-        UPDATE die_orders SET status = 'CANCELLED'
-        WHERE id NOT IN (
-          SELECT MIN(id) FROM die_orders WHERE order_no IS NOT NULL AND order_no != '' GROUP BY order_no
-        ) AND order_no IS NOT NULL AND order_no != ''
-      `);
-
-      const constraintExists = await client.query(`
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name='die_orders' AND constraint_name='uq_order_no'
-      `);
-      if (constraintExists.rows.length === 0) {
-        await client.query(`ALTER TABLE die_orders ADD CONSTRAINT uq_order_no UNIQUE (order_no)`);
-      }
-
-      await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v1')`);
-      console.log('Added UNIQUE constraint on die_orders.order_no');
-    }
-
-    // Migration: replace plain UNIQUE constraint with partial index (exclude NULL + empty)
-    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='unique_order_no_v2'`)).rows.length) {
-      const constraintExists = await client.query(`
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name='die_orders' AND constraint_name='uq_order_no'
-      `);
-      if (constraintExists.rows.length > 0) {
-        await client.query(`ALTER TABLE die_orders DROP CONSTRAINT uq_order_no`);
-      }
-      await client.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_order_no
-        ON die_orders (order_no)
-        WHERE order_no IS NOT NULL AND order_no <> ''
-      `);
-      await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v2')`);
-      console.log('Replaced uq_order_no constraint with partial unique index');
-    }
-
-    // Migration: remove all uniqueness on order_no (one order_no can span multiple rows)
-    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='unique_order_no_v3'`)).rows.length) {
-      const constraintExists = await client.query(`
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name='die_orders' AND constraint_name='uq_order_no'
-      `);
-      if (constraintExists.rows.length > 0) {
-        await client.query(`ALTER TABLE die_orders DROP CONSTRAINT uq_order_no`);
-      }
-      await client.query(`DROP INDEX IF EXISTS uq_order_no`);
-      await client.query(`INSERT INTO app_migrations (id) VALUES ('unique_order_no_v3')`);
-      console.log('Removed all uniqueness restriction on die_orders.order_no');
-    }
 
     console.log('Database initialized successfully');
   } catch (error) {

@@ -66,10 +66,16 @@ export const normalizeColumnName = (col) => {
   return mappings[col.toLowerCase().trim()] || col;
 };
 
-// Parse date in DD/MM/YYYY format
+// Parse date in DD/MM/YYYY or YYYY-MM-DD format, returning YYYY-MM-DD
 export const parseDateDMY = (dateStr) => {
   if (!dateStr) return null;
-  // Support DD/MM/YYYY, DD-MM-YYYY, and DD.MM.YYYY formats
+  // Handle ISO / YYYY-MM-DD format (e.g. "2026-05-21") — return as-is after normalising separator
+  const isoMatch = dateStr.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  // Handle DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY formats
   const match = dateStr.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
   if (match) {
     const [, day, month, year] = match;

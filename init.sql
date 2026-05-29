@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS backup_die_requests (
     die_no TEXT,
     customer TEXT,
     press TEXT,
+    cavity INTEGER DEFAULT 0,
     requested_date TEXT,
     die_available TEXT,
     drawing_requested TEXT,

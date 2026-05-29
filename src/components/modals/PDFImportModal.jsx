@@ -124,8 +124,8 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
         if (upper.includes('SUPPLIER')) {
           // Count non-label, non-separator content after SUPPLIER
           const afterLabels = line.text.replace(/SUPPLIER|DATE|[-:\s]/gi, '').trim();
-          // If there's a date or supplier name, values are filled
-          if (/\d{1,2}[/.-]\d{1,2}[/.-]\d{4}/.test(line.text) || afterLabels.length >= 2) {
+          // If there's a date (DD/MM/YYYY or YYYY-MM-DD) or supplier name, values are filled
+          if (/(\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/.test(line.text) || afterLabels.length >= 2) {
             labelsHaveValues = true;
           }
           break;
@@ -195,7 +195,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
 
           // Extract date from supplier line or adjacent lines
           for (let j = Math.max(0, i - 1); j <= Math.min(i + 2, lines.length - 1); j++) {
-            const dm = lines[j].text.match(/(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})/);
+            const dm = lines[j].text.match(/(\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/);
             if (dm && !requestedDate) {
               requestedDate = parseDateDMY(dm[1]);
               break;
@@ -275,23 +275,38 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
         // BOLSTER NO. / INSERT NO. extraction (Format A)
         if ((upperLine.includes('BOLSTER') || upperLine.includes('INSERT')) && !bolsterNo && !insertNo) {
           // Extract Bolster No. value
-          const bolsterMatch = lineText.match(/BOLSTER\s*(?:No\.?|NO\.?)\s*[-:.]?\s*([A-Za-z0-9-]+)/i);
-          if (bolsterMatch && bolsterMatch[1] !== '-') {
+          // NOTE: separator can be comma (e.g. "BOLSTER No,") — include ',' in the set.
+          // Also guard against capturing the next label word (e.g. "INSERT") when the
+          // bolster column is empty and the INSERT label immediately follows.
+          const bolsterMatch = lineText.match(/BOLSTER\s*(?:No\.?|NO\.?)\s*[-:.,]?\s*([A-Za-z0-9-]+)/i);
+          if (
+            bolsterMatch &&
+            bolsterMatch[1] !== '-' &&
+            // Reject known label words that appear when bolster value is blank
+            !/^(INSERT|BOLSTER|SIZE|SOLID|HOLLOW|NO|YES|OK|PRESS|DATE|SUPPLIER|REQUESTED|MODE|FINISH|CAV)$/i.test(bolsterMatch[1])
+          ) {
             bolsterNo = bolsterMatch[1].trim();
           }
           // Extract Insert No. value
-          const insertMatch = lineText.match(/INSERT\s*(?:No\.?|NO\.?)\s*[-:.]?\s*([A-Za-z0-9-]+)/i);
+          // NOTE: separator can be comma (e.g. "INSERT No,") — include ',' in the set.
+          const insertMatch = lineText.match(/INSERT\s*(?:No\.?|NO\.?)\s*[-:.,]?\s*([A-Za-z0-9-]+)/i);
           if (insertMatch && insertMatch[1] !== '-') {
             insertNo = insertMatch[1].trim();
           }
           // Check surrounding lines for values (may be on next line)
           if (!bolsterNo && !insertNo && i + 1 < lines.length) {
             const nextText = lines[i + 1].text.trim();
-            // Look for bolster/insert IDs like "I-30602", "B-12345" or plain alphanumeric
-            const idMatch = nextText.match(/([A-Za-z][-]?\d{3,6})/i);
-            if (idMatch) {
-              if (upperLine.includes('INSERT')) insertNo = idMatch[1].trim();
-              else bolsterNo = idMatch[1].trim();
+            // Guard: skip SIZE lines — "SIZE SIZE 460X150" would cause the regex below
+            // to spuriously match "X150" (the X in a NNNxNNN size) as an insert ID.
+            const nextUpper = nextText.toUpperCase();
+            if (!nextUpper.startsWith('SIZE') && !nextUpper.startsWith('DIE SIZE')) {
+              // Look for bolster/insert IDs like "I-30602", "B-12345" or plain alphanumeric
+              // Require the letter NOT to be immediately preceded by a digit (excludes X in 460X150)
+              const idMatch = nextText.match(/(?<!\d)([A-Za-z][-]?\d{3,6})/i);
+              if (idMatch) {
+                if (upperLine.includes('INSERT')) insertNo = idMatch[1].trim();
+                else bolsterNo = idMatch[1].trim();
+              }
             }
           }
         }
@@ -384,7 +399,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
         if (anchorIdx > 0) {
           const supplierLine = lines[anchorIdx - 1].text.trim();
           // Extract date first
-          const dateMatch = supplierLine.match(/(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})/);
+          const dateMatch = supplierLine.match(/(\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/);
           if (dateMatch) requestedDate = parseDateDMY(dateMatch[1]);
           // Supplier = text before the date (or the whole line if no date)
           const supplierPart = dateMatch ? supplierLine.replace(dateMatch[0], '').replace(/[-\s]+$/, '').trim() : supplierLine;
@@ -480,7 +495,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           }
 
           // Delivery date: DD/MM/YYYY or DD-MM-YYYY
-          const dateMatch = val.match(/(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})/);
+          const dateMatch = val.match(/(\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/);
           if (dateMatch) {
             // Skip dates that look like old revision dates (< 2020)
             const yearMatch = dateMatch[1].match(/(\d{4})/);
@@ -552,7 +567,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
     // Fallback: date from any line
     if (!requestedDate) {
       for (const line of lines) {
-        const dm = line.text.match(/(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})/);
+        const dm = line.text.match(/(\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/);
         if (dm) {
           const yearMatch = dm[1].match(/(\d{4})/);
           if (yearMatch && parseInt(yearMatch[1], 10) >= 2020) {
@@ -746,9 +761,13 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
   const handleEditOrder = (index, field, value) => {
     setPreview(prev => ({
       ...prev,
-      orders: prev.orders.map((order, i) =>
-        i === index ? { ...order, [field]: value } : order
-      ),
+      orders: prev.orders.map((order, i) => {
+        if (i !== index) return order;
+        if (typeof field === 'object' && field !== null) {
+          return { ...order, ...field };
+        }
+        return { ...order, [field]: value };
+      }),
     }));
   };
 
@@ -937,7 +956,23 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               <option value="H">H - Hold</option>
                             </select>
                           </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Cavity'] || order._cavity || '-'}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              value={order['Cavity'] || order._cavity || 0}
+                              onChange={(e) => {
+                                const cav = parseInt(e.target.value, 10) || 0;
+                                const mpc = order['Mandrels per Cavity'] || 0;
+                                handleEditOrder(index, {
+                                  'Cavity': cav,
+                                  _cavity: cav,
+                                  'Total Mandrels': mpc * (cav || 1),
+                                });
+                              }}
+                              style={{ width: '50px', padding: '4px 6px', background: '#334155', border: 'none', borderRadius: '4px', color: '#F1F5F9', fontSize: '0.8rem', textAlign: 'center' }}
+                            />
+                          </td>
                           <td style={{ padding: '10px 12px' }}>
                             <input
                               type="number"
@@ -946,8 +981,10 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               onChange={(e) => {
                                 const mpc = parseInt(e.target.value, 10) || 0;
                                 const cavities = order['Cavity'] || order._cavity || 1;
-                                handleEditOrder(index, 'Mandrels per Cavity', mpc);
-                                handleEditOrder(index, 'Total Mandrels', mpc * cavities);
+                                handleEditOrder(index, {
+                                  'Mandrels per Cavity': mpc,
+                                  'Total Mandrels': mpc * cavities,
+                                });
                               }}
                               style={{ width: '50px', padding: '4px 6px', background: '#334155', border: 'none', borderRadius: '4px', color: '#F1F5F9', fontSize: '0.8rem', textAlign: 'center' }}
                             />

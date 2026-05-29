@@ -138,7 +138,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
   const tabBtnStyle = (active) => ({
     padding: '8px 20px', borderRadius: '8px', border: 'none',
     background: active ? (theme.primary || '#3B82F6') : 'transparent',
-    color: active ? 'white' : theme.textDim,
+    color: active ? (theme.primaryText || '#ffffff') : theme.textDim,
     cursor: 'pointer', fontWeight: active ? 600 : 400, fontSize: '0.875rem',
     transition: 'all 0.15s ease',
   });
