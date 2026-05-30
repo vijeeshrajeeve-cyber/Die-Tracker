@@ -633,7 +633,7 @@ const initializeDatabase = async () => {
         }
       }
 
-      const backupDateCols = ['requested_date','die_available','drawing_requested','ordered_date'];
+      const backupDateCols = ['requested_date','drawing_requested','ordered_date'];
       for (const col of backupDateCols) {
         const exists = await client.query(
           `SELECT data_type FROM information_schema.columns WHERE table_name='backup_die_requests' AND column_name=$1`, [col]
@@ -669,6 +669,25 @@ const initializeDatabase = async () => {
 
       await client.query(`INSERT INTO app_migrations (id) VALUES ('date_columns_to_date_v1')`);
       console.log('Converted TEXT date columns to DATE type');
+    }
+
+    // die_available holds labels/counts (e.g. Yes/No), not calendar dates
+    if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='die_available_text_v1'`)).rows.length) {
+      const dieAvailableCol = await client.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_name='backup_die_requests' AND column_name='die_available'`
+      );
+      if (dieAvailableCol.rows.length > 0 && dieAvailableCol.rows[0].data_type === 'date') {
+        await client.query(`
+          ALTER TABLE backup_die_requests
+            ALTER COLUMN die_available TYPE TEXT
+            USING CASE
+              WHEN die_available IS NULL THEN NULL
+              ELSE die_available::TEXT
+            END
+        `);
+      }
+      await client.query(`INSERT INTO app_migrations (id) VALUES ('die_available_text_v1')`);
+      console.log('Ensured backup_die_requests.die_available is TEXT');
     }
 
 

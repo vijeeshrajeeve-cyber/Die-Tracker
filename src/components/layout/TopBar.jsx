@@ -188,10 +188,12 @@ const TopBar = ({
                         </div>
                     )}
                 </div>
-                <button onClick={() => setShowImportModal(true)} title="Import Excel/CSV" style={actionButtonStyle()}>
-                    <Upload size={18} />
-                    <span style={actionLabelStyle()}>Import</span>
-                </button>
+                {user?.role === 'admin' && (
+                    <button onClick={() => setShowImportModal(true)} title="Import Excel/CSV" style={actionButtonStyle()}>
+                        <Upload size={18} />
+                        <span style={actionLabelStyle()}>Import</span>
+                    </button>
+                )}
                 <button onClick={exportData} title="Export Data" style={actionButtonStyle()}>
                     <Download size={18} />
                     <span style={actionLabelStyle()}>Export</span>

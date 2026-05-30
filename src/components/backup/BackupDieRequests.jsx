@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
-import { backupRequestsAPI, profilesAPI, pressesAPI, extractProfileFromDie } from '../../api';
+import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, extractProfileFromDie } from '../../api';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
 
@@ -27,8 +27,6 @@ const COLUMNS = [
   { key: 'Plant', label: 'PLANT' },
   { key: 'DIE NO', label: 'DIE NO' },
   { key: 'Customer', label: 'CUSTOMER' },
-  { key: 'Press', label: 'PRESS' },
-  { key: 'Cavity', label: 'CAV' },
   { key: 'Requested Date', label: 'REQUESTED DATE' },
   { key: 'Die Available', label: 'DIE AVAILABLE' },
   { key: 'Drawing Requested', label: 'DRAWING REQUESTED' },
@@ -84,6 +82,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [presses, setPresses] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [selectedRequestIds, setSelectedRequestIds] = useState([]);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderRow, setOrderRow] = useState(null);
@@ -99,6 +98,14 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     pressesAPI.getAll()
       .then((rows) => { if (!cancelled) setPresses(rows || []); })
       .catch((err) => console.error('Failed to load presses:', err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    suppliersAPI.getAll()
+      .then((rows) => { if (!cancelled) setSuppliers(rows || []); })
+      .catch((err) => console.error('Failed to load suppliers:', err));
     return () => { cancelled = true; };
   }, []);
 
@@ -228,9 +235,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(request['Plant'])}</td>
             <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(press)}</td>
             <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(request['Customer'])}</td>
-            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(request['Requested Date'])}</td>
-            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(request['Reason'])}</td>
-            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(request['Remarks'])}</td>
+            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(formatDate(request['Requested Date']))}</td>
           </tr>`;
       })
       .join('');
@@ -251,8 +256,6 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Press</th>
               <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Customer</th>
               <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Requested Date</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Reason</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Remarks</th>
             </tr>
           </thead>
           <tbody>${requestRows}</tbody>
@@ -682,18 +685,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                       {request['Customer'] || '—'}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {request['Press']
-                        ? `${request['Press']}${pressCodeByName[request['Press']] ? ` (${pressCodeByName[request['Press']]})` : ''}`
-                        : '—'}
-                    </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, fontFamily: 'monospace', textAlign: 'center' }}>
-                      {request['Cavity'] || '—'}
-                    </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
                       {formatDate(request['Requested Date'])}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {formatDate(request['Die Available'])}
+                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted }}>
+                      {request['Die Available'] || '—'}
                     </td>
                     <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
                       {formatDate(request['Drawing Requested'])}
@@ -1078,7 +1073,27 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
               <div>
                 <label style={labelStyle}>SUPPLIER</label>
-                <input type="text" value={orderValues.SUPPLIER} onChange={(e) => setOrderValues({ ...orderValues, SUPPLIER: e.target.value })} style={inputStyle} />
+                <select
+                  value={orderValues.SUPPLIER}
+                  onChange={(e) => {
+                    const supplierName = e.target.value;
+                    const matched = suppliers.find((s) => s.name === supplierName);
+                    setOrderValues((prev) => ({
+                      ...prev,
+                      SUPPLIER: supplierName,
+                      SHIPMENT: matched?.shipment_mode || prev.SHIPMENT,
+                    }));
+                  }}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">Select Supplier</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id ?? s.name} value={s.name}>{s.name}</option>
+                  ))}
+                  {orderValues.SUPPLIER && !suppliers.some((s) => s.name === orderValues.SUPPLIER) && (
+                    <option value={orderValues.SUPPLIER}>{orderValues.SUPPLIER}</option>
+                  )}
+                </select>
               </div>
               <div>
                 <label style={labelStyle}>DATE</label>

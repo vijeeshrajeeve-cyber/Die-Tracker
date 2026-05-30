@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Search, X, Eye, Trash2, ClipboardList } from 'lucide-react';
+import { Search, X, Eye, Trash2, ClipboardList, Download } from 'lucide-react';
 import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { formatDate } from '../utils/helpers';
+import { exportToExcel } from '../utils/exportExcel';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
@@ -199,6 +200,30 @@ export default function SampleFollowupPage({
     return matchesStatus && matchesPlant && matchesSearch;
   });
 
+  const handleExport = () => {
+    exportToExcel({
+      rows: filteredFollowups,
+      filename: 'sample_followups',
+      sheetName: 'Sample Followup',
+      columns: [
+        { key: 'die', label: 'Die' },
+        { key: 'profile', label: 'Profile' },
+        { key: 'press', label: 'Plant' },
+        { key: 'supplier', label: 'Supplier' },
+        { key: 'customer', label: 'Customer' },
+        { key: 'die_received_date', label: 'Die Received Date', format: 'date' },
+        { key: 'ascona_reference', label: 'Ascona Ref', format: (v) => v || 'No' },
+        { key: 'submission_date', label: 'Submission Date', format: 'date' },
+        { key: 'sample_approval_date', label: 'Sample Approval Date', format: 'date' },
+        { key: 'delay_days', label: 'Delay Days', format: (_, sf) => computeSfDelay(sf.die_received_date, sf.submission_date) },
+        { key: 'status', label: 'Status', format: (v) => v || 'Pending' },
+        { key: 'no_of_trial', label: 'No. of Trial', format: (v) => v || 0 },
+        { key: 'remark', label: 'Remark' },
+        { key: 'corrector', label: 'Corrector' },
+      ],
+    });
+  };
+
   return (
     <div>
       {/* Header */}
@@ -224,6 +249,14 @@ export default function SampleFollowupPage({
               style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }}
             />
           </div>
+          <button
+            onClick={handleExport}
+            disabled={filteredFollowups.length === 0}
+            style={{ padding: '10px 16px', background: 'linear-gradient(135deg, #10B981, #059669)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.9rem', cursor: filteredFollowups.length === 0 ? 'not-allowed' : 'pointer', opacity: filteredFollowups.length === 0 ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: '8px' }}
+            title="Export the currently filtered followups to Excel"
+          >
+            <Download size={16} /> Export
+          </button>
           <button
             onClick={() => { setEditingSampleFollowup(null); setSampleFollowupForm(EMPTY_FORM); setShowSampleFollowupForm(true); }}
             style={{ padding: '10px 20px', background: sfColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: `0 4px 12px ${sfColor}40` }}

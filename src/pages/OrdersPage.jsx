@@ -1,9 +1,10 @@
 import React from 'react';
-import { ChevronUp, ChevronDown, Plane, Truck, Eye, Trash2, ChevronLeft, ChevronRight, History } from 'lucide-react';
+import { ChevronUp, ChevronDown, Plane, Truck, Eye, Trash2, ChevronLeft, ChevronRight, History, Download } from 'lucide-react';
 import { STATUS_CONFIG } from '../utils/constants';
 import { ordersAPI } from '../api';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import { parseDateDMY, formatDate } from '../utils/helpers';
+import { exportToExcel } from '../utils/exportExcel';
 
 const StatusBadge = ({ status }) => {
   const config = STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
@@ -83,6 +84,39 @@ export default function OrdersPage({
     );
   };
 
+  const handleExport = () => {
+    const leadTime = (startKey) => (_, order) => {
+      const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
+      const days = calcLeadDays(order[startKey], receivedDate);
+      return days !== null ? days : '';
+    };
+    exportToExcel({
+      rows: filteredData,
+      filename: 'die_orders',
+      sheetName: 'Die Orders',
+      columns: [
+        { key: 'DIE NO', label: 'Die No' },
+        { key: 'Order No', label: 'Order No' },
+        { key: 'Plant', label: 'Plant' },
+        { key: 'TYPE', label: 'Type' },
+        { key: 'Die Size', label: 'Diameter', format: (v) => parseDieSize(v).diameter || '' },
+        { key: 'Die Size', label: 'Thickness', format: (v) => parseDieSize(v).thickness || '' },
+        { key: 'Cavity', label: 'Cavity' },
+        { key: 'Supplier', label: 'Supplier' },
+        { key: 'Customer Name', label: 'Customer' },
+        { key: 'PR Number', label: 'PR Number' },
+        { key: 'Mandrels per Cavity', label: 'Mandrels per Cavity' },
+        { key: 'Total Mandrels', label: 'Total Mandrels' },
+        { key: 'Die Requested Date', label: 'Requested Date', format: 'date' },
+        { key: 'Type of shipment', label: 'Shipment' },
+        { key: 'STATUS', label: 'Status', format: (v) => STATUS_CONFIG[v]?.label || v || '' },
+        { key: 'Ordered date', label: 'Delivery Lead Time (days)', format: leadTime('Ordered date') },
+        { key: 'Design Approved Date', label: 'Mfg Lead Time (days)', format: leadTime('Design Approved Date') },
+        { key: 'STATUS', label: 'Days in Stage', format: (_, order) => { const d = daysInStage(order); return d === null ? '' : d; } },
+      ],
+    });
+  };
+
   const filterBar = { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
   const filterRow = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' };
   const filterSelect = { padding: '10px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px', transition: 'all 0.15s', outline: 'none' };
@@ -104,7 +138,17 @@ export default function OrdersPage({
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: `1px solid ${theme.cardBorder}` }}>
           <span style={{ fontSize: '0.875rem', color: theme.textMuted }}>Showing <strong style={{ color: theme.text }}>{filteredData.length}</strong> orders</span>
-          <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <button
+              onClick={handleExport}
+              disabled={filteredData.length === 0}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', fontSize: '0.8rem', fontWeight: 600, color: 'white', background: 'linear-gradient(135deg, #10B981, #059669)', border: 'none', borderRadius: '8px', cursor: filteredData.length === 0 ? 'not-allowed' : 'pointer', opacity: filteredData.length === 0 ? 0.5 : 1 }}
+              title="Export the currently filtered orders to Excel"
+            >
+              <Download size={14} /> Export to Excel
+            </button>
+            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
+          </div>
         </div>
       </div>
       <div style={tableContainer}>

@@ -3,7 +3,7 @@ import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Fac
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -48,8 +48,9 @@ const ERP_PRESS_CODE_MAP = {
   '4': 'D',
   '5': 'E',
   '6': 'F',
-  '7': '25',
-  '8': '35',
+  '7': 'P25',
+  '8': 'P35',
+  '9': 'I',
 };
 
 const getERPPressCode = (press) => {
@@ -377,8 +378,40 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [errors, setErrors] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
+  const [presses, setPresses] = React.useState([]);
 
-  const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+  React.useEffect(() => {
+    let cancelled = false;
+    pressesAPI.getAll()
+      .then((rows) => { if (!cancelled) setPresses(rows || []); })
+      .catch((err) => console.error('Failed to load presses:', err));
+    return () => { cancelled = true; };
+  }, []);
+
+  const normalizePlantName = (plant) => (plant || '')
+    .toString()
+    .trim()
+    .toUpperCase()
+    .replace(/\b0+(\d+)\b/g, '$1');
+
+  const pressOptions = React.useMemo(() => {
+    const selectedPlant = normalizePlantName(form.Plant);
+    if (!selectedPlant) return [];
+    return presses
+      .filter((p) => normalizePlantName(p.plant) === selectedPlant)
+      .map((p) => ({ value: p.press_name, label: `${p.press_name} (${p.press_code})` }));
+  }, [presses, form.Plant]);
+
+  const set = (field, val) => setForm(prev => {
+    const next = { ...prev, [field]: val };
+    if (field === 'Plant') {
+      const stillValid = presses.some(
+        (p) => p.press_name === prev.Press && normalizePlantName(p.plant) === normalizePlantName(val)
+      );
+      if (!stillValid) next.Press = '';
+    }
+    return next;
+  });
 
   const validate = () => {
     const e = {};
@@ -441,12 +474,17 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
     display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '10px',
   });
 
-  const renderField = ({ label, field, type = 'text', options, required, span }) => (
+  const renderField = ({ label, field, type = 'text', options, required, span, disabled, placeholder }) => (
     <div key={field} style={span ? { gridColumn: `span ${span}` } : {}}>
       <label style={labelStyle}>{label}{required && <span style={{ color: '#EF4444' }}> *</span>}</label>
       {type === 'select' ? (
-        <select value={form[field]} onChange={e => set(field, e.target.value)} style={inputStyle(!!errors[field])}>
-          <option value="">— select —</option>
+        <select
+          value={form[field]}
+          onChange={e => set(field, e.target.value)}
+          disabled={disabled}
+          style={{ ...inputStyle(!!errors[field]), cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.65 : 1 }}
+        >
+          <option value="">{placeholder || '— select —'}</option>
           {(options || []).map(o =>
             typeof o === 'string'
               ? <option key={o} value={o}>{o}</option>
@@ -540,7 +578,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
               {renderField({ label: 'Mandrels / Cavity', field: 'Mandrels per Cavity', type: 'number' })}
               {renderField({ label: 'Total Mandrels', field: 'Total Mandrels', type: 'number' })}
               {renderField({ label: 'No. of Trials', field: 'No of Trial', type: 'number' })}
-              {renderField({ label: 'Press', field: 'Press' })}
+              {renderField({ label: 'Press', field: 'Press', type: 'select', options: pressOptions, disabled: !form.Plant, placeholder: form.Plant ? 'Select Press' : 'Select Plant first' })}
               {renderField({ label: 'Corrector', field: 'Corrector' })}
               {renderField({ label: 'PR Number', field: 'PR Number' })}
             </div>
@@ -832,6 +870,29 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [viewingFile, setViewingFile] = useState(null); // { file, type, notes, signature }
   const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
   const [pendingStatusLog, setPendingStatusLog] = useState(null);
+  const [presses, setPresses] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    pressesAPI.getAll()
+      .then((rows) => { if (!cancelled) setPresses(rows || []); })
+      .catch((err) => console.error('Failed to load presses:', err));
+    return () => { cancelled = true; };
+  }, []);
+
+  const normalizePlantName = (plant) => (plant || '')
+    .toString()
+    .trim()
+    .toUpperCase()
+    .replace(/\b0+(\d+)\b/g, '$1');
+
+  const pressOptions = useMemo(() => {
+    const selectedPlant = normalizePlantName(editedOrder.Plant);
+    if (!selectedPlant) return [];
+    return presses
+      .filter((p) => normalizePlantName(p.plant) === selectedPlant)
+      .map((p) => ({ value: p.press_name, label: `${p.press_name} (${p.press_code})` }));
+  }, [presses, editedOrder.Plant]);
 
   useEffect(() => {
     setEditedOrder({
@@ -898,6 +959,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     }
     setEditedOrder(prev => {
       const updated = { ...prev, [field]: value };
+      // Clear the selected press if it no longer belongs to the chosen plant
+      if (field === 'Plant') {
+        const stillValid = presses.some(
+          (p) => p.press_name === prev.Press && normalizePlantName(p.plant) === normalizePlantName(value)
+        );
+        if (!stillValid) updated.Press = '';
+      }
       // Auto-update status when date fields change (except if manually setting STATUS)
       if (field !== 'STATUS') {
         updated.STATUS = determineStatus(updated);
@@ -971,14 +1039,23 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
 
   const selectStyle = { ...inputStyle, cursor: 'pointer' };
 
-  const InfoRow = ({ label, field, value, type = 'text', options = null }) => (
+  const InfoRow = ({ label, field, value, type = 'text', options = null, disabled = false, placeholder = '—' }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
       <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>{label}</span>
       {isEditing ? (
         type === 'select' && options ? (
-          <select style={selectStyle} value={editedOrder[field] || ''} onChange={(e) => handleFieldChange(field, e.target.value)}>
-            <option value="">—</option>
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          <select
+            style={{ ...selectStyle, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.65 : 1 }}
+            value={editedOrder[field] || ''}
+            onChange={(e) => handleFieldChange(field, e.target.value)}
+            disabled={disabled}
+          >
+            <option value="">{placeholder}</option>
+            {options.map(opt =>
+              typeof opt === 'string'
+                ? <option key={opt} value={opt}>{opt}</option>
+                : <option key={opt.value} value={opt.value}>{opt.label}</option>
+            )}
           </select>
         ) : type === 'date' ? (
           <input
@@ -1092,7 +1169,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               <InfoRow label="Supplier" field="Supplier" value={currentOrder.Supplier} type="select" options={suppliers.map(s => s.name)} />
               <InfoRow label="Customer" field="Customer Name" value={currentOrder['Customer Name']} />
               <InfoRow label="PR Number" field="PR Number" value={currentOrder['PR Number']} />
-              <InfoRow label="Press" field="Press" value={currentOrder.Press} />
+              <InfoRow label="Press" field="Press" value={currentOrder.Press} type="select" options={pressOptions} disabled={!editedOrder.Plant} placeholder={editedOrder.Plant ? 'Select Press' : 'Select Plant first'} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
                 <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>Simulation</span>
                 {isEditing ? (
@@ -2324,16 +2401,59 @@ export default function DieOrderingSystem() {
     };
 
     const sendEmailDirect = (type, key, orders) => {
-      const dieList = orders.map(o => `  - ${o['DIE NO']} | Order No: ${o['Order No']} (${o.Plant})`).join('\n');
+      const escapeHtml = (value) => (value === null || value === undefined || value === '' ? 'N/A' : value)
+        .toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+      const dateLabel = type === 'design' ? 'Order Date' : 'Requested Date';
+      const getDateValue = (o) => formatDate(type === 'design' ? o['Ordered date'] : o['Die Requested Date']);
+
+      const tableRows = orders.map((o, index) => `
+          <tr>
+            <td style="padding:8px 10px;border:1px solid #CBD5E1;text-align:center;">${index + 1}</td>
+            <td style="padding:8px 10px;border:1px solid #CBD5E1;font-weight:600;">${escapeHtml(o['DIE NO'])}</td>
+            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(o['Order No'])}</td>
+            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(getDateValue(o))}</td>
+            <td style="padding:8px 10px;border:1px solid #CBD5E1;">${escapeHtml(o.Plant)}</td>
+          </tr>`).join('');
+
+      const buildTable = () => `
+        <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;color:#0F172A;">
+          <thead>
+            <tr style="background:#E2E8F0;color:#0F172A;">
+              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:center;">SL No</th>
+              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Die Number</th>
+              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Order Number</th>
+              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">${dateLabel}</th>
+              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Plant</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>`;
+
       let subject, body;
       const templateName = type === 'design' ? 'Design Reminder' : 'Ordering Reminder';
       const templateRecipients = emailTemplates.find(template => template.name === templateName) || {};
       if (type === 'design') {
         subject = `URGENT: Design Pending for ${orders.length} Die Order(s) - ${key}`;
-        body = `Dear ${key} Team,\n\nThis is a reminder that the following die order(s) have been awaiting design for more than 48 hours:\n\n${dieList}\n\nPlease provide the design drawings at the earliest to avoid further delays in production.\n\nBest regards,\nDie Ordering Team`;
+        body = `
+        <p>Dear ${escapeHtml(key)} Team,</p>
+        <p>This is a reminder that the following die order(s) have been awaiting design for more than 48 hours:</p>
+        ${buildTable()}
+        <p>Please provide the design drawings at the earliest to avoid further delays in production.</p>
+        <p>Best regards,<br/>Die Ordering Team</p>`;
       } else {
         subject = `URGENT: ${orders.length} Die Order(s) Pending Ordering - ${key}`;
-        body = `Dear Purchase Team,\n\nThe following die order(s) for ${key} have been pending ordering for more than 24 hours:\n\n${dieList}\n\nPlease process these orders at the earliest to avoid production delays.\n\nBest regards,\nDie Ordering Team`;
+        body = `
+        <p>Dear Purchase Team,</p>
+        <p>The following die order(s) for ${escapeHtml(key)} have been pending ordering for more than 24 hours:</p>
+        ${buildTable()}
+        <p>Please process these orders at the earliest to avoid production delays.</p>
+        <p>Best regards,<br/>Die Ordering Team</p>`;
       }
       setShowEmailCompose({
         to: templateRecipients.default_to || '',
@@ -2341,6 +2461,7 @@ export default function DieOrderingSystem() {
         subject,
         body,
         importance: 'high',
+        isHtml: true,
       });
     };
 
