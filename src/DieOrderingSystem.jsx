@@ -15,6 +15,7 @@ import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
 import { CONTROLLABLE_PAGES } from './utils/constants';
 import { parseDateDMY, formatDate } from './utils/helpers';
+import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
 import DashboardPage from './pages/DashboardPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -2148,13 +2149,26 @@ export default function DieOrderingSystem() {
       const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
       const deliveryDays = calcLeadDays(order['Ordered date'], receivedDate);
       const mfgDays = calcLeadDays(order['Design Approved Date'], receivedDate);
+      const row = { ...order };
+      // Convert any pure date-string fields into real JS Dates so Excel stores
+      // them as native date cells (columns are otherwise left untouched).
+      Object.keys(row).forEach(key => {
+        const d = toExcelDate(row[key]);
+        if (d) row[key] = d;
+      });
       return {
-        ...order,
+        ...row,
         'Delivery Lead Time (days)': deliveryDays !== null ? deliveryDays : '',
         'Manufacturing Lead Time (days)': mfgDays !== null ? mfgDays : '',
       };
     });
-    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const ws = XLSX.utils.json_to_sheet(exportRows, { cellDates: true });
+    // Render every date cell with a readable, sortable date format.
+    Object.keys(ws).forEach(addr => {
+      if (addr[0] === '!') return;
+      const cell = ws[addr];
+      if (cell && cell.t === 'd') cell.z = 'dd mmm yyyy';
+    });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Die Orders');
     XLSX.writeFile(wb, 'die_orders_export.xlsx');

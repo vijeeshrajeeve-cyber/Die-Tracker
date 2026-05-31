@@ -106,6 +106,23 @@ const validateApiKey = async (key) => {
     return null;
 };
 
+// Normalize date values to a clean ISO date (YYYY-MM-DD) that Excel / Power
+// Query reliably recognises as a real date. Postgres returns DATE/TIMESTAMP
+// columns as JS Date objects, which would otherwise serialize as noisy full
+// timestamps. Non-date values pass through unchanged.
+const pad2 = (n) => String(n).padStart(2, '0');
+const formatDateValue = (val) => {
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return '';
+        return `${val.getFullYear()}-${pad2(val.getMonth() + 1)}-${pad2(val.getDate())}`;
+    }
+    if (typeof val === 'string') {
+        const m = val.match(/^(\d{4}-\d{2}-\d{2})(?:[T ].*)?$/);
+        if (m) return m[1];
+    }
+    return val;
+};
+
 // Escape a value for CSV
 const csvEscape = (val) => {
     if (val === null || val === undefined) return '';
@@ -178,7 +195,7 @@ router.get('/orders', async (req, res) => {
             const rows = result.rows.map(row => {
                 const obj = {};
                 for (const field of selectedFields) {
-                    obj[DISPLAY_NAMES[field]] = row[FIELD_MAP[field]];
+                    obj[DISPLAY_NAMES[field]] = formatDateValue(row[FIELD_MAP[field]]);
                 }
                 return obj;
             });
@@ -190,7 +207,7 @@ router.get('/orders', async (req, res) => {
         let csv = headers.map(csvEscape).join(',') + '\r\n';
 
         for (const row of result.rows) {
-            const values = selectedFields.map(f => csvEscape(row[FIELD_MAP[f]]));
+            const values = selectedFields.map(f => csvEscape(formatDateValue(row[FIELD_MAP[f]])));
             csv += values.join(',') + '\r\n';
         }
 
