@@ -463,8 +463,12 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           const val = rLine.text.trim();
           // Extract Bolster/Insert IDs (patterns like "I-30602", "B-12345", "BOL-30587", "INS-22772")
           // Also refs like "35IC1-120154" (leading digits + alphanumeric before hyphen) common on supplier PDFs
+          // NOTE: PDF.js creates separate text items on font changes mid-word (e.g. the last digit of
+          // "INS-32084" may use a different embedded font subset than the rest), so same-Y items get
+          // joined with a space → "INS-3208 4". Strip spaces before ID matching to handle this.
           if (!bolsterNo && !insertNo) {
-            const idMatch = val.match(/^([A-Za-z]{1,4})[-](\d{3,6})$/i);
+            const valNoSpaces = val.replace(/\s+/g, '');
+            const idMatch = valNoSpaces.match(/^([A-Za-z]{1,4})[-](\d{3,6})$/i);
             if (idMatch) {
               const prefix = idMatch[1].toUpperCase();
               const fullId = `${prefix}-${idMatch[2]}`;
@@ -473,7 +477,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
               else insertNo = fullId; // Default to insert for unknown prefixes
               continue;
             }
-            const broadIdMatch = val.match(/^(\d+[A-Za-z][A-Za-z0-9]*-\d{3,})$/i);
+            const broadIdMatch = valNoSpaces.match(/^(\d+[A-Za-z][A-Za-z0-9]*-\d{3,})$/i);
             if (broadIdMatch) {
               insertNo = broadIdMatch[1];
               continue;
