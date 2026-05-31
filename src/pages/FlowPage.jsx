@@ -71,6 +71,7 @@ const DaysBadge = ({ order }) => {
 export default function FlowPage({
   data, activeTab, searchTerm, setSearchTerm, sortConfig, handleSort, suppliers, theme,
   setSelectedOrder, setShowAddOrderModal, setRevisionOrder, setChangelogOrder,
+  setRevisionHistoryOrder,
   setData, setToast, setActiveTab,
   handleInlineFieldSave, handleSizeChange, handleMandrelsChange, handlePRNumberChange, copyForERP,
   handleCavityChange,
@@ -107,7 +108,14 @@ export default function FlowPage({
     const nextStatus = currentFlow.status === 'AWAITING FOR DESIGN' && isSimulationEnabled(order.simulationEnabled)
       ? 'UNDER SIMULATION'
       : workflow.nextStatus;
-    const updatedOrder = { ...order, STATUS: nextStatus, [workflow.dateField]: today, 'Change Log': [] };
+    const changeLogEntry = {
+      date: today,
+      field: 'STATUS',
+      oldValue: order.STATUS,
+      newValue: nextStatus,
+      stage: order.STATUS,
+    };
+    const updatedOrder = { ...order, STATUS: nextStatus, [workflow.dateField]: today, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
     try {
       await ordersAPI.update(order.id, updatedOrder);
       setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
@@ -282,7 +290,7 @@ export default function FlowPage({
                     </td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       {order['Design Revision Count'] > 0 ? (
-                        <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B' }} title={order['Last Revision Date'] ? `Last: ${order['Last Revision Date']}` : ''}>{order['Design Revision Count']}</span>
+                        <button onClick={(e) => { e.stopPropagation(); setRevisionHistoryOrder && setRevisionHistoryOrder(order); }} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.4)', cursor: 'pointer' }} title={`${order['Design Revision Count']} revision(s)${order['Last Revision Date'] ? ` - Last: ${order['Last Revision Date']}` : ''} - Click to view history`}>{order['Design Revision Count']}</button>
                       ) : <span style={{ color: '#64748B' }}>—</span>}
                     </td>
                     {isPR && (
@@ -296,10 +304,10 @@ export default function FlowPage({
                           <input type="text" defaultValue={order['PR Number'] || ''} onBlur={(e) => handlePRNumberChange(order, e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} style={{ width: '100px', padding: '6px 8px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }} placeholder="PR-XXXX" />
                         </td>
                         <td style={{ ...styles.td, textAlign: 'center' }}>
-                          {order['Change Log'] && order['Change Log'].length > 0 ? (
-                            <button onClick={(e) => { e.stopPropagation(); setChangelogOrder(order); }} style={{ padding: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title={`${order['Change Log'].length} change(s) logged`}>
+                          {order.changeCount > 0 ? (
+                            <button onClick={(e) => { e.stopPropagation(); setChangelogOrder(order); }} style={{ padding: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title={`${order.changeCount} change(s) logged`}>
                               <History size={14} />
-                              <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order['Change Log'].length}</span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order.changeCount}</span>
                             </button>
                           ) : <span style={{ color: '#64748B', fontSize: '0.8rem' }}>—</span>}
                         </td>
@@ -378,7 +386,15 @@ export default function FlowPage({
                   if (!dieReceivanceForm.die_received_date) { setToast({ message: 'Please enter the die received date', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
                   if (!dieReceivanceForm.corrector.trim()) { setToast({ message: 'Please assign a corrector', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
                   try {
-                    const updatedOrder = { ...dieReceivanceOrder, STATUS: 'DIE RECEIVED', 'Die Received Date': dieReceivanceForm.die_received_date, 'Corrector': dieReceivanceForm.corrector.trim(), 'Press': dieReceivanceOrder['Press'] || dieReceivanceOrder.Plant || '', 'Ascona Reference': dieReceivanceOrder['Ascona Reference'] || 'No', 'Sample Status': dieReceivanceOrder['Sample Status'] || 'Pending', 'Change Log': [] };
+                    const dieReceivanceLog = {
+                      date: dieReceivanceForm.die_received_date,
+                      field: 'STATUS',
+                      oldValue: dieReceivanceOrder.STATUS,
+                      newValue: 'DIE RECEIVED',
+                      stage: dieReceivanceOrder.STATUS,
+                      reason: `Corrector: ${dieReceivanceForm.corrector.trim()}`,
+                    };
+                    const updatedOrder = { ...dieReceivanceOrder, STATUS: 'DIE RECEIVED', 'Die Received Date': dieReceivanceForm.die_received_date, 'Corrector': dieReceivanceForm.corrector.trim(), 'Press': dieReceivanceOrder['Press'] || dieReceivanceOrder.Plant || '', 'Ascona Reference': dieReceivanceOrder['Ascona Reference'] || 'No', 'Sample Status': dieReceivanceOrder['Sample Status'] || 'Pending', 'Change Log': [dieReceivanceLog], changeCount: (dieReceivanceOrder.changeCount || 0) + 1 };
                     await ordersAPI.update(dieReceivanceOrder.id, updatedOrder);
                     setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? updatedOrder : o));
                     setDieReceivanceOrder(null);

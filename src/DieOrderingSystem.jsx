@@ -8,7 +8,7 @@ import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
-import { PDFImportModal, PIImportModal, MissingCustomerPromptModal, RevisionModal, ChangeLogModal } from './components/modals';
+import { PDFImportModal, PIImportModal, MissingCustomerPromptModal, RevisionModal, RevisionHistoryModal, ChangeLogModal } from './components/modals';
 import BackupDieRequests from './components/backup/BackupDieRequests';
 import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
@@ -996,7 +996,11 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      let orderToSave = { ...editedOrder, 'Change Log': pendingStatusLog ? [pendingStatusLog] : [] };
+      let orderToSave = {
+        ...editedOrder,
+        'Change Log': pendingStatusLog ? [pendingStatusLog] : [],
+        changeCount: (editedOrder.changeCount || 0) + (pendingStatusLog ? 1 : 0),
+      };
       await ordersAPI.update(order.id, orderToSave);
       if (onUpdate) onUpdate(orderToSave);
       setIsEditing(false);
@@ -1321,7 +1325,7 @@ export default function DieOrderingSystem() {
   const [data, setData] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' });
+  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', dateFrom: '', dateTo: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'Die Requested Date', direction: 'desc' });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -1329,6 +1333,7 @@ export default function DieOrderingSystem() {
   const [showPIImportModal, setShowPIImportModal] = useState(false);
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
   const [revisionOrder, setRevisionOrder] = useState(null); // For revision modal
+  const [revisionHistoryOrder, setRevisionHistoryOrder] = useState(null); // For revision history modal
   const [changelogOrder, setChangelogOrder] = useState(null); // For changelog modal
   const [currentPage, setCurrentPage] = useState(1);
   const [showCompletedInChart, setShowCompletedInChart] = useState(false);
@@ -1757,29 +1762,27 @@ export default function DieOrderingSystem() {
       const order = data.find(o => o.id === orderId);
       if (!order) throw new Error('Order not found');
 
-      const currentRevisionCount = order['Design Revision Count'] || 0;
+      // Record the revision on the backend (stores history + increments the counter atomically)
+      const result = await ordersAPI.createRevision(orderId, {
+        targetStatus,
+        notes,
+        revisionDate,
+        revisionPdf: pdfFile ? pdfFile.name : null,
+      });
 
-      // Prepare updated order data
-      const updatedOrder = {
-        ...order,
+      const newRevisionCount = result?.revisionNumber ?? (order['Design Revision Count'] || 0) + 1;
+
+      setData(prev => prev.map(o => o.id === orderId ? {
+        ...o,
         STATUS: targetStatus,
-        'Design Revision Count': currentRevisionCount + 1,
-        'Last Revision Date': revisionDate,
-        'Revision Notes': notes
-      };
-
-      // Handle PDF upload if provided
-      if (pdfFile) {
-        // For now, store the PDF name - in production this would upload to storage
-        updatedOrder['Revision PDF'] = pdfFile.name;
-      }
-
-      await ordersAPI.update(orderId, updatedOrder);
-      setData(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+        'Design Revision Count': newRevisionCount,
+        'Last Revision Date': result?.lastRevisionDate || revisionDate,
+        changeCount: (o.changeCount || 0) + 1,
+      } : o));
 
       const targetLabel = targetStatus === 'AWAITING FOR DESIGN' ? 'Design' : 'Simulation';
       setToast({
-        message: `Revision #${currentRevisionCount + 1} requested - sent back to ${targetLabel}`,
+        message: `Revision #${newRevisionCount} requested - sent back to ${targetLabel}`,
         type: 'warning'
       });
       setTimeout(() => setToast(null), 4000);
@@ -1828,7 +1831,8 @@ export default function DieOrderingSystem() {
       const updatedOrder = {
         ...order,
         'Die Size': newDieSize,
-        'Change Log': [changeLogEntry]
+        'Change Log': [changeLogEntry],
+        changeCount: (order.changeCount || 0) + 1,
       };
 
       await ordersAPI.update(order.id, updatedOrder);
@@ -1881,7 +1885,15 @@ export default function DieOrderingSystem() {
     if (order['PR Number'] === prNumber) return; // No change
 
     try {
-      const updatedOrder = { ...order, 'PR Number': prNumber, 'Change Log': [] };
+      const changeLogEntry = {
+        date: new Date().toISOString().split('T')[0],
+        field: 'PR Number',
+        oldValue: order['PR Number'] || '',
+        newValue: prNumber,
+        changedBy: user?.username || 'unknown',
+        stage: order.STATUS,
+      };
+      const updatedOrder = { ...order, 'PR Number': prNumber, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
       await ordersAPI.update(order.id, updatedOrder);
       setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
       setToast({ message: `PR Number saved: ${prNumber}`, type: 'success' });
@@ -1897,7 +1909,15 @@ export default function DieOrderingSystem() {
   const handleInlineFieldSave = async (order, field, value) => {
     if (order[field] === value) return;
     try {
-      const updatedOrder = { ...order, [field]: value, 'Change Log': [] };
+      const changeLogEntry = {
+        date: new Date().toISOString().split('T')[0],
+        field,
+        oldValue: order[field] ?? '',
+        newValue: value,
+        changedBy: user?.username || 'unknown',
+        stage: order.STATUS,
+      };
+      const updatedOrder = { ...order, [field]: value, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
       await ordersAPI.update(order.id, updatedOrder);
       setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
       setToast({ message: `${field} saved`, type: 'success' });
@@ -1917,7 +1937,15 @@ export default function DieOrderingSystem() {
     const totalMandrels = mpc * cavities;
     if (order['Mandrels per Cavity'] === mpc && order['Total Mandrels'] === totalMandrels) return;
     try {
-      const updatedOrder = { ...order, 'Mandrels per Cavity': mpc, 'Total Mandrels': totalMandrels, 'Change Log': [] };
+      const changeLogEntry = {
+        date: new Date().toISOString().split('T')[0],
+        field: 'Mandrels per Cavity',
+        oldValue: order['Mandrels per Cavity'] ?? '',
+        newValue: mpc,
+        changedBy: user?.username || 'unknown',
+        stage: order.STATUS,
+      };
+      const updatedOrder = { ...order, 'Mandrels per Cavity': mpc, 'Total Mandrels': totalMandrels, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
       await ordersAPI.update(order.id, updatedOrder);
       setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
       setToast({ message: `Mandrels updated: ${mpc}/cav, ${totalMandrels} total`, type: 'success' });
@@ -1947,6 +1975,7 @@ export default function DieOrderingSystem() {
       'Cavity': newCavity,
       'Total Mandrels': totalMandrels,
       'Change Log': [changeLogEntry],
+      changeCount: (order.changeCount || 0) + 1,
     };
     try {
       await ordersAPI.update(order.id, updatedOrder);
@@ -2054,7 +2083,11 @@ export default function DieOrderingSystem() {
             ? order.STATUS !== 'CANCELLED' && hasDesignApprovedDate(order) && !hasDieReceivedDate(order)
             : order.STATUS === filters.status);
       const orderYear = getYearFromDate(order['Die Requested Date']);
-      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year);
+      const orderDate = parseOrderCalendarDate(order['Die Requested Date']);
+      const dateFromMatch = !filters.dateFrom || (orderDate && orderDate >= filters.dateFrom);
+      const dateToMatch = !filters.dateTo || (orderDate && orderDate <= filters.dateTo);
+      const customerMatch = filters.customer === 'all' || order['Customer Name'] === filters.customer;
+      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year) && customerMatch && dateFromMatch && dateToMatch;
     }).sort((a, b) => {
       const aVal = a[sortConfig.key] || '', bVal = b[sortConfig.key] || '';
       return (aVal > bVal ? 1 : -1) * (sortConfig.direction === 'asc' ? 1 : -1);
@@ -2084,6 +2117,7 @@ export default function DieOrderingSystem() {
   const uniqueTypes = [...new Set(data.map(o => o.TYPE))].filter(Boolean).sort();
   const uniqueMonths = MONTH_ORDER.filter(m => data.some(o => o.month === m));
   const uniqueYears = [...new Set(data.map(o => getYearFromDate(o['Die Requested Date'])))].filter(Boolean).sort((a, b) => Number(b) - Number(a));
+  const uniqueCustomers = [...new Set(data.map(o => o['Customer Name']))].filter(Boolean).sort();
 
   // Map die_no → die_received_date from sample followups (for lead time columns)
   const dieReceivedDateMap = useMemo(() => {
@@ -2657,6 +2691,7 @@ export default function DieOrderingSystem() {
               uniquePlants={uniquePlants} uniqueStatuses={uniqueStatuses}
               uniqueSuppliers={uniqueSuppliers} uniqueTypes={uniqueTypes}
               uniqueMonths={uniqueMonths} uniqueYears={uniqueYears}
+              uniqueCustomers={uniqueCustomers}
               dieReceivedDateMap={dieReceivedDateMap}
               setSelectedOrder={setSelectedOrder}
               setChangelogOrder={setChangelogOrder}
@@ -2672,6 +2707,7 @@ export default function DieOrderingSystem() {
               sortConfig={sortConfig} handleSort={handleSort} suppliers={suppliers} theme={theme}
               setSelectedOrder={setSelectedOrder} setShowAddOrderModal={setShowAddOrderModal}
               setRevisionOrder={setRevisionOrder} setChangelogOrder={setChangelogOrder}
+              setRevisionHistoryOrder={setRevisionHistoryOrder}
               setData={setData} setToast={setToast} setActiveTab={setActiveTab}
               handleInlineFieldSave={handleInlineFieldSave} handleSizeChange={handleSizeChange}
               handleMandrelsChange={handleMandrelsChange} handlePRNumberChange={handlePRNumberChange}
@@ -2789,6 +2825,13 @@ export default function DieOrderingSystem() {
             order={revisionOrder}
             onRevision={handleRevision}
             sourceStatus={revisionOrder.STATUS}
+            theme={theme}
+          />
+        )}
+        {revisionHistoryOrder && (
+          <RevisionHistoryModal
+            order={revisionHistoryOrder}
+            onClose={() => setRevisionHistoryOrder(null)}
             theme={theme}
           />
         )}

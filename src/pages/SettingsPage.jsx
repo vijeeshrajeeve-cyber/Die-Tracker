@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload } from 'lucide-react';
-import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI } from '../api';
+import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI, ordersAPI } from '../api';
 import Papa from 'papaparse';
 import ExistingDataPage from './ExistingDataPage';
 
@@ -21,6 +21,34 @@ export default function SettingsPage({
   apiKeyLoading, setApiKeyLoading,
   copyToClipboard, allChangeLogs,
 }) {
+  const [changeLogs, setChangeLogs] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    ordersAPI.getAllChangeLogs()
+      .then(res => {
+        if (cancelled) return;
+        const mapped = (res.changes || []).map(c => {
+          const dt = c.changed_at ? new Date(c.changed_at) : null;
+          const valid = dt && !isNaN(dt);
+          return {
+            date: valid ? dt.toLocaleDateString() : '—',
+            time: valid ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—',
+            dieNo: c.die_no,
+            orderNo: c.order_no,
+            changedBy: c.changed_by,
+            field: c.field_name,
+            oldValue: c.old_value,
+            newValue: c.new_value,
+            reason: c.reason,
+          };
+        });
+        setChangeLogs(mapped);
+      })
+      .catch(() => { if (!cancelled) setChangeLogs([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
             <div>
               <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', color: theme.text }}>Settings</h2>
@@ -568,7 +596,7 @@ export default function SettingsPage({
                     <History size={20} /> Change Log
                   </h3>
                   <span style={{ fontSize: '0.8rem', color: theme.textDim, background: theme.inputBg, padding: '4px 10px', borderRadius: '20px' }}>
-                    {allChangeLogs.length} {allChangeLogs.length === 1 ? 'entry' : 'entries'}
+                    {changeLogs.length} {changeLogs.length === 1 ? 'entry' : 'entries'}
                   </span>
                 </div>
                 <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden', maxHeight: '520px', overflowY: 'auto' }}>
@@ -581,9 +609,9 @@ export default function SettingsPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {allChangeLogs.length === 0 ? (
+                      {changeLogs.length === 0 ? (
                         <tr><td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem' }}>No changes recorded yet</td></tr>
-                      ) : allChangeLogs.map((entry, idx) => (
+                      ) : changeLogs.map((entry, idx) => (
                         <tr key={idx} style={{ background: idx % 2 === 0 ? 'transparent' : `${theme.tableBg}55` }}>
                           <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{entry.date || '—'}</td>
                           <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{entry.time || '—'}</td>

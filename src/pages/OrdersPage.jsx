@@ -3,6 +3,7 @@ import { ChevronUp, ChevronDown, Plane, Truck, Eye, Trash2, ChevronLeft, Chevron
 import { STATUS_CONFIG } from '../utils/constants';
 import { ordersAPI } from '../api';
 import DieAttentionLabels from '../components/DieAttentionLabels';
+import DatePickerField from '../components/DatePickerField';
 import { parseDateDMY, formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
 
@@ -54,6 +55,7 @@ export default function OrdersPage({
   currentPage, setCurrentPage,
   totalPages,
   uniquePlants, uniqueStatuses, uniqueSuppliers, uniqueTypes, uniqueMonths, uniqueYears,
+  uniqueCustomers = [],
   dieReceivedDateMap,
   setSelectedOrder,
   setChangelogOrder,
@@ -120,6 +122,8 @@ export default function OrdersPage({
   const filterBar = { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
   const filterRow = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' };
   const filterSelect = { padding: '10px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px', transition: 'all 0.15s', outline: 'none' };
+  const dateFieldLabel = { display: 'flex', flexDirection: 'column', gap: '4px' };
+  const dateLabelText = { fontSize: '0.7rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.03em' };
   const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
   const tableStyle = { width: '100%', borderCollapse: 'collapse' };
   const th = { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` };
@@ -135,6 +139,41 @@ export default function OrdersPage({
           <select style={filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}</select>
           <select style={filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
           <select style={filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
+          <select style={filterSelect} value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })}><option value="all">All Customers</option>{uniqueCustomers.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        </div>
+        <div style={{ ...filterRow, marginTop: '1rem', alignItems: 'flex-end' }}>
+          <div style={dateFieldLabel}>
+            <span style={dateLabelText}>Requested from</span>
+            <div style={{ minWidth: '180px' }}>
+              <DatePickerField
+                theme={theme}
+                value={filters.dateFrom}
+                placeholder="Start date"
+                title="Show orders requested on or after this date"
+                onChange={(val) => setFilters({ ...filters, dateFrom: val })}
+              />
+            </div>
+          </div>
+          <div style={dateFieldLabel}>
+            <span style={dateLabelText}>Requested to</span>
+            <div style={{ minWidth: '180px' }}>
+              <DatePickerField
+                theme={theme}
+                value={filters.dateTo}
+                placeholder="End date"
+                title="Show orders requested on or before this date"
+                onChange={(val) => setFilters({ ...filters, dateTo: val })}
+              />
+            </div>
+          </div>
+          {(filters.dateFrom || filters.dateTo) && (
+            <button
+              onClick={() => setFilters({ ...filters, dateFrom: '', dateTo: '' })}
+              style={{ fontSize: '0.8rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer', paddingBottom: '10px' }}
+            >
+              Clear dates
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: `1px solid ${theme.cardBorder}` }}>
           <span style={{ fontSize: '0.875rem', color: theme.textMuted }}>Showing <strong style={{ color: theme.text }}>{filteredData.length}</strong> orders</span>
@@ -147,7 +186,7 @@ export default function OrdersPage({
             >
               <Download size={14} /> Export to Excel
             </button>
-            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
+            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', dateFrom: '', dateTo: '' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
           </div>
         </div>
       </div>
@@ -231,14 +270,14 @@ export default function OrdersPage({
                   </td>
                   {/* Change Log indicator */}
                   <td style={{ ...td, textAlign: 'center' }}>
-                    {order['Change Log'] && order['Change Log'].length > 0 ? (
+                    {order.changeCount > 0 ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); setChangelogOrder(order); }}
                         style={{ padding: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        title={`${order['Change Log'].length} change(s) logged - Click to view`}
+                        title={`${order.changeCount} change(s) logged - Click to view`}
                       >
                         <History size={14} />
-                        <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order['Change Log'].length}</span>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{order.changeCount}</span>
                       </button>
                     ) : (
                       <span style={{ color: '#64748B', fontSize: '0.8rem' }}>—</span>

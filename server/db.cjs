@@ -195,6 +195,8 @@ const initializeDatabase = async () => {
         remark TEXT,
         urgency TEXT DEFAULT 'NORMAL',
         special_follow_up BOOLEAN DEFAULT false,
+        design_revision_count INTEGER DEFAULT 0,
+        last_revision_date TEXT,
         change_log TEXT DEFAULT '[]',
         created_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -248,6 +250,15 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='special_follow_up') THEN
           ALTER TABLE die_orders ADD COLUMN special_follow_up BOOLEAN DEFAULT false;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='design_revision_count') THEN
+          ALTER TABLE die_orders ADD COLUMN design_revision_count INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='last_revision_date') THEN
+          ALTER TABLE die_orders ADD COLUMN last_revision_date TEXT;
+        END IF;
+        -- Per-revision notes/pdf live in order_revisions; drop any legacy columns
+        ALTER TABLE die_orders DROP COLUMN IF EXISTS revision_notes;
+        ALTER TABLE die_orders DROP COLUMN IF EXISTS revision_pdf;
       END $$;
 
       -- Backup Die Requests table
@@ -609,6 +620,24 @@ const initializeDatabase = async () => {
         console.log('Dropped die_orders.change_log column');
       }
     }
+
+    // Order revisions history (one die order can have many design revisions)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS order_revisions (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER REFERENCES die_orders(id) ON DELETE CASCADE,
+        revision_number INTEGER NOT NULL,
+        from_status TEXT,
+        to_status TEXT,
+        notes TEXT,
+        revision_date TEXT,
+        revision_pdf TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_order_revisions_order_id ON order_revisions(order_id)`);
 
     // Migration: TEXT date columns → DATE
     if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='date_columns_to_date_v1'`)).rows.length) {

@@ -160,6 +160,24 @@ export const ordersAPI = {
         return apiRequest(`/orders/${orderId}/change-log`);
     },
 
+    // Global change log across all orders (admin Settings view)
+    getAllChangeLogs: async ({ limit = 1000 } = {}) => {
+        return apiRequest(`/orders/change-log/all?limit=${limit}`);
+    },
+
+    // Revision history for a single order
+    getRevisions: async (orderId) => {
+        return apiRequest(`/orders/${orderId}/revisions`);
+    },
+
+    // Record a new revision (increments the counter on the order + stores history)
+    createRevision: async (orderId, { targetStatus, notes, revisionDate, revisionPdf } = {}) => {
+        return apiRequest(`/orders/${orderId}/revisions`, {
+            method: 'POST',
+            body: JSON.stringify({ targetStatus, notes, revisionDate, revisionPdf }),
+        });
+    },
+
     create: async (order) => {
         return apiRequest('/orders', {
             method: 'POST',

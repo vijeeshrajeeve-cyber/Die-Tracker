@@ -149,7 +149,17 @@ router.get('/', async (req, res) => {
         const offset = (page - 1) * limit;
 
         const [result, countResult] = await Promise.all([
-            pool.query('SELECT * FROM die_orders ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
+            pool.query(`
+                SELECT o.*, COALESCE(c.change_count, 0)::int AS change_count
+                FROM die_orders o
+                LEFT JOIN (
+                    SELECT order_id, COUNT(*) AS change_count
+                    FROM order_changes
+                    GROUP BY order_id
+                ) c ON c.order_id = o.id
+                ORDER BY o.created_at DESC
+                LIMIT $1 OFFSET $2
+            `, [limit, offset]),
             pool.query('SELECT COUNT(*)::int AS total FROM die_orders'),
         ]);
 
@@ -193,6 +203,9 @@ router.get('/', async (req, res) => {
             'Remark': order.remark,
             'Urgency': order.urgency || 'NORMAL',
             'specialFollowUp': !!order.special_follow_up,
+            'Design Revision Count': order.design_revision_count || 0,
+            'Last Revision Date': order.last_revision_date,
+            'changeCount': order.change_count || 0,
         }));
 
         res.json({
@@ -333,7 +346,7 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['Remark']),
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
-            id
+            id,
         ]);
 
         if (result.rowCount === 0) {
@@ -390,6 +403,28 @@ router.delete('/:id', orderIdValidation, handleValidationErrors, async (req, res
     }
 });
 
+// Get the global change log across all orders (admin change-log view)
+router.get('/change-log/all', async (req, res) => {
+    try {
+        const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit) || 1000));
+        const result = await pool.query(`
+            SELECT oc.id, oc.field_name, oc.old_value, oc.new_value,
+                   oc.changed_at, oc.reason, oc.stage,
+                   COALESCE(u.username, oc.changed_by_name, 'Unknown') AS changed_by,
+                   o.die_no, o.order_no
+            FROM order_changes oc
+            LEFT JOIN users u ON u.id = oc.user_id
+            LEFT JOIN die_orders o ON o.id = oc.order_id
+            ORDER BY oc.changed_at DESC
+            LIMIT $1
+        `, [limit]);
+        res.json({ changes: result.rows });
+    } catch (error) {
+        console.error('Get global change log error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Get change log for a specific order
 router.get('/:id/change-log', orderIdValidation, handleValidationErrors, async (req, res) => {
     try {
@@ -407,6 +442,116 @@ router.get('/:id/change-log', orderIdValidation, handleValidationErrors, async (
     } catch (error) {
         console.error('Get change log error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get the revision history for an order
+router.get('/:id/revisions', orderIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT r.id, r.revision_number, r.from_status, r.to_status,
+                   r.notes, r.revision_date, r.revision_pdf, r.created_at,
+                   COALESCE(u.username, r.created_by_name, 'Unknown') AS created_by
+            FROM order_revisions r
+            LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.order_id = $1
+            ORDER BY r.revision_number DESC
+        `, [id]);
+        res.json({ revisions: result.rows });
+    } catch (error) {
+        console.error('Get revisions error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Create a new revision for an order (records history + increments counter on the order)
+const revisionValidation = [
+    body('targetStatus').isString().custom((v) => {
+        if (!VALID_STATUSES.includes(v)) throw new Error('Invalid target status');
+        return true;
+    }),
+    body('notes').isString().trim().isLength({ min: 1, max: 2000 }).withMessage('Revision notes are required'),
+    body('revisionDate').optional({ nullable: true }).customSanitizer(sanitizeString),
+    body('revisionPdf').optional({ nullable: true }).customSanitizer(sanitizeString),
+];
+
+router.post('/:id/revisions', orderIdValidation, revisionValidation, handleValidationErrors, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { targetStatus, notes, revisionDate, revisionPdf } = req.body;
+        const revDate = revisionDate || new Date().toISOString().split('T')[0];
+
+        await client.query('BEGIN');
+
+        const orderRes = await client.query(
+            'SELECT status, design_revision_count FROM die_orders WHERE id = $1 FOR UPDATE',
+            [id]
+        );
+        if (orderRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const fromStatus = orderRes.rows[0].status;
+        const newRevisionNumber = (orderRes.rows[0].design_revision_count || 0) + 1;
+
+        const revInsert = await client.query(`
+            INSERT INTO order_revisions
+              (order_id, revision_number, from_status, to_status, notes, revision_date, revision_pdf, created_by, created_by_name)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            RETURNING id, created_at
+        `, [
+            id,
+            newRevisionNumber,
+            fromStatus,
+            targetStatus,
+            notes,
+            revDate,
+            revisionPdf || null,
+            req.user?.id || null,
+            req.user?.username || null,
+        ]);
+
+        await client.query(`
+            UPDATE die_orders
+            SET status = $1, design_revision_count = $2, last_revision_date = $3, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $4
+        `, [targetStatus, newRevisionNumber, revDate, id]);
+
+        // Audit entry in the change log
+        await client.query(`
+            INSERT INTO order_changes
+              (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `, [
+            id,
+            req.user?.id || null,
+            req.user?.username || null,
+            new Date(),
+            'Revision',
+            fromStatus,
+            `${targetStatus} (Rev #${newRevisionNumber})`,
+            notes,
+            fromStatus,
+        ]);
+
+        await client.query('COMMIT');
+
+        res.status(201).json({
+            id: revInsert.rows[0].id,
+            revisionNumber: newRevisionNumber,
+            status: targetStatus,
+            lastRevisionDate: revDate,
+            message: 'Revision recorded successfully',
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Create revision error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        client.release();
     }
 });
 
