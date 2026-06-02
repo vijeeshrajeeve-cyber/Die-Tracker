@@ -996,13 +996,35 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      let orderToSave = {
+      // Date columns stored as DATE in the DB. Only include a date field in the
+      // PATCH if the user explicitly changed it. If the edited value is null/empty
+      // AND the original was also null/empty, skip it — that way another workflow
+      // step that set the date after this modal was opened won't be overwritten.
+      const DATE_FIELDS = new Set([
+        'Die Requested Date', 'Ordered date', 'Design Received Date',
+        '3D Model Received Date', 'Design Approved Date', 'Die Received Date',
+        'Submission Date', 'Sample Approval Date', 'Design to EMS Date',
+      ]);
+      const isEmpty = (v) => v === null || v === undefined || v === '';
+      const patch = {};
+      for (const [field, value] of Object.entries(editedOrder)) {
+        if (DATE_FIELDS.has(field) && isEmpty(value)) {
+          // Only include a null/empty date if the user explicitly cleared a previously-set date
+          if (!isEmpty(order[field])) patch[field] = value;
+        } else {
+          patch[field] = value;
+        }
+      }
+      if (pendingStatusLog) patch['Change Log'] = [pendingStatusLog];
+
+      await ordersAPI.patch(order.id, patch);
+      const updatedOrder = {
+        ...order,
         ...editedOrder,
         'Change Log': pendingStatusLog ? [pendingStatusLog] : [],
-        changeCount: (editedOrder.changeCount || 0) + (pendingStatusLog ? 1 : 0),
+        changeCount: (order.changeCount || 0) + (pendingStatusLog ? 1 : 0),
       };
-      await ordersAPI.update(order.id, orderToSave);
-      if (onUpdate) onUpdate(orderToSave);
+      if (onUpdate) onUpdate(updatedOrder);
       setIsEditing(false);
       setPendingStatusLog(null);
     } catch (error) {
@@ -1399,6 +1421,7 @@ export default function DieOrderingSystem() {
   const [newSupplierName, setNewSupplierName] = useState('');
   const [newSupplierShipment, setNewSupplierShipment] = useState('LAND');
   const [newSupplierRegion, setNewSupplierRegion] = useState('');
+  const [newSupplierEmail, setNewSupplierEmail] = useState('');
   const [plants, setPlants] = useState([]);
   const [showAddPlant, setShowAddPlant] = useState(false);
   const [newPlantName, setNewPlantName] = useState('');
@@ -1828,15 +1851,8 @@ export default function DieOrderingSystem() {
         stage: order.STATUS
       };
 
-      const updatedOrder = {
-        ...order,
-        'Die Size': newDieSize,
-        'Change Log': [changeLogEntry],
-        changeCount: (order.changeCount || 0) + 1,
-      };
-
-      await ordersAPI.update(order.id, updatedOrder);
-      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      await ordersAPI.patch(order.id, { 'Die Size': newDieSize, 'Change Log': [changeLogEntry] });
+      setData(prev => prev.map(o => o.id === order.id ? { ...o, 'Die Size': newDieSize, changeCount: (o.changeCount || 0) + 1 } : o));
 
       setToast({
         message: `${field} updated: ${oldValue || 'N/A'} → ${newValue}`,
@@ -1893,9 +1909,8 @@ export default function DieOrderingSystem() {
         changedBy: user?.username || 'unknown',
         stage: order.STATUS,
       };
-      const updatedOrder = { ...order, 'PR Number': prNumber, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
-      await ordersAPI.update(order.id, updatedOrder);
-      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      await ordersAPI.patch(order.id, { 'PR Number': prNumber, 'Change Log': [changeLogEntry] });
+      setData(prev => prev.map(o => o.id === order.id ? { ...o, 'PR Number': prNumber, changeCount: (o.changeCount || 0) + 1 } : o));
       setToast({ message: `PR Number saved: ${prNumber}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
@@ -1917,9 +1932,8 @@ export default function DieOrderingSystem() {
         changedBy: user?.username || 'unknown',
         stage: order.STATUS,
       };
-      const updatedOrder = { ...order, [field]: value, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
-      await ordersAPI.update(order.id, updatedOrder);
-      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      await ordersAPI.patch(order.id, { [field]: value, 'Change Log': [changeLogEntry] });
+      setData(prev => prev.map(o => o.id === order.id ? { ...o, [field]: value, changeCount: (o.changeCount || 0) + 1 } : o));
       setToast({ message: `${field} saved`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
@@ -1945,9 +1959,8 @@ export default function DieOrderingSystem() {
         changedBy: user?.username || 'unknown',
         stage: order.STATUS,
       };
-      const updatedOrder = { ...order, 'Mandrels per Cavity': mpc, 'Total Mandrels': totalMandrels, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
-      await ordersAPI.update(order.id, updatedOrder);
-      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      await ordersAPI.patch(order.id, { 'Mandrels per Cavity': mpc, 'Total Mandrels': totalMandrels, 'Change Log': [changeLogEntry] });
+      setData(prev => prev.map(o => o.id === order.id ? { ...o, 'Mandrels per Cavity': mpc, 'Total Mandrels': totalMandrels, changeCount: (o.changeCount || 0) + 1 } : o));
       setToast({ message: `Mandrels updated: ${mpc}/cav, ${totalMandrels} total`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
@@ -1970,16 +1983,9 @@ export default function DieOrderingSystem() {
       reason,
     };
     const totalMandrels = (order['Mandrels per Cavity'] || 0) * newCavity;
-    const updatedOrder = {
-      ...order,
-      'Cavity': newCavity,
-      'Total Mandrels': totalMandrels,
-      'Change Log': [changeLogEntry],
-      changeCount: (order.changeCount || 0) + 1,
-    };
     try {
-      await ordersAPI.update(order.id, updatedOrder);
-      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      await ordersAPI.patch(order.id, { 'Cavity': newCavity, 'Total Mandrels': totalMandrels, 'Change Log': [changeLogEntry] });
+      setData(prev => prev.map(o => o.id === order.id ? { ...o, 'Cavity': newCavity, 'Total Mandrels': totalMandrels, changeCount: (o.changeCount || 0) + 1 } : o));
       setToast({ message: `Cavity updated: ${oldValue} → ${newCavity}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
@@ -2486,6 +2492,10 @@ export default function DieOrderingSystem() {
       let subject, body;
       const templateName = type === 'design' ? 'Design Reminder' : 'Ordering Reminder';
       const templateRecipients = emailTemplates.find(template => template.name === templateName) || {};
+      // For design reminders, prefer the supplier's configured contact email as the To address
+      const supplierContactEmail = type === 'design'
+        ? (suppliers.find(s => s.name === key)?.contact_email || '').trim()
+        : '';
       if (type === 'design') {
         subject = `URGENT: Design Pending for ${orders.length} Die Order(s) - ${key}`;
         body = `
@@ -2504,7 +2514,7 @@ export default function DieOrderingSystem() {
         <p>Best regards,<br/>Die Ordering Team</p>`;
       }
       setShowEmailCompose({
-        to: templateRecipients.default_to || '',
+        to: supplierContactEmail || templateRecipients.default_to || '',
         cc: templateRecipients.default_cc || '',
         subject,
         body,
@@ -2774,6 +2784,7 @@ export default function DieOrderingSystem() {
               newSupplierName={newSupplierName} setNewSupplierName={setNewSupplierName}
               newSupplierShipment={newSupplierShipment} setNewSupplierShipment={setNewSupplierShipment}
               newSupplierRegion={newSupplierRegion} setNewSupplierRegion={setNewSupplierRegion}
+              newSupplierEmail={newSupplierEmail} setNewSupplierEmail={setNewSupplierEmail}
               emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates}
               savingTemplateId={savingTemplateId} setSavingTemplateId={setSavingTemplateId}
               profileMeta={profileMeta} profileImportStatus={profileImportStatus}

@@ -17,7 +17,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // Add new supplier (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { name, shipment_mode, region } = req.body;
+        const { name, shipment_mode, region, contact_email } = req.body;
 
         if (!name || !name.trim()) {
             return res.status(400).json({ error: 'Supplier name is required' });
@@ -26,6 +26,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         const trimmedName = name.trim().toUpperCase();
         const mode = (shipment_mode || 'LAND').toUpperCase();
         const trimmedRegion = region && region.trim() ? region.trim() : null;
+        const trimmedEmail = contact_email && contact_email.trim() ? contact_email.trim() : null;
 
         if (!['AIR', 'LAND'].includes(mode)) {
             return res.status(400).json({ error: 'Shipment mode must be AIR or LAND' });
@@ -38,8 +39,8 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO suppliers (name, shipment_mode, region) VALUES ($1, $2, $3) RETURNING *',
-            [trimmedName, mode, trimmedRegion]
+            'INSERT INTO suppliers (name, shipment_mode, region, contact_email) VALUES ($1, $2, $3, $4) RETURNING *',
+            [trimmedName, mode, trimmedRegion, trimmedEmail]
         );
 
         res.status(201).json(result.rows[0]);
@@ -53,7 +54,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const { shipment_mode, region } = req.body;
+        const { shipment_mode, region, contact_email } = req.body;
 
         const existing = await pool.query('SELECT * FROM suppliers WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
@@ -70,9 +71,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
             ? (region && region.trim() ? region.trim() : null)
             : current.region;
 
+        const newEmail = contact_email !== undefined
+            ? (contact_email && contact_email.trim() ? contact_email.trim() : null)
+            : current.contact_email;
+
         const result = await pool.query(
-            'UPDATE suppliers SET shipment_mode = $1, region = $2 WHERE id = $3 RETURNING *',
-            [mode, newRegion, id]
+            'UPDATE suppliers SET shipment_mode = $1, region = $2, contact_email = $3 WHERE id = $4 RETURNING *',
+            [mode, newRegion, newEmail, id]
         );
 
         res.json(result.rows[0]);

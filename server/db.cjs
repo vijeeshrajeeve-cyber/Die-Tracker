@@ -1,6 +1,13 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const bcrypt = require('bcryptjs');
+
+// Return PostgreSQL DATE columns as raw 'YYYY-MM-DD' strings instead of JS Date
+// objects. The default parser converts to a Date in the server's local zone,
+// which then serializes to JSON as an ISO datetime with a UTC offset — breaking
+// downstream code that expects YYYY-MM-DD and causing off-by-one display bugs.
+// 1082 = DATE OID.
+types.setTypeParser(1082, (val) => val);
 
 // Validate database configuration
 const validateDbConfig = () => {
@@ -111,6 +118,7 @@ const initializeDatabase = async () => {
         name TEXT UNIQUE NOT NULL,
         shipment_mode TEXT DEFAULT 'LAND',
         region TEXT,
+        contact_email TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -121,6 +129,9 @@ const initializeDatabase = async () => {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppliers' AND column_name='region') THEN
           ALTER TABLE suppliers ADD COLUMN region TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppliers' AND column_name='contact_email') THEN
+          ALTER TABLE suppliers ADD COLUMN contact_email TEXT;
         END IF;
       END $$;
 
@@ -256,6 +267,9 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='last_revision_date') THEN
           ALTER TABLE die_orders ADD COLUMN last_revision_date TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='design_to_ems_date') THEN
+          ALTER TABLE die_orders ADD COLUMN design_to_ems_date DATE;
+        END IF;
         -- Per-revision notes/pdf live in order_revisions; drop any legacy columns
         ALTER TABLE die_orders DROP COLUMN IF EXISTS revision_notes;
         ALTER TABLE die_orders DROP COLUMN IF EXISTS revision_pdf;
@@ -328,6 +342,10 @@ const initializeDatabase = async () => {
         mailbox_email TEXT,
         send_enabled BOOLEAN DEFAULT false,
         receive_enabled BOOLEAN DEFAULT false,
+        auth_method TEXT DEFAULT 'basic',
+        oauth_tenant_id TEXT,
+        oauth_client_id TEXT,
+        oauth_client_secret TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -655,7 +673,9 @@ const initializeDatabase = async () => {
             ALTER TABLE die_orders
               ALTER COLUMN ${col} TYPE DATE
               USING CASE
-                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ${col}::DATE
+                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(${col}, 1, 10)::DATE
+                WHEN ${col} ~ '^\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4}$'
+                  THEN TO_DATE(${col}, 'DD/MM/YYYY')
                 ELSE NULL
               END
           `);
@@ -672,7 +692,9 @@ const initializeDatabase = async () => {
             ALTER TABLE backup_die_requests
               ALTER COLUMN ${col} TYPE DATE
               USING CASE
-                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ${col}::DATE
+                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(${col}, 1, 10)::DATE
+                WHEN ${col} ~ '^\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4}$'
+                  THEN TO_DATE(${col}, 'DD/MM/YYYY')
                 ELSE NULL
               END
           `);
@@ -689,7 +711,9 @@ const initializeDatabase = async () => {
             ALTER TABLE sample_followups
               ALTER COLUMN ${col} TYPE DATE
               USING CASE
-                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ${col}::DATE
+                WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(${col}, 1, 10)::DATE
+                WHEN ${col} ~ '^\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4}$'
+                  THEN TO_DATE(${col}, 'DD/MM/YYYY')
                 ELSE NULL
               END
           `);

@@ -192,6 +192,15 @@ export const ordersAPI = {
         });
     },
 
+    // Partial update — only sends the fields you want to change.
+    // Safe to call without the full order object; unspecified fields are left unchanged.
+    patch: async (id, fields) => {
+        return apiRequest(`/orders/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(fields),
+        });
+    },
+
     delete: async (id) => {
         return apiRequest(`/orders/${id}`, {
             method: 'DELETE',
@@ -204,10 +213,10 @@ export const suppliersAPI = {
         return apiRequest('/suppliers');
     },
 
-    create: async (name, shipment_mode = 'LAND', region = null) => {
+    create: async (name, shipment_mode = 'LAND', region = null, contact_email = null) => {
         return apiRequest('/suppliers', {
             method: 'POST',
-            body: JSON.stringify({ name, shipment_mode, region }),
+            body: JSON.stringify({ name, shipment_mode, region, contact_email }),
         });
     },
 

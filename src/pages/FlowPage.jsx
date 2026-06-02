@@ -115,10 +115,19 @@ export default function FlowPage({
       newValue: nextStatus,
       stage: order.STATUS,
     };
-    const updatedOrder = { ...order, STATUS: nextStatus, [workflow.dateField]: today, 'Change Log': [changeLogEntry], changeCount: (order.changeCount || 0) + 1 };
+    const patch = {
+      STATUS: nextStatus,
+      [workflow.dateField]: today,
+      'Change Log': [changeLogEntry],
+    };
     try {
-      await ordersAPI.update(order.id, updatedOrder);
-      setData(prev => prev.map(o => o.id === order.id ? updatedOrder : o));
+      await ordersAPI.patch(order.id, patch);
+      setData(prev => prev.map(o => o.id === order.id ? {
+        ...o,
+        STATUS: nextStatus,
+        [workflow.dateField]: today,
+        changeCount: (o.changeCount || 0) + 1,
+      } : o));
       setToast({ message: `Order ${order['DIE NO']} moved to ${STATUS_CONFIG[nextStatus]?.label || nextStatus}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
@@ -394,9 +403,19 @@ export default function FlowPage({
                       stage: dieReceivanceOrder.STATUS,
                       reason: `Corrector: ${dieReceivanceForm.corrector.trim()}`,
                     };
-                    const updatedOrder = { ...dieReceivanceOrder, STATUS: 'DIE RECEIVED', 'Die Received Date': dieReceivanceForm.die_received_date, 'Corrector': dieReceivanceForm.corrector.trim(), 'Press': dieReceivanceOrder['Press'] || dieReceivanceOrder.Plant || '', 'Ascona Reference': dieReceivanceOrder['Ascona Reference'] || 'No', 'Sample Status': dieReceivanceOrder['Sample Status'] || 'Pending', 'Change Log': [dieReceivanceLog], changeCount: (dieReceivanceOrder.changeCount || 0) + 1 };
-                    await ordersAPI.update(dieReceivanceOrder.id, updatedOrder);
-                    setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? updatedOrder : o));
+                    const patch = {
+                      STATUS: 'DIE RECEIVED',
+                      'Die Received Date': dieReceivanceForm.die_received_date,
+                      'Corrector': dieReceivanceForm.corrector.trim(),
+                      'Press': dieReceivanceOrder['Press'] || dieReceivanceOrder.Plant || '',
+                      'Ascona Reference': dieReceivanceOrder['Ascona Reference'] || 'No',
+                      'Sample Status': dieReceivanceOrder['Sample Status'] || 'Pending',
+                      'Change Log': [dieReceivanceLog],
+                    };
+                    await ordersAPI.patch(dieReceivanceOrder.id, patch);
+                    setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? {
+                      ...o, ...patch, changeCount: (o.changeCount || 0) + 1,
+                    } : o));
                     setDieReceivanceOrder(null);
                     setToast({ message: `Die ${dieReceivanceOrder['DIE NO']} confirmed & moved to Sample Followup`, type: 'success' });
                     setActiveTab('flow-sample-followup');

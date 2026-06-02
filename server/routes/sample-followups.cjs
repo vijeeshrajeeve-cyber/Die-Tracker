@@ -14,7 +14,8 @@ const sanitizeDate = (value) => {
     if (!value) return null;
     const s = String(value).trim();
     if (!s) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const iso = s.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s].*)?$/);
+    if (iso) return iso[1];
     const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
     if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
     return null;

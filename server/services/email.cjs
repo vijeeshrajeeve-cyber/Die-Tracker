@@ -91,26 +91,49 @@ async function testSmtpConnection(config) {
     const transporter = nodemailer.createTransport({
         host: config.smtp_host,
         port: config.smtp_port || 587,
-        secure: (config.smtp_port === 465),
+        secure: (Number(config.smtp_port) === 465),
         auth: { user: config.email_user, pass: config.email_password }
     });
-    await transporter.verify();
-    return { success: true };
+    try {
+        await transporter.verify();
+        return { success: true };
+    } catch (error) {
+        const detail = [error.response, error.code, error.message].filter(Boolean).join(' — ');
+        throw new Error(detail || 'Unknown error');
+    }
 }
 
 // ── IMAP – test connection ──────────────────────────────────────────────────
 
+function describeImapError(error) {
+    // ImapFlow surfaces the real reason in these fields, not in .message
+    const parts = [];
+    if (error.authenticationFailed) parts.push('authentication failed');
+    if (error.serverResponseCode) parts.push(error.serverResponseCode);
+    if (error.responseText) parts.push(error.responseText);
+    if (error.code) parts.push(error.code);
+    const detail = parts.filter(Boolean).join(' — ');
+    return detail || error.message || 'Unknown error';
+}
+
 async function testImapConnection(config) {
+    // Port 993 = implicit TLS; port 143 = STARTTLS upgrade
+    const port = config.imap_port || 993;
     const client = new ImapFlow({
         host: config.imap_host,
-        port: config.imap_port || 993,
-        secure: true,
+        port,
+        secure: port === 993,
         auth: { user: config.email_user, pass: config.email_password },
         logger: false
     });
-    await client.connect();
-    await client.logout();
-    return { success: true };
+    try {
+        await client.connect();
+        await client.logout();
+        return { success: true };
+    } catch (error) {
+        try { await client.logout(); } catch (_) {}
+        throw new Error(describeImapError(error));
+    }
 }
 
 // ── IMAP – poll for new emails ──────────────────────────────────────────────
@@ -124,10 +147,11 @@ async function pollImap() {
     }
 
     imapState.running = true;
+    const port = config.imap_port || 993;
     const client = new ImapFlow({
         host: config.imap_host,
-        port: config.imap_port || 993,
-        secure: true,
+        port,
+        secure: port === 993,
         auth: { user: config.email_user, pass: config.email_password },
         logger: false
     });
@@ -218,8 +242,8 @@ async function pollImap() {
         imapState.error = null;
         if (fetched > 0) console.log(`IMAP poll: fetched ${fetched} new email(s)`);
     } catch (error) {
-        imapState.error = error.message;
-        console.error('IMAP poll error:', error.message);
+        imapState.error = describeImapError(error);
+        console.error('IMAP poll error:', imapState.error);
         try { await client.logout(); } catch (_) {}
     } finally {
         imapState.running = false;

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     id SERIAL PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
     region TEXT,
+    contact_email TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

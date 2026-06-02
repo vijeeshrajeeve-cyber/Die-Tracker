@@ -36,7 +36,11 @@ const sanitizeDate = (value) => {
     if (!value) return null;
     const s = String(value).trim();
     if (!s) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // Accept YYYY-MM-DD and ISO 8601 datetimes (e.g. "2026-03-01T00:00:00.000Z")
+    // by keeping only the date prefix. This is what the GET endpoint returns when
+    // pg gives us DATE columns as JS Date objects that JSON-serialize as ISO.
+    const iso = s.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s].*)?$/);
+    if (iso) return iso[1];
     const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
     if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
     return null; // unparseable — store as NULL rather than error
@@ -203,6 +207,7 @@ router.get('/', async (req, res) => {
             'Remark': order.remark,
             'Urgency': order.urgency || 'NORMAL',
             'specialFollowUp': !!order.special_follow_up,
+            'Design to EMS Date': order.design_to_ems_date,
             'Design Revision Count': order.design_revision_count || 0,
             'Last Revision Date': order.last_revision_date,
             'changeCount': order.change_count || 0,
@@ -232,9 +237,9 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 oracle_entry, supplier, status, overall_delay, eta, month,
                 die_received_date, submission_date, sample_approval_date, no_of_trial, corrector,
                 press, cavity, ascona_reference, sample_status, remark,
-                urgency, special_follow_up,
+                urgency, special_follow_up, design_to_ems_date,
                 created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -273,6 +278,7 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['Remark']),
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
+            sanitizeDate(order['Design to EMS Date']),
             req.user.id
         ]);
 
@@ -288,7 +294,111 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
     }
 });
 
-// Update order
+// Partial update (PATCH) — only touches the fields explicitly included in the request body.
+// Used by workflow step completions and inline field saves so that dates/fields not being
+// changed are never overwritten with null from stale client state.
+router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const body = req.body;
+
+        const FIELD_MAP = {
+            'Plant':                  { col: 'plant',                       fn: sanitizeString },
+            'Order No':               { col: 'order_no',                    fn: sanitizeString },
+            'DIE NO':                 { col: 'die_no',                      fn: sanitizeString },
+            'TYPE':                   { col: 'type',                        fn: sanitizeString },
+            'Die Size':               { col: 'die_size',                    fn: sanitizeString },
+            'Die Requested Date':     { col: 'die_requested_date',          fn: sanitizeDate   },
+            'Ordered date':           { col: 'ordered_date',                fn: sanitizeDate   },
+            'Type of shipment':       { col: 'shipment_type',               fn: sanitizeString },
+            'Mandrels per Cavity':    { col: 'mandrels_per_cavity',         fn: (v) => Math.round(v || 0) },
+            'Total Mandrels':         { col: 'total_mandrels',              fn: (v) => Math.round(v || 0) },
+            'Cavity':                 { col: 'cavity',                      fn: (v) => Math.round(v || 0) },
+            'Design Received Date':   { col: 'design_received_date',        fn: sanitizeDate   },
+            '3D Model Received Date': { col: 'three_d_model_received_date', fn: sanitizeDate   },
+            'simulationEnabled':      { col: 'simulation_enabled',          fn: (v) => v ? 1 : 0 },
+            'Design Approved Date':   { col: 'design_approved_date',        fn: sanitizeDate   },
+            'Delay':                  { col: 'delay',                       fn: (v) => Math.round(v || 0) },
+            'PR Entry':               { col: 'pr_entry',                    fn: sanitizeString },
+            'PR Number':              { col: 'pr_number',                   fn: sanitizeString },
+            'Customer Name':          { col: 'customer_name',               fn: sanitizeString },
+            'Oracle Entry':           { col: 'oracle_entry',                fn: sanitizeString },
+            'Supplier':               { col: 'supplier',                    fn: sanitizeString },
+            'STATUS':                 { col: 'status',                      fn: sanitizeString },
+            'OVERALL DELAY':          { col: 'overall_delay',               fn: (v) => Math.round(v || 0) },
+            'ETA':                    { col: 'eta',                         fn: sanitizeString },
+            'month':                  { col: 'month',                       fn: sanitizeString },
+            'Die Received Date':      { col: 'die_received_date',           fn: sanitizeDate   },
+            'Submission Date':        { col: 'submission_date',             fn: sanitizeDate   },
+            'Sample Approval Date':   { col: 'sample_approval_date',        fn: sanitizeDate   },
+            'No of Trial':            { col: 'no_of_trial',                 fn: (v) => Math.round(v || 0) },
+            'Corrector':              { col: 'corrector',                   fn: sanitizeString },
+            'Press':                  { col: 'press',                       fn: sanitizeString },
+            'Ascona Reference':       { col: 'ascona_reference',            fn: sanitizeString },
+            'Sample Status':          { col: 'sample_status',               fn: sanitizeString },
+            'Remark':                 { col: 'remark',                      fn: sanitizeString },
+            'Urgency':                { col: 'urgency',                     fn: normalizeUrgencyInput },
+            'specialFollowUp':        { col: 'special_follow_up',           fn: parseSpecialFollowUpInput },
+            'Design to EMS Date':     { col: 'design_to_ems_date',          fn: sanitizeDate   },
+        };
+
+        const setClauses = ['updated_at = CURRENT_TIMESTAMP'];
+        const params = [];
+        let paramIdx = 1;
+
+        for (const [field, { col, fn }] of Object.entries(FIELD_MAP)) {
+            if (Object.prototype.hasOwnProperty.call(body, field)) {
+                setClauses.push(`${col} = $${paramIdx++}`);
+                params.push(fn(body[field]));
+            }
+        }
+
+        if (paramIdx === 1) {
+            return res.status(400).json({ error: 'No updatable fields provided' });
+        }
+
+        params.push(id);
+        const result = await pool.query(
+            `UPDATE die_orders SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`,
+            params
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const newEntries = Array.isArray(body['Change Log']) ? body['Change Log'] : [];
+        for (const entry of newEntries) {
+            if (!entry || !entry.field) continue;
+            const changedAt = entry.date ? new Date(entry.date) : new Date();
+            await pool.query(
+                `INSERT INTO order_changes
+                  (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                [
+                    id,
+                    req.user?.id || null,
+                    req.user?.username || entry.changedBy || null,
+                    isNaN(changedAt) ? new Date() : changedAt,
+                    String(entry.field),
+                    entry.oldValue != null ? String(entry.oldValue) : null,
+                    entry.newValue != null ? String(entry.newValue) : null,
+                    entry.reason || null,
+                    entry.stage || null,
+                ]
+            );
+        }
+
+        await autoUpdateBackupRequests(body['DIE NO'], body['Ordered date']);
+
+        res.json({ message: 'Order updated' });
+    } catch (error) {
+        console.error('Patch order error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Update order (full replace — used by Order Detail Modal save)
 router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, async (req, res) => {
     try {
         const { id } = req.params;
@@ -307,8 +417,9 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
                 no_of_trial = $28, corrector = $29,
                 press = $30, cavity = $31, ascona_reference = $32, sample_status = $33, remark = $34,
                 urgency = $35, special_follow_up = $36,
+                design_to_ems_date = $37,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $37
+            WHERE id = $38
         `, [
             sanitizeString(order['Plant']),
             sanitizeString(order['Order No']),
@@ -346,6 +457,7 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['Remark']),
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
+            sanitizeDate(order['Design to EMS Date']),
             id,
         ]);
 

@@ -11,6 +11,7 @@ export default function SettingsPage({
   showAddPlant, setShowAddPlant, newPlantName, setNewPlantName,
   showAddSupplier, setShowAddSupplier, newSupplierName, setNewSupplierName,
   newSupplierShipment, setNewSupplierShipment, newSupplierRegion, setNewSupplierRegion,
+  newSupplierEmail, setNewSupplierEmail,
   emailTemplates, setEmailTemplates, savingTemplateId, setSavingTemplateId,
   profileMeta, profileImportStatus, profileImporting, handleProfileImportFile, fetchProfileMeta,
   budgetYear, setBudgetYear, budgetActivePlant, setBudgetActivePlant,
@@ -22,6 +23,27 @@ export default function SettingsPage({
   copyToClipboard, allChangeLogs,
 }) {
   const [changeLogs, setChangeLogs] = useState([]);
+
+  const tabs = [
+    { id: 'general', label: 'Plants & Suppliers', icon: Factory },
+    { id: 'email', label: 'Email Templates', icon: FileText },
+    { id: 'data', label: 'Data Import', icon: ClipboardList },
+    { id: 'budgets', label: 'Budget Targets', icon: TrendingUp },
+    { id: 'integration', label: 'Excel Integration', icon: Download },
+    { id: 'changelog', label: 'Change Log', icon: History },
+  ];
+
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem('settingsActiveTab');
+      if (saved && tabs.some(t => t.id === saved)) return saved;
+    } catch { /* ignore */ }
+    return 'general';
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('settingsActiveTab', activeTab); } catch { /* ignore */ }
+  }, [activeTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,9 +73,35 @@ export default function SettingsPage({
 
   return (
             <div>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', color: theme.text }}>Settings</h2>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.25rem', color: theme.text }}>Settings</h2>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+              {/* Tab bar */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.5rem', overflowX: 'auto', borderBottom: `1px solid ${theme.cardBorder}`, paddingBottom: '2px', WebkitOverflowScrolling: 'touch' }}>
+                {tabs.map(tab => {
+                  const Icon = tab.icon;
+                  const active = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '7px',
+                        padding: '10px 16px', border: 'none', cursor: 'pointer',
+                        fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
+                        background: 'transparent',
+                        color: active ? theme.text : theme.textDim,
+                        borderBottom: active ? '2px solid #3B82F6' : '2px solid transparent',
+                        marginBottom: '-3px', transition: 'color 0.15s',
+                      }}
+                    >
+                      <Icon size={16} /> {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Plants & Suppliers tab */}
+              <div style={{ display: activeTab === 'general' ? 'grid' : 'none', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
                 {/* Plants Section */}
                 <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -96,6 +144,7 @@ export default function SettingsPage({
                           <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Name</th>
                           <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Region</th>
                           <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Shipment</th>
+                          <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Contact Email</th>
                           <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Actions</th>
                         </tr>
                       </thead>
@@ -128,20 +177,36 @@ export default function SettingsPage({
                                 <option value="LAND">LAND</option>
                               </select>
                             </td>
+                            <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                              <input
+                                type="text"
+                                defaultValue={supplier.contact_email || ''}
+                                placeholder="email@example.com"
+                                title="Used as the To address for Design reminder emails. Separate multiple with commas."
+                                onBlur={async (e) => {
+                                  const value = e.target.value.trim();
+                                  if (value === (supplier.contact_email || '')) return;
+                                  try { await suppliersAPI.update(supplier.id, { contact_email: value }); fetchSuppliers(); } catch (error) { alert('Failed to update: ' + error.message); }
+                                }}
+                                style={{ width: '100%', minWidth: '180px', padding: '6px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                              />
+                            </td>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
                               <button onClick={async () => { if (window.confirm(`Delete supplier "${supplier.name}"?`)) { try { await suppliersAPI.delete(supplier.id); fetchSuppliers(); } catch (error) { alert('Failed to delete: ' + error.message); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
                             </td>
                           </tr>
                         ))}
-                        {suppliers.length === 0 && <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
+                        {suppliers.length === 0 && <tr><td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
                       </tbody>
                     </table>
                   </div>
                 </div>
               </div>
 
+              {/* Email Templates tab */}
+              <div style={{ display: activeTab === 'email' ? 'block' : 'none' }}>
               {/* Email Template Recipients Section - full width */}
-              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, marginTop: '1.5rem' }}>
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ marginBottom: '1rem' }}>
                   <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}><FileText size={20} /> Email Template Recipients</h3>
                   <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '4px', marginBottom: 0 }}>
@@ -216,8 +281,12 @@ export default function SettingsPage({
                 </div>
               </div>
 
+              </div>
+
+              {/* Data Import tab */}
+              <div style={{ display: activeTab === 'data' ? 'block' : 'none' }}>
               {/* Profile Master Section - full width */}
-              <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '10px' }}>
                   <div>
                     <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}><ClipboardList size={20} /> Profile Master</h3>
@@ -278,10 +347,15 @@ export default function SettingsPage({
               </div>
 
               {/* Existing Data Import Section - full width */}
-              <ExistingDataPage plants={plants} theme={theme} setToast={setToast} />
+              <div style={{ marginTop: '1.5rem' }}>
+                <ExistingDataPage plants={plants} theme={theme} setToast={setToast} />
+              </div>
+              </div>
 
+              {/* Budget Targets tab */}
+              <div style={{ display: activeTab === 'budgets' ? 'block' : 'none' }}>
               {/* Budget Targets Section - full width */}
-              <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, marginTop: '0' }}>
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
                   <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}><TrendingUp size={20} /> Budget Targets</h3>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -460,8 +534,12 @@ export default function SettingsPage({
                 </div>
               </div>
 
+              </div>
+
+              {/* Excel Integration tab */}
+              <div style={{ display: activeTab === 'integration' ? 'block' : 'none' }}>
               {/* Excel Integration Section - full width */}
-              <div style={{ gridColumn: 'span 2', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}><Download size={20} /> Excel Integration</h3>
                 </div>
@@ -589,8 +667,12 @@ export default function SettingsPage({
                 </div>
               </div>
 
+              </div>
+
+              {/* Change Log tab */}
+              <div style={{ display: activeTab === 'changelog' ? 'block' : 'none' }}>
               {/* Change Log Section */}
-              <div style={{ marginTop: '1.5rem', background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+              <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}>
                     <History size={20} /> Change Log
@@ -638,6 +720,8 @@ export default function SettingsPage({
                 </div>
               </div>
 
+              </div>
+
               {/* Add Plant Modal */}
               {showAddPlant && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowAddPlant(false)}>
@@ -683,9 +767,13 @@ export default function SettingsPage({
                         <option value="AIR">AIR</option>
                       </select>
                     </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Contact Email</label>
+                      <input type="text" value={newSupplierEmail} onChange={(e) => setNewSupplierEmail(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="email@example.com (used for Design reminders)" />
+                    </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                      <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment, newSupplierRegion || null); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
+                      <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); setNewSupplierEmail(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment, newSupplierRegion || null, newSupplierEmail || null); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); setNewSupplierEmail(''); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
                     </div>
                   </div>
                 </div>

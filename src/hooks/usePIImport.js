@@ -97,7 +97,7 @@ export default function usePIImport({
       for (const record of records) {
         const { isExisting, ...orderData } = record;
         if (isExisting && orderData.id) {
-          await ordersAPI.update(orderData.id, orderData);
+          await ordersAPI.patch(orderData.id, orderData);
           updated++;
         } else {
           await ordersAPI.create(orderData);

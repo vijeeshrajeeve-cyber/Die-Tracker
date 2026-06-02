@@ -101,9 +101,9 @@ export default function SampleFollowupPage({
     try {
       if (editingSampleFollowup) {
         if (editingSampleFollowup._source === 'order') {
-          const existing = editingSampleFollowup._order;
-          const updated = { ...existing, ...formToOrderFields(sampleFollowupForm) };
-          await ordersAPI.update(existing.id, updated);
+          // Use PATCH so only the SF-specific fields are touched; other dates
+          // (Design Received Date, Ordered date, etc.) are never overwritten.
+          await ordersAPI.patch(editingSampleFollowup._order.id, formToOrderFields(sampleFollowupForm));
           fetchOrders();
         } else {
           const raw = editingSampleFollowup._raw;
@@ -144,18 +144,16 @@ export default function SampleFollowupPage({
     if (!window.confirm('Clear the sample-followup data for this die? The underlying die order will remain; only sample/trial fields will be reset.')) return;
     try {
       const existing = sf._order;
-      const cleared = {
-        ...existing,
-        'Die Received Date': '',
-        'Submission Date': '',
-        'Sample Approval Date': '',
+      await ordersAPI.patch(existing.id, {
+        'Die Received Date': null,
+        'Submission Date': null,
+        'Sample Approval Date': null,
         'Ascona Reference': 'No',
         'Sample Status': '',
         'No of Trial': 0,
         'Remark': '',
         'Press': '',
-      };
-      await ordersAPI.update(existing.id, cleared);
+      });
       setToast({ message: 'Sample followup cleared', type: 'success' });
       setTimeout(() => setToast(null), 3000);
       fetchOrders();
