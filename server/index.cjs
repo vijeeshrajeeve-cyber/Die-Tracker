@@ -23,6 +23,8 @@ const emailService = require('./services/email.cjs');
 const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
 const plantBudgetsRouter = require('./routes/plant-budgets.cjs');
 const existingDataRouter = require('./routes/existing-data.cjs');
+const autoBackupsRouter = require('./routes/auto-backups.cjs');
+const autoBackupService = require('./services/autoBackup.cjs');
 
 
 const app = express();
@@ -93,6 +95,7 @@ app.use('/api/api-keys', authMiddleware, adminMiddleware, apiKeysRouter);
 app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleFollowupsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
 app.use('/api/existing-data', existingDataRouter);
+app.use('/api/auto-backups', authMiddleware, adminMiddleware, autoBackupsRouter);
 
 
 // Health check
@@ -140,6 +143,9 @@ const startServer = async () => {
         }
 
         await initializeDatabase();
+
+        // Start scheduled Excel backup every 5 hours (configurable via BACKUP_INTERVAL_HOURS)
+        autoBackupService.scheduleAutoBackup();
 
         // Start IMAP poller if receive is enabled in config
         emailService.getEmailConfig().then(config => {

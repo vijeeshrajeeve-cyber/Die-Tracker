@@ -57,6 +57,8 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3001}
       HOST: ${HOST:-0.0.0.0}
+    volumes:
+      - order_backups:/app/backups
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -160,6 +162,8 @@ services:
       - die-ordering-network
 volumes:
   postgres_data:
+    driver: local
+  order_backups:
     driver: local
 
 networks:

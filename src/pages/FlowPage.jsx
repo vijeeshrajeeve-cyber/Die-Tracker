@@ -152,16 +152,18 @@ export default function FlowPage({
   const isPR = currentFlow.status === 'PENDING FOR PR';
   const isDone = currentFlow.status === 'DONE';
   const isDesignApproval = currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
+  const isOracleEntry = currentFlow.status === 'PENDING FOR ORACLE ENTRY';
 
   const columns = [
     { key: 'DIE NO', label: 'Die No' },
-    { key: 'Order No', label: 'Order' },
+    ...(isOracleEntry ? [] : [{ key: 'Order No', label: 'Order' }]),
     { key: 'Plant', label: 'Plant' },
     { key: 'TYPE', label: 'Type' },
     { key: 'Diameter', label: 'Diameter' },
     { key: 'Thickness', label: 'Thickness' },
     { key: 'Cavity', label: 'Cav' },
     { key: 'Supplier', label: 'Supplier' },
+    ...(isOracleEntry ? [{ key: 'Ordered date', label: 'Order Date' }] : []),
     ...(isPendingOrder ? [{ key: 'Customer Name', label: 'Customer' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' }, { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' }, { key: 'Type of shipment', label: 'Shipment' }] : []),
   ];
 
@@ -207,7 +209,7 @@ export default function FlowPage({
                   ))}
                   <th style={{ ...styles.th, textAlign: 'center' }}>Days</th>
                   <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
-                  <th style={{ ...styles.th, textAlign: 'center' }}>Rev</th>
+                  {!isOracleEntry && <th style={{ ...styles.th, textAlign: 'center' }}>Rev</th>}
                   {isPR && (
                     <>
                       <th style={{ ...styles.th, textAlign: 'center' }}>Copy ERP</th>
@@ -228,11 +230,13 @@ export default function FlowPage({
                         <span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
                       </div>
                     </td>
-                    <td style={styles.td}>
-                      {isPendingOrder ? (
-                        <input type="text" defaultValue={order['Order No'] || ''} onBlur={(e) => handleInlineFieldSave(order, 'Order No', e.target.value.trim())} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} style={{ width: '90px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }} placeholder="Order No" />
-                      ) : order['Order No']}
-                    </td>
+                    {!isOracleEntry && (
+                      <td style={styles.td}>
+                        {isPendingOrder ? (
+                          <input type="text" defaultValue={order['Order No'] || ''} onBlur={(e) => handleInlineFieldSave(order, 'Order No', e.target.value.trim())} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} style={{ width: '90px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }} placeholder="Order No" />
+                        ) : order['Order No']}
+                      </td>
+                    )}
                     <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
                       <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span>
                     </td>
@@ -293,15 +297,20 @@ export default function FlowPage({
                         <td style={styles.td}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{order['Type of shipment'] === 'AIR' ? <Plane size={14} color="#0EA5E9" /> : <Truck size={14} color="#10B981" />}{order['Type of shipment']}</div></td>
                       </>
                     )}
+                    {isOracleEntry && (
+                      <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{formatDate(order['Ordered date'])}</td>
+                    )}
                     <td style={{ ...styles.td, textAlign: 'center' }}><DaysBadge order={order} /></td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}><Eye size={18} /></button>
                     </td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      {order['Design Revision Count'] > 0 ? (
-                        <button onClick={(e) => { e.stopPropagation(); setRevisionHistoryOrder && setRevisionHistoryOrder(order); }} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.4)', cursor: 'pointer' }} title={`${order['Design Revision Count']} revision(s)${order['Last Revision Date'] ? ` - Last: ${order['Last Revision Date']}` : ''} - Click to view history`}>{order['Design Revision Count']}</button>
-                      ) : <span style={{ color: '#64748B' }}>—</span>}
-                    </td>
+                    {!isOracleEntry && (
+                      <td style={{ ...styles.td, textAlign: 'center' }}>
+                        {order['Design Revision Count'] > 0 ? (
+                          <button onClick={(e) => { e.stopPropagation(); setRevisionHistoryOrder && setRevisionHistoryOrder(order); }} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.4)', cursor: 'pointer' }} title={`${order['Design Revision Count']} revision(s)${order['Last Revision Date'] ? ` - Last: ${order['Last Revision Date']}` : ''} - Click to view history`}>{order['Design Revision Count']}</button>
+                        ) : <span style={{ color: '#64748B' }}>—</span>}
+                      </td>
+                    )}
                     {isPR && (
                       <>
                         <td style={{ ...styles.td, textAlign: 'center' }}>

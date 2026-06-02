@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload } from 'lucide-react';
-import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI, ordersAPI } from '../api';
+import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload, HardDrive, RefreshCw } from 'lucide-react';
+import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI, ordersAPI, autoBackupsAPI } from '../api';
 import Papa from 'papaparse';
 import ExistingDataPage from './ExistingDataPage';
 
@@ -23,6 +23,9 @@ export default function SettingsPage({
   copyToClipboard, allChangeLogs,
 }) {
   const [changeLogs, setChangeLogs] = useState([]);
+  const [backups, setBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [backupRunning, setBackupRunning] = useState(false);
 
   const tabs = [
     { id: 'general', label: 'Plants & Suppliers', icon: Factory },
@@ -31,6 +34,7 @@ export default function SettingsPage({
     { id: 'budgets', label: 'Budget Targets', icon: TrendingUp },
     { id: 'integration', label: 'Excel Integration', icon: Download },
     { id: 'changelog', label: 'Change Log', icon: History },
+    { id: 'backups', label: 'Data Backups', icon: HardDrive },
   ];
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -43,6 +47,18 @@ export default function SettingsPage({
 
   useEffect(() => {
     try { localStorage.setItem('settingsActiveTab', activeTab); } catch { /* ignore */ }
+  }, [activeTab]);
+
+  const fetchBackups = () => {
+    setBackupsLoading(true);
+    autoBackupsAPI.getAll()
+      .then(res => setBackups(res.backups || []))
+      .catch(() => setBackups([]))
+      .finally(() => setBackupsLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'backups') fetchBackups();
   }, [activeTab]);
 
   useEffect(() => {
@@ -720,6 +736,79 @@ export default function SettingsPage({
                 </div>
               </div>
 
+              </div>
+
+              {/* Data Backups tab */}
+              <div style={{ display: activeTab === 'backups' ? 'block' : 'none' }}>
+                <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}>
+                      <HardDrive size={20} /> Data Backups
+                    </h3>
+                    <button
+                      onClick={async () => {
+                        setBackupRunning(true);
+                        try {
+                          await autoBackupsAPI.runNow();
+                          setToast?.({ message: 'Backup created successfully', type: 'success' });
+                          fetchBackups();
+                        } catch (err) {
+                          setToast?.({ message: 'Backup failed: ' + err.message, type: 'error' });
+                        } finally {
+                          setBackupRunning(false);
+                        }
+                      }}
+                      disabled={backupRunning}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: backupRunning ? theme.inputBg : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: backupRunning ? theme.textDim : 'white', border: 'none', borderRadius: '8px', cursor: backupRunning ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
+                    >
+                      <RefreshCw size={14} style={{ animation: backupRunning ? 'spin 1s linear infinite' : 'none' }} />
+                      {backupRunning ? 'Running…' : 'Backup Now'}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: theme.textDim, marginBottom: '1.25rem' }}>
+                    Auto-backups run every 5 hours and save all die orders to Excel. The last 30 backups are kept.
+                  </p>
+                  <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden' }}>
+                    {backupsLoading ? (
+                      <div style={{ padding: '2.5rem', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem' }}>Loading…</div>
+                    ) : backups.length === 0 ? (
+                      <div style={{ padding: '2.5rem', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem' }}>No backups yet — the first one runs 1 minute after server start, or click "Backup Now".</div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            {['File', 'Date & Time', 'Size', ''].map(h => (
+                              <th key={h} style={{ padding: '10px 14px', textAlign: h === '' ? 'right' : 'left', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, whiteSpace: 'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backups.map((b, idx) => {
+                            const dt = new Date(b.createdAt);
+                            const dateStr = dt.toLocaleDateString();
+                            const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            const sizeKb = (b.sizeBytes / 1024).toFixed(1);
+                            return (
+                              <tr key={b.filename} style={{ background: idx % 2 === 0 ? 'transparent' : `${theme.tableBg}55` }}>
+                                <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', fontFamily: 'monospace', color: theme.text }}>{b.filename}</td>
+                                <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{dateStr} {timeStr}</td>
+                                <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.8rem', color: theme.textDim, whiteSpace: 'nowrap' }}>{sizeKb} KB</td>
+                                <td style={{ padding: '10px 14px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => autoBackupsAPI.download(b.filename).catch(err => setToast?.({ message: 'Download failed: ' + err.message, type: 'error' }))}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 12px', background: 'rgba(59,130,246,0.1)', color: '#3B82F6', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                                  >
+                                    <Download size={12} /> Download
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Add Plant Modal */}

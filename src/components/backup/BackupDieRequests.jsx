@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
-import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, extractProfileFromDie } from '../../api';
+import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, extractProfileFromDie } from '../../api';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
 
@@ -63,6 +63,11 @@ const normalizePlantName = (plant) => (plant || '')
   .toUpperCase()
   .replace(/\b0+(\d+)\b/g, '$1');
 
+const normalizeDieNo = (value) => (value || '')
+  .toString()
+  .trim()
+  .toUpperCase();
+
 const escapeHtml = (value) => (value || 'N/A')
   .toString()
   .replace(/&/g, '&amp;')
@@ -83,6 +88,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [saving, setSaving] = useState(false);
   const [presses, setPresses] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [dieWarning, setDieWarning] = useState('');
   const [selectedRequestIds, setSelectedRequestIds] = useState([]);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderRow, setOrderRow] = useState(null);
@@ -106,6 +113,14 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     suppliersAPI.getAll()
       .then((rows) => { if (!cancelled) setSuppliers(rows || []); })
       .catch((err) => console.error('Failed to load suppliers:', err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    ordersAPI.getAll()
+      .then((res) => { if (!cancelled) setOrders(res?.orders || []); })
+      .catch((err) => console.error('Failed to load orders:', err));
     return () => { cancelled = true; };
   }, []);
 
@@ -192,7 +207,38 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const openCreateModal = () => {
     setEditingRequest(null);
     setFormData({ ...EMPTY_FORM, 'Requested Date': getTodayDateString() });
+    setDieWarning('');
     setShowModal(true);
+  };
+
+  // Returns a warning message if the entered die number already has an open
+  // backup request or a die order, otherwise an empty string. Duplicates are
+  // not allowed, so this is also used to block saving.
+  const getDuplicateDieWarning = (rawDie) => {
+    const die = normalizeDieNo(rawDie);
+    if (!die) return '';
+
+    const matchingRequests = (backupRequests || []).filter(
+      (r) => normalizeDieNo(r['DIE NO']) === die && (!editingRequest || r.id !== editingRequest.id)
+    );
+    const matchingOrders = (orders || []).filter(
+      (o) => normalizeDieNo(o['DIE NO']) === die
+    );
+
+    if (matchingRequests.length === 0 && matchingOrders.length === 0) return '';
+
+    const parts = [];
+    if (matchingRequests.length > 0) {
+      parts.push(`${matchingRequests.length} existing backup die request${matchingRequests.length > 1 ? 's' : ''}`);
+    }
+    if (matchingOrders.length > 0) {
+      parts.push(`${matchingOrders.length} die order${matchingOrders.length > 1 ? 's' : ''}`);
+    }
+    return `Die "${rawDie.trim()}" already has ${parts.join(' and ')}. Duplicate die numbers are not allowed — please review the die number.`;
+  };
+
+  const checkDuplicateDie = (rawDie) => {
+    setDieWarning(getDuplicateDieWarning(rawDie));
   };
 
   const toggleRequestSelection = (requestId) => {
@@ -284,12 +330,16 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       'Order Received Last Year': request['Order Received Last Year'] || '',
       'Remarks': request['Remarks'] || '',
     });
+    setDieWarning('');
     setShowModal(true);
   };
 
   const handleDieBlur = async () => {
     const die = (formData['DIE NO'] || '').trim();
     const existingCustomer = (formData['Customer'] || '').trim();
+
+    checkDuplicateDie(die);
+
     if (!die || existingCustomer) return;
     try {
       const result = await profilesAPI.lookup(die);
@@ -302,9 +352,18 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   };
 
   const handleSave = async () => {
+    const die = (formData['DIE NO'] || '').trim();
+
+    // Block duplicates — a die number with an existing backup request or die order cannot be re-used.
+    const duplicateWarning = getDuplicateDieWarning(die);
+    if (duplicateWarning) {
+      setDieWarning(duplicateWarning);
+      alert(duplicateWarning);
+      return;
+    }
+
     setSaving(true);
     try {
-      const die = (formData['DIE NO'] || '').trim();
       let customer = (formData['Customer'] || '').trim();
       const profile = extractProfileFromDie(die);
 
@@ -830,11 +889,25 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 <input
                   type="text"
                   value={formData['DIE NO']}
-                  onChange={(e) => setFormData({ ...formData, 'DIE NO': e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, 'DIE NO': e.target.value }); if (dieWarning) setDieWarning(''); }}
                   onBlur={handleDieBlur}
-                  style={inputStyle}
+                  style={{
+                    ...inputStyle,
+                    border: dieWarning ? '1px solid #F59E0B' : inputStyle.border,
+                  }}
                   placeholder="Enter die number"
                 />
+                {dieWarning && (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: '8px',
+                    marginTop: '8px', padding: '8px 12px', borderRadius: '8px',
+                    background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)',
+                    color: '#F59E0B', fontSize: '0.78rem', lineHeight: 1.35,
+                  }}>
+                    <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+                    <span>{dieWarning}</span>
+                  </div>
+                )}
               </div>
 
               {/* Customer */}

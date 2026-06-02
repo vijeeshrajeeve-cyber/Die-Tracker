@@ -509,6 +509,32 @@ export const sampleFollowupsAPI = {
     },
 };
 
+// Auto Backups API (admin only)
+export const autoBackupsAPI = {
+    getAll: async () => {
+        return apiRequest('/auto-backups');
+    },
+
+    runNow: async () => {
+        return apiRequest('/auto-backups/run', { method: 'POST' });
+    },
+
+    download: async (filename) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/auto-backups/download/${encodeURIComponent(filename)}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+};
+
 // Plant Budgets API
 export const plantBudgetsAPI = {
     getAll: async () => {
