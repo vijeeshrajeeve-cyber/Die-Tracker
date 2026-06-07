@@ -55,3 +55,90 @@ body {
 .hover-subtle:active {
   transform: scale(0.98);
 }
+
+/* ============================================================
+   Data table readability system (.dt-table)
+   Colors are driven by CSS variables set on the scroll wrapper
+   from the active theme, so this works in light & dark modes.
+   Density is controlled globally via [data-table-density] on
+   the root element (defaults to "comfortable").
+   ============================================================ */
+
+/* Scroll container: cap width, allow horizontal scroll, and give a
+   max-height so the sticky header engages on long lists. */
+.dt-scroll {
+  max-width: 100%;
+  max-height: calc(100vh - 16rem);
+  overflow: auto;
+}
+
+.dt-table {
+  width: 100%;
+  border-collapse: separate; /* required so sticky header borders stay put */
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums; /* align die nos, qtys, dates vertically */
+  font-feature-settings: "tnum" 1;
+}
+
+/* Header: bolder, distinct background, sticky on vertical scroll */
+.dt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--dt-header-bg, #18181b);
+  color: var(--dt-header-text, #e4e4e7);
+  font-size: 0.8125rem; /* 13px — never below 13 */
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 2px solid var(--dt-header-border, #52525b);
+}
+
+/* Body cells: 14px min, comfortable line-height, AA-contrast text */
+.dt-table tbody td {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.45;
+  color: var(--dt-body-text, inherit);
+  border-bottom: 1px solid var(--dt-border, #27272a);
+  vertical-align: middle;
+}
+
+/* Zebra striping — the single biggest scannability win */
+.dt-table tbody tr:nth-child(even) > td {
+  background: var(--dt-stripe, rgba(127, 127, 127, 0.045));
+}
+
+/* Hover-row highlight so the eye tracks across columns */
+.dt-table tbody tr:hover > td {
+  background: var(--dt-hover, rgba(127, 127, 127, 0.1));
+}
+
+/* ---- Density (comfortable default / compact toggle) ---- */
+.dt-table thead th,
+.dt-table tbody td {
+  padding: 12px 14px; /* comfortable */
+}
+[data-table-density="compact"] .dt-table thead th,
+[data-table-density="compact"] .dt-table tbody td {
+  padding: 7px 12px;
+  font-size: 0.8125rem; /* 13px floor in compact mode */
+  line-height: 1.35;
+}
+
+/* ---- Alignment & truncation utilities ---- */
+.dt-table .dt-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dt-table .dt-center {
+  text-align: center;
+}
+.dt-table .dt-truncate {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

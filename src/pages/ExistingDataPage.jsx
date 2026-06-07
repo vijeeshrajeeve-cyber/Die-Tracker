@@ -135,6 +135,16 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
     color: theme.text, fontSize: '0.875rem', cursor: 'pointer',
   };
 
+  const scrollVars = {
+    '--dt-border': theme.cardBorder,
+    '--dt-header-bg': theme.tableHeaderBg,
+    '--dt-header-text': theme.tableHeaderText,
+    '--dt-header-border': theme.tableHeaderBorder,
+    '--dt-stripe': theme.stripeBg,
+    '--dt-hover': theme.rowHover,
+    '--dt-body-text': theme.text,
+  };
+
   const tabBtnStyle = (active) => ({
     padding: '8px 20px', borderRadius: '8px', border: 'none',
     background: active ? (theme.primary || '#3B82F6') : 'transparent',
@@ -264,16 +274,12 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
         {metaLoading ? (
           <p style={{ fontSize: '0.8rem', color: theme.textDim, margin: 0 }}>Loading…</p>
         ) : (
-          <div style={{ background: theme.inputBg, borderRadius: '10px', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <div className="dt-scroll" style={{ ...scrollVars, background: theme.inputBg, borderRadius: '10px', overflow: 'hidden' }}>
+            <table className="dt-table" style={{ width: '100%' }}>
               <thead>
                 <tr>
                   {['Plant', 'Die Details', 'Last Imported', 'Production Data', 'Last Imported'].map((h, i) => (
-                    <th key={i} style={{
-                      padding: '10px 12px', textAlign: i === 1 || i === 3 ? 'right' : 'left',
-                      color: theme.textDim, fontWeight: 600, fontSize: '0.75rem',
-                      textTransform: 'uppercase', background: theme.tableBg,
-                    }}>{h}</th>
+                    <th key={i} className={i === 1 || i === 3 ? 'dt-num' : undefined}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -281,20 +287,19 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
                 {(plants || []).map(p => {
                   const dd = getDdMeta(p.name);
                   const pd = getPdMeta(p.name);
-                  const cellBorder = { borderTop: `1px solid ${theme.cardBorder}` };
                   return (
                     <tr key={p.id || p.name}>
-                      <td style={{ ...cellBorder, padding: '10px 12px', color: theme.text, fontWeight: 500 }}>{p.name}</td>
-                      <td style={{ ...cellBorder, padding: '10px 12px', textAlign: 'right', color: dd ? theme.text : theme.textDim }}>
+                      <td style={{ fontWeight: 500 }}>{p.name}</td>
+                      <td className="dt-num" style={{ color: dd ? theme.text : theme.textMuted }}>
                         {dd ? dd.count.toLocaleString() : '—'}
                       </td>
-                      <td style={{ ...cellBorder, padding: '10px 12px', color: theme.textDim, fontSize: '0.8rem' }}>
+                      <td style={{ color: theme.textMuted }}>
                         {dd?.last_imported ? new Date(dd.last_imported).toLocaleDateString() : '—'}
                       </td>
-                      <td style={{ ...cellBorder, padding: '10px 12px', textAlign: 'right', color: pd ? theme.text : theme.textDim }}>
+                      <td className="dt-num" style={{ color: pd ? theme.text : theme.textMuted }}>
                         {pd ? pd.count.toLocaleString() : '—'}
                       </td>
-                      <td style={{ ...cellBorder, padding: '10px 12px', color: theme.textDim, fontSize: '0.8rem' }}>
+                      <td style={{ color: theme.textMuted }}>
                         {pd?.last_imported ? new Date(pd.last_imported).toLocaleDateString() : '—'}
                       </td>
                     </tr>
@@ -302,7 +307,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
                 })}
                 {(!plants || plants.length === 0) && (
                   <tr>
-                    <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>
+                    <td colSpan={5} className="dt-center" style={{ padding: '24px', color: theme.textMuted }}>
                       No plants configured
                     </td>
                   </tr>

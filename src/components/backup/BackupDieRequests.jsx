@@ -531,6 +531,18 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     fontSize: '0.875rem',
   };
 
+  // Color tokens consumed by the shared .dt-table CSS (see index.css)
+  const scrollVars = {
+    '--dt-border': theme.cardBorder,
+    '--dt-header-bg': theme.tableHeaderBg,
+    '--dt-header-text': theme.tableHeaderText,
+    '--dt-header-border': theme.tableHeaderBorder,
+    '--dt-stripe': theme.stripeBg,
+    '--dt-hover': theme.rowHover,
+    '--dt-body-text': theme.text,
+  };
+  const tdMuted = { color: theme.textMuted };
+
   const labelStyle = {
     display: 'block',
     fontSize: '0.8rem',
@@ -647,15 +659,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
         border: `1px solid ${theme.cardBorder}`, overflow: 'hidden',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
       }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="dt-scroll" style={scrollVars}>
+          <table className="dt-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th style={{
-                  padding: '1rem', textAlign: 'center', fontSize: '0.7rem',
-                  fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-                  color: theme.textDim, background: theme.tableBg, width: '48px',
-                }}>
+                <th className="dt-center" style={{ width: '48px' }}>
                   <input
                     type="checkbox"
                     checked={allPageRequestsSelected}
@@ -668,13 +676,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                   <th
                     key={col.key}
                     onClick={() => col.sortable !== false && handleSort(col.key)}
-                    style={{
-                      padding: '1rem', textAlign: 'left', fontSize: '0.7rem',
-                      fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-                      color: theme.textDim, background: theme.tableBg,
-                      cursor: col.sortable !== false ? 'pointer' : 'default',
-                      whiteSpace: 'nowrap',
-                    }}
+                    style={{ cursor: col.sortable !== false ? 'pointer' : 'default' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       {col.label}
@@ -686,11 +688,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     </div>
                   </th>
                 ))}
-                <th style={{
-                  padding: '1rem', textAlign: 'center', fontSize: '0.7rem',
-                  fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-                  color: theme.textDim, background: theme.tableBg,
-                }}>
+                <th className="dt-center">
                   Actions
                 </th>
               </tr>
@@ -698,9 +696,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             <tbody>
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={COLUMNS.length + 2} style={{
-                    padding: '3rem', textAlign: 'center', color: theme.textMuted, fontSize: '0.95rem',
-                  }}>
+                  <td colSpan={COLUMNS.length + 2} className="dt-center" style={{ padding: '3rem', color: theme.textMuted, fontSize: '0.95rem' }}>
                     No backup requests found
                   </td>
                 </tr>
@@ -710,10 +706,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     key={request.id}
                     style={{ cursor: 'pointer' }}
                     onClick={() => openEditModal(request)}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.primaryLight; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                    <td className="dt-center">
                       <input
                         type="checkbox"
                         checked={selectedRequestIds.includes(request.id)}
@@ -723,10 +717,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                         style={{ width: '16px', height: '16px', accentColor: theme.primary, cursor: 'pointer' }}
                       />
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted }}>
+                    <td className="dt-num" style={tdMuted}>
                       {(currentPage - 1) * itemsPerPage + idx + 1}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       {request['Plant'] && (
                         <span style={{
                           padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600,
@@ -737,37 +731,37 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text, fontWeight: 600, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                    <td style={{ fontWeight: 600, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                       {request['DIE NO'] || '—'}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted }}>
+                    <td>
                       {request['Customer'] || '—'}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       {formatDate(request['Requested Date'])}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted }}>
+                    <td>
                       {request['Die Available'] || '—'}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       {formatDate(request['Drawing Requested'])}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       {formatDate(request['Ordered Date'])}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem' }}>
+                    <td>
                       <StatusBadge status={request['Status']} />
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted }}>
+                    <td>
                       {request['Reason'] || '—'}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted }}>
+                    <td>
                       {request['Order Received Last Year'] || '—'}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.textMuted, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="dt-truncate">
                       {request['Remarks'] || '—'}
                     </td>
-                    <td style={{ padding: '1rem', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                    <td className="dt-center">
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); openOrderModal(request); }}

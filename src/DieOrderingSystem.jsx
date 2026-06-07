@@ -864,7 +864,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], currentUser }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], currentUser, canEdit = true }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
@@ -1167,7 +1167,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {!isEditing ? (
-              <button onClick={() => setIsEditing(true)} style={{ padding: '8px 16px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+              canEdit && <button onClick={() => setIsEditing(true)} style={{ padding: '8px 16px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
             ) : (
               <>
                 <button onClick={handleCancel} style={{ padding: '8px 16px', background: theme?.cardBg || '#334155', color: theme?.text || '#F1F5F9', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
@@ -1347,7 +1347,7 @@ export default function DieOrderingSystem() {
   const [data, setData] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', dateFrom: '', dateTo: '' });
+  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', urgency: 'all', specialFollowUp: 'all', dateFrom: '', dateTo: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'Die Requested Date', direction: 'desc' });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -1385,6 +1385,25 @@ export default function DieOrderingSystem() {
       console.warn('Unable to save theme preference');
     }
   }, [isDarkMode]);
+
+  // Table density (comfortable default — better for plant-floor / shared monitors)
+  const [tableDensity, setTableDensity] = useState(() => {
+    try {
+      return localStorage.getItem('die-ordering-table-density') === 'compact' ? 'compact' : 'comfortable';
+    } catch {
+      return 'comfortable';
+    }
+  });
+
+  // Apply density globally via a root attribute the .dt-table CSS reads, and persist it
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-table-density', tableDensity);
+      localStorage.setItem('die-ordering-table-density', tableDensity);
+    } catch {
+      console.warn('Unable to save table density preference');
+    }
+  }, [tableDensity]);
 
   useEffect(() => {
     try {
@@ -2093,7 +2112,11 @@ export default function DieOrderingSystem() {
       const dateFromMatch = !filters.dateFrom || (orderDate && orderDate >= filters.dateFrom);
       const dateToMatch = !filters.dateTo || (orderDate && orderDate <= filters.dateTo);
       const customerMatch = filters.customer === 'all' || order['Customer Name'] === filters.customer;
-      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year) && customerMatch && dateFromMatch && dateToMatch;
+      const urgencyMatch = filters.urgency === 'all' || normalizeOrderUrgency(order.Urgency) === filters.urgency;
+      const isFlagged = order.specialFollowUp === true || order.specialFollowUp === 1;
+      const specialFollowUpMatch = filters.specialFollowUp === 'all'
+        || (filters.specialFollowUp === 'yes' ? isFlagged : !isFlagged);
+      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year) && customerMatch && urgencyMatch && specialFollowUpMatch && dateFromMatch && dateToMatch;
     }).sort((a, b) => {
       const aVal = a[sortConfig.key] || '', bVal = b[sortConfig.key] || '';
       return (aVal > bVal ? 1 : -1) * (sortConfig.direction === 'asc' ? 1 : -1);
@@ -2226,6 +2249,11 @@ export default function DieOrderingSystem() {
     headerBg: '#09090b', 
     navBg: 'transparent',
     tableBg: 'transparent',
+    tableHeaderBg: '#18181b',
+    tableHeaderText: '#e4e4e7',
+    tableHeaderBorder: '#3f3f46',
+    stripeBg: 'rgba(255,255,255,0.025)',
+    rowHover: 'rgba(255,255,255,0.06)',
     tooltipBg: '#27272a',
     sidebarBg: '#09090b',
     primary: '#fafafa',
@@ -2243,6 +2271,11 @@ export default function DieOrderingSystem() {
     headerBg: '#ffffff',
     navBg: 'transparent',
     tableBg: 'transparent',
+    tableHeaderBg: '#f4f4f5',
+    tableHeaderText: '#3f3f46',
+    tableHeaderBorder: '#d4d4d8',
+    stripeBg: 'rgba(0,0,0,0.025)',
+    rowHover: 'rgba(0,0,0,0.045)',
     tooltipBg: '#09090b',
     sidebarBg: '#ffffff',
     primary: '#18181b',
@@ -2659,6 +2692,8 @@ export default function DieOrderingSystem() {
           theme={theme}
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
+          tableDensity={tableDensity}
+          setTableDensity={setTableDensity}
           setShowPDFImportModal={setShowPDFImportModal}
           setShowPIImportModal={setShowPIImportModal}
           setShowImportModal={setShowImportModal}
@@ -2817,7 +2852,7 @@ export default function DieOrderingSystem() {
           )}
         </main>
 
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} canEdit={activeTab === 'orders'} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
         {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}

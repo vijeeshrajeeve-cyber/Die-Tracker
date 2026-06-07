@@ -13,9 +13,18 @@ export default function UsersPage({
   handleDeleteUser,
 }) {
   const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
-  const tableStyle = { width: '100%', borderCollapse: 'collapse' };
-  const th = { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` };
-  const td = { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text };
+  const tableStyle = { width: '100%' };
+  const scrollVars = {
+    '--dt-border': theme.cardBorder,
+    '--dt-header-bg': theme.tableHeaderBg,
+    '--dt-header-text': theme.tableHeaderText,
+    '--dt-header-border': theme.tableHeaderBorder,
+    '--dt-stripe': theme.stripeBg,
+    '--dt-hover': theme.rowHover,
+    '--dt-body-text': theme.text,
+  };
+  const th = {};
+  const td = {};
   const actionBtn = { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', border: 'none', cursor: 'pointer', background: theme.primary, color: theme.primaryText };
   return (
             <div>
@@ -24,10 +33,11 @@ export default function UsersPage({
                 <button onClick={() => setShowAddUser(true)} style={actionBtn}>Add New User</button>
               </div>
               <div style={tableContainer}>
-                <table style={tableStyle}>
+                <div className="dt-scroll" style={scrollVars}>
+                <table className="dt-table" style={tableStyle}>
                   <thead>
                     <tr>
-                      <th style={th}>ID</th>
+                      <th style={th} className="dt-num">ID</th>
                       <th style={th}>Username</th>
                       <th style={th}>Role</th>
                       <th style={th}>Page Access</th>
@@ -38,8 +48,8 @@ export default function UsersPage({
                   <tbody>
                     {users.map(u => (
                       <tr key={u.id}>
-                        <td style={td}>{u.id}</td>
-                        <td style={{ ...td, fontWeight: 600, color: '#F1F5F9' }}>{u.username}</td>
+                        <td style={td} className="dt-num">{u.id}</td>
+                        <td style={{ ...td, fontWeight: 600, color: theme.text }}>{u.username}</td>
                         <td style={td}><span style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, background: u.role === 'admin' ? '#3B82F620' : '#64748B20', color: u.role === 'admin' ? '#3B82F6' : '#94A3B8' }}>{u.role}</span></td>
                         <td style={td}>
                           {u.role === 'admin' ? (
@@ -86,6 +96,7 @@ export default function UsersPage({
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Add User Modal */}

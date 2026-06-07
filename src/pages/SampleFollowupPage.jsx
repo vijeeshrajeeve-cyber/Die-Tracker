@@ -93,9 +93,18 @@ export default function SampleFollowupPage({
   fetchSampleFollowups,
 }) {
   const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
-  const tableStyle = { width: '100%', borderCollapse: 'collapse' };
-  const th = { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` };
-  const td = { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text };
+  const tableStyle = { width: '100%' };
+  const scrollVars = {
+    '--dt-border': theme.cardBorder,
+    '--dt-header-bg': theme.tableHeaderBg,
+    '--dt-header-text': theme.tableHeaderText,
+    '--dt-header-border': theme.tableHeaderBorder,
+    '--dt-stripe': theme.stripeBg,
+    '--dt-hover': theme.rowHover,
+    '--dt-body-text': theme.text,
+  };
+  const th = { cursor: 'pointer' };
+  const td = {};
 
   const handleSampleFollowupSubmit = async () => {
     try {
@@ -313,25 +322,25 @@ export default function SampleFollowupPage({
       {/* Table */}
       <div style={tableContainer}>
         {filteredFollowups.length > 0 ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={tableStyle}>
+          <div className="dt-scroll" style={scrollVars}>
+            <table className="dt-table" style={tableStyle}>
               <thead>
                 <tr>
                   <th style={th}>Die</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Profile</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Plant</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Supplier</th>
+                  <th style={th}>Profile</th>
+                  <th style={th}>Plant</th>
+                  <th style={th}>Supplier</th>
                   <th style={th}>Customer</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Die Received Date</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Ascona Ref</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Submission Date</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Sample Approval Date</th>
-                  <th style={{ ...th, textAlign: 'center', whiteSpace: 'nowrap' }}>Delay Days</th>
+                  <th style={th}>Die Received Date</th>
+                  <th style={th}>Ascona Ref</th>
+                  <th style={th}>Submission Date</th>
+                  <th style={th}>Sample Approval Date</th>
+                  <th style={th} className="dt-center">Delay Days</th>
                   <th style={th}>Status</th>
-                  <th style={{ ...th, textAlign: 'center', whiteSpace: 'nowrap' }}>No. of Trial</th>
+                  <th style={th} className="dt-center">No. of Trial</th>
                   <th style={th}>Remark</th>
-                  <th style={{ ...th, whiteSpace: 'nowrap' }}>Corrector</th>
-                  <th style={{ ...th, textAlign: 'center' }}>Actions</th>
+                  <th style={th}>Corrector</th>
+                  <th style={th} className="dt-center">Actions</th>
                 </tr>
               </thead>
               <tbody>

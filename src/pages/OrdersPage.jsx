@@ -125,9 +125,19 @@ export default function OrdersPage({
   const dateFieldLabel = { display: 'flex', flexDirection: 'column', gap: '4px' };
   const dateLabelText = { fontSize: '0.7rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.03em' };
   const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
-  const tableStyle = { width: '100%', borderCollapse: 'collapse' };
-  const th = { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` };
-  const td = { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text };
+  const tableStyle = { width: '100%' };
+  // Color tokens consumed by the shared .dt-table CSS (see index.css)
+  const scrollVars = {
+    '--dt-border': theme.cardBorder,
+    '--dt-header-bg': theme.tableHeaderBg,
+    '--dt-header-text': theme.tableHeaderText,
+    '--dt-header-border': theme.tableHeaderBorder,
+    '--dt-stripe': theme.stripeBg,
+    '--dt-hover': theme.rowHover,
+    '--dt-body-text': theme.text,
+  };
+  const th = { cursor: 'pointer' };
+  const td = {};
 
   return (
     <>
@@ -140,6 +150,17 @@ export default function OrdersPage({
           <select style={filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
           <select style={filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
           <select style={filterSelect} value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })}><option value="all">All Customers</option>{uniqueCustomers.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <select style={filterSelect} value={filters.urgency || 'all'} onChange={(e) => setFilters({ ...filters, urgency: e.target.value })} title="Filter by urgency level">
+            <option value="all">All Urgencies</option>
+            <option value="NORMAL">Normal</option>
+            <option value="URGENT">Urgent</option>
+            <option value="TOP_URGENT">Top urgent</option>
+          </select>
+          <select style={filterSelect} value={filters.specialFollowUp || 'all'} onChange={(e) => setFilters({ ...filters, specialFollowUp: e.target.value })} title="Filter by special follow-up flag">
+            <option value="all">All (Special follow-up)</option>
+            <option value="yes">Flagged</option>
+            <option value="no">Not flagged</option>
+          </select>
         </div>
         <div style={{ ...filterRow, marginTop: '1rem', alignItems: 'flex-end' }}>
           <div style={dateFieldLabel}>
@@ -186,36 +207,36 @@ export default function OrdersPage({
             >
               <Download size={14} /> Export to Excel
             </button>
-            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', dateFrom: '', dateTo: '' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
+            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', urgency: 'all', specialFollowUp: 'all', dateFrom: '', dateTo: '' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
           </div>
         </div>
       </div>
       <div style={tableContainer}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={tableStyle}>
+        <div className="dt-scroll" style={scrollVars}>
+          <table className="dt-table" style={tableStyle}>
             <thead>
               <tr>
                 {[
                   { key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' },
                   { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' },
-                  { key: 'Diameter', label: 'Ø' }, { key: 'Thickness', label: 'T' }, { key: 'Cavity', label: 'Cav' },
+                  { key: 'Diameter', label: 'Ø', align: 'right' }, { key: 'Thickness', label: 'T', align: 'right' }, { key: 'Cavity', label: 'Cav', align: 'right' },
                   { key: 'Supplier', label: 'Supplier' }, { key: 'Customer Name', label: 'Customer' },
-                  { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav' },
-                  { key: 'Total Mandrels', label: 'Total Mandrels' }, { key: 'Die Requested Date', label: 'Requested' },
+                  { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav', align: 'right' },
+                  { key: 'Total Mandrels', label: 'Total Mandrels', align: 'right' }, { key: 'Die Requested Date', label: 'Requested' },
                   { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' },
-                  { key: 'Delivery Lead Time', label: 'Delivery LT' }, { key: 'Mfg Lead Time', label: 'Mfg LT' },
+                  { key: 'Delivery Lead Time', label: 'Delivery LT', align: 'right' }, { key: 'Mfg Lead Time', label: 'Mfg LT', align: 'right' },
                 ].map(col => (
-                  <th key={col.key} style={th} onClick={() => handleSort(col.key)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <th key={col.key} style={th} className={col.align === 'right' ? 'dt-num' : undefined} onClick={() => handleSort(col.key)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start' }}>
                       {col.label}
                       {sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color="#3B82F6" /> : <ChevronDown size={14} color="#3B82F6" />) : <ChevronDown size={14} color="#64748B" />}
                     </div>
                   </th>
                 ))}
-                <th style={{ ...th, textAlign: 'center' }}>Log</th>
-                <th style={{ ...th, textAlign: 'center' }}>Days</th>
-                <th style={{ ...th, textAlign: 'center' }}>View</th>
-                {user?.role === 'admin' && <th style={{ ...th, textAlign: 'center' }}>Actions</th>}
+                <th style={th} className="dt-center">Log</th>
+                <th style={th} className="dt-center">Days</th>
+                <th style={th} className="dt-center">View</th>
+                {user?.role === 'admin' && <th style={th} className="dt-center">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -232,14 +253,14 @@ export default function OrdersPage({
                     <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span>
                   </td>
                   <td style={td}>{order.TYPE}</td>
-                  <td style={td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
-                  <td style={td}><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
-                  <td style={td}><span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span></td>
+                  <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
+                  <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
+                  <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span></td>
                   <td style={td}>{order.Supplier}</td>
-                  <td style={td}>{order['Customer Name'] || <span style={{ color: '#64748B' }}>—</span>}</td>
-                  <td style={td}><span style={{ fontFamily: 'monospace', color: order['PR Number'] ? theme.text : '#64748B' }}>{order['PR Number'] || '—'}</span></td>
-                  <td style={td}><span style={{ fontFamily: 'monospace' }}>{order['Mandrels per Cavity'] || 0}</span></td>
-                  <td style={td}><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
+                  <td style={td}>{order['Customer Name'] || <span style={{ color: theme.textMuted }}>—</span>}</td>
+                  <td style={td}><span style={{ fontFamily: 'monospace', color: order['PR Number'] ? theme.text : theme.textMuted }}>{order['PR Number'] || '—'}</span></td>
+                  <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{order['Mandrels per Cavity'] || 0}</span></td>
+                  <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</span></td>
                   <td style={td}>{formatDate(order['Die Requested Date'])}</td>
                   <td style={td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -249,27 +270,27 @@ export default function OrdersPage({
                   </td>
                   <td style={td}><StatusBadge status={order.STATUS} /></td>
                   {/* Delivery Lead Time */}
-                  <td style={td}>
+                  <td style={td} className="dt-num">
                     {(() => {
                       const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
                       const days = calcLeadDays(order['Ordered date'], receivedDate);
                       return days !== null
                         ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: days > 90 ? '#EF4444' : days > 60 ? '#F59E0B' : '#10B981' }}>{days}d</span>
-                        : <span style={{ color: '#64748B' }}>—</span>;
+                        : <span style={{ color: theme.textMuted }}>—</span>;
                     })()}
                   </td>
                   {/* Manufacturing Lead Time */}
-                  <td style={td}>
+                  <td style={td} className="dt-num">
                     {(() => {
                       const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
                       const days = calcLeadDays(order['Design Approved Date'], receivedDate);
                       return days !== null
                         ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: days > 90 ? '#EF4444' : days > 60 ? '#F59E0B' : '#10B981' }}>{days}d</span>
-                        : <span style={{ color: '#64748B' }}>—</span>;
+                        : <span style={{ color: theme.textMuted }}>—</span>;
                     })()}
                   </td>
                   {/* Change Log indicator */}
-                  <td style={{ ...td, textAlign: 'center' }}>
+                  <td style={td} className="dt-center">
                     {order.changeCount > 0 ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); setChangelogOrder(order); }}
@@ -283,14 +304,14 @@ export default function OrdersPage({
                       <span style={{ color: '#64748B', fontSize: '0.8rem' }}>—</span>
                     )}
                   </td>
-                  <td style={{ ...td, textAlign: 'center' }}><DaysBadge order={order} /></td>
-                  <td style={{ ...td, textAlign: 'center' }}>
-                    <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748B' }}>
+                  <td style={td} className="dt-center"><DaysBadge order={order} /></td>
+                  <td style={td} className="dt-center">
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}>
                       <Eye size={18} />
                     </button>
                   </td>
                   {user?.role === 'admin' && (
-                    <td style={{ ...td, textAlign: 'center' }}>
+                    <td style={td} className="dt-center">
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();

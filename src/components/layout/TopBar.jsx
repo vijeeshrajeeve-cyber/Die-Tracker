@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList } from 'lucide-react';
+import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, Menu, AlignJustify } from 'lucide-react';
 
 const TopBar = ({
     user,
@@ -8,6 +8,8 @@ const TopBar = ({
     theme,
     isDarkMode,
     setIsDarkMode,
+    tableDensity = 'comfortable',
+    setTableDensity = () => {},
     setShowPDFImportModal,
     setShowPIImportModal,
     setShowImportModal,
@@ -204,6 +206,15 @@ const TopBar = ({
                 <button onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle theme" style={actionButtonStyle()}>
                     {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                     <span style={actionLabelStyle()}>Theme</span>
+                </button>
+
+                <button
+                    onClick={() => setTableDensity(tableDensity === 'compact' ? 'comfortable' : 'compact')}
+                    title={tableDensity === 'compact' ? 'Switch tables to comfortable density' : 'Switch tables to compact density'}
+                    style={actionButtonStyle()}
+                >
+                    {tableDensity === 'compact' ? <AlignJustify size={18} /> : <Menu size={18} />}
+                    <span style={actionLabelStyle()}>{tableDensity === 'compact' ? 'Compact' : 'Comfortable'}</span>
                 </button>
 
                 {/* Notifications */}
