@@ -627,12 +627,29 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
     }
 
     // Check if order already exists
-    const existingOrder = existingOrders.find(o => o['DIE NO'] === dieNo);
+    const existingOrderRaw = existingOrders.find(o => o['DIE NO'] === dieNo);
+
+    // If the existing order is CANCELLED and this PDF names a different supplier,
+    // the die was re-ordered elsewhere: create a NEW order instead of updating the
+    // cancelled record. The supplier change is recorded in Remark (notes).
+    const pdfSupplierName = (supplier || '').toUpperCase();
+    const isReorderAfterCancel = (oldOrder) => !!oldOrder
+      && oldOrder.STATUS === 'CANCELLED'
+      && !!pdfSupplierName
+      && (oldOrder.Supplier || '').toUpperCase() !== pdfSupplierName;
+    const reorderNoteFor = (oldOrder) =>
+      `Re-ordered with ${pdfSupplierName} — previous order with ${oldOrder.Supplier || 'unknown supplier'} was CANCELLED (new order created via PDF import)`;
+
+    const mainIsReorder = isReorderAfterCancel(existingOrderRaw);
+    // Lifecycle fields (id, status, PR/order numbers, dates) must NOT carry over from
+    // a cancelled order; die-intrinsic fields (plant, customer, press, mandrels) may.
+    const existingOrder = mainIsReorder ? null : existingOrderRaw;
+    const mainReorderNote = mainIsReorder ? reorderNoteFor(existingOrderRaw) : null;
 
     const mainOrder = {
       id: existingOrder?.id || null,
       isExisting: !!existingOrder,
-      Plant: plantFromPress || existingOrder?.Plant || 'GEX 1',
+      Plant: plantFromPress || existingOrderRaw?.Plant || 'GEX 1',
       'Order No': existingOrder?.['Order No'] || '',
       'DIE NO': dieNo,
       TYPE: existingOrder?.TYPE || null,
@@ -643,9 +660,9 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       // PDF "No OF CAV" goes to the dedicated `cavity` column (used by ERP copy `CAV n`).
       // "Mandrels per Cavity" is a separate concept the user fills in via the preview input;
       // Total Mandrels = mpc * cavity is recomputed by the preview edit handler.
-      'Cavity': cavity || existingOrder?.Cavity || 0,
-      'Mandrels per Cavity': existingOrder?.['Mandrels per Cavity'] || 0,
-      'Total Mandrels': existingOrder?.['Total Mandrels'] || 0,
+      'Cavity': cavity || existingOrderRaw?.Cavity || 0,
+      'Mandrels per Cavity': existingOrderRaw?.['Mandrels per Cavity'] || 0,
+      'Total Mandrels': existingOrderRaw?.['Total Mandrels'] || 0,
       'Design Received Date': null,
       '3D Model Received Date': null,
       simulationEnabled: simulationEnabled || false,
@@ -653,7 +670,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       Delay: 0,
       'PR Entry': null,
       'PR Number': existingOrder?.['PR Number'] || null,
-      'Customer Name': existingOrder?.['Customer Name'] || '',
+      'Customer Name': existingOrderRaw?.['Customer Name'] || '',
       'Die Received Date': existingOrder?.['Die Received Date'] || null,
       'Submission Date': existingOrder?.['Submission Date'] || null,
       'Sample Approval Date': existingOrder?.['Sample Approval Date'] || null,
@@ -662,9 +679,10 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       'Oracle Entry': null,
       // Press code parsed from PDF (e.g., "P25", "P5", "B"); falls back to existing order's value.
       // Persisted to die_orders.press; used as ERP-copy prefix on the "Pending for PR" page.
-      Press: pressCode || existingOrder?.Press || null,
+      Press: pressCode || existingOrderRaw?.Press || null,
       Supplier: supplier || 'UNKNOWN',
       STATUS: existingOrder?.STATUS || 'PENDING FOR ORDERING',
+      ...(mainReorderNote ? { Remark: mainReorderNote, _reorderNote: mainReorderNote } : {}),
       'OVERALL DELAY': 0,
       ETA: null,
       month: requestedDate ? MONTHS[parseInt(requestedDate.split('-')[1], 10) - 1] : null,
@@ -681,19 +699,30 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
     // If Bolster No. or Insert No. has a Size value that is not "old" or blank,
     // create a new order with that bolster/insert number as Die No. and the extracted size.
     const createSubOrder = (subDieNo, subSize) => {
-      const existingSub = existingOrders.find(o => o['DIE NO'] === subDieNo);
-      return {
+      const existingSubRaw = existingOrders.find(o => o['DIE NO'] === subDieNo);
+      const subIsReorder = isReorderAfterCancel(existingSubRaw);
+      const existingSub = subIsReorder ? null : existingSubRaw;
+      const subOrder = {
         ...mainOrder,
         id: existingSub?.id || null,
         isExisting: !!existingSub,
         'Order No': existingSub?.['Order No'] || '',
         'DIE NO': subDieNo,
         'Die Size': subSize,
-        'Customer Name': existingSub?.['Customer Name'] || mainOrder['Customer Name'],
+        'Customer Name': existingSubRaw?.['Customer Name'] || mainOrder['Customer Name'],
         'PR Number': existingSub?.['PR Number'] || null,
         STATUS: existingSub?.STATUS || 'PENDING FOR ORDERING',
         _componentType: 'BOLSTER/INSERT',
       };
+      // Remark/_reorderNote inherited from mainOrder apply to the main die, not this sub-order
+      delete subOrder.Remark;
+      delete subOrder._reorderNote;
+      if (subIsReorder) {
+        const note = reorderNoteFor(existingSubRaw);
+        subOrder.Remark = note;
+        subOrder._reorderNote = note;
+      }
+      return subOrder;
     };
 
     // Helper: check if a size value is valid (not blank, not "old")
@@ -786,6 +815,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           delete cleanOrder._componentType;
           delete cleanOrder._isRevision;
           delete cleanOrder._cavity;
+          delete cleanOrder._reorderNote;
           return cleanOrder;
         });
         await onImportRecords(cleanOrders);
@@ -892,6 +922,11 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                       {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
                     </p>
                   )}
+                  {preview.orders.some(o => o._reorderNote) && (
+                    <p style={{ fontSize: '0.75rem', color: '#FB923C', marginTop: '4px' }}>
+                      {preview.orders.filter(o => o._reorderNote).length} order(s) will be created as NEW — the existing order is CANCELLED and the supplier has changed
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -930,7 +965,11 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                                 {order._componentType === 'INSERT MANDREL ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(139,92,246,0.2)', color: '#8B5CF6', borderRadius: '4px' }}>INSERT MANDREL ONLY</span>}
                                 {order._componentType === 'BOLSTER/INSERT' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(20,184,166,0.2)', color: '#14B8A6', borderRadius: '4px' }}>BOLSTER/INSERT</span>}
                                 {order._isRevision && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(148,163,184,0.2)', color: '#94A3B8', borderRadius: '4px' }}>REVISION</span>}
+                                {order._reorderNote && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(251,146,60,0.2)', color: '#FB923C', borderRadius: '4px' }}>RE-ORDER (SUPPLIER CHANGED)</span>}
                               </div>
+                              {order._reorderNote && (
+                                <span style={{ fontSize: '0.65rem', color: '#FB923C', fontFamily: 'inherit', whiteSpace: 'normal', maxWidth: '220px' }}>{order._reorderNote}</span>
+                              )}
                             </div>
                           </td>
                           <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>

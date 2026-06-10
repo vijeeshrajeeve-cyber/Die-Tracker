@@ -33,7 +33,9 @@
       "PowerShell(New-Item *)",
       "PowerShell(node --test server/services/jFileTemplate.test.cjs 2>&1 | Select-Object -First 20.)",
       "Bash(git fetch *)",
-      "Bash(docker volume *)"
+      "Bash(docker volume *)",
+      "Bash(npx eslint *)",
+      "Bash(npx esbuild *)"
     ]
   }
 }
