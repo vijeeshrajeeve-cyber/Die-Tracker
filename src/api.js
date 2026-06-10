@@ -480,6 +480,21 @@ export const emailAPI = {
     triggerImapPoll: async () => {
         return apiRequest('/email/imap-poll', { method: 'POST' });
     },
+
+    getReminderSettings: async () => {
+        return apiRequest('/email/reminder-settings');
+    },
+
+    updateReminderSettings: async ({ enabled, days, time }) => {
+        return apiRequest('/email/reminder-settings', {
+            method: 'PUT',
+            body: JSON.stringify({ enabled, days, time }),
+        });
+    },
+
+    runDesignRemindersNow: async () => {
+        return apiRequest('/email/reminder-settings/run-now', { method: 'POST' });
+    },
 };
 
 // Sample Followups API

@@ -4,6 +4,7 @@
 
 const express = require('express');
 const emailService = require('../services/email.cjs');
+const designReminderService = require('../services/designReminder.cjs');
 const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -173,6 +174,67 @@ router.put('/config', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Update config error:', error);
         res.status(500).json({ error: 'Failed to update email config' });
+    }
+});
+
+// ── Design reminder settings (admin only) ─────────────────────────────────────
+
+router.get('/reminder-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const settings = await designReminderService.getReminderSettings();
+        res.json({ settings, state: designReminderService.getReminderState() });
+    } catch (error) {
+        console.error('Get reminder settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch reminder settings' });
+    }
+});
+
+router.put('/reminder-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { enabled, days, time } = req.body;
+
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({ error: 'enabled must be a boolean' });
+        }
+        let daysValue;
+        if (days !== undefined) {
+            daysValue = parseInt(days, 10);
+            if (isNaN(daysValue) || daysValue < 1 || daysValue > 60) {
+                return res.status(400).json({ error: 'days must be a number between 1 and 60' });
+            }
+        }
+        if (time !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+            return res.status(400).json({ error: 'time must be in HH:MM (24-hour) format' });
+        }
+
+        const settings = await designReminderService.updateReminderSettings({
+            enabled, days: daysValue, time
+        });
+        res.json({ message: 'Reminder settings updated', settings });
+    } catch (error) {
+        console.error('Update reminder settings error:', error);
+        res.status(500).json({ error: 'Failed to update reminder settings' });
+    }
+});
+
+// Manually trigger a reminder run (for testing the configuration)
+router.post('/reminder-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const summary = await designReminderService.sendDesignReminders();
+        res.json({ message: 'Design reminder run completed', summary });
+    } catch (error) {
+        console.error('Manual reminder run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to run design reminders' });
     }
 });
 

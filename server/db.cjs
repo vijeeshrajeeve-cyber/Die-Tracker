@@ -377,6 +377,16 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- Automatic reminder settings (single row, like email_config)
+      CREATE TABLE IF NOT EXISTS reminder_settings (
+        id SERIAL PRIMARY KEY,
+        design_reminder_enabled BOOLEAN DEFAULT false,
+        design_reminder_days INTEGER DEFAULT 2,
+        design_reminder_time TEXT DEFAULT '08:00',
+        design_reminder_last_run DATE,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Email log (sent and received emails)
       CREATE TABLE IF NOT EXISTS email_log (
         id SERIAL PRIMARY KEY,

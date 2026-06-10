@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Mail, Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, Send, Inbox, RefreshCw } from 'lucide-react';
+import { Settings, Mail, Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, Send, Inbox, RefreshCw, Bell } from 'lucide-react';
 import { emailAPI } from '../../api';
 
 const EmailSettings = ({ theme }) => {
@@ -21,10 +21,15 @@ const EmailSettings = ({ theme }) => {
     const [toast, setToast] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [imapStatus, setImapStatus] = useState(null);
+    const [reminder, setReminder] = useState({ enabled: false, days: 2, time: '08:00' });
+    const [reminderState, setReminderState] = useState(null);
+    const [savingReminder, setSavingReminder] = useState(false);
+    const [runningReminder, setRunningReminder] = useState(false);
 
     useEffect(() => {
         fetchConfig();
         fetchImapStatus();
+        fetchReminderSettings();
     }, []);
 
     const fetchConfig = async () => {
@@ -56,6 +61,53 @@ const EmailSettings = ({ theme }) => {
             const result = await emailAPI.getImapStatus();
             setImapStatus(result.status);
         } catch (_) { /* ignore */ }
+    };
+
+    const fetchReminderSettings = async () => {
+        try {
+            const result = await emailAPI.getReminderSettings();
+            if (result.settings) {
+                setReminder({
+                    enabled: result.settings.design_reminder_enabled || false,
+                    days: result.settings.design_reminder_days || 2,
+                    time: result.settings.design_reminder_time || '08:00'
+                });
+            }
+            setReminderState({ ...result.state, lastRunDate: result.settings?.design_reminder_last_run });
+        } catch (err) {
+            console.error('Failed to fetch reminder settings:', err);
+        }
+    };
+
+    const handleSaveReminder = async () => {
+        setSavingReminder(true);
+        try {
+            await emailAPI.updateReminderSettings(reminder);
+            showToast('Reminder settings saved', 'success');
+            fetchReminderSettings();
+        } catch (err) {
+            showToast(err.message || 'Failed to save reminder settings', 'error');
+        } finally {
+            setSavingReminder(false);
+        }
+    };
+
+    const handleRunRemindersNow = async () => {
+        setRunningReminder(true);
+        try {
+            const result = await emailAPI.runDesignRemindersNow();
+            const s = result.summary || {};
+            showToast(
+                `Reminders sent: ${s.sent || 0} email(s) for ${s.totalOrders || 0} overdue order(s)` +
+                (s.skippedNoEmail?.length ? ` — no email set for: ${s.skippedNoEmail.join(', ')}` : ''),
+                'success'
+            );
+            fetchReminderSettings();
+        } catch (err) {
+            showToast(err.message || 'Failed to run reminders', 'error');
+        } finally {
+            setRunningReminder(false);
+        }
     };
 
     const handleSave = async () => {
@@ -225,6 +277,98 @@ const EmailSettings = ({ theme }) => {
                         }
                     </div>
                 )}
+            </div>
+
+            {/* Automatic Design Reminders */}
+            <div style={cardStyle}>
+                <ToggleButton
+                    enabled={reminder.enabled}
+                    onToggle={() => setReminder({ ...reminder, enabled: !reminder.enabled })}
+                    label="Automatic Design Reminders"
+                    sublabel={reminder.enabled
+                        ? `Active — daily at ${reminder.time}, one email per supplier for orders awaiting design > ${reminder.days} day(s)`
+                        : 'Disabled — no automatic reminder emails will be sent'}
+                    icon={Bell}
+                    color="#F59E0B"
+                />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Days Awaiting Design
+                        </label>
+                        <input
+                            type="number"
+                            min={1}
+                            max={60}
+                            value={reminder.days}
+                            onChange={(e) => setReminder({ ...reminder, days: Math.max(1, Math.min(60, parseInt(e.target.value) || 1)) })}
+                            style={inputStyle}
+                        />
+                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
+                            Remind for orders in "Awaiting Design" longer than this many days
+                        </p>
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Send Time
+                        </label>
+                        <input
+                            type="time"
+                            value={reminder.time}
+                            onChange={(e) => setReminder({ ...reminder, time: e.target.value || '08:00' })}
+                            style={inputStyle}
+                        />
+                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
+                            Time of day the reminder emails are sent (server time)
+                        </p>
+                    </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, margin: '14px 0 0' }}>
+                    Emails go to each supplier's contact email (set in Settings → Suppliers).
+                    Suppliers without an email fall back to the "Design Reminder" template's default recipients.
+                    Requires outgoing email (SMTP) to be enabled.
+                </p>
+
+                {reminderState?.lastRunDate && (
+                    <div style={{
+                        marginTop: '14px', padding: '10px 14px', borderRadius: '10px',
+                        background: reminderState.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                        fontSize: '0.8rem', color: reminderState.error ? '#EF4444' : '#10B981',
+                        display: 'flex', alignItems: 'center', gap: '8px'
+                    }}>
+                        {reminderState.error
+                            ? <><XCircle size={14} /> Last run error: {reminderState.error}</>
+                            : <><CheckCircle size={14} /> Last run: {reminderState.lastRunDate}
+                                {reminderState.lastResult ? ` — ${reminderState.lastResult.sent} email(s) sent for ${reminderState.lastResult.totalOrders} overdue order(s)` : ''}</>
+                        }
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
+                    <button onClick={handleSaveReminder} disabled={savingReminder} style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 20px', borderRadius: '12px', border: 'none',
+                        background: savingReminder ? '#475569' : 'linear-gradient(135deg, #F59E0B, #F97316)',
+                        color: 'white', cursor: savingReminder ? 'not-allowed' : 'pointer',
+                        fontWeight: 600, fontSize: '0.85rem'
+                    }}>
+                        <Save size={16} />
+                        {savingReminder ? 'Saving...' : 'Save Reminder Settings'}
+                    </button>
+                    <button onClick={handleRunRemindersNow} disabled={runningReminder} style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 20px', borderRadius: '12px',
+                        border: `1px solid ${theme.cardBorder}`,
+                        background: theme.cardBg, color: theme.text,
+                        cursor: runningReminder ? 'not-allowed' : 'pointer',
+                        fontWeight: 500, fontSize: '0.85rem'
+                    }}>
+                        <Send size={16} />
+                        {runningReminder ? 'Sending...' : 'Send Reminders Now'}
+                    </button>
+                </div>
             </div>
 
             {/* SMTP/IMAP Configuration */}

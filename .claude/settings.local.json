@@ -41,7 +41,9 @@
       "Bash(npx -y esbuild src/components/backup/BackupDieRequests.jsx src/DieOrderingSystem.jsx --loader:.jsx=jsx --outdir=/tmp/esbuild-check)",
       "Bash(npx -y esbuild src/components/backup/BackupDieRequests.jsx --loader:.jsx=jsx --outfile=/tmp/esbuild-check/bdr.js)",
       "Bash(python3 -)",
-      "Bash(npx -y esbuild src/DieOrderingSystem.jsx --loader:.jsx=jsx --jsx=automatic --outfile=/dev/null)"
+      "Bash(npx -y esbuild src/DieOrderingSystem.jsx --loader:.jsx=jsx --jsx=automatic --outfile=/dev/null)",
+      "Bash(npx -y esbuild src/components/email/EmailSettings.jsx --loader:.jsx=jsx --outfile=/dev/null)",
+      "Bash(npx -y esbuild src/api.js --outfile=/dev/null)"
     ]
   }
 }

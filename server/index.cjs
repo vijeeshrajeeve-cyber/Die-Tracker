@@ -20,6 +20,7 @@ const exportRouter = require('./routes/export.cjs');
 const apiKeysRouter = require('./routes/api-keys.cjs');
 const emailRouter = require('./routes/email.cjs');
 const emailService = require('./services/email.cjs');
+const designReminderService = require('./services/designReminder.cjs');
 const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
 const plantBudgetsRouter = require('./routes/plant-budgets.cjs');
 const existingDataRouter = require('./routes/existing-data.cjs');
@@ -146,6 +147,9 @@ const startServer = async () => {
 
         // Start scheduled Excel backup every 5 hours (configurable via BACKUP_INTERVAL_HOURS)
         autoBackupService.scheduleAutoBackup();
+
+        // Start daily design reminder scheduler (runs when enabled in settings)
+        designReminderService.scheduleDesignReminders();
 
         // Start IMAP poller if receive is enabled in config
         emailService.getEmailConfig().then(config => {
