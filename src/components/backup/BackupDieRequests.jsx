@@ -184,15 +184,17 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  const paginatedRequestIds = paginatedData.map(request => request.id);
-  const allPageRequestsSelected = paginatedRequestIds.length > 0 && paginatedRequestIds.every(id => selectedRequestIds.includes(id));
+  // Requests that already have a Drawing Requested date cannot be selected again.
+  const isSelectable = (request) => !request['Drawing Requested'];
+  const selectablePageRequestIds = paginatedData.filter(isSelectable).map(request => request.id);
+  const allPageRequestsSelected = selectablePageRequestIds.length > 0 && selectablePageRequestIds.every(id => selectedRequestIds.includes(id));
   const selectedRequests = useMemo(() => {
     const selectedIds = new Set(selectedRequestIds);
     return (backupRequests || []).filter(request => selectedIds.has(request.id));
   }, [backupRequests, selectedRequestIds]);
 
   useEffect(() => {
-    const validIds = new Set((backupRequests || []).map(request => request.id));
+    const validIds = new Set((backupRequests || []).filter(isSelectable).map(request => request.id));
     setSelectedRequestIds(prev => prev.filter(id => validIds.has(id)));
   }, [backupRequests]);
 
@@ -251,11 +253,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
   const togglePageSelection = () => {
     setSelectedRequestIds(prev => {
-      const pageIds = new Set(paginatedRequestIds);
+      const pageIds = new Set(selectablePageRequestIds);
       if (allPageRequestsSelected) {
         return prev.filter(id => !pageIds.has(id));
       }
-      return [...new Set([...prev, ...paginatedRequestIds])];
+      return [...new Set([...prev, ...selectablePageRequestIds])];
     });
   };
 
@@ -310,6 +312,18 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
         <p>Best regards,<br/>Die Ordering Team</p>`,
       importance: 'high',
       isHtml: true,
+      onSent: async () => {
+        const today = getTodayDateString();
+        try {
+          await Promise.all(selectedRequests.map(request =>
+            backupRequestsAPI.update(request.id, { ...request, 'Drawing Requested': today })
+          ));
+        } catch (error) {
+          alert('Email sent, but failed to update Drawing Requested date: ' + error.message);
+        }
+        setSelectedRequestIds([]);
+        onRefresh();
+      },
     });
   };
 
@@ -668,8 +682,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     type="checkbox"
                     checked={allPageRequestsSelected}
                     onChange={togglePageSelection}
-                    aria-label="Select all visible backup requests"
-                    style={{ width: '16px', height: '16px', accentColor: theme.primary, cursor: 'pointer' }}
+                    disabled={selectablePageRequestIds.length === 0}
+                    aria-label="Select all visible backup requests without a drawing requested date"
+                    style={{ width: '16px', height: '16px', accentColor: theme.primary, cursor: selectablePageRequestIds.length === 0 ? 'not-allowed' : 'pointer' }}
                   />
                 </th>
                 {COLUMNS.map(col => (
@@ -713,8 +728,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                         checked={selectedRequestIds.includes(request.id)}
                         onChange={(e) => { e.stopPropagation(); toggleRequestSelection(request.id); }}
                         onClick={(e) => e.stopPropagation()}
+                        disabled={!isSelectable(request)}
+                        title={!isSelectable(request) ? `Drawing already requested on ${formatDate(request['Drawing Requested'])}` : undefined}
                         aria-label={`Select backup request ${request['DIE NO'] || request.id}`}
-                        style={{ width: '16px', height: '16px', accentColor: theme.primary, cursor: 'pointer' }}
+                        style={{ width: '16px', height: '16px', accentColor: theme.primary, cursor: isSelectable(request) ? 'pointer' : 'not-allowed' }}
                       />
                     </td>
                     <td className="dt-num" style={tdMuted}>

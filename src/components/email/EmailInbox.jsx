@@ -57,6 +57,22 @@ const EmailInbox = ({ theme, onCompose }) => {
         try { return JSON.parse(json).join(', '); } catch { return json; }
     };
 
+    // Convert stored HTML email bodies to readable plain text.
+    // DOMParser documents are inert (no script execution, no resource loads),
+    // so this is safe for untrusted received emails.
+    const htmlToText = (str) => {
+        if (!str) return '';
+        if (!/<[a-z!/][\s\S]*>/i.test(str) && !/&[a-z#0-9]+;/i.test(str)) return str;
+        const doc = new DOMParser().parseFromString(str, 'text/html');
+        doc.querySelectorAll('style, script, title').forEach(el => el.remove());
+        doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+        doc.querySelectorAll('p, div, tr, li, blockquote, h1, h2, h3, h4, h5, h6').forEach(el => el.append('\n'));
+        return (doc.body?.textContent || '')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    };
+
     const cardStyle = {
         background: theme.cardBg, borderRadius: '20px',
         border: `1px solid ${theme.cardBorder}`,
@@ -127,7 +143,7 @@ const EmailInbox = ({ theme, onCompose }) => {
                                     fontSize: '0.875rem', color: theme.textMuted,
                                     lineHeight: 1.7, whiteSpace: 'pre-wrap'
                                 }}>
-                                    {email.body_content || email.body_preview || '(No content)'}
+                                    {htmlToText(email.body_content || email.body_preview) || '(No content)'}
                                 </div>
                             </div>
                         ))}
@@ -263,7 +279,7 @@ const EmailInbox = ({ theme, onCompose }) => {
                                         fontSize: '0.8rem', color: theme.textDim, marginTop: '2px',
                                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                                     }}>
-                                        {email.body_preview || ''}
+                                        {htmlToText(email.body_preview).replace(/\s+/g, ' ')}
                                     </div>
                                 </div>
 

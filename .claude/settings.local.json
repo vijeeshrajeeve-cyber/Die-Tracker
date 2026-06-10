@@ -35,7 +35,13 @@
       "Bash(git fetch *)",
       "Bash(docker volume *)",
       "Bash(npx eslint *)",
-      "Bash(npx esbuild *)"
+      "Bash(npx esbuild *)",
+      "Bash(npx vite *)",
+      "Bash(npx --yes esbuild src/DieOrderingSystem.jsx --loader:.jsx=jsx --outfile=/dev/null)",
+      "Bash(npx -y esbuild src/components/backup/BackupDieRequests.jsx src/DieOrderingSystem.jsx --loader:.jsx=jsx --outdir=/tmp/esbuild-check)",
+      "Bash(npx -y esbuild src/components/backup/BackupDieRequests.jsx --loader:.jsx=jsx --outfile=/tmp/esbuild-check/bdr.js)",
+      "Bash(python3 -)",
+      "Bash(npx -y esbuild src/DieOrderingSystem.jsx --loader:.jsx=jsx --jsx=automatic --outfile=/dev/null)"
     ]
   }
 }

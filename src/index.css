@@ -47,6 +47,31 @@ body {
   animation: slideDownAndFade 0.2s ease-out forwards;
 }
 
+/* Side drawer (slide in from the right) */
+@keyframes drawerOverlayFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drawerSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.drawer-overlay {
+  animation: drawerOverlayFade 0.2s ease-out forwards;
+}
+
+.drawer-panel {
+  animation: drawerSlideIn 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
 /* Interactive Rows/Buttons */
 .hover-subtle {
   transition: all 0.15s ease;

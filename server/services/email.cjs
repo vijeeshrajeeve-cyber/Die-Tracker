@@ -197,11 +197,21 @@ async function pollImap() {
                         const raw = message.source.toString('utf-8');
                         const bodyStart = raw.indexOf('\r\n\r\n');
                         const rawBody = bodyStart >= 0 ? raw.substring(bodyStart + 4) : '';
-                        // Strip MIME headers and HTML tags for a readable preview
+                        // Decode quoted-printable FIRST, otherwise encoded tags
+                        // (=3Cdiv=3E) survive the tag strip and reappear as <div>
                         bodyContent = rawBody
+                            .replace(/=\r?\n/g, '')          // quoted-printable line continuations
+                            .replace(/(?:=[0-9A-Fa-f]{2})+/g, (m) =>
+                                Buffer.from(m.split('=').filter(Boolean).join(''), 'hex').toString('utf-8'))
+                            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
                             .replace(/<[^>]+>/g, ' ')
-                            .replace(/=\r\n/g, '')           // quoted-printable line continuations
-                            .replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+                            .replace(/&nbsp;/gi, ' ')
+                            .replace(/&lt;/gi, '<')
+                            .replace(/&gt;/gi, '>')
+                            .replace(/&quot;/gi, '"')
+                            .replace(/&#39;/g, "'")
+                            .replace(/&amp;/gi, '&')
                             .replace(/\s+/g, ' ')
                             .trim()
                             .substring(0, 2000);
