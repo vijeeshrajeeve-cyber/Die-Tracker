@@ -43,7 +43,12 @@
       "Bash(python3 -)",
       "Bash(npx -y esbuild src/DieOrderingSystem.jsx --loader:.jsx=jsx --jsx=automatic --outfile=/dev/null)",
       "Bash(npx -y esbuild src/components/email/EmailSettings.jsx --loader:.jsx=jsx --outfile=/dev/null)",
-      "Bash(npx -y esbuild src/api.js --outfile=/dev/null)"
+      "Bash(npx -y esbuild src/api.js --outfile=/dev/null)",
+      "Bash(git -C /home/vj/Desktop/vllm/Die-Tracker status --short)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git *)",
+      "Bash(npx --no-install esbuild src/components/modals/PIImportModal.jsx --loader=jsx --bundle=false --outfile=/dev/null)",
+      "Bash(gh auth *)"
     ]
   }
 }
