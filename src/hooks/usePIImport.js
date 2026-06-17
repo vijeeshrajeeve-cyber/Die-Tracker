@@ -81,15 +81,22 @@ export default function usePIImport({
     return records;
   }, [fetchProfileMeta]);
 
-  const handlePIImport = useCallback(async (importData) => {
+  const handlePIImport = useCallback(async (importData, options = {}) => {
+    // resolveCustomers: when false, skip the missing-customer lookup/prompt (and so never
+    //   touch the customer name) — used by PI import, which must not change customer data.
+    // restrictUpdateFields: when set, only these fields are sent on an UPDATE, leaving every
+    //   other field on the existing order untouched. New orders always get the full payload.
+    const { resolveCustomers = true, restrictUpdateFields = null } = options;
     try {
       const records = importData.map(r => ({ ...r }));
-      await resolveCustomerNames(
-        records,
-        (r) => r['DIE NO'] || r.die_no,
-        (r) => r['Customer Name'] || r.customer_name,
-        (r, v) => { r['Customer Name'] = v; if ('customer_name' in r) r.customer_name = v; }
-      );
+      if (resolveCustomers) {
+        await resolveCustomerNames(
+          records,
+          (r) => r['DIE NO'] || r.die_no,
+          (r) => r['Customer Name'] || r.customer_name,
+          (r, v) => { r['Customer Name'] = v; if ('customer_name' in r) r.customer_name = v; }
+        );
+      }
 
       let created = 0;
       let updated = 0;
@@ -97,7 +104,13 @@ export default function usePIImport({
       for (const record of records) {
         const { isExisting, ...orderData } = record;
         if (isExisting && orderData.id) {
-          await ordersAPI.patch(orderData.id, orderData);
+          const payload = restrictUpdateFields
+            ? restrictUpdateFields.reduce((acc, key) => {
+                if (key in orderData) acc[key] = orderData[key];
+                return acc;
+              }, {})
+            : orderData;
+          await ordersAPI.patch(orderData.id, payload);
           updated++;
         } else {
           await ordersAPI.create(orderData);

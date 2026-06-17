@@ -417,43 +417,45 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                 .map(line => parseTableRow(line))
                 .filter(Boolean);
 
-            // Enrich with requested dates from drawing pages when not found in table row
-            // First pass: match by exact die number
+            // Set the Die Requested Date from the drawing pages' info boxes. The requested
+            // date is the DATE next to the SUPPLIER field, NOT the "requested delivery date"
+            // column printed in the PI table row — so the supplier date takes priority over
+            // any date parsed from the table row (which is only kept as a last resort).
             const allDrawingDates = Object.entries(drawingRequestedDates)
-                .filter(([k]) => !k.startsWith('_section_'))
+                .filter(([k]) => !k.startsWith('_section_') && k !== '_allDates')
                 .map(([, v]) => v);
-            for (const row of parsedRows) {
-                if (!row.deliveryDate && drawingRequestedDates[row.dieNo]) {
-                    row.deliveryDate = drawingRequestedDates[row.dieNo];
-                }
-                // Try section number match (base number before hyphen)
-                if (!row.deliveryDate) {
-                    const baseNo = row.dieNo.replace(/^0+/, '').split('-')[0];
-                    const sectionDate = drawingRequestedDates['_section_' + baseNo]
-                        || drawingRequestedDates['_section_' + row.dieNo.split('-')[0]];
-                    if (sectionDate) row.deliveryDate = sectionDate;
-                }
-            }
-            // Second pass: for dies still without dates, use most common drawing date as fallback
-            // (dies in the same PI typically share the same requested date)
-            const stillMissing = parsedRows.filter(r => !r.deliveryDate);
+            // Most common supplier date across all drawings — dies in the same PI typically
+            // share the same requested date, so this fills dies whose drawing wasn't matched.
             const fallbackDates = drawingRequestedDates._allDates || allDrawingDates;
-            if (stillMissing.length > 0 && fallbackDates.length > 0) {
-                // Find the most common date from all drawing pages
+            let commonDrawingDate = null;
+            if (fallbackDates.length > 0) {
                 const dateCounts = {};
                 for (const d of fallbackDates) { dateCounts[d] = (dateCounts[d] || 0) + 1; }
-                const commonDate = Object.entries(dateCounts).sort((a, b) => b[1] - a[1])[0][0];
-                for (const row of stillMissing) {
-                    row.deliveryDate = commonDate;
-                }
+                commonDrawingDate = Object.entries(dateCounts).sort((a, b) => b[1] - a[1])[0][0];
+            }
+            for (const row of parsedRows) {
+                // Match the drawing's supplier date by exact die number, then by section
+                // number (base number before hyphen), then fall back to the common date.
+                const baseNo = row.dieNo.replace(/^0+/, '').split('-')[0];
+                const drawingDate = drawingRequestedDates[row.dieNo]
+                    || drawingRequestedDates['_section_' + baseNo]
+                    || drawingRequestedDates['_section_' + row.dieNo.split('-')[0]]
+                    || commonDrawingDate;
+                // Supplier date wins; only keep the table-row date when the PI has no
+                // drawing dates at all.
+                if (drawingDate) row.deliveryDate = drawingDate;
             }
 
             // ── Build die orders ──
             const orders = parsedRows.map(row => {
-                const month = orderDate ? MONTHS[new Date(orderDate).getMonth()] : null;
-
                 // Check if this die order already exists in the system
                 const existingOrder = existingOrders.find(o => o['DIE NO'] === row.dieNo);
+
+                // Month is derived from the Die Requested Date (the supplier date), not the
+                // Ordered date. PI import does not change an existing order's requested date,
+                // so prefer its stored value and fall back to the date parsed from this PI.
+                const requestedDate = existingOrder?.['Die Requested Date'] || row.deliveryDate || null;
+                const month = requestedDate ? MONTHS[parseInt(requestedDate.split('-')[1], 10) - 1] : null;
 
                 return {
                     'id': existingOrder?.id || null,
@@ -574,22 +576,21 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
         }));
     };
 
-    const handleEditOrder = (index, field, value) => {
-        setPreview(prev => ({
-            ...prev,
-            orders: prev.orders.map((order, i) =>
-                i === index ? { ...order, [field]: value } : order
-            ),
-        }));
-    };
-
     const handleImportAll = async () => {
         if (preview?.orders?.length > 0) {
             setImporting(true);
             try {
                 // Strip internal display-only fields before importing
                 const cleanOrders = preview.orders.map(({ _urgency, _cavity, _weightPerMeter, _pressCode, ...order }) => order);
-                await onImportRecords(cleanOrders);
+                // PI import only updates the order-event fields on existing orders; every
+                // other field (Plant, TYPE, Die Size, Supplier, shipment, customer, requested
+                // date, …) is left untouched. 'DIE NO' is included only so the server can
+                // auto-complete the matching backup request — it is the identity column, so
+                // writing it back is a no-op.
+                await onImportRecords(cleanOrders, {
+                    resolveCustomers: false,
+                    restrictUpdateFields: ['DIE NO', 'Order No', 'Ordered date', 'STATUS', 'month'],
+                });
             } catch (err) {
                 console.error('Import failed:', err);
             } finally {
@@ -770,42 +771,11 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                         )}
                                                     </td>
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>
-                                                    <td style={{ padding: '10px 12px' }}>
-                                                        <select
-                                                            value={order.TYPE || ''}
-                                                            onChange={(e) => handleEditOrder(index, 'TYPE', e.target.value || null)}
-                                                            style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
-                                                        >
-                                                            <option value="">--</option>
-                                                            <option value="N">N - New</option>
-                                                            <option value="B">B - Backup</option>
-                                                            <option value="T">T - Tooling</option>
-                                                            <option value="C">C - Cancelled</option>
-                                                            <option value="H">H - Hold</option>
-                                                        </select>
-                                                    </td>
+                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.TYPE || '-'}</td>
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order._cavity || order['Mandrels per Cavity'] || '-'}</td>
-                                                    <td style={{ padding: '10px 12px' }}>
-                                                        <select
-                                                            value={order.Plant || ''}
-                                                            onChange={(e) => handleEditOrder(index, 'Plant', e.target.value || null)}
-                                                            style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
-                                                        >
-                                                            <option value="">--</option>
-                                                            <option value="GEX 1">GEX 1</option>
-                                                            <option value="GEX 2">GEX 2</option>
-                                                        </select>
-                                                    </td>
+                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Plant || '-'}</td>
                                                     <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
-                                                    <td style={{ padding: '10px 12px' }}>
-                                                        <input
-                                                            type="text"
-                                                            value={order['Customer Name'] || ''}
-                                                            onChange={(e) => handleEditOrder(index, 'Customer Name', e.target.value)}
-                                                            placeholder="Customer"
-                                                            style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem', width: '140px' }}
-                                                        />
-                                                    </td>
+                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Customer Name'] || '-'}</td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <span style={{
                                                             padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
