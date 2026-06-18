@@ -24,6 +24,7 @@ import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
+import FrozenDesignsPage from './pages/FrozenDesignsPage';
 
 
 
@@ -2794,6 +2795,10 @@ export default function DieOrderingSystem() {
               onCompose={(prefill) => setShowEmailCompose(prefill || {})}
               emailTemplates={emailTemplates}
             />
+          )}
+
+          {activeTab === 'frozen-designs' && hasPageAccess('frozen-designs') && (
+            <FrozenDesignsPage user={user} />
           )}
 
           {activeTab === 'email-inbox' && hasPageAccess('email-inbox') && (
