@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, X } from 'lucide-react';
 import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
-import { ordersAPI } from '../api';
+import { ordersAPI, frozenDesignsAPI } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 
@@ -80,6 +80,9 @@ export default function FlowPage({
   const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
   const [cavityEdit, setCavityEdit] = useState(null);
   const [cavityReason, setCavityReason] = useState('');
+  const [freezePrompt, setFreezePrompt] = useState(null); // order pending design-approval
+  const [freezeChecked, setFreezeChecked] = useState(false);
+  const [freezeUploadTarget, setFreezeUploadTarget] = useState(null); // frozen_design id awaiting files
 
   const currentFlow = FLOW_TABS.find(f => f.id === activeTab);
   if (!currentFlow) return null;
@@ -101,8 +104,7 @@ export default function FlowPage({
     td: { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text },
   };
 
-  const handleCompleteStep = async (order, e) => {
-    e.stopPropagation();
+  const doCompleteStep = async (order, { freeze = false } = {}) => {
     if (!workflow || !workflow.nextStatus) return;
     const today = new Date().toISOString().split('T')[0];
     const nextStatus = currentFlow.status === 'AWAITING FOR DESIGN' && isSimulationEnabled(order.simulationEnabled)
@@ -119,9 +121,10 @@ export default function FlowPage({
       STATUS: nextStatus,
       [workflow.dateField]: today,
       'Change Log': [changeLogEntry],
+      ...(freeze ? { freeze_design: true } : {}),
     };
     try {
-      await ordersAPI.patch(order.id, patch);
+      const resp = await ordersAPI.patch(order.id, patch);
       setData(prev => prev.map(o => o.id === order.id ? {
         ...o,
         STATUS: nextStatus,
@@ -130,10 +133,25 @@ export default function FlowPage({
       } : o));
       setToast({ message: `Order ${order['DIE NO']} moved to ${STATUS_CONFIG[nextStatus]?.label || nextStatus}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
+      if (freeze && resp?.frozenDesignId) {
+        setFreezeUploadTarget(resp.frozenDesignId);
+      }
     } catch (error) {
       setToast({ message: 'Failed to update: ' + error.message, type: 'error' });
       setTimeout(() => setToast(null), 5000);
     }
+  };
+
+  const handleCompleteStep = async (order, e) => {
+    e.stopPropagation();
+    if (!workflow || !workflow.nextStatus) return;
+    // On the Design Approval stage, offer to freeze the design as part of approval.
+    if (currentFlow.status === 'PENDING FOR DESIGN APPROVAL') {
+      setFreezeChecked(false);
+      setFreezePrompt(order);
+      return;
+    }
+    await doCompleteStep(order);
   };
 
   const filteredOrders = flowOrders
@@ -509,6 +527,90 @@ export default function FlowPage({
                 style={{ padding: '5px 12px', background: cavityReason.trim() ? '#3B82F6' : '#334155', border: 'none', borderRadius: '6px', color: cavityReason.trim() ? 'white' : '#64748B', fontSize: '0.8rem', fontWeight: 600, cursor: cavityReason.trim() ? 'pointer' : 'not-allowed' }}
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {freezePrompt && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setFreezePrompt(null)}
+        >
+          <div
+            style={{ background: theme.cardBg || '#1E293B', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '12px', padding: '20px 24px', minWidth: '360px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 12px', color: theme.text, fontSize: '1rem' }}>
+              Approve Design — {freezePrompt['DIE NO']}
+            </h3>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, fontSize: '0.9rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={freezeChecked} onChange={(e) => setFreezeChecked(e.target.checked)} />
+              Mark design as Frozen / Final
+            </label>
+            <p style={{ color: theme.textMuted || '#94A3B8', fontSize: '0.78rem', margin: '8px 0 16px' }}>
+              Freezing lets future orders for the same profile/plant/press/cavity skip the design stages. You can upload the final files next.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => setFreezePrompt(null)}
+                style={{ padding: '8px 16px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted || '#94A3B8', fontSize: '0.85rem', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const order = freezePrompt;
+                  const freeze = freezeChecked;
+                  setFreezePrompt(null);
+                  await doCompleteStep(order, { freeze });
+                }}
+                style={{ padding: '8px 16px', background: '#16A34A', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} /> Approve Design
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {freezeUploadTarget && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setFreezeUploadTarget(null)}
+        >
+          <div
+            style={{ background: theme.cardBg || '#1E293B', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '12px', padding: '20px 24px', minWidth: '360px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 12px', color: theme.text, fontSize: '1rem' }}>Upload Final Design Files</h3>
+            <p style={{ color: theme.textMuted || '#94A3B8', fontSize: '0.78rem', margin: '0 0 12px' }}>
+              Allowed: PDF, images, DWG, DXF, STEP/STP (up to 100 MB each).
+            </p>
+            <input
+              type="file"
+              multiple
+              onChange={async (e) => {
+                if (e.target.files?.length) {
+                  try {
+                    await frozenDesignsAPI.uploadFiles(freezeUploadTarget, e.target.files);
+                    setToast({ message: 'Final design files uploaded', type: 'success' });
+                    setTimeout(() => setToast(null), 3000);
+                  } catch (error) {
+                    setToast({ message: 'Upload failed: ' + error.message, type: 'error' });
+                    setTimeout(() => setToast(null), 5000);
+                  }
+                }
+              }}
+              style={{ color: theme.text, fontSize: '0.85rem' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button
+                onClick={() => setFreezeUploadTarget(null)}
+                style={{ padding: '8px 16px', background: '#3B82F6', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Done
               </button>
             </div>
           </div>
