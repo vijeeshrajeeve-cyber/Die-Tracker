@@ -102,8 +102,11 @@ router.post('/', requestValidation, handleValidationErrors, async (req, res) => 
             INSERT INTO backup_die_requests (
                 plant, die_no, customer, press, cavity, requested_date,
                 die_available, drawing_requested, ordered_date, status,
-                reason, order_received_last_year, remarks, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                reason, order_received_last_year, remarks,
+                frozen_design_id, frozen_design_action,
+                frozen_design_override_reason, frozen_design_override_note,
+                created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING id
         `, [
             sanitizeString(data['Plant']),
@@ -119,6 +122,10 @@ router.post('/', requestValidation, handleValidationErrors, async (req, res) => 
             sanitizeString(data['Reason']),
             sanitizeString(data['Order Received Last Year']),
             sanitizeString(data['Remarks']),
+            data['frozenDesignId'] || null,
+            sanitizeString(data['frozenDesignAction']),
+            sanitizeString(data['frozenDesignOverrideReason']),
+            sanitizeString(data['frozenDesignOverrideNote']),
             req.user.id
         ]);
 
@@ -149,8 +156,10 @@ router.put('/:id', requestIdValidation, requestValidation, handleValidationError
                 requested_date = $6, die_available = $7, drawing_requested = $8,
                 ordered_date = $9, status = $10, reason = $11,
                 order_received_last_year = $12, remarks = $13,
+                frozen_design_id = $14, frozen_design_action = $15,
+                frozen_design_override_reason = $16, frozen_design_override_note = $17,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $14
+            WHERE id = $18
         `, [
             sanitizeString(data['Plant']),
             sanitizeString(data['DIE NO']),
@@ -165,6 +174,10 @@ router.put('/:id', requestIdValidation, requestValidation, handleValidationError
             sanitizeString(data['Reason']),
             sanitizeString(data['Order Received Last Year']),
             sanitizeString(data['Remarks']),
+            data['frozenDesignId'] || null,
+            sanitizeString(data['frozenDesignAction']),
+            sanitizeString(data['frozenDesignOverrideReason']),
+            sanitizeString(data['frozenDesignOverrideNote']),
             id
         ]);
 
