@@ -1,0 +1,75 @@
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, FileText } from 'lucide-react';
+import { frozenDesignsAPI } from '../api';
+import { BYPASS_REASONS } from '../utils/constants';
+
+// Props: { profile, plant, press, cavity, onRelease(match), onBypass({reason, note, match}) }
+// Fires a /match lookup when the full key is present; renders nothing when no match.
+export default function FrozenDesignBanner({ profile, plant, press, cavity, onRelease, onBypass }) {
+  const [match, setMatch] = useState(null);
+  const [mode, setMode] = useState(null); // null | 'bypass'
+  const [reason, setReason] = useState(BYPASS_REASONS[0]);
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const full = profile && plant && press && (cavity !== '' && cavity !== null && cavity !== undefined);
+    const lookup = full ? frozenDesignsAPI.match({ profile, plant, press, cavity }) : Promise.resolve(null);
+    lookup
+      .then(r => { if (!cancelled) setMatch(r); })
+      .catch(() => { if (!cancelled) setMatch(null); });
+    return () => { cancelled = true; };
+  }, [profile, plant, press, cavity]);
+
+  if (!match) return null;
+
+  const noteRequired = reason === 'Other';
+  const canBypass = !noteRequired || note.trim().length > 0;
+
+  return (
+    <div style={{ border: '1px solid #F59E0B', background: '#FFFBEB', borderRadius: 8, padding: 12, margin: '8px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, color: '#92400E' }}>
+        <AlertTriangle size={18} /> Frozen Design Available
+      </div>
+      <div style={{ fontSize: '0.85rem', color: '#78350F', marginTop: 4 }}>
+        A finalized design exists for {profile} / {press} / cavity {cavity}. Frozen on {match.frozen_at ? new Date(match.frozen_at).toLocaleDateString() : '—'}.
+      </div>
+      {Array.isArray(match.files) && match.files.length > 0 && (
+        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {match.files.map(f => (
+            <button key={f.id} type="button"
+              onClick={() => frozenDesignsAPI.downloadFile(f.id, f.original_name)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#1D4ED8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              <FileText size={14} /> {f.original_name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button type="button" onClick={() => onRelease && onRelease(match)}
+          style={{ background: '#16A34A', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>
+          Release Frozen Design
+        </button>
+        <button type="button" onClick={() => setMode(mode === 'bypass' ? null : 'bypass')}
+          style={{ background: '#fff', color: '#92400E', border: '1px solid #F59E0B', borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>
+          Proceed with normal flow
+        </button>
+      </div>
+      {mode === 'bypass' && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: '0.8rem', color: '#78350F' }}>Reason (required)</label>
+          <select value={reason} onChange={e => setReason(e.target.value)}>
+            {BYPASS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+          <textarea placeholder={noteRequired ? 'Note required for "Other"' : 'Optional note'}
+            value={note} onChange={e => setNote(e.target.value)} rows={2} />
+          <button type="button" disabled={!canBypass}
+            onClick={() => onBypass && onBypass({ reason, note: note.trim(), match })}
+            style={{ alignSelf: 'flex-start', background: canBypass ? '#92400E' : '#D1D5DB', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: canBypass ? 'pointer' : 'not-allowed' }}>
+            Confirm normal flow
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
