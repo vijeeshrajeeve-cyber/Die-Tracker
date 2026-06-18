@@ -43,14 +43,16 @@ export const isLoggedIn = () => !!getToken();
 // API request helper
 const apiRequest = async (endpoint, options = {}) => {
     const token = getToken();
+    const { isMultipart, ...fetchOptions } = options;
     const headers = {
-        'Content-Type': 'application/json',
+        // For multipart uploads let the browser set Content-Type (with boundary).
+        ...(isMultipart ? {} : { 'Content-Type': 'application/json' }),
         ...(token && { Authorization: `Bearer ${token}` }),
         ...options.headers,
     };
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
+        ...fetchOptions,
         headers,
     });
 
@@ -547,6 +549,46 @@ export const autoBackupsAPI = {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+    },
+};
+
+// Frozen / Final Designs API
+export const frozenDesignsAPI = {
+    list: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/frozen-designs${qs ? `?${qs}` : ''}`);
+    },
+    match: async ({ profile, plant, press, cavity }) => {
+        const qs = new URLSearchParams({
+            profile: profile ?? '', plant: plant ?? '', press: press ?? '', cavity: cavity ?? '',
+        }).toString();
+        return apiRequest(`/frozen-designs/match?${qs}`);
+    },
+    create: async (payload) => {
+        return apiRequest('/frozen-designs', { method: 'POST', body: JSON.stringify(payload) });
+    },
+    uploadFiles: async (id, fileList) => {
+        const form = new FormData();
+        Array.from(fileList).forEach((f) => form.append('files', f));
+        return apiRequest(`/frozen-designs/${id}/files`, { method: 'POST', body: form, isMultipart: true });
+    },
+    downloadFile: async (fileId, filename) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/frozen-designs/files/${fileId}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename || 'design-file';
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+    release: async (id) => {
+        return apiRequest(`/frozen-designs/${id}/release`, { method: 'POST' });
     },
 };
 

@@ -127,6 +127,7 @@ export const CONTROLLABLE_PAGES = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'orders', label: 'Orders' },
   { id: 'backup-requests', label: 'Backup Die Requests' },
+  { id: 'frozen-designs', label: 'Frozen Designs' },
   // Individual Process Flow pages
   { id: 'flow-pending-order', label: 'Pending Order', group: 'Process Flow' },
   { id: 'flow-awaiting-design', label: 'Awaiting Design', group: 'Process Flow' },
@@ -140,3 +141,6 @@ export const CONTROLLABLE_PAGES = [
   { id: 'email-inbox', label: 'Email Inbox' },
   { id: 'analytics', label: 'Analytics' },
 ];
+
+// Preset reasons for bypassing a frozen design and following the normal flow.
+export const BYPASS_REASONS = ['Profile revised', 'Customer change', 'Quality issue', 'Other'];
