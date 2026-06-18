@@ -60,3 +60,26 @@ test('freezeDesign supersedes existing active then inserts new', async () => {
   assert.ok(sqls.some(s => s.startsWith('UPDATE frozen_designs SET is_active = false')));
   assert.ok(sqls.some(s => s.startsWith('INSERT INTO frozen_designs')));
 });
+
+test('listFrozenDesigns selects released/bypassed counts and orders by frozen_at', async () => {
+  const client = makeClient([
+    { match: (s) => s.includes('FROM frozen_designs') && s.includes('released_count'),
+      result: () => ({ rows: [{ id: 1, released_count: 3, bypassed_count: 1 }], rowCount: 1 }) },
+    { match: (s) => s.includes('FROM frozen_design_files'),
+      result: () => ({ rows: [{ id: 11, frozen_design_id: 1, original_name: 'd.pdf' }] }) },
+  ]);
+  const rows = await fd.listFrozenDesigns(client, {});
+  assert.equal(rows[0].released_count, 3);
+  assert.equal(rows[0].bypassed_count, 1);
+  assert.equal(rows[0].files.length, 1);
+});
+
+test('manualRelease deactivates by id with reason manual', async () => {
+  const client = makeClient([
+    { match: (s) => s.startsWith('UPDATE frozen_designs SET is_active = false'),
+      result: () => ({ rows: [{ id: 5 }], rowCount: 1 }) },
+  ]);
+  const ok = await fd.manualRelease(client, { id: 5, userId: 2 });
+  assert.equal(ok, true);
+  assert.deepEqual(client.calls[0].params, [2, 5]);
+});

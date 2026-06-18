@@ -48,4 +48,57 @@ async function freezeDesign(client, { profile, plant, press, cavity, sourceOrder
   return newId;
 }
 
-module.exports = { extractProfileFromDie, hasFullKey, findActiveMatch, freezeDesign };
+async function listFrozenDesigns(client, { profile, plant, press, cavity, activeOnly } = {}) {
+  const where = [];
+  const params = [];
+  if (profile) { params.push(profile); where.push(`fd.profile_number = $${params.length}`); }
+  if (plant)   { params.push(plant);   where.push(`fd.plant = $${params.length}`); }
+  if (press)   { params.push(press);   where.push(`fd.press = $${params.length}`); }
+  if (cavity !== undefined && cavity !== null && cavity !== '') {
+    params.push(Math.round(Number(cavity))); where.push(`fd.cavity = $${params.length}`);
+  }
+  if (activeOnly) where.push('fd.is_active = true');
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const { rows } = await client.query(
+    `SELECT fd.*,
+       (SELECT COUNT(*) FROM die_orders o WHERE o.frozen_design_id = fd.id AND o.frozen_design_action = 'released')
+       + (SELECT COUNT(*) FROM backup_die_requests b WHERE b.frozen_design_id = fd.id AND b.frozen_design_action = 'released')
+         AS released_count,
+       (SELECT COUNT(*) FROM die_orders o WHERE o.frozen_design_id = fd.id AND o.frozen_design_action = 'bypassed')
+       + (SELECT COUNT(*) FROM backup_die_requests b WHERE b.frozen_design_id = fd.id AND b.frozen_design_action = 'bypassed')
+         AS bypassed_count
+       FROM frozen_designs fd
+       ${whereSql}
+       ORDER BY fd.frozen_at DESC`,
+    params
+  );
+  const ids = rows.map(r => r.id);
+  let files = [];
+  if (ids.length) {
+    const fres = await client.query(
+      `SELECT id, frozen_design_id, original_name, mime_type, size_bytes, uploaded_at
+         FROM frozen_design_files WHERE frozen_design_id = ANY($1) ORDER BY uploaded_at ASC`,
+      [ids]
+    );
+    files = fres.rows;
+  }
+  return rows.map(r => ({
+    ...r,
+    released_count: Number(r.released_count) || 0,
+    bypassed_count: Number(r.bypassed_count) || 0,
+    files: files.filter(f => f.frozen_design_id === r.id),
+  }));
+}
+
+async function manualRelease(client, { id, userId }) {
+  const { rowCount } = await client.query(
+    `UPDATE frozen_designs SET is_active = false, released_at = CURRENT_TIMESTAMP,
+       released_by = $1, release_reason = 'manual'
+       WHERE id = $2 AND is_active = true`,
+    [userId || null, id]
+  );
+  return rowCount > 0;
+}
+
+module.exports = { extractProfileFromDie, hasFullKey, findActiveMatch, freezeDesign, listFrozenDesigns, manualRelease };
