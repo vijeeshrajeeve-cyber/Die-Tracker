@@ -127,6 +127,48 @@ CREATE TABLE IF NOT EXISTS backup_die_requests (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Frozen / Final Designs
+CREATE TABLE IF NOT EXISTS frozen_designs (
+    id SERIAL PRIMARY KEY,
+    profile_number  TEXT NOT NULL,
+    plant           TEXT NOT NULL,
+    press           TEXT NOT NULL,
+    cavity          INTEGER NOT NULL,
+    source_order_id INTEGER REFERENCES die_orders(id),
+    frozen_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    frozen_by       INTEGER REFERENCES users(id),
+    is_active       BOOLEAN DEFAULT true,
+    superseded_by   INTEGER REFERENCES frozen_designs(id),
+    released_at     TIMESTAMP,
+    released_by     INTEGER REFERENCES users(id),
+    release_reason  TEXT,
+    notes           TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_frozen
+    ON frozen_designs (profile_number, plant, press, cavity)
+    WHERE is_active = true;
+
+CREATE TABLE IF NOT EXISTS frozen_design_files (
+    id SERIAL PRIMARY KEY,
+    frozen_design_id INTEGER NOT NULL REFERENCES frozen_designs(id) ON DELETE CASCADE,
+    original_name    TEXT NOT NULL,
+    stored_path      TEXT NOT NULL,
+    mime_type        TEXT,
+    size_bytes       BIGINT,
+    uploaded_by      INTEGER REFERENCES users(id),
+    uploaded_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_id INTEGER REFERENCES frozen_designs(id);
+ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_action TEXT;
+ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_override_reason TEXT;
+ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_override_note TEXT;
+ALTER TABLE backup_die_requests ADD COLUMN IF NOT EXISTS frozen_design_id INTEGER REFERENCES frozen_designs(id);
+ALTER TABLE backup_die_requests ADD COLUMN IF NOT EXISTS frozen_design_action TEXT;
+ALTER TABLE backup_die_requests ADD COLUMN IF NOT EXISTS frozen_design_override_reason TEXT;
+ALTER TABLE backup_die_requests ADD COLUMN IF NOT EXISTS frozen_design_override_note TEXT;
+
 -- Sample Followup table
 CREATE TABLE IF NOT EXISTS sample_followups (
     id SERIAL PRIMARY KEY,
