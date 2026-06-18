@@ -8,6 +8,13 @@ function getRoot() {
   return process.env.FROZEN_DESIGNS_ROOT || '/app/storage/frozen-designs';
 }
 
+// Temp upload dir kept ON THE SAME filesystem as the storage root so moving a
+// finished upload into place is an intra-device rename (no EXDEV across the
+// Docker volume boundary).
+function getTmpDir() {
+  return path.join(getRoot(), '.uploads-tmp');
+}
+
 function extOf(name) {
   const base = String(name || '');
   const dot = base.lastIndexOf('.');
@@ -43,6 +50,7 @@ module.exports = {
   ALLOWED_EXTENSIONS,
   MAX_FILE_BYTES,
   getRoot,
+  getTmpDir,
   isAllowedExtension,
   sanitizeFilename,
   sanitizeSegment,

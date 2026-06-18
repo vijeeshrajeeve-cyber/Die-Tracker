@@ -3,7 +3,6 @@ const express = require('express');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const os = require('os');
 const multer = require('multer');
 const { pool } = require('../db.cjs');
 const { adminMiddleware } = require('./auth.cjs');
@@ -12,14 +11,38 @@ const store = require('../services/frozenDesignStorage.cjs');
 
 const router = express.Router();
 
+// Keep the temp dir on the same filesystem as the final storage so moving the
+// file into place is an intra-device rename (avoids EXDEV across the Docker volume).
+const uploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = store.getTmpDir();
+    fs.mkdir(dir, { recursive: true }, (err) => cb(err, dir));
+  },
+});
+
 const upload = multer({
-  dest: path.join(os.tmpdir(), 'frozen-uploads'),
+  storage: uploadStorage,
   limits: { fileSize: store.MAX_FILE_BYTES },
   fileFilter: (req, file, cb) => {
     if (store.isAllowedExtension(file.originalname)) return cb(null, true);
     cb(new Error('File type not allowed'));
   },
 });
+
+// Move a finished upload into place; rename when on the same device, otherwise
+// fall back to copy + unlink (defensive — temp dir should already be co-located).
+async function moveIntoPlace(src, dest) {
+  try {
+    await fsp.rename(src, dest);
+  } catch (e) {
+    if (e.code === 'EXDEV') {
+      await fsp.copyFile(src, dest);
+      await fsp.unlink(src);
+    } else {
+      throw e;
+    }
+  }
+}
 
 // GET /api/frozen-designs?profile=&plant=&press=&cavity=&activeOnly=
 router.get('/', async (req, res) => {
@@ -92,7 +115,7 @@ router.post('/:id/files', upload.array('files', 10), async (req, res) => {
         frozenDesignId: d.id, fileName: file.originalname,
       });
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.rename(file.path, dest);
+      await moveIntoPlace(file.path, dest);
       const rel = path.relative(root, dest);
       const ins = await pool.query(
         `INSERT INTO frozen_design_files (frozen_design_id, original_name, stored_path, mime_type, size_bytes, uploaded_by)

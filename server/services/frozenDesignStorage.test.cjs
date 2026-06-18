@@ -28,3 +28,10 @@ test('buildStoredPath composes root/profile/press/cavity/id/name', () => {
 test('MAX_FILE_BYTES is 100 MB', () => {
   assert.equal(s.MAX_FILE_BYTES, 100 * 1024 * 1024);
 });
+
+test('getTmpDir is the .uploads-tmp dir directly under the storage root', () => {
+  const tmp = s.getTmpDir();
+  assert.equal(tmp, path.join(s.getRoot(), '.uploads-tmp'));
+  assert.equal(path.dirname(tmp), path.normalize(s.getRoot())); // same parent → same filesystem
+  assert.equal(path.basename(tmp), '.uploads-tmp');
+});
