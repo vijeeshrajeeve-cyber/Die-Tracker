@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
+const fdService = require('../services/frozenDesigns.cjs');
 
 const router = express.Router();
 
@@ -238,8 +239,10 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 die_received_date, submission_date, sample_approval_date, no_of_trial, corrector,
                 press, cavity, ascona_reference, sample_status, remark,
                 urgency, special_follow_up, design_to_ems_date,
+                frozen_design_id, frozen_design_action,
+                frozen_design_override_reason, frozen_design_override_note,
                 created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -279,6 +282,10 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
             sanitizeDate(order['Design to EMS Date']),
+            order['frozenDesignId'] || null,
+            sanitizeString(order['frozenDesignAction']),
+            sanitizeString(order['frozenDesignOverrideReason']),
+            sanitizeString(order['frozenDesignOverrideNote']),
             req.user.id
         ]);
 
@@ -391,7 +398,34 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
 
         await autoUpdateBackupRequests(body['DIE NO'], body['Ordered date']);
 
-        res.json({ message: 'Order updated' });
+        // Freeze design when the approval action requested it.
+        let frozenDesignId = null;
+        if (body && body.freeze_design) {
+            const row = await pool.query('SELECT die_no, plant, press, cavity FROM die_orders WHERE id = $1', [id]);
+            if (row.rowCount > 0) {
+                const o = row.rows[0];
+                const profile = fdService.extractProfileFromDie(o.die_no);
+                if (fdService.hasFullKey({ profile, plant: o.plant, press: o.press, cavity: o.cavity })) {
+                    const client = await pool.connect();
+                    try {
+                        await client.query('BEGIN');
+                        frozenDesignId = await fdService.freezeDesign(client, {
+                            profile, plant: o.plant, press: o.press, cavity: o.cavity,
+                            sourceOrderId: Number(id), frozenBy: req.user?.id,
+                            notes: body.freeze_notes || null,
+                        });
+                        await client.query('COMMIT');
+                    } catch (fe) {
+                        await client.query('ROLLBACK');
+                        console.error('Freeze on approval error:', fe);
+                    } finally {
+                        client.release();
+                    }
+                }
+            }
+        }
+
+        res.json({ message: 'Order updated', frozenDesignId });
     } catch (error) {
         console.error('Patch order error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -418,8 +452,10 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
                 press = $30, cavity = $31, ascona_reference = $32, sample_status = $33, remark = $34,
                 urgency = $35, special_follow_up = $36,
                 design_to_ems_date = $37,
+                frozen_design_id = $38, frozen_design_action = $39,
+                frozen_design_override_reason = $40, frozen_design_override_note = $41,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $38
+            WHERE id = $42
         `, [
             sanitizeString(order['Plant']),
             sanitizeString(order['Order No']),
@@ -458,6 +494,10 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
             sanitizeDate(order['Design to EMS Date']),
+            order['frozenDesignId'] || null,
+            sanitizeString(order['frozenDesignAction']),
+            sanitizeString(order['frozenDesignOverrideReason']),
+            sanitizeString(order['frozenDesignOverrideNote']),
             id,
         ]);
 
