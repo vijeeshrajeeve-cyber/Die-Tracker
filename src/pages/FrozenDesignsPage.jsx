@@ -1,10 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { FileText, Unlock } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { FileText, Unlock, Upload } from 'lucide-react';
 import { frozenDesignsAPI } from '../api';
 
 export default function FrozenDesignsPage({ user }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [uploadingId, setUploadingId] = useState(null);
+  const fileInputRef = useRef(null);
+  const pendingUploadId = useRef(null);
   const isAdmin = user?.role === 'admin';
 
   const load = useCallback(() => {
@@ -23,6 +26,30 @@ export default function FrozenDesignsPage({ user }) {
     load();
   };
 
+  const pickFiles = (id) => {
+    pendingUploadId.current = id;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const onFilesChosen = async (e) => {
+    const id = pendingUploadId.current;
+    const chosen = e.target.files;
+    if (!id || !chosen || !chosen.length) return;
+    setUploadingId(id);
+    try {
+      await frozenDesignsAPI.uploadFiles(id, chosen);
+      load();
+    } catch (err) {
+      window.alert('Upload failed: ' + err.message);
+    } finally {
+      setUploadingId(null);
+      pendingUploadId.current = null;
+    }
+  };
+
   const statusLabel = (r) => r.is_active ? 'Active' : (r.release_reason === 'superseded' ? 'Superseded' : 'Released');
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
@@ -30,6 +57,7 @@ export default function FrozenDesignsPage({ user }) {
   return (
     <div style={{ padding: 24 }}>
       <h2 style={{ marginBottom: 16 }}>Frozen Designs</h2>
+      <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesChosen} />
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
         <thead>
           <tr style={{ textAlign: 'left', borderBottom: '2px solid #E5E7EB' }}>
@@ -56,12 +84,18 @@ export default function FrozenDesignsPage({ user }) {
               <td>Released ×{r.released_count}</td>
               <td>Bypassed ×{r.bypassed_count}</td>
               <td>
-                {isAdmin && r.is_active && (
-                  <button onClick={() => release(r.id)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #DC2626', color: '#DC2626', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
-                    <Unlock size={13} /> Release
+                <div style={{ display: 'inline-flex', gap: 6 }}>
+                  <button onClick={() => pickFiles(r.id)} disabled={uploadingId === r.id}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #2563EB', color: '#2563EB', borderRadius: 6, padding: '4px 8px', cursor: uploadingId === r.id ? 'wait' : 'pointer' }}>
+                    <Upload size={13} /> {uploadingId === r.id ? 'Uploading…' : 'Add files'}
                   </button>
-                )}
+                  {isAdmin && r.is_active && (
+                    <button onClick={() => release(r.id)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #DC2626', color: '#DC2626', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+                      <Unlock size={13} /> Release
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

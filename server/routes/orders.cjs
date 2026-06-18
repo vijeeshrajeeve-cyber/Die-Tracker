@@ -1,7 +1,6 @@
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
-const fdService = require('../services/frozenDesigns.cjs');
 
 const router = express.Router();
 
@@ -398,34 +397,7 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
 
         await autoUpdateBackupRequests(body['DIE NO'], body['Ordered date']);
 
-        // Freeze design when the approval action requested it.
-        let frozenDesignId = null;
-        if (body && body.freeze_design) {
-            const row = await pool.query('SELECT die_no, plant, press, cavity FROM die_orders WHERE id = $1', [id]);
-            if (row.rowCount > 0) {
-                const o = row.rows[0];
-                const profile = fdService.extractProfileFromDie(o.die_no);
-                if (fdService.hasFullKey({ profile, plant: o.plant, press: o.press, cavity: o.cavity })) {
-                    const client = await pool.connect();
-                    try {
-                        await client.query('BEGIN');
-                        frozenDesignId = await fdService.freezeDesign(client, {
-                            profile, plant: o.plant, press: o.press, cavity: o.cavity,
-                            sourceOrderId: Number(id), frozenBy: req.user?.id,
-                            notes: body.freeze_notes || null,
-                        });
-                        await client.query('COMMIT');
-                    } catch (fe) {
-                        await client.query('ROLLBACK');
-                        console.error('Freeze on approval error:', fe);
-                    } finally {
-                        client.release();
-                    }
-                }
-            }
-        }
-
-        res.json({ message: 'Order updated', frozenDesignId });
+        res.json({ message: 'Order updated' });
     } catch (error) {
         console.error('Patch order error:', error);
         res.status(500).json({ error: 'Internal server error' });

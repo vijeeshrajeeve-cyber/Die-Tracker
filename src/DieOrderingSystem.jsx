@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus } from 'lucide-react';
+import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
@@ -26,6 +26,7 @@ import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
 import FrozenDesignsPage from './pages/FrozenDesignsPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
+import FreezeDesignModal from './components/FreezeDesignModal';
 
 
 
@@ -903,6 +904,8 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
   const [pendingStatusLog, setPendingStatusLog] = useState(null);
   const [presses, setPresses] = useState([]);
+  const [showFreeze, setShowFreeze] = useState(false);
+  const [freezeToast, setFreezeToast] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -1303,7 +1306,12 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           <button onClick={onClose} style={{ padding: '9px 18px', background: 'transparent', color: theme?.textDim || '#64748B', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', cursor: 'pointer' }}>Close</button>
           <div style={{ display: 'flex', gap: '8px' }}>
             {!isEditing ? (
-              canEdit && <button onClick={() => setIsEditing(true)} style={{ padding: '9px 22px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>Edit</button>
+              <>
+                <button onClick={() => setShowFreeze(true)} style={{ padding: '9px 18px', background: 'transparent', color: '#38BDF8', border: '1px solid #38BDF8', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Snowflake size={15} /> Freeze / Final Design
+                </button>
+                {canEdit && <button onClick={() => setIsEditing(true)} style={{ padding: '9px 22px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>Edit</button>}
+              </>
             ) : (
               <>
                 <button onClick={handleCancel} style={{ padding: '9px 18px', background: theme?.cardBg || '#334155', color: theme?.text || '#F1F5F9', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', cursor: 'pointer' }}>Cancel</button>
@@ -1322,6 +1330,24 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           onSave={handleViewerSave}
           onClose={() => setViewingFile(null)}
         />
+      )}
+
+      {showFreeze && (
+        <FreezeDesignModal
+          order={currentOrder}
+          theme={theme}
+          onClose={() => setShowFreeze(false)}
+          onDone={({ filesUploaded }) => {
+            setFreezeToast(`Design frozen for ${currentOrder['DIE NO']}${filesUploaded ? ` · ${filesUploaded} file(s) uploaded` : ''}`);
+            setTimeout(() => setFreezeToast(''), 4000);
+          }}
+        />
+      )}
+
+      {freezeToast && (
+        <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: '#0891B2', color: 'white', padding: '10px 20px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 600, zIndex: 2100, boxShadow: '0 6px 20px rgba(8,145,178,0.5)' }}>
+          {freezeToast}
+        </div>
       )}
 
       {/* Status Change Reason Modal */}
