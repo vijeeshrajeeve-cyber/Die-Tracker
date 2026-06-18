@@ -6,6 +6,41 @@ function extractProfileFromDie(dieNo) {
   return cleaned || null;
 }
 
+// Normalize a plant label so 'GEX 01' and 'GEX 1' (and case/space variants) compare equal.
+function normalizePlant(raw) {
+  return String(raw == null ? '' : raw).trim().toUpperCase().replace(/\b0+(\d+)\b/g, '$1');
+}
+
+function cleanPressToken(raw) {
+  return String(raw == null ? '' : raw).trim().toUpperCase().replace(/\s+/g, '');
+}
+
+// Resolve any press representation (press_name "PRESS 8", PDF token "P8", bare "8",
+// master press_code "P35"/"E") to the canonical press_name using the presses master.
+// Falls back to the cleaned token when nothing matches.
+function canonicalPress(raw, presses) {
+  const c = cleanPressToken(raw);
+  if (!c) return '';
+  for (const p of (presses || [])) {
+    const nameClean = cleanPressToken(p.press_name);
+    const codeClean = cleanPressToken(p.press_code);
+    const num = (String(p.press_name || '').match(/\d+/) || [])[0];
+    if (c === nameClean || (codeClean && c === codeClean) || (num && (c === 'P' + num || c === num))) {
+      return p.press_name;
+    }
+  }
+  return c;
+}
+
+async function loadPresses(client) {
+  try {
+    const { rows } = await client.query('SELECT press_name, press_code FROM presses');
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 function hasFullKey({ profile, plant, press, cavity }) {
   return Boolean(profile) && Boolean(plant) && Boolean(press) &&
     cavity !== null && cavity !== undefined && cavity !== '';
@@ -13,18 +48,22 @@ function hasFullKey({ profile, plant, press, cavity }) {
 
 async function findActiveMatch(client, { profile, plant, press, cavity }) {
   if (!hasFullKey({ profile, plant, press, cavity })) return null;
+  const presses = await loadPresses(client);
   const { rows } = await client.query(
     `SELECT * FROM frozen_designs
        WHERE profile_number = $1 AND plant = $2 AND press = $3 AND cavity = $4
          AND is_active = true
        LIMIT 1`,
-    [profile, plant, press, Math.round(Number(cavity))]
+    [profile, normalizePlant(plant), canonicalPress(press, presses), Math.round(Number(cavity))]
   );
   return rows[0] || null;
 }
 
 async function freezeDesign(client, { profile, plant, press, cavity, sourceOrderId, frozenBy, notes }) {
   const cav = Math.round(Number(cavity));
+  const presses = await loadPresses(client);
+  plant = normalizePlant(plant);
+  press = canonicalPress(press, presses);
   // Deactivate any existing active design for this key.
   await client.query(
     `UPDATE frozen_designs SET is_active = false, released_at = CURRENT_TIMESTAMP,
@@ -101,4 +140,4 @@ async function manualRelease(client, { id, userId }) {
   return rowCount > 0;
 }
 
-module.exports = { extractProfileFromDie, hasFullKey, findActiveMatch, freezeDesign, listFrozenDesigns, manualRelease };
+module.exports = { extractProfileFromDie, normalizePlant, cleanPressToken, canonicalPress, loadPresses, hasFullKey, findActiveMatch, freezeDesign, listFrozenDesigns, manualRelease };
