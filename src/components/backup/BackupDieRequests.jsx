@@ -4,6 +4,7 @@ import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, extractProfileFromDie } from '../../api';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
+import FrozenDesignBanner from '../FrozenDesignBanner';
 
 const StatusBadge = ({ status }) => {
   const config = BACKUP_REQUEST_STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
@@ -1071,6 +1072,31 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 />
               </div>
             </div>
+
+            <FrozenDesignBanner
+              profile={extractProfileFromDie(formData['DIE NO'])}
+              plant={formData['Plant']}
+              press={formData['Press']}
+              cavity={formData['Cavity']}
+              onRelease={(match) => {
+                setFormData(prev => ({
+                  ...prev,
+                  frozenDesignId: match.id,
+                  frozenDesignAction: 'released',
+                  frozenDesignOverrideReason: '',
+                  frozenDesignOverrideNote: '',
+                }));
+              }}
+              onBypass={({ reason, note, match }) => {
+                setFormData(prev => ({
+                  ...prev,
+                  frozenDesignId: match.id,
+                  frozenDesignAction: 'bypassed',
+                  frozenDesignOverrideReason: reason,
+                  frozenDesignOverrideNote: note,
+                }));
+              }}
+            />
 
             {/* Modal Actions */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: `1px solid ${theme.cardBorder}` }}>

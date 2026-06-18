@@ -3,7 +3,7 @@ import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Fac
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -25,6 +25,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
 import FrozenDesignsPage from './pages/FrozenDesignsPage';
+import FrozenDesignBanner from './components/FrozenDesignBanner';
 
 
 
@@ -600,6 +601,35 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
               style={{ ...inputStyle(false), resize: 'vertical', fontFamily: 'inherit' }}
             />
           </div>
+
+          <FrozenDesignBanner
+            profile={extractProfileFromDie(form['DIE NO'])}
+            plant={form.Plant}
+            press={form.Press}
+            cavity={form.Cavity}
+            onRelease={(match) => {
+              const today = new Date().toISOString().split('T')[0];
+              setForm(prev => ({
+                ...prev,
+                'Design Received Date': today,
+                'Design Approved Date': today,
+                STATUS: 'PENDING FOR PR',
+                frozenDesignId: match.id,
+                frozenDesignAction: 'released',
+                frozenDesignOverrideReason: '',
+                frozenDesignOverrideNote: '',
+              }));
+            }}
+            onBypass={({ reason, note, match }) => {
+              setForm(prev => ({
+                ...prev,
+                frozenDesignId: match.id,
+                frozenDesignAction: 'bypassed',
+                frozenDesignOverrideReason: reason,
+                frozenDesignOverrideNote: note,
+              }));
+            }}
+          />
         </div>
 
         {/* Footer */}
