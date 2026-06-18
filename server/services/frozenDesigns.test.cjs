@@ -41,3 +41,22 @@ test('findActiveMatch queries active row by full key', async () => {
   assert.equal(res.id, 7);
   assert.deepEqual(client.calls[0].params, ['14752', 'GEX 01', 'PRESS 4', 2]);
 });
+
+test('freezeDesign supersedes existing active then inserts new', async () => {
+  const client = makeClient([
+    { match: (s) => s.startsWith('UPDATE frozen_designs SET is_active = false'),
+      result: () => ({ rows: [], rowCount: 1 }) },
+    { match: (s) => s.startsWith('INSERT INTO frozen_designs'),
+      result: () => ({ rows: [{ id: 42 }], rowCount: 1 }) },
+    { match: (s) => s.startsWith('UPDATE frozen_designs SET superseded_by'),
+      result: () => ({ rows: [], rowCount: 1 }) },
+  ]);
+  const id = await fd.freezeDesign(client, {
+    profile: '14752', plant: 'GEX 01', press: 'PRESS 4', cavity: 2,
+    sourceOrderId: 5, frozenBy: 3, notes: 'final',
+  });
+  assert.equal(id, 42);
+  const sqls = client.calls.map(c => c.sql);
+  assert.ok(sqls.some(s => s.startsWith('UPDATE frozen_designs SET is_active = false')));
+  assert.ok(sqls.some(s => s.startsWith('INSERT INTO frozen_designs')));
+});
