@@ -57,8 +57,10 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3001}
       HOST: ${HOST:-0.0.0.0}
+      FROZEN_DESIGNS_ROOT: /app/storage/frozen-designs
     volumes:
       - order_backups:/app/backups
+      - frozen_designs_data:/app/storage/frozen-designs
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -164,6 +166,8 @@ volumes:
   postgres_data:
     driver: local
   order_backups:
+    driver: local
+  frozen_designs_data:
     driver: local
 
 networks:

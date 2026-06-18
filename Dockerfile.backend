@@ -10,9 +10,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY server/ ./server/
 
-# Create the backups directory inside the image so Docker initialises the
-# named volume with the correct node ownership on first use.
-RUN mkdir -p /app/backups && chown -R node:node /app
+# Create the backups and frozen-designs directories inside the image so Docker
+# initialises the named volumes with the correct node ownership on first use.
+RUN mkdir -p /app/backups /app/storage/frozen-designs && chown -R node:node /app
 USER node
 
 EXPOSE 3001
