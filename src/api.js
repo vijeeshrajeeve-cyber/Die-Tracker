@@ -393,6 +393,7 @@ export const backupRequestsAPI = {
             jFilePdfBlob: data.jFilePdf ? base64ToBlob(data.jFilePdf, 'application/pdf') : null,
             jFileName: data.jFileName,
             jFileError: data.jFileError,
+            frozenMerged: data.frozenMerged || 0,
         };
     },
 };

@@ -3,6 +3,9 @@ const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { generateBackupOrderPdf, VALUE_KEYS } = require('../services/dieOrderTemplate.cjs');
 const { generateJFilePdf } = require('../services/jFileTemplate.cjs');
+const fdService = require('../services/frozenDesigns.cjs');
+const fdStore = require('../services/frozenDesignStorage.cjs');
+const { pdfPathsFromFiles, mergePdfs } = require('../services/frozenDesignMerge.cjs');
 
 const router = express.Router();
 
@@ -268,7 +271,30 @@ router.post(
             // Order PDF is required — propagate failure
             if (orderSettled.status === 'rejected') throw orderSettled.reason;
 
-            const orderPdf = orderSettled.value.toString('base64');
+            // Merge the active frozen design's PDF attachment(s) into the order PDF, if any.
+            let orderBuffer = orderSettled.value;
+            let frozenMerged = 0;
+            try {
+                const profile = fdService.extractProfileFromDie(backupRequest.die_no);
+                const match = await fdService.findActiveMatch(pool, {
+                    profile, plant: backupRequest.plant, press: backupRequest.press, cavity: backupRequest.cavity,
+                });
+                if (match) {
+                    const files = await pool.query(
+                        'SELECT stored_path, original_name FROM frozen_design_files WHERE frozen_design_id = $1',
+                        [match.id]
+                    );
+                    const pdfPaths = pdfPathsFromFiles(files.rows, fdStore.getRoot());
+                    if (pdfPaths.length) {
+                        orderBuffer = await mergePdfs(orderBuffer, pdfPaths);
+                        frozenMerged = pdfPaths.length;
+                    }
+                }
+            } catch (mergeErr) {
+                console.error('Frozen design merge error (continuing without merge):', mergeErr);
+            }
+
+            const orderPdf = orderBuffer.toString('base64');
 
             let jFilePdf = null;
             let jFileError;
@@ -280,7 +306,7 @@ router.post(
             }
 
             const jFileName = (backupRequest.die_no || 'backup') + ' J.pdf';
-            const response = { orderPdf, jFilePdf, jFileName };
+            const response = { orderPdf, jFilePdf, jFileName, frozenMerged };
             if (jFileError) response.jFileError = jFileError;
             res.json(response);
         } catch (error) {

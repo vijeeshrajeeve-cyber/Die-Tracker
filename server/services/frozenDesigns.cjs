@@ -59,7 +59,7 @@ async function findActiveMatch(client, { profile, plant, press, cavity }) {
   return rows[0] || null;
 }
 
-async function freezeDesign(client, { profile, plant, press, cavity, sourceOrderId, frozenBy, notes }) {
+async function freezeDesign(client, { profile, plant, press, cavity, sourceOrderId, frozenBy, notes, supplier, dieSize }) {
   const cav = Math.round(Number(cavity));
   const presses = await loadPresses(client);
   plant = normalizePlant(plant);
@@ -72,9 +72,9 @@ async function freezeDesign(client, { profile, plant, press, cavity, sourceOrder
     [profile, plant, press, cav, frozenBy || null]
   );
   const { rows } = await client.query(
-    `INSERT INTO frozen_designs (profile_number, plant, press, cavity, source_order_id, frozen_by, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [profile, plant, press, cav, sourceOrderId || null, frozenBy || null, notes || null]
+    `INSERT INTO frozen_designs (profile_number, plant, press, cavity, source_order_id, frozen_by, notes, supplier, die_size)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [profile, plant, press, cav, sourceOrderId || null, frozenBy || null, notes || null, supplier || null, dieSize || null]
   );
   const newId = rows[0].id;
   // Point superseded rows (just deactivated for this key) at the new active one.

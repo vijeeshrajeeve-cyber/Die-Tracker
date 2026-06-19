@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS frozen_designs (
     released_at     TIMESTAMP,
     released_by     INTEGER REFERENCES users(id),
     release_reason  TEXT,
+    supplier        TEXT,
+    die_size        TEXT,
     notes           TEXT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

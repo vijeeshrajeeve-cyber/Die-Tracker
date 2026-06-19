@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
-import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, extractProfileFromDie } from '../../api';
+import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../../api';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
 import FrozenDesignBanner from '../FrozenDesignBanner';
@@ -428,15 +428,27 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     }
   };
 
-  const openOrderModal = (request) => {
+  const openOrderModal = async (request) => {
     setOrderRow(request);
     setOrderFileHandle(null);
     setOrderFileName('');
     setOrderError('');
+
+    // Pull supplier / die size from an active frozen design for this profile (if any).
+    let frozen = null;
+    try {
+      frozen = await frozenDesignsAPI.match({
+        profile: extractProfileFromDie(request['DIE NO']),
+        plant: request['Plant'],
+        press: request['Press'],
+        cavity: request['Cavity'],
+      });
+    } catch { /* no match / lookup failed — proceed without prefill */ }
+
     setOrderValues({
-      SUPPLIER: '',
+      SUPPLIER: frozen?.supplier || '',
       DATE: getTodayDateString(),
-      DIE_SIZE: '',
+      DIE_SIZE: frozen?.die_size || '',
       NO_OF_CAV: request['Cavity'] ? String(request['Cavity']) : '',
       PRESS: request['Press'] || '',
       SOLID: '',
@@ -497,7 +509,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       }
 
       const file = await orderFileHandle.getFile();
-      const { orderPdfBlob, jFilePdfBlob, jFileName, jFileError } =
+      const { orderPdfBlob, jFilePdfBlob, jFileName, jFileError, frozenMerged } =
         await backupRequestsAPI.generateOrderPdf(orderRow.id, file, orderValues);
 
       // Write die-order stamp back to the chosen file
@@ -519,10 +531,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
       setShowOrderModal(false);
 
+      const mergedNote = frozenMerged ? `\n\nFrozen design merged: ${frozenMerged} PDF page-set(s) appended.` : '';
       if (jFileError) {
-        alert(`Order PDF saved to "${orderFileHandle.name}".\n\nWarning: J-file could not be generated: ${jFileError}`);
+        alert(`Order PDF saved to "${orderFileHandle.name}".${mergedNote}\n\nWarning: J-file could not be generated: ${jFileError}`);
       } else {
-        alert(`Die order saved to "${orderFileHandle.name}" and J-file downloaded as "${jFileName}".`);
+        alert(`Die order saved to "${orderFileHandle.name}" and J-file downloaded as "${jFileName}".${mergedNote}`);
       }
     } catch (error) {
       setOrderError(error.message || String(error));
@@ -1074,28 +1087,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             </div>
 
             <FrozenDesignBanner
+              infoOnly
               profile={extractProfileFromDie(formData['DIE NO'])}
               plant={formData['Plant']}
               press={formData['Press']}
               cavity={formData['Cavity']}
-              onRelease={(match) => {
-                setFormData(prev => ({
-                  ...prev,
-                  frozenDesignId: match.id,
-                  frozenDesignAction: 'released',
-                  frozenDesignOverrideReason: '',
-                  frozenDesignOverrideNote: '',
-                }));
-              }}
-              onBypass={({ reason, note, match }) => {
-                setFormData(prev => ({
-                  ...prev,
-                  frozenDesignId: match.id,
-                  frozenDesignAction: 'bypassed',
-                  frozenDesignOverrideReason: reason,
-                  frozenDesignOverrideNote: note,
-                }));
-              }}
             />
 
             {/* Modal Actions */}

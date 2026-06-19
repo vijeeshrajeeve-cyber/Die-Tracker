@@ -320,6 +320,8 @@ const initializeDatabase = async () => {
         released_at     TIMESTAMP,
         released_by     INTEGER REFERENCES users(id),
         release_reason  TEXT,
+        supplier        TEXT,
+        die_size        TEXT,
         notes           TEXT,
         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -339,6 +341,12 @@ const initializeDatabase = async () => {
       );
 
       DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='frozen_designs' AND column_name='supplier') THEN
+          ALTER TABLE frozen_designs ADD COLUMN supplier TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='frozen_designs' AND column_name='die_size') THEN
+          ALTER TABLE frozen_designs ADD COLUMN die_size TEXT;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='frozen_design_id') THEN
           ALTER TABLE die_orders ADD COLUMN frozen_design_id INTEGER REFERENCES frozen_designs(id);
         END IF;

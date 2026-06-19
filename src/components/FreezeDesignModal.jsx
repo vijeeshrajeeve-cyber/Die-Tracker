@@ -11,6 +11,8 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
   const [plant, setPlant] = useState(order ? (order.Plant || order.plant || '') : '');
   const [press, setPress] = useState(order ? (order['Press'] || order.press || '') : '');
   const [cavity, setCavity] = useState(order ? (order['Cavity'] ?? order.cavity ?? '') : '');
+  const [supplier, setSupplier] = useState(order ? (order['Supplier'] || order.supplier || '') : '');
+  const [dieSize, setDieSize] = useState(order ? (order['Die Size'] || order.die_size || '') : '');
   const [notes, setNotes] = useState('');
   const [files, setFiles] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -38,6 +40,7 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
       const { id } = await frozenDesignsAPI.create({
         profile: String(profile).trim(), plant: String(plant).trim(), press: String(press).trim(), cavity: cavityNum,
         sourceOrderId: order ? order.id : null, notes: notes.trim() || null,
+        supplier: String(supplier).trim() || null, dieSize: String(dieSize).trim() || null,
       });
       if (files && files.length) {
         await frozenDesignsAPI.uploadFiles(id, files);
@@ -84,6 +87,17 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
               <label style={labelStyle}>Cavity *</label>
               <input style={inputStyle} type="number" min="1" value={cavity} onChange={(e) => setCavity(e.target.value)} placeholder="e.g. 2" />
             </div>
+            <div>
+              <label style={labelStyle}>Supplier</label>
+              <input style={inputStyle} value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. PDTMC" />
+            </div>
+            <div>
+              <label style={labelStyle}>Die Size</label>
+              <input style={inputStyle} value={dieSize} onChange={(e) => setDieSize(e.target.value)} placeholder="e.g. DIA 250 X 60" />
+            </div>
+          </div>
+          <div style={{ fontSize: '0.72rem', color: muted, marginTop: '-6px' }}>
+            Supplier &amp; die size are reused to pre-fill re-order PDFs for this profile.
           </div>
 
           <div>

@@ -80,14 +80,14 @@ router.get('/match', async (req, res) => {
 router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { profile, plant, press, cavity, sourceOrderId, notes } = req.body;
+    const { profile, plant, press, cavity, sourceOrderId, notes, supplier, dieSize } = req.body;
     if (!fd.hasFullKey({ profile, plant, press, cavity })) {
       client.release();
       return res.status(400).json({ error: 'profile, plant, press and cavity are required' });
     }
     await client.query('BEGIN');
     const id = await fd.freezeDesign(client, {
-      profile, plant, press, cavity, sourceOrderId, frozenBy: req.user?.id, notes,
+      profile, plant, press, cavity, sourceOrderId, frozenBy: req.user?.id, notes, supplier, dieSize,
     });
     await client.query('COMMIT');
     res.status(201).json({ id });

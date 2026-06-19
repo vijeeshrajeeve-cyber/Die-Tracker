@@ -3,9 +3,11 @@ import { AlertTriangle, FileText } from 'lucide-react';
 import { frozenDesignsAPI } from '../api';
 import { BYPASS_REASONS } from '../utils/constants';
 
-// Props: { profile, plant, press, cavity, onRelease(match), onBypass({reason, note, match}) }
+// Props: { profile, plant, press, cavity, onRelease(match), onBypass({reason, note, match}), infoOnly }
 // Fires a /match lookup when the full key is present; renders nothing when no match.
-export default function FrozenDesignBanner({ profile, plant, press, cavity, onRelease, onBypass }) {
+// infoOnly: render the banner + details for awareness, without the Release/Proceed actions
+// (used on the Backup Die Request page, which has no design-approval stages).
+export default function FrozenDesignBanner({ profile, plant, press, cavity, onRelease, onBypass, infoOnly = false }) {
   const [match, setMatch] = useState(null);
   const [mode, setMode] = useState(null); // null | 'bypass'
   const [reason, setReason] = useState(BYPASS_REASONS[0]);
@@ -34,6 +36,18 @@ export default function FrozenDesignBanner({ profile, plant, press, cavity, onRe
       <div style={{ fontSize: '0.85rem', color: '#78350F', marginTop: 4 }}>
         A finalized design exists for {profile} / {press} / cavity {cavity}. Frozen on {match.frozen_at ? new Date(match.frozen_at).toLocaleDateString() : '—'}.
       </div>
+      {(match.supplier || match.die_size) && (
+        <div style={{ fontSize: '0.8rem', color: '#78350F', marginTop: 4 }}>
+          {match.supplier && <>Supplier: <strong>{match.supplier}</strong></>}
+          {match.supplier && match.die_size && ' · '}
+          {match.die_size && <>Die size: <strong>{match.die_size}</strong></>}
+        </div>
+      )}
+      {infoOnly && (
+        <div style={{ fontSize: '0.78rem', color: '#92400E', marginTop: 4, fontStyle: 'italic' }}>
+          These details will pre-fill the die order PDF, and the design files will be merged into it on release.
+        </div>
+      )}
       {Array.isArray(match.files) && match.files.length > 0 && (
         <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {match.files.map(f => (
@@ -45,6 +59,7 @@ export default function FrozenDesignBanner({ profile, plant, press, cavity, onRe
           ))}
         </div>
       )}
+      {!infoOnly && (
       <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
         <button type="button" onClick={() => onRelease && onRelease(match)}
           style={{ background: '#16A34A', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>
@@ -55,7 +70,8 @@ export default function FrozenDesignBanner({ profile, plant, press, cavity, onRe
           Proceed with normal flow
         </button>
       </div>
-      {mode === 'bypass' && (
+      )}
+      {!infoOnly && mode === 'bypass' && (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: '0.8rem', color: '#78350F' }}>Reason (required)</label>
           <select value={reason} onChange={e => setReason(e.target.value)}>
