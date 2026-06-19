@@ -2854,7 +2854,7 @@ export default function DieOrderingSystem() {
           )}
 
           {activeTab === 'frozen-designs' && hasPageAccess('frozen-designs') && (
-            <FrozenDesignsPage user={user} />
+            <FrozenDesignsPage user={user} theme={theme} />
           )}
 
           {activeTab === 'email-inbox' && hasPageAccess('email-inbox') && (

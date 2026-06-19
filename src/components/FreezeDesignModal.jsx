@@ -2,41 +2,42 @@ import React, { useState } from 'react';
 import { Snowflake, X, Upload } from 'lucide-react';
 import { frozenDesignsAPI, extractProfileFromDie } from '../api';
 
-// Explicit "Freeze / Final Design" action launched from the Order Detail modal.
-// Press + cavity are prefilled from the order (captured at PDF import) but editable,
-// since older/manually-entered orders may not carry them. Files upload in the same step.
-export default function FreezeDesignModal({ order, theme = {}, onClose, onDone }) {
-  const profile = extractProfileFromDie(order['DIE NO']);
-  const plant = order.Plant || order.plant || '';
-  const [press, setPress] = useState(order['Press'] || order.press || '');
-  const [cavity, setCavity] = useState(order['Cavity'] ?? order.cavity ?? '');
+// "Freeze / Final Design" action. Works two ways:
+//  - From an order (Order Detail modal): profile/plant/press/cavity prefilled from the order.
+//  - Standalone (Frozen Designs page): all fields entered manually.
+// Files upload in the same step.
+export default function FreezeDesignModal({ order = null, theme = {}, onClose, onDone }) {
+  const [profile, setProfile] = useState(order ? (extractProfileFromDie(order['DIE NO']) || '') : '');
+  const [plant, setPlant] = useState(order ? (order.Plant || order.plant || '') : '');
+  const [press, setPress] = useState(order ? (order['Press'] || order.press || '') : '');
+  const [cavity, setCavity] = useState(order ? (order['Cavity'] ?? order.cavity ?? '') : '');
   const [notes, setNotes] = useState('');
   const [files, setFiles] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const bg = theme.cardBg || '#1E293B';
-  const border = theme.cardBorder || '#334155';
-  const text = theme.text || '#F1F5F9';
-  const muted = theme.textDim || '#94A3B8';
-  const inputBg = theme.inputBg || '#0F172A';
+  const bg = theme.cardBg || '#09090b';
+  const border = theme.cardBorder || '#27272a';
+  const text = theme.text || '#fafafa';
+  const muted = theme.textDim || '#71717a';
+  const inputBg = theme.inputBg || '#09090b';
   const inputStyle = { width: '100%', padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: '8px', color: text, fontSize: '0.875rem', boxSizing: 'border-box', outline: 'none' };
-  const labelStyle = { display: 'block', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: muted, marginBottom: '6px' };
+  const labelStyle = { display: 'block', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: muted, marginBottom: '6px', letterSpacing: '0.04em' };
 
   const cavityNum = Math.round(Number(cavity));
-  const canSubmit = profile && plant && String(press).trim() && cavityNum > 0 && !saving;
+  const canSubmit = String(profile).trim() && String(plant).trim() && String(press).trim() && cavityNum > 0 && !saving;
 
   const handleSubmit = async () => {
     setError('');
-    if (!profile) { setError('Could not derive profile from the die number.'); return; }
-    if (!plant) { setError('Plant is missing on this order.'); return; }
+    if (!String(profile).trim()) { setError('Profile is required.'); return; }
+    if (!String(plant).trim()) { setError('Plant is required.'); return; }
     if (!String(press).trim()) { setError('Press is required.'); return; }
     if (!(cavityNum > 0)) { setError('Cavity must be greater than 0.'); return; }
     setSaving(true);
     try {
       const { id } = await frozenDesignsAPI.create({
-        profile, plant, press: String(press).trim(), cavity: cavityNum,
-        sourceOrderId: order.id, notes: notes.trim() || null,
+        profile: String(profile).trim(), plant: String(plant).trim(), press: String(press).trim(), cavity: cavityNum,
+        sourceOrderId: order ? order.id : null, notes: notes.trim() || null,
       });
       if (files && files.length) {
         await frozenDesignsAPI.uploadFiles(id, files);
@@ -60,11 +61,21 @@ export default function FreezeDesignModal({ order, theme = {}, onClose, onDone }
         </div>
 
         <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ fontSize: '0.8rem', color: muted }}>
-            Die <span style={{ color: text, fontWeight: 600 }}>{order['DIE NO']}</span> · Profile <span style={{ color: text, fontWeight: 600 }}>{profile || '—'}</span> · Plant <span style={{ color: text, fontWeight: 600 }}>{plant || '—'}</span>
-          </div>
+          {order && (
+            <div style={{ fontSize: '0.8rem', color: muted }}>
+              Die <span style={{ color: text, fontWeight: 600 }}>{order['DIE NO']}</span>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={labelStyle}>Profile *</label>
+              <input style={inputStyle} value={profile} onChange={(e) => setProfile(e.target.value)} placeholder="e.g. 29663" />
+            </div>
+            <div>
+              <label style={labelStyle}>Plant *</label>
+              <input style={inputStyle} value={plant} onChange={(e) => setPlant(e.target.value)} placeholder="e.g. GEX 1" />
+            </div>
             <div>
               <label style={labelStyle}>Press *</label>
               <input style={inputStyle} value={press} onChange={(e) => setPress(e.target.value)} placeholder="e.g. PRESS 4 / P5" />
