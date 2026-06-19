@@ -445,12 +445,13 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       });
     } catch { /* no match / lookup failed — proceed without prefill */ }
 
+    const src = frozen?.source_order || {};
     setOrderValues({
-      SUPPLIER: frozen?.supplier || '',
+      SUPPLIER: frozen?.supplier || src.supplier || '',
       DATE: getTodayDateString(),
-      DIE_SIZE: frozen?.die_size || '',
-      NO_OF_CAV: request['Cavity'] ? String(request['Cavity']) : '',
-      PRESS: request['Press'] || '',
+      DIE_SIZE: frozen?.die_size || src.die_size || '',
+      NO_OF_CAV: request['Cavity'] ? String(request['Cavity']) : (src.cavity ? String(src.cavity) : ''),
+      PRESS: request['Press'] || src.press || '',
       SOLID: '',
       HOLLOW: '',
       BOLSTER_NO: '',
@@ -459,7 +460,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       INSERT_SIZE: '',
       DELIVERY_DATE: request['Requested Date'] || '',
       THREE_D_MODULE: '',
-      SHIPMENT: '',
+      SHIPMENT: src.shipment_type || '',
       PROFILE_WEIGHT_PCT: '',
       FINISH_MILL: false,
       FINISH_ANODIZING: false,

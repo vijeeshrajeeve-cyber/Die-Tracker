@@ -69,7 +69,17 @@ router.get('/match', async (req, res) => {
       `SELECT id, original_name, mime_type, size_bytes FROM frozen_design_files WHERE frozen_design_id = $1`,
       [match.id]
     );
-    res.json({ ...match, files: files.rows });
+    // Enrich with the source order's re-orderable details (Generate Die Order PDF prefill).
+    let source_order = null;
+    if (match.source_order_id) {
+      const so = await pool.query(
+        `SELECT supplier, die_size, cavity, press, shipment_type, type, eta
+           FROM die_orders WHERE id = $1`,
+        [match.source_order_id]
+      );
+      source_order = so.rows[0] || null;
+    }
+    res.json({ ...match, files: files.rows, source_order });
   } catch (e) {
     console.error('Match frozen design error:', e);
     res.status(500).json({ error: 'Internal server error' });
