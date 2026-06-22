@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../../api';
@@ -58,6 +58,18 @@ const MANUAL_STATUSES = ['HOLD', 'Not required'];
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
+// Reasons for die ordering — must match the checkbox labels on the J-file template.
+const DIE_ORDER_REASONS = [
+  'Die Broken',
+  'Die Plate Broken',
+  'Back up die for Other Press',
+  'Poor Die Design',
+  'Design Enhancement',
+  'High Order Volume Expected',
+  'Over Weight',
+  'Other',
+];
+
 const normalizePlantName = (plant) => (plant || '')
   .toString()
   .trim()
@@ -96,9 +108,12 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [orderRow, setOrderRow] = useState(null);
   const [orderValues, setOrderValues] = useState(null);
   const [orderFileHandle, setOrderFileHandle] = useState(null);
+  // Fallback File (no write-back handle) for browsers without the File System Access API.
+  const [orderFile, setOrderFile] = useState(null);
   const [orderFileName, setOrderFileName] = useState('');
   const [orderBusy, setOrderBusy] = useState(false);
   const [orderError, setOrderError] = useState('');
+  const orderFileInputRef = useRef(null);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -136,6 +151,13 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     if (!selectedPlant) return [];
     return presses.filter((p) => normalizePlantName(p.plant) === selectedPlant);
   }, [presses, formData]);
+
+  // Press options for the Generate Die Order PDF modal, scoped to the order row's plant.
+  const orderPressOptions = useMemo(() => {
+    const plant = normalizePlantName(orderRow?.['Plant']);
+    if (!plant) return presses;
+    return presses.filter((p) => normalizePlantName(p.plant) === plant);
+  }, [presses, orderRow]);
 
   const handlePlantChange = (plant) => {
     setFormData((prev) => {
@@ -431,6 +453,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const openOrderModal = async (request) => {
     setOrderRow(request);
     setOrderFileHandle(null);
+    setOrderFile(null);
     setOrderFileName('');
     setOrderError('');
 
@@ -446,21 +469,24 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     } catch { /* no match / lookup failed — proceed without prefill */ }
 
     const src = frozen?.source_order || {};
+    const initialSupplier = frozen?.supplier || src.supplier || '';
+    const matchedSupplier = suppliers.find((s) => s.name === initialSupplier);
     setOrderValues({
-      SUPPLIER: frozen?.supplier || src.supplier || '',
+      SUPPLIER: initialSupplier,
       DATE: getTodayDateString(),
       DIE_SIZE: frozen?.die_size || src.die_size || '',
       NO_OF_CAV: request['Cavity'] ? String(request['Cavity']) : (src.cavity ? String(src.cavity) : ''),
       PRESS: request['Press'] || src.press || '',
-      SOLID: '',
-      HOLLOW: '',
+      SOLID: false,
+      HOLLOW: false,
       BOLSTER_NO: '',
       INSERT_NO: '',
       BOLSTER_SIZE: '',
       INSERT_SIZE: '',
       DELIVERY_DATE: request['Requested Date'] || '',
-      THREE_D_MODULE: '',
-      SHIPMENT: src.shipment_type || '',
+      THREE_D_MODULE: false,
+      REASON: '',
+      SHIPMENT: matchedSupplier?.shipment_mode || src.shipment_type || '',
       PROFILE_WEIGHT_PCT: '',
       FINISH_MILL: false,
       FINISH_ANODIZING: false,
@@ -471,72 +497,105 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   };
 
   const handlePickProfileDrawing = async () => {
-    if (typeof window.showOpenFilePicker !== 'function') {
-      setOrderError('This browser cannot save back to a chosen file. Please use Chrome or Edge.');
+    // Preferred path: File System Access API (Chromium) lets us overwrite the PDF in place.
+    if (typeof window.showOpenFilePicker === 'function') {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          mode: 'readwrite',
+          multiple: false,
+          types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+        });
+        setOrderFileHandle(handle);
+        setOrderFile(null);
+        setOrderFileName(handle.name);
+        setOrderError('');
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setOrderError(err.message || String(err));
+        }
+      }
       return;
     }
 
-    try {
-      const [handle] = await window.showOpenFilePicker({
-        mode: 'readwrite',
-        multiple: false,
-        types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
-      });
-      setOrderFileHandle(handle);
-      setOrderFileName(handle.name);
-      setOrderError('');
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        setOrderError(err.message || String(err));
-      }
-    }
+    // Fallback (Firefox, insecure context, embedded frames): use a plain file input.
+    // We can't write back in place, so the stamped PDF is downloaded instead.
+    setOrderError('');
+    orderFileInputRef.current?.click();
+  };
+
+  const handleProfileDrawingInput = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+    setOrderFile(file);
+    setOrderFileHandle(null);
+    setOrderFileName(file.name);
+    setOrderError('');
+  };
+
+  const downloadBlob = (blob, name) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleGenerateOrderPdf = async () => {
-    if (!orderFileHandle || !orderRow) return;
+    if ((!orderFileHandle && !orderFile) || !orderRow) return;
 
     setOrderBusy(true);
     setOrderError('');
     try {
-      const permOpts = { mode: 'readwrite' };
-      if (orderFileHandle.queryPermission) {
-        let permission = await orderFileHandle.queryPermission(permOpts);
-        if (permission !== 'granted' && orderFileHandle.requestPermission) {
-          permission = await orderFileHandle.requestPermission(permOpts);
+      let file;
+      if (orderFileHandle) {
+        const permOpts = { mode: 'readwrite' };
+        if (orderFileHandle.queryPermission) {
+          let permission = await orderFileHandle.queryPermission(permOpts);
+          if (permission !== 'granted' && orderFileHandle.requestPermission) {
+            permission = await orderFileHandle.requestPermission(permOpts);
+          }
+          if (permission !== 'granted') {
+            throw new Error('Permission to overwrite the file was denied.');
+          }
         }
-        if (permission !== 'granted') {
-          throw new Error('Permission to overwrite the file was denied.');
-        }
+        file = await orderFileHandle.getFile();
+      } else {
+        file = orderFile;
       }
 
-      const file = await orderFileHandle.getFile();
       const { orderPdfBlob, jFilePdfBlob, jFileName, jFileError, frozenMerged } =
         await backupRequestsAPI.generateOrderPdf(orderRow.id, file, orderValues);
 
-      // Write die-order stamp back to the chosen file
-      const writable = await orderFileHandle.createWritable();
-      await writable.write(orderPdfBlob);
-      await writable.close();
+      let orderSavedNote;
+      if (orderFileHandle) {
+        // Write the die-order stamp back to the chosen file in place.
+        const writable = await orderFileHandle.createWritable();
+        await writable.write(orderPdfBlob);
+        await writable.close();
+        orderSavedNote = `Die order saved to "${orderFileHandle.name}"`;
+      } else {
+        // Fallback: no write-back handle, so download the stamped order PDF.
+        const orderDownloadName = orderFileName?.replace(/\.pdf$/i, '') + '-die-order.pdf';
+        downloadBlob(orderPdfBlob, orderDownloadName);
+        orderSavedNote = `Die order PDF downloaded as "${orderDownloadName}"`;
+      }
 
       // Trigger J-file browser download
       if (jFilePdfBlob) {
-        const url = URL.createObjectURL(jFilePdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = jFileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        downloadBlob(jFilePdfBlob, jFileName);
       }
 
       setShowOrderModal(false);
 
       const mergedNote = frozenMerged ? `\n\nFrozen design merged: ${frozenMerged} PDF page-set(s) appended.` : '';
       if (jFileError) {
-        alert(`Order PDF saved to "${orderFileHandle.name}".${mergedNote}\n\nWarning: J-file could not be generated: ${jFileError}`);
+        alert(`${orderSavedNote}.${mergedNote}\n\nWarning: J-file could not be generated: ${jFileError}`);
       } else {
-        alert(`Die order saved to "${orderFileHandle.name}" and J-file downloaded as "${jFileName}".${mergedNote}`);
+        alert(`${orderSavedNote} and J-file downloaded as "${jFileName}".${mergedNote}`);
       }
     } catch (error) {
       setOrderError(error.message || String(error));
@@ -578,6 +637,20 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     fontWeight: 600,
     color: theme.textMuted,
     marginBottom: '6px',
+  };
+
+  // Bordered checkbox container that matches the height/style of inputStyle.
+  const checkboxBoxStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 14px',
+    background: theme.inputBg,
+    border: `1px solid ${theme.cardBorder}`,
+    borderRadius: '10px',
+    color: theme.text,
+    fontSize: '0.875rem',
+    cursor: 'pointer',
   };
 
   return (
@@ -1170,10 +1243,21 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                   fontWeight: 600, fontSize: '0.85rem',
                 }}
               >
-                <FolderOpen size={16} /> {orderFileHandle ? 'Choose different PDF' : 'Select Profile Drawing PDF'}
+                <FolderOpen size={16} /> {(orderFileHandle || orderFile) ? 'Choose different PDF' : 'Select Profile Drawing PDF'}
               </button>
-              <span style={{ fontSize: '0.85rem', color: orderFileHandle ? theme.text : theme.textMuted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {orderFileHandle ? orderFileName : 'No file selected. The output will overwrite the chosen PDF.'}
+              <input
+                ref={orderFileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={handleProfileDrawingInput}
+                style={{ display: 'none' }}
+              />
+              <span style={{ fontSize: '0.85rem', color: (orderFileHandle || orderFile) ? theme.text : theme.textMuted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {orderFileHandle
+                  ? orderFileName
+                  : orderFile
+                    ? `${orderFileName} (will download the stamped PDF)`
+                    : 'No file selected. The output will overwrite the chosen PDF, or download it if your browser does not support in-place save.'}
               </span>
             </div>
 
@@ -1188,7 +1272,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     setOrderValues((prev) => ({
                       ...prev,
                       SUPPLIER: supplierName,
-                      SHIPMENT: matched?.shipment_mode || prev.SHIPMENT,
+                      SHIPMENT: matched?.shipment_mode || '',
                     }));
                   }}
                   style={{ ...inputStyle, cursor: 'pointer' }}
@@ -1203,8 +1287,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>DATE</label>
-                <input type="text" value={orderValues.DATE} onChange={(e) => setOrderValues({ ...orderValues, DATE: e.target.value })} style={inputStyle} />
+                <label style={labelStyle}>REQUESTED DATE</label>
+                <input type="date" value={orderValues.DATE} onChange={(e) => setOrderValues({ ...orderValues, DATE: e.target.value })} style={inputStyle} />
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
@@ -1218,16 +1302,36 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
               <div>
                 <label style={labelStyle}>PRESS</label>
-                <input type="text" value={orderValues.PRESS} onChange={(e) => setOrderValues({ ...orderValues, PRESS: e.target.value })} style={inputStyle} />
+                <select
+                  value={orderValues.PRESS}
+                  onChange={(e) => setOrderValues({ ...orderValues, PRESS: e.target.value })}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">Select Press</option>
+                  {orderPressOptions.map((p) => (
+                    <option key={p.id ?? p.press_name} value={p.press_name}>
+                      {p.press_name}{p.press_code ? ` (${p.press_code})` : ''}
+                    </option>
+                  ))}
+                  {orderValues.PRESS && !orderPressOptions.some((p) => p.press_name === orderValues.PRESS) && (
+                    <option value={orderValues.PRESS}>{orderValues.PRESS}</option>
+                  )}
+                </select>
               </div>
 
               <div>
                 <label style={labelStyle}>SOLID</label>
-                <input type="text" value={orderValues.SOLID} onChange={(e) => setOrderValues({ ...orderValues, SOLID: e.target.value })} style={inputStyle} />
+                <label style={checkboxBoxStyle}>
+                  <input type="checkbox" checked={!!orderValues.SOLID} onChange={(e) => setOrderValues({ ...orderValues, SOLID: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
+                  Solid
+                </label>
               </div>
               <div>
                 <label style={labelStyle}>HOLLOW</label>
-                <input type="text" value={orderValues.HOLLOW} onChange={(e) => setOrderValues({ ...orderValues, HOLLOW: e.target.value })} style={inputStyle} />
+                <label style={checkboxBoxStyle}>
+                  <input type="checkbox" checked={!!orderValues.HOLLOW} onChange={(e) => setOrderValues({ ...orderValues, HOLLOW: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
+                  Hollow
+                </label>
               </div>
 
               <div>
@@ -1254,12 +1358,15 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
               <div>
                 <label style={labelStyle}>3D MODULE FOR SIMULATION</label>
-                <input type="text" value={orderValues.THREE_D_MODULE} onChange={(e) => setOrderValues({ ...orderValues, THREE_D_MODULE: e.target.value })} style={inputStyle} />
+                <label style={checkboxBoxStyle}>
+                  <input type="checkbox" checked={!!orderValues.THREE_D_MODULE} onChange={(e) => setOrderValues({ ...orderValues, THREE_D_MODULE: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
+                  Required
+                </label>
               </div>
 
               <div>
                 <label style={labelStyle}>MODE OF SHIPMENT</label>
-                <input type="text" value={orderValues.SHIPMENT} onChange={(e) => setOrderValues({ ...orderValues, SHIPMENT: e.target.value })} style={inputStyle} />
+                <input type="text" value={orderValues.SHIPMENT} readOnly style={{ ...inputStyle, opacity: 0.8, cursor: 'not-allowed' }} placeholder="Auto-filled from supplier" />
               </div>
               <div>
                 <label style={labelStyle}>PROFILE WEIGHT START %</label>
@@ -1268,6 +1375,20 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               <div>
                 <label style={labelStyle}>PENDING ORDER (KG)</label>
                 <input type="text" value={orderValues.PENDING_ORDER_KG} onChange={(e) => setOrderValues({ ...orderValues, PENDING_ORDER_KG: e.target.value })} style={inputStyle} placeholder="e.g. 16280" />
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>REASON FOR DIE ORDERING</label>
+                <select
+                  value={orderValues.REASON}
+                  onChange={(e) => setOrderValues({ ...orderValues, REASON: e.target.value })}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">Select a reason</option>
+                  {DIE_ORDER_REASONS.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
@@ -1318,12 +1439,12 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </button>
               <button
                 onClick={handleGenerateOrderPdf}
-                disabled={orderBusy || !orderFileHandle}
+                disabled={orderBusy || (!orderFileHandle && !orderFile)}
                 style={{
                   padding: '10px 24px', borderRadius: '10px',
-                  background: (orderBusy || !orderFileHandle) ? '#475569' : theme.primary,
+                  background: (orderBusy || (!orderFileHandle && !orderFile)) ? '#475569' : theme.primary,
                   border: 'none', color: theme.primaryText,
-                  cursor: (orderBusy || !orderFileHandle) ? 'not-allowed' : 'pointer',
+                  cursor: (orderBusy || (!orderFileHandle && !orderFile)) ? 'not-allowed' : 'pointer',
                   fontWeight: 600, fontSize: '0.875rem',
                 }}
               >

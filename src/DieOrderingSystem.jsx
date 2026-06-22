@@ -2886,7 +2886,7 @@ export default function DieOrderingSystem() {
               newSupplierEmail={newSupplierEmail} setNewSupplierEmail={setNewSupplierEmail}
               emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates}
               savingTemplateId={savingTemplateId} setSavingTemplateId={setSavingTemplateId}
-              profileMeta={profileMeta} profileImportStatus={profileImportStatus}
+              profileMeta={profileMeta} profileImportStatus={profileImportStatus} setProfileImportStatus={setProfileImportStatus}
               profileImporting={profileImporting} handleProfileImportFile={handleProfileImportFile}
               fetchProfileMeta={fetchProfileMeta}
               budgetYear={budgetYear} setBudgetYear={setBudgetYear}

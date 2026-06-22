@@ -48,7 +48,24 @@
       "Bash(echo \"exit: $?\")",
       "Bash(git *)",
       "Bash(npx --no-install esbuild src/components/modals/PIImportModal.jsx --loader=jsx --bundle=false --outfile=/dev/null)",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "Bash(grep -n \"pool.query\\\\|await.*query\\(\\\\`\\\\|\\\\`\\)\" server/db.cjs)",
+      "Bash(npm test *)",
+      "Bash(docker compose *)",
+      "Bash(docker exec *)",
+      "Bash(cp /tmp/fd_smoke.cjs ./fd_smoke.cjs)",
+      "Bash(rm -f ./fd_smoke.cjs)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec die-ordering-backend node /tmp/fd_smoke.cjs)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec die-ordering-backend rm -f /tmp/fd_smoke.cjs /tmp/fd_dbcheck.cjs)",
+      "Bash(mkdir -p \"C:/Users/vijee/.claude/projects/C--Users-vijee-Desktop-18-06-2026-Die-Tracker/memory\" && echo created)",
+      "mcp__Claude_in_Chrome__list_connected_browsers",
+      "Bash(ls -la \"C:/Users/vijee/Desktop/18.06.2026/design-improvisation-request\" 2>&1)",
+      "Bash(grep -oE \"InfoRow\\\\\\(\\\\{ label: '[^']+', field: '[^']+'\" src/DieOrderingSystem.jsx)",
+      "Bash(npx --no-install eslint src/components/backup/BackupDieRequests.jsx)",
+      "Bash(npx --no-install eslint src/components/backup/BackupDieRequests.jsx server/services/jFileTemplate.cjs)",
+      "Bash(echo \"lint-exit: $?\")",
+      "Bash(npx --no-install eslint server/routes/backup-requests.cjs server/services/dieOrderTemplate.cjs server/services/jFileTemplate.cjs src/components/backup/BackupDieRequests.jsx)",
+      "Bash(xargs wc -l)"
     ]
   }
 }

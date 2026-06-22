@@ -262,6 +262,23 @@ router.post(
         }
         const backupRequest = requestResult.rows[0];
 
+        // Fall back to the die's recorded size from existing_die_details when the
+        // form left DIE_SIZE blank, so both the order PDF and J-file get filled.
+        if (!values.DIE_SIZE && backupRequest.die_no) {
+            try {
+                const { rows } = await pool.query(
+                    `SELECT die_size FROM existing_die_details
+                     WHERE die_no = $1 AND die_size IS NOT NULL AND die_size <> ''
+                     ORDER BY updated_at DESC NULLS LAST
+                     LIMIT 1`,
+                    [backupRequest.die_no]
+                );
+                if (rows[0]?.die_size) values.DIE_SIZE = String(rows[0].die_size).slice(0, 200);
+            } catch (lookupErr) {
+                console.error('Die size lookup failed (continuing without it):', lookupErr);
+            }
+        }
+
         try {
             const [orderSettled, jFileSettled] = await Promise.allSettled([
                 generateBackupOrderPdf(req.body, values),

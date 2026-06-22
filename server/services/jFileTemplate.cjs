@@ -16,6 +16,30 @@ function getTemplateBytes() {
 const FS = 8;      // main font size (pt)
 const FS_SM = 7;   // smaller size for long-value columns
 const BLACK = rgb(0, 0, 0);
+const WHITE = rgb(1, 1, 1);
+
+// "Press" column center (text is centered within the narrow column borders ~205–258 pt).
+const PRESS_CENTER_X = 231;
+
+// ── Reason-for-die-ordering checkboxes ───────────────────────────────────────
+// Box geometry calibrated against the template's printed checkboxes.
+const REASON_BOX = 9;
+const REASON_COL_X = { 1: 36, 2: 193, 3: 404 };
+const REASON_ROW_Y = { 1: 421, 2: 392, 3: 363 };
+// Canonical reason → checkbox [column, row]. Keys must match the modal dropdown.
+const REASON_BOXES = {
+  'Die Broken':                   [1, 1],
+  'Die Plate Broken':             [2, 1],
+  'Back up die for Other Press':  [3, 1],
+  'Poor Die Design':              [1, 2],
+  'Design Enhancement':           [2, 2],
+  'High Order Volume Expected':   [3, 2],
+  'Over Weight':                  [1, 3],
+  'Other':                        [2, 3],
+};
+// Checkmarks pre-printed in the template that must be erased before drawing the
+// user-selected reason. (col, row)
+const REASON_BAKED_CHECKS = [[3, 2], [2, 3]];
 
 // Table column x-positions (text baseline, ~2 pt left padding inside each cell)
 const COL_X = {
@@ -28,19 +52,21 @@ const COL_X = {
   extruded:  532,   // "Extruded Volume on Active Dies" column
 };
 
-// Row text-baseline y-positions: Row 1 at index 0, stride 16 pt downward
-const ROW_BASE_Y  = 638;
-const ROW_STRIDE  = 16;
+// Row text-baseline y-positions: Row 1 at index 0, stride ~14.5 pt downward.
+// Baselines match the template's row-number labels (1 → y=641.9, 10 → y=510.8).
+const ROW_BASE_Y  = 642;
+const ROW_STRIDE  = 14.5;
 const rowY = (i) => ROW_BASE_Y - i * ROW_STRIDE; // i = 0..9
 
-// Static field positions confirmed by probe
+// Static field positions — y-baselines aligned to the template's printed labels
+// (probed against backup-j-template.pdf with pdfjs-dist).
 const FIELD = {
-  customerName:  { x: 155, y: 742 },
-  orderVolume:   { x: 215, y: 722 },
+  customerName:  { x: 155, y: 744 },
+  orderVolume:   { x: 215, y: 715 },
   prefSupplier:  { x: 195, y: 482 },
-  prevSuppliers: { x: 195, y: 462 },
-  pendingKg:     { x: 130, y: 328 },
-  asOnDate:      { x: 420, y: 328 },
+  prevSuppliers: { x: 195, y: 467 },
+  pendingKg:     { x: 130, y: 321 },
+  asOnDate:      { x: 420, y: 321 },
 };
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -97,6 +123,34 @@ function drawClamped(page, text, x, y, font, size, maxWidth) {
     s = s.slice(0, -1);
   }
   page.drawText(s, { x, y, font, size, color: BLACK });
+}
+
+/** Draw text horizontally centered on centerX. */
+function drawCentered(page, text, centerX, y, font, size) {
+  if (!text) return;
+  const w = font.widthOfTextAtSize(text, size);
+  page.drawText(text, { x: centerX - w / 2, y, font, size, color: BLACK });
+}
+
+/** Draw a tick mark inside the checkbox at (column, row). */
+function drawReasonCheck(page, col, row) {
+  const x = REASON_COL_X[col];
+  const y = REASON_ROW_Y[row];
+  if (x == null || y == null) return;
+  const s = REASON_BOX, p = s * 0.22;
+  page.drawLine({ start: { x: x + p, y: y + s * 0.45 }, end: { x: x + s * 0.42, y: y + p }, thickness: 1, color: BLACK });
+  page.drawLine({ start: { x: x + s * 0.42, y: y + p }, end: { x: x + s - p, y: y + s - p + 0.5 }, thickness: 1, color: BLACK });
+}
+
+/** Remove a pre-printed checkmark in the box at (column, row).
+ *  The template tick overflows the box edges, so we white out a generous area
+ *  (clear of the label text ~13 pt to the right) and redraw a clean empty box. */
+function eraseReasonCheck(page, col, row) {
+  const x = REASON_COL_X[col];
+  const y = REASON_ROW_Y[row];
+  if (x == null || y == null) return;
+  page.drawRectangle({ x: x - 1.5, y: y - 1.5, width: REASON_BOX + 4, height: REASON_BOX + 4, color: WHITE });
+  page.drawRectangle({ x, y, width: REASON_BOX, height: REASON_BOX, borderColor: BLACK, borderWidth: 0.7 });
 }
 
 // ── Database queries ────────────────────────────────────────────────────────
@@ -191,8 +245,9 @@ async function generateJFilePdf(backupRequest, orderValues, pool) {
   const y1 = rowY(0); // 638
 
   page.drawText(extractProfile(dieNo),     { x: COL_X.profile,  y: y1, font, size: FS, color: BLACK });
-  page.drawText(extractNewDieNo(dieNo),    { x: COL_X.newDieNo, y: y1, font, size: FS, color: BLACK });
-  page.drawText(backupRequest.press || '', { x: COL_X.press,    y: y1, font, size: FS, color: BLACK });
+  // "New Die No." shows the full Profile-Die number, e.g. "29663-252".
+  page.drawText(dieNo,                      { x: COL_X.newDieNo, y: y1, font, size: FS, color: BLACK });
+  drawCentered(page, backupRequest.press || '', PRESS_CENTER_X, y1, font, FS);
   page.drawText(dieType,                   { x: COL_X.dieType,  y: y1, font, size: FS, color: BLACK });
   drawClamped(page, orderValues.DIE_SIZE || '', COL_X.dieSize, y1, font, FS, 70);
 
@@ -221,6 +276,12 @@ async function generateJFilePdf(backupRequest, orderValues, pool) {
   if (prevSuppliersList.length > 0) {
     drawClamped(page, prevSuppliersList.join(' , '), FIELD.prevSuppliers.x, FIELD.prevSuppliers.y, font, FS, 380);
   }
+
+  // ── Reason for Die Ordering ──────────────────────────────────────────────
+  // Erase the template's pre-printed checkmarks, then tick the user's choice.
+  for (const [c, r] of REASON_BAKED_CHECKS) eraseReasonCheck(page, c, r);
+  const reasonBox = REASON_BOXES[orderValues.REASON];
+  if (reasonBox) drawReasonCheck(page, reasonBox[0], reasonBox[1]);
 
   // ── Die Ordering Explanation ─────────────────────────────────────────────
   page.drawText(formatKg(Number(orderValues.PENDING_ORDER_KG) || 0), {

@@ -13,7 +13,7 @@ export default function SettingsPage({
   newSupplierShipment, setNewSupplierShipment, newSupplierRegion, setNewSupplierRegion,
   newSupplierEmail, setNewSupplierEmail,
   emailTemplates, setEmailTemplates, savingTemplateId, setSavingTemplateId,
-  profileMeta, profileImportStatus, profileImporting, handleProfileImportFile, fetchProfileMeta,
+  profileMeta, profileImportStatus, setProfileImportStatus, profileImporting, handleProfileImportFile, fetchProfileMeta,
   budgetYear, setBudgetYear, budgetActivePlant, setBudgetActivePlant,
   budgetEdits, setBudgetEdits, budgetSaving, setBudgetSaving,
   plantBudgets, fetchPlantBudgets, uniquePlants,
