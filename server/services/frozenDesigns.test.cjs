@@ -108,6 +108,25 @@ test('listFrozenDesigns selects released/bypassed counts and orders by frozen_at
   assert.equal(rows[0].files.length, 1);
 });
 
+test('matchBulk maps order ids to matching active frozen designs (with normalization)', async () => {
+  const client = makeClient([
+    { match: (s) => s.includes('FROM presses'), result: () => ({ rows: PRESSES }) },
+    { match: (s) => s.includes('FROM frozen_designs fd WHERE fd.is_active'),
+      result: () => ({ rows: [
+        { id: 5, profile_number: '14752', plant: 'GEX 1', press: 'PRESS 8', cavity: 2, frozen_at: '2026-06-21', files_count: '1' },
+      ] }) },
+  ]);
+  const res = await fd.matchBulk(client, [
+    { id: 101, profile: '14752', plant: 'GEX 01', press: 'P8', cavity: 2 }, // normalizes -> matches id 5
+    { id: 102, profile: '14752', plant: 'GEX 1', press: 'PRESS 7', cavity: 2 }, // different press -> no match
+    { id: 103, profile: '99999', plant: 'GEX 1', press: '', cavity: 2 }, // incomplete key -> skipped
+  ]);
+  assert.equal(res[101].id, 5);
+  assert.equal(res[101].files_count, 1);
+  assert.equal(res[102], undefined);
+  assert.equal(res[103], undefined);
+});
+
 test('manualRelease deactivates by id with reason manual', async () => {
   const client = makeClient([
     { match: (s) => s.startsWith('UPDATE frozen_designs SET is_active = false'),

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, X, Snowflake } from 'lucide-react';
 import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
-import { ordersAPI } from '../api';
+import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 
@@ -80,8 +80,26 @@ export default function FlowPage({
   const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
   const [cavityEdit, setCavityEdit] = useState(null);
   const [cavityReason, setCavityReason] = useState('');
+  const [frozenMap, setFrozenMap] = useState({}); // orderId -> { id, frozen_at, files_count }
 
   const currentFlow = FLOW_TABS.find(f => f.id === activeTab);
+
+  // Flag orders that have an active frozen design — only at the early planning stages
+  // so planners can fast-track them. One bulk request for all visible orders.
+  useEffect(() => {
+    let cancelled = false;
+    const stage = currentFlow?.status;
+    const eligible = stage === 'PENDING FOR ORDERING' || stage === 'AWAITING FOR DESIGN';
+    const keys = eligible
+      ? data
+          .filter(o => o.STATUS === stage && o.id != null)
+          .map(o => ({ id: o.id, profile: extractProfileFromDie(o['DIE NO']), plant: o.Plant, press: o.Press, cavity: o.Cavity }))
+      : [];
+    const p = keys.length ? frozenDesignsAPI.matchBulk(keys) : Promise.resolve({});
+    p.then(r => { if (!cancelled) setFrozenMap(r || {}); }).catch(() => { if (!cancelled) setFrozenMap({}); });
+    return () => { cancelled = true; };
+  }, [activeTab, data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!currentFlow) return null;
 
   const config = STATUS_CONFIG[currentFlow.status] || { color: '#6B7280', label: currentFlow.status };
@@ -228,6 +246,14 @@ export default function FlowPage({
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
                         <DieAttentionLabels order={order} dense />
                         <span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
+                        {frozenMap[order.id] && (
+                          <span
+                            title={`Frozen design available — ${frozenMap[order.id].files_count} file(s). Release together with the die order to skip the design stages.`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '2px 7px', borderRadius: 6, background: 'rgba(56,189,248,0.14)', color: '#0EA5E9', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.02em' }}
+                          >
+                            <Snowflake size={11} /> FROZEN DESIGN
+                          </span>
+                        )}
                       </div>
                     </td>
                     {!isOracleEntry && (

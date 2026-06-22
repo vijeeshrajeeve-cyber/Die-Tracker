@@ -130,6 +130,31 @@ async function listFrozenDesigns(client, { profile, plant, press, cavity, active
   }));
 }
 
+// Given a list of keys [{ id, profile, plant, press, cavity }], return a map of
+// id -> { id, frozen_at, files_count } for those that match an active frozen design.
+// One presses query + one frozen_designs query regardless of list size.
+async function matchBulk(client, keys) {
+  const result = {};
+  if (!Array.isArray(keys) || keys.length === 0) return result;
+  const presses = await loadPresses(client);
+  const { rows } = await client.query(
+    `SELECT fd.id, fd.profile_number, fd.plant, fd.press, fd.cavity, fd.frozen_at,
+            (SELECT COUNT(*) FROM frozen_design_files f WHERE f.frozen_design_id = fd.id) AS files_count
+       FROM frozen_designs fd WHERE fd.is_active = true`
+  );
+  const map = new Map();
+  for (const r of rows) {
+    map.set(`${r.profile_number}|${r.plant}|${r.press}|${r.cavity}`, r);
+  }
+  for (const k of (keys || [])) {
+    if (!hasFullKey(k)) continue;
+    const lookup = `${k.profile}|${normalizePlant(k.plant)}|${canonicalPress(k.press, presses)}|${Math.round(Number(k.cavity))}`;
+    const m = map.get(lookup);
+    if (m) result[k.id] = { id: m.id, frozen_at: m.frozen_at, files_count: Number(m.files_count) || 0 };
+  }
+  return result;
+}
+
 async function manualRelease(client, { id, userId }) {
   const { rowCount } = await client.query(
     `UPDATE frozen_designs SET is_active = false, released_at = CURRENT_TIMESTAMP,
@@ -140,4 +165,4 @@ async function manualRelease(client, { id, userId }) {
   return rowCount > 0;
 }
 
-module.exports = { extractProfileFromDie, normalizePlant, cleanPressToken, canonicalPress, loadPresses, hasFullKey, findActiveMatch, freezeDesign, listFrozenDesigns, manualRelease };
+module.exports = { extractProfileFromDie, normalizePlant, cleanPressToken, canonicalPress, loadPresses, hasFullKey, findActiveMatch, matchBulk, freezeDesign, listFrozenDesigns, manualRelease };

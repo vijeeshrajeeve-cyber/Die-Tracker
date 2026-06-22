@@ -566,6 +566,9 @@ export const frozenDesignsAPI = {
         }).toString();
         return apiRequest(`/frozen-designs/match?${qs}`);
     },
+    matchBulk: async (keys) => {
+        return apiRequest('/frozen-designs/match-bulk', { method: 'POST', body: JSON.stringify({ keys }) });
+    },
     create: async (payload) => {
         return apiRequest('/frozen-designs', { method: 'POST', body: JSON.stringify(payload) });
     },

@@ -86,6 +86,18 @@ router.get('/match', async (req, res) => {
   }
 });
 
+// POST /api/frozen-designs/match-bulk  { keys: [{ id, profile, plant, press, cavity }] }
+// Returns { [id]: { id, frozen_at, files_count } } for keys with an active frozen design.
+router.post('/match-bulk', async (req, res) => {
+  try {
+    const result = await fd.matchBulk(pool, req.body?.keys);
+    res.json(result);
+  } catch (e) {
+    console.error('Bulk match frozen designs error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/frozen-designs  { profile, plant, press, cavity, sourceOrderId, notes }
 router.post('/', async (req, res) => {
   const client = await pool.connect();
