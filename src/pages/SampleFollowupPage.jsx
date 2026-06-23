@@ -45,6 +45,7 @@ const extractProfile = (dieNo) => {
 
 const formToOrderFields = (form) => ({
   'DIE NO': form.die || '',
+  'Plant': form.plant || '',
   'Press': form.press || '',
   'Supplier': form.supplier || '',
   'Customer Name': form.customer || '',
@@ -60,6 +61,7 @@ const formToOrderFields = (form) => ({
 
 const formToSfFields = (form) => ({
   profile: form.die || '',
+  plant: form.plant || '',
   press: form.press || '',
   supplier: form.supplier || '',
   customer: form.customer || '',
@@ -74,7 +76,7 @@ const formToSfFields = (form) => ({
   corrector: form.corrector || '',
 });
 
-const EMPTY_FORM = { die: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' };
+const EMPTY_FORM = { die: '', plant: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' };
 
 export default function SampleFollowupPage({
   sampleFollowups,
@@ -194,11 +196,11 @@ export default function SampleFollowupPage({
     }
   };
 
-  const sfPlants = Array.from(new Set(sampleFollowups.map(sf => (sf.press || '').trim()).filter(Boolean))).sort();
+  const sfPlants = Array.from(new Set(sampleFollowups.map(sf => (sf.plant || '').trim()).filter(Boolean))).sort();
 
   const filteredFollowups = sampleFollowups.filter(sf => {
     const matchesStatus = sfStatusFilter === 'All' || (sf.status || 'Pending') === sfStatusFilter;
-    const matchesPlant = sfPlantFilter === 'All' || (sf.press || '').trim() === sfPlantFilter;
+    const matchesPlant = sfPlantFilter === 'All' || (sf.plant || '').trim() === sfPlantFilter;
     const matchesSearch = !searchTerm ||
       (sf.profile && sf.profile.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (sf.supplier && sf.supplier.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -215,7 +217,8 @@ export default function SampleFollowupPage({
       columns: [
         { key: 'die', label: 'Die' },
         { key: 'profile', label: 'Profile' },
-        { key: 'press', label: 'Plant' },
+        { key: 'plant', label: 'Plant' },
+        { key: 'press', label: 'Press' },
         { key: 'supplier', label: 'Supplier' },
         { key: 'customer', label: 'Customer' },
         { key: 'die_received_date', label: 'Die Received Date', format: 'date' },
@@ -312,7 +315,7 @@ export default function SampleFollowupPage({
           >
             <option value="All">All Plants ({sampleFollowups.length})</option>
             {sfPlants.map(p => {
-              const count = sampleFollowups.filter(sf => (sf.press || '').trim() === p).length;
+              const count = sampleFollowups.filter(sf => (sf.plant || '').trim() === p).length;
               return <option key={p} value={p}>{p} ({count})</option>;
             })}
           </select>
@@ -329,6 +332,7 @@ export default function SampleFollowupPage({
                   <th style={th}>Die</th>
                   <th style={th}>Profile</th>
                   <th style={th}>Plant</th>
+                  <th style={th}>Press</th>
                   <th style={th}>Supplier</th>
                   <th style={th}>Customer</th>
                   <th style={th}>Die Received Date</th>
@@ -350,6 +354,7 @@ export default function SampleFollowupPage({
                     <tr key={sf.id}>
                       <td style={{ ...td, fontWeight: 600, color: theme.text }}>{sf.die || '—'}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap', color: theme.textMuted }}>{sf.profile || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.plant || '—'}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.press || '—'}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{sf.supplier || '—'}</td>
                       <td style={td}>{sf.customer || '—'}</td>
@@ -416,7 +421,7 @@ export default function SampleFollowupPage({
                           <button
                             onClick={() => {
                               setEditingSampleFollowup(sf);
-                              setSampleFollowupForm({ die: sf.die || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' });
+                              setSampleFollowupForm({ die: sf.die || '', plant: sf.plant || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' });
                               setShowSampleFollowupForm(true);
                             }}
                             style={{ padding: '6px', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
@@ -468,7 +473,8 @@ export default function SampleFollowupPage({
               {[
                 { key: 'die', label: 'Die', type: 'text' },
                 { key: 'profile', label: 'Profile', type: 'readonly' },
-                { key: 'press', label: 'Plant', type: 'text' },
+                { key: 'plant', label: 'Plant', type: 'text' },
+                { key: 'press', label: 'Press', type: 'text' },
                 { key: 'supplier', label: 'Supplier', type: 'text' },
                 { key: 'customer', label: 'Customer', type: 'text' },
                 { key: 'die_received_date', label: 'Die Received Date', type: 'date' },

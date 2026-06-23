@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Mail, Send, Inbox, ArrowLeft, ExternalLink, Link2, RefreshCw, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { Mail, Send, Inbox, ArrowLeft, ExternalLink, Link2, RefreshCw, ChevronLeft, ChevronRight, Filter, Bell } from 'lucide-react';
 import { emailAPI } from '../../api';
 
 const EmailInbox = ({ theme, onCompose }) => {
@@ -57,6 +57,29 @@ const EmailInbox = ({ theme, onCompose }) => {
         try { return JSON.parse(json).join(', '); } catch { return json; }
     };
 
+    // A reminder applies only to a sent "PDF Drawing Request" email. The sent
+    // subject is always "URGENT: PDF Drawing Request for N Backup Die Request(s)".
+    const isPdfDrawingRequest = (email) =>
+        !!email && (email.subject || '').includes('PDF Drawing Request');
+
+    const handleSendReminder = (email) => {
+        if (!onCompose || !email) return;
+        const rawSubject = email.subject || 'PDF Drawing Request';
+        const subject = /^reminder:/i.test(rawSubject) ? rawSubject : `REMINDER: ${rawSubject}`;
+        const reminderNote =
+            '<p>This is a reminder regarding our earlier PDF drawing request below. ' +
+            'The drawings for the die number(s) listed are still pending — please share them at the earliest.</p>';
+        onCompose({
+            to: parseAddresses(email.to_addresses),
+            cc: parseAddresses(email.cc_addresses),
+            subject,
+            body: reminderNote + (email.body_content || email.body_preview || ''),
+            importance: 'high',
+            isHtml: true,
+            orderId: email.order_id || null,
+        });
+    };
+
     // Convert stored HTML email bodies to readable plain text.
     // DOMParser documents are inert (no script execution, no resource loads),
     // so this is safe for untrusted received emails.
@@ -65,6 +88,17 @@ const EmailInbox = ({ theme, onCompose }) => {
         if (!/<[a-z!/][\s\S]*>/i.test(str) && !/&[a-z#0-9]+;/i.test(str)) return str;
         const doc = new DOMParser().parseFromString(str, 'text/html');
         doc.querySelectorAll('style, script, title').forEach(el => el.remove());
+        // Render tables as readable rows. Without this, the whitespace between
+        // <td>/<th> tags survives as newlines and drops every cell onto its own
+        // line, turning a table into an unreadable vertical list.
+        doc.querySelectorAll('table').forEach(table => {
+            const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+                Array.from(tr.querySelectorAll('th, td'))
+                    .map(cell => (cell.textContent || '').replace(/\s+/g, ' ').trim())
+                    .join('  |  ')
+            );
+            table.replaceWith(doc.createTextNode('\n' + rows.join('\n') + '\n'));
+        });
         doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
         doc.querySelectorAll('p, div, tr, li, blockquote, h1, h2, h3, h4, h5, h6').forEach(el => el.append('\n'));
         return (doc.body?.textContent || '')
@@ -92,14 +126,30 @@ const EmailInbox = ({ theme, onCompose }) => {
     if (selectedEmail) {
         return (
             <div>
-                <button onClick={() => { setSelectedEmail(null); setThreadEmails([]); }} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    background: 'none', border: 'none', color: theme.primary,
-                    cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500,
-                    marginBottom: '1rem', padding: 0
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    marginBottom: '1rem', gap: '12px'
                 }}>
-                    <ArrowLeft size={18} /> Back to Inbox
-                </button>
+                    <button onClick={() => { setSelectedEmail(null); setThreadEmails([]); }} style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        background: 'none', border: 'none', color: theme.primary,
+                        cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500,
+                        padding: 0
+                    }}>
+                        <ArrowLeft size={18} /> Back to Inbox
+                    </button>
+                    {onCompose && isPdfDrawingRequest(selectedEmail) && (
+                        <button onClick={() => handleSendReminder(selectedEmail)} style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 18px', borderRadius: '10px', border: 'none',
+                            background: 'linear-gradient(135deg, #F59E0B, #EF4444)',
+                            color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                            boxShadow: '0 4px 12px rgba(239,68,68,0.3)'
+                        }}>
+                            <Bell size={16} /> Send Reminder
+                        </button>
+                    )}
+                </div>
 
                 <div style={{ ...cardStyle, padding: '24px' }}>
                     <div style={{ marginBottom: '20px', borderBottom: `1px solid ${theme.cardBorder}`, paddingBottom: '16px' }}>

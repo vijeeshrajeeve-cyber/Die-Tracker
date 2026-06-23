@@ -563,6 +563,7 @@ const initializeDatabase = async () => {
       CREATE TABLE IF NOT EXISTS sample_followups (
         id SERIAL PRIMARY KEY,
         profile TEXT,
+        plant TEXT,
         press TEXT,
         supplier TEXT,
         customer TEXT,
@@ -579,6 +580,9 @@ const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Plant added after Press; backfill for databases created before the split.
+      ALTER TABLE sample_followups ADD COLUMN IF NOT EXISTS plant TEXT;
     `);
 
     // Create default admin user if not exists

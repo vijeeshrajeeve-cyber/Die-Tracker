@@ -1523,7 +1523,7 @@ export default function DieOrderingSystem() {
   const [showSampleFollowupForm, setShowSampleFollowupForm] = useState(false);
   const [editingSampleFollowup, setEditingSampleFollowup] = useState(null);
   const [sampleFollowupForm, setSampleFollowupForm] = useState({
-    die: '', press: '', supplier: '', customer: '', die_received_date: '',
+    die: '', plant: '', press: '', supplier: '', customer: '', die_received_date: '',
     ascona_reference: 'No', submission_date: '', sample_approval_date: '',
     delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: ''
   });
@@ -1685,7 +1685,8 @@ export default function DieOrderingSystem() {
         _order: o,
         die: o['DIE NO'] || '',
         profile: extractProfile(o['DIE NO']),
-        press: o['Press'] || o['Plant'] || '',
+        plant: o['Plant'] || '',
+        press: o['Press'] || '',
         supplier: o['Supplier'] || '',
         customer: o['Customer Name'] || '',
         die_received_date: o['Die Received Date'] || '',
@@ -1705,6 +1706,7 @@ export default function DieOrderingSystem() {
       _raw: sf,
       die: sf.profile || '',
       profile: extractProfile(sf.profile),
+      plant: sf.plant || '',
       press: sf.press || '',
       supplier: sf.supplier || '',
       customer: sf.customer || '',

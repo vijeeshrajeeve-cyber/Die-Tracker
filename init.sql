@@ -175,6 +175,7 @@ ALTER TABLE backup_die_requests ADD COLUMN IF NOT EXISTS frozen_design_override_
 CREATE TABLE IF NOT EXISTS sample_followups (
     id SERIAL PRIMARY KEY,
     profile TEXT,
+    plant TEXT,
     press TEXT,
     supplier TEXT,
     customer TEXT,

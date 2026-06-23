@@ -65,7 +65,10 @@
       "Bash(npx --no-install eslint src/components/backup/BackupDieRequests.jsx server/services/jFileTemplate.cjs)",
       "Bash(echo \"lint-exit: $?\")",
       "Bash(npx --no-install eslint server/routes/backup-requests.cjs server/services/dieOrderTemplate.cjs server/services/jFileTemplate.cjs src/components/backup/BackupDieRequests.jsx)",
-      "Bash(xargs wc -l)"
+      "Bash(xargs wc -l)",
+      "Bash(gh --version)",
+      "Bash(cd \"C:/Users/vijee/Desktop/18.06.2026/Die-Tracker\" && git checkout -b feat/pdf-drawing-reminder && echo \"---BASE---\" && git rev-parse HEAD && echo \"---SCRIPTS---\" && ls \"C:/Users/vijee/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/\")",
+      "Bash(npm --version)"
     ]
   }
 }
