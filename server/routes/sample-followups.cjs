@@ -36,6 +36,7 @@ const handleValidationErrors = (req, res, next) => {
 // Validation rules
 const followupValidation = [
     body('profile').optional().customSanitizer(sanitizeString),
+    body('plant').optional().customSanitizer(sanitizeString),
     body('press').optional().customSanitizer(sanitizeString),
     body('supplier').optional().customSanitizer(sanitizeString),
     body('customer').optional().customSanitizer(sanitizeString),
@@ -71,13 +72,14 @@ router.post('/', followupValidation, handleValidationErrors, async (req, res) =>
         const data = req.body;
         const result = await pool.query(`
             INSERT INTO sample_followups (
-                profile, press, supplier, customer, die_received_date,
+                profile, plant, press, supplier, customer, die_received_date,
                 ascona_reference, submission_date, sample_approval_date,
                 delay_days, status, no_of_trial, remark, corrector, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id
         `, [
             sanitizeString(data.profile),
+            sanitizeString(data.plant),
             sanitizeString(data.press),
             sanitizeString(data.supplier),
             sanitizeString(data.customer),
@@ -111,14 +113,15 @@ router.put('/:id', idValidation, followupValidation, handleValidationErrors, asy
 
         const result = await pool.query(`
             UPDATE sample_followups SET
-                profile = $1, press = $2, supplier = $3, customer = $4,
-                die_received_date = $5, ascona_reference = $6, submission_date = $7,
-                sample_approval_date = $8, delay_days = $9, status = $10,
-                no_of_trial = $11, remark = $12, corrector = $13,
+                profile = $1, plant = $2, press = $3, supplier = $4, customer = $5,
+                die_received_date = $6, ascona_reference = $7, submission_date = $8,
+                sample_approval_date = $9, delay_days = $10, status = $11,
+                no_of_trial = $12, remark = $13, corrector = $14,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $14
+            WHERE id = $15
         `, [
             sanitizeString(data.profile),
+            sanitizeString(data.plant),
             sanitizeString(data.press),
             sanitizeString(data.supplier),
             sanitizeString(data.customer),

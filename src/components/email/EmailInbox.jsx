@@ -88,6 +88,17 @@ const EmailInbox = ({ theme, onCompose }) => {
         if (!/<[a-z!/][\s\S]*>/i.test(str) && !/&[a-z#0-9]+;/i.test(str)) return str;
         const doc = new DOMParser().parseFromString(str, 'text/html');
         doc.querySelectorAll('style, script, title').forEach(el => el.remove());
+        // Render tables as readable rows. Without this, the whitespace between
+        // <td>/<th> tags survives as newlines and drops every cell onto its own
+        // line, turning a table into an unreadable vertical list.
+        doc.querySelectorAll('table').forEach(table => {
+            const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+                Array.from(tr.querySelectorAll('th, td'))
+                    .map(cell => (cell.textContent || '').replace(/\s+/g, ' ').trim())
+                    .join('  |  ')
+            );
+            table.replaceWith(doc.createTextNode('\n' + rows.join('\n') + '\n'));
+        });
         doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
         doc.querySelectorAll('p, div, tr, li, blockquote, h1, h2, h3, h4, h5, h6').forEach(el => el.append('\n'));
         return (doc.body?.textContent || '')
