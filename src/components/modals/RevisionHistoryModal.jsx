@@ -192,6 +192,21 @@ function RevisionHistoryModal({ order, onClose, theme }) {
                                             </div>
                                         )}
 
+                                        {(rev.design_received_date || rev.model_received_date) && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                                                {rev.design_received_date && (
+                                                    <span style={{ fontSize: '0.75rem', color: '#10B981', background: 'rgba(16,185,129,0.12)', padding: '2px 8px', borderRadius: '4px' }}>
+                                                        Design re-received: {rev.design_received_date}
+                                                    </span>
+                                                )}
+                                                {rev.model_received_date && (
+                                                    <span style={{ fontSize: '0.75rem', color: '#10B981', background: 'rgba(16,185,129,0.12)', padding: '2px 8px', borderRadius: '4px' }}>
+                                                        3D model re-received: {rev.model_received_date}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                                             <div style={{ fontSize: '0.75rem', color: theme?.textMuted || '#94A3B8' }}>
                                                 By <strong style={{ color: theme?.text || '#F1F5F9' }}>{rev.created_by}</strong>
