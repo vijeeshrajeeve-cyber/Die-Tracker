@@ -732,12 +732,27 @@ const initializeDatabase = async () => {
         notes TEXT,
         revision_date TEXT,
         revision_pdf TEXT,
+        design_received_date TEXT,
+        model_received_date TEXT,
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_by_name TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_order_revisions_order_id ON order_revisions(order_id)`);
+
+    // Migration: per-revision received-date columns (preserve first received date on the order)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='order_revisions' AND column_name='design_received_date') THEN
+          ALTER TABLE order_revisions ADD COLUMN design_received_date TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='order_revisions' AND column_name='model_received_date') THEN
+          ALTER TABLE order_revisions ADD COLUMN model_received_date TEXT;
+        END IF;
+      END $$;
+    `);
 
     // Migration: TEXT date columns → DATE
     if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='date_columns_to_date_v1'`)).rows.length) {
