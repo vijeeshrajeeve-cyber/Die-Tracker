@@ -896,7 +896,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], currentUser, canEdit = true }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], currentUser, canEdit = true, onViewRevisions }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
@@ -1279,6 +1279,20 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               {InfoRow({ label: 'Design Received', field: 'Design Received Date', value: currentOrder['Design Received Date'], type: 'date' })}
               {isSimulationEnabled(currentOrder.simulationEnabled) && InfoRow({ label: '3D Model Received', field: '3D Model Received Date', value: currentOrder['3D Model Received Date'], type: 'date' })}
               {InfoRow({ label: 'Design Approved', field: 'Design Approved Date', value: currentOrder['Design Approved Date'], type: 'date' })}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
+                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>Revisions</span>
+                {currentOrder['Design Revision Count'] > 0 ? (
+                  <button
+                    onClick={() => onViewRevisions && onViewRevisions(currentOrder)}
+                    style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.4)', cursor: 'pointer' }}
+                    title="View revision history"
+                  >
+                    {currentOrder['Design Revision Count']} — View history
+                  </button>
+                ) : (
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>None</span>
+                )}
+              </div>
               {InfoRow({ label: 'PR Entry', field: 'PR Entry', value: currentOrder['PR Entry'], type: 'date' })}
               {InfoRow({ label: 'Oracle Entry', field: 'Oracle Entry', value: currentOrder['Oracle Entry'], type: 'date' })}
               {InfoRow({ label: 'Ordered', field: 'Ordered date', value: currentOrder['Ordered date'], type: 'date' })}
@@ -2918,7 +2932,7 @@ export default function DieOrderingSystem() {
           )}
         </main>
 
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} canEdit={activeTab === 'orders'} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} canEdit={activeTab === 'orders'} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
         {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}
