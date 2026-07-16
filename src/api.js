@@ -180,6 +180,15 @@ export const ordersAPI = {
         });
     },
 
+    // Complete a design/simulation stage. Preserves the first received date on the
+    // order and records re-receipts (after a revision) on the latest revision row.
+    completeStage: async (id, { field, date, nextStatus } = {}) => {
+        return apiRequest(`/orders/${id}/complete-stage`, {
+            method: 'PATCH',
+            body: JSON.stringify({ field, date, nextStatus }),
+        });
+    },
+
     create: async (order) => {
         return apiRequest('/orders', {
             method: 'POST',
