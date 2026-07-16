@@ -5,6 +5,10 @@ import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 
+// Received-date fields are write-once on the order; re-receipts after a revision
+// are recorded on the revision row via the complete-stage endpoint.
+const RECEIVED_DATE_FIELDS = ['Design Received Date', '3D Model Received Date'];
+
 const FLOW_TABS = [
   { id: 'flow-pending-order', status: 'PENDING FOR ORDERING' },
   { id: 'flow-awaiting-design', status: 'AWAITING FOR DESIGN' },
@@ -133,19 +137,32 @@ export default function FlowPage({
       newValue: nextStatus,
       stage: order.STATUS,
     };
-    const patch = {
-      STATUS: nextStatus,
-      [workflow.dateField]: today,
-      'Change Log': [changeLogEntry],
-    };
     try {
-      await ordersAPI.patch(order.id, patch);
-      setData(prev => prev.map(o => o.id === order.id ? {
-        ...o,
-        STATUS: nextStatus,
-        [workflow.dateField]: today,
-        changeCount: (o.changeCount || 0) + 1,
-      } : o));
+      if (RECEIVED_DATE_FIELDS.includes(workflow.dateField)) {
+        // Write-once received date: first receipt sets the top-level field; a
+        // re-receipt after a revision is logged on the revision row server-side.
+        const alreadyReceived = !!order[workflow.dateField];
+        await ordersAPI.completeStage(order.id, { field: workflow.dateField, date: today, nextStatus });
+        setData(prev => prev.map(o => o.id === order.id ? {
+          ...o,
+          STATUS: nextStatus,
+          ...(alreadyReceived ? {} : { [workflow.dateField]: today }),
+          changeCount: (o.changeCount || 0) + 1,
+        } : o));
+      } else {
+        const patch = {
+          STATUS: nextStatus,
+          [workflow.dateField]: today,
+          'Change Log': [changeLogEntry],
+        };
+        await ordersAPI.patch(order.id, patch);
+        setData(prev => prev.map(o => o.id === order.id ? {
+          ...o,
+          STATUS: nextStatus,
+          [workflow.dateField]: today,
+          changeCount: (o.changeCount || 0) + 1,
+        } : o));
+      }
       setToast({ message: `Order ${order['DIE NO']} moved to ${STATUS_CONFIG[nextStatus]?.label || nextStatus}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (error) {

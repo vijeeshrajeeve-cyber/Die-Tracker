@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
+const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
 
 const router = express.Router();
 
@@ -575,7 +576,8 @@ router.get('/:id/revisions', orderIdValidation, handleValidationErrors, async (r
         const { id } = req.params;
         const result = await pool.query(`
             SELECT r.id, r.revision_number, r.from_status, r.to_status,
-                   r.notes, r.revision_date, r.revision_pdf, r.created_at,
+                   r.notes, r.revision_date, r.revision_pdf,
+                   r.design_received_date, r.model_received_date, r.created_at,
                    COALESCE(u.username, r.created_by_name, 'Unknown') AS created_by
             FROM order_revisions r
             LEFT JOIN users u ON u.id = r.created_by
@@ -673,6 +675,103 @@ router.post('/:id/revisions', orderIdValidation, revisionValidation, handleValid
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Create revision error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        client.release();
+    }
+});
+
+// Complete a design/simulation stage: advances status and records the received
+// date. Preserves the first received date on the order; logs re-receipts (after a
+// revision) on the latest open revision row so history is never overwritten.
+const completeStageValidation = [
+    body('field').isString().custom((v) => {
+        if (!RECEIVED_FIELDS[v]) throw new Error('Invalid field');
+        return true;
+    }),
+    body('nextStatus').isString().custom((v) => {
+        if (!VALID_STATUSES.includes(v)) throw new Error('Invalid next status');
+        return true;
+    }),
+    body('date').optional({ nullable: true }).customSanitizer(sanitizeString),
+];
+
+router.patch('/:id/complete-stage', orderIdValidation, completeStageValidation, handleValidationErrors, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { field, nextStatus } = req.body;
+        const date = sanitizeDate(req.body.date) || new Date().toISOString().split('T')[0];
+        const mapping = RECEIVED_FIELDS[field];
+
+        await client.query('BEGIN');
+
+        const orderRes = await client.query(
+            `SELECT status, ${mapping.orderCol} AS existing FROM die_orders WHERE id = $1 FOR UPDATE`,
+            [id]
+        );
+        if (orderRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const fromStatus = orderRes.rows[0].status;
+        const plan = planReceivedDate({ field, existingValue: orderRes.rows[0].existing });
+        let target = 'order';
+
+        if (plan.writeTo === 'order') {
+            await client.query(
+                `UPDATE die_orders SET ${mapping.orderCol} = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+                [date, nextStatus, id]
+            );
+        } else {
+            // Record the re-received date on the most recent revision still missing it.
+            const revRes = await client.query(
+                `UPDATE order_revisions SET ${mapping.revisionCol} = $1
+                 WHERE id = (
+                   SELECT id FROM order_revisions
+                   WHERE order_id = $2 AND ${mapping.revisionCol} IS NULL
+                   ORDER BY revision_number DESC LIMIT 1
+                 )`,
+                [date, id]
+            );
+            if (revRes.rowCount === 0) {
+                // Defensive fallback: no open revision row → keep the date on the order.
+                await client.query(
+                    `UPDATE die_orders SET ${mapping.orderCol} = $1 WHERE id = $2`,
+                    [date, id]
+                );
+            } else {
+                target = 'revision';
+            }
+            await client.query(
+                `UPDATE die_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+                [nextStatus, id]
+            );
+        }
+
+        // Audit entry in the change log.
+        await client.query(`
+            INSERT INTO order_changes
+              (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `, [
+            id,
+            req.user?.id || null,
+            req.user?.username || null,
+            new Date(),
+            'STATUS',
+            fromStatus,
+            nextStatus,
+            null,
+            fromStatus,
+        ]);
+
+        await client.query('COMMIT');
+        res.json({ message: 'Stage completed', target, status: nextStatus, date });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Complete stage error:', error);
         res.status(500).json({ error: 'Internal server error' });
     } finally {
         client.release();
