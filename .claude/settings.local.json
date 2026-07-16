@@ -68,7 +68,10 @@
       "Bash(xargs wc -l)",
       "Bash(gh --version)",
       "Bash(cd \"C:/Users/vijee/Desktop/18.06.2026/Die-Tracker\" && git checkout -b feat/pdf-drawing-reminder && echo \"---BASE---\" && git rev-parse HEAD && echo \"---SCRIPTS---\" && ls \"C:/Users/vijee/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/\")",
-      "Bash(npm --version)"
+      "Bash(npm --version)",
+      "Bash(cd \"C:/Users/vijee/Desktop/18.06.2026/Die-Tracker\" && node -e \"const s=require\\('fs'\\).readFileSync\\('src/pages/FrozenDesignsPage.jsx','utf8'\\); const o=\\(s.match\\(/<th/g\\)||[]\\).length; console.log\\('th count line check'\\); \" && grep -n \"cat package.json\" /dev/null; node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
+      "Bash(echo \"---exit:$?---\")",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }

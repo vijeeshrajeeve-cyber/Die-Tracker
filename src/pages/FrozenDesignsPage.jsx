@@ -77,6 +77,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
       if (!s) return true;
       const inFiles = (r.files || []).some(f => (f.original_name || '').toLowerCase().includes(s));
       return String(r.profile_number || '').toLowerCase().includes(s)
+        || String(r.supplier || '').toLowerCase().includes(s)
         || String(r.press || '').toLowerCase().includes(s)
         || inFiles;
     });
@@ -88,10 +89,10 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
   const kBypassed = rows.reduce((a, r) => a + (Number(r.bypassed_count) || 0), 0);
 
   const exportCsv = () => {
-    const header = ['Profile', 'Plant', 'Press', 'Cavity', 'Status', 'Frozen At', 'Files', 'Released', 'Bypassed'];
+    const header = ['Profile', 'Supplier', 'Plant', 'Press', 'Cavity', 'Status', 'Frozen At', 'Files', 'Released', 'Bypassed'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = view.map(r => [
-      r.profile_number, r.plant, r.press, r.cavity, statusOf(r), fmtDate(r.frozen_at),
+      r.profile_number, r.supplier, r.plant, r.press, r.cavity, statusOf(r), fmtDate(r.frozen_at),
       (r.files || []).map(f => f.original_name).join('; '),
       r.released_count || 0, r.bypassed_count || 0,
     ].map(esc).join(','));
@@ -177,7 +178,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
         <div style={{ flex: 1, minWidth: 240, position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: dim }} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by profile, press, or file…"
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by profile, supplier, press, or file…"
             style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
         </div>
         <select value={plant} onChange={(e) => setPlant(e.target.value)} style={selectStyle}>
@@ -197,7 +198,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${border}` }}>
-              <th style={th}>Profile</th><th style={th}>Plant</th><th style={th}>Press</th><th style={th}>Cavity</th>
+              <th style={th}>Profile</th><th style={th}>Supplier</th><th style={th}>Plant</th><th style={th}>Press</th><th style={th}>Cavity</th>
               <th style={th}>Status</th><th style={th}>Frozen At</th><th style={th}>Files</th>
               <th style={th}>Released</th><th style={th}>Bypassed</th>
               <th style={{ ...th, textAlign: 'right' }}>Actions</th>
@@ -212,6 +213,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
               return (
                 <tr key={r.id} className="fd-row" style={{ borderBottom: `1px solid ${border}` }}>
                   <td style={{ ...td, fontFamily: mono, fontSize: 13.5, fontWeight: 600, color: text }}>{r.profile_number}</td>
+                  <td style={{ ...td, fontSize: 13, color: r.supplier ? text : dim }}>{r.supplier || '—'}</td>
                   <td style={td}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: text }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLANT_COLORS[r.plant] || '#3B82F6', flexShrink: 0 }} />
