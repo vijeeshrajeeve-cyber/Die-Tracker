@@ -28,6 +28,21 @@ const upload = multer({
   },
 });
 
+// Multer surfaces rejections (bad extension, oversize) as errors. Without this
+// they reach the generic handler and become an opaque 500 — these are client
+// mistakes, so answer 400 with a message the UI can actually show.
+const acceptFiles = (req, res, next) => {
+  upload.array('files', 10)(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? `File too large (max ${Math.round(store.MAX_FILE_BYTES / 1024 / 1024)} MB)`
+      : err.message === 'File type not allowed'
+        ? `File type not allowed (accepted: ${store.ALLOWED_EXTENSIONS.join(', ')})`
+        : err.message;
+    return res.status(400).json({ error: message });
+  });
+};
+
 async function moveIntoPlace(src, dest) {
   try {
     await fsp.rename(src, dest);
@@ -166,7 +181,7 @@ router.post('/:id/notes', async (req, res) => {
 });
 
 // POST /api/quality-discrepancies/:id/files  (multipart, field "files")
-router.post('/:id/files', upload.array('files', 10), async (req, res) => {
+router.post('/:id/files', acceptFiles, async (req, res) => {
   try {
     const meta = await pool.query('SELECT id, qd_no FROM quality_discrepancies WHERE id = $1', [req.params.id]);
     if (meta.rowCount === 0) return res.status(404).json({ error: 'QD not found' });
