@@ -137,10 +137,10 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
     : `${visibleSuppliers.length} supplier${visibleSuppliers.length === 1 ? '' : 's'} · ${supplierTabQds.length} QD${supplierTabQds.length === 1 ? '' : 's'}`;
 
   const kpis = k ? [
-    { label: 'Open QDs', value: k.openCount, sub: `${k.atSupplier} awaiting supplier action`, icon: AlertTriangle, color: '#FBBF24' },
-    { label: 'At supplier', value: k.atSupplier, sub: 'sent back for rework / FOC', icon: Truck, color: '#60A5FA' },
-    { label: 'FOC recovered', value: k.focRecovered, sub: 'dies + mandrels this FY', icon: CheckCircle, color: '#34D399' },
-    { label: 'Avg resolution', value: k.avgResolution === null ? '—' : `${k.avgResolution}d`, sub: 'raised → closed', icon: Clock, color: '#A78BFA' },
+    { label: 'Open QDs', value: k.openCount, sub: `${k.atSupplier} awaiting supplier action`, icon: AlertTriangle, ic: '#FBBF24', ibg: 'rgba(245,158,11,0.14)' },
+    { label: 'At supplier', value: k.atSupplier, sub: 'sent back for rework / FOC', icon: Truck, ic: '#60A5FA', ibg: 'rgba(59,130,246,0.14)' },
+    { label: 'FOC recovered', value: k.focRecovered, sub: 'dies + mandrels this FY', icon: CheckCircle, ic: '#34D399', ibg: 'rgba(16,185,129,0.14)' },
+    { label: 'Avg resolution', value: k.avgResolution === null ? '—' : `${k.avgResolution}d`, sub: 'raised → closed', icon: Clock, ic: '#A78BFA', ibg: 'rgba(139,92,246,0.14)' },
   ] : [];
 
   const exportCsv = () => {
@@ -159,14 +159,18 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
     URL.revokeObjectURL(url);
   };
 
-  const selectStyle = { padding: '10px 14px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: 14, cursor: 'pointer', outline: 'none' };
-  const th = { padding: '14px 16px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: `1px solid ${border}` };
+  // Styling follows the app's existing pages (see FrozenDesignsPage), not the
+  // standalone design prototype — the prototype had no sidebar, so its centred
+  // 1400px canvas left dead gutters once dropped into the app shell.
+  const selectStyle = { padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' };
+  const th = { padding: '13px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: `1px solid ${border}` };
   const td = { padding: '14px 16px', borderBottom: `1px solid ${border}` };
   const mono = "'JetBrains Mono', ui-monospace, monospace";
-  const sectionLabel = { fontSize: 12, fontWeight: 700, color: dim, textTransform: 'uppercase', letterSpacing: '0.06em' };
+  const sectionLabel = { fontSize: '0.75rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' };
+  const panel = { background: bg, border: `1px solid ${border}`, borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' };
 
   return (
-    <div style={{ padding: '32px 24px', maxWidth: 1400, margin: '0 auto', color: text }}>
+    <div style={{ padding: '32px 28px', color: text }}>
       <style>{`
         .qd-row { transition: background .15s ease; cursor: pointer; }
         .qd-row:hover { background: ${surfaceHover}; }
@@ -176,26 +180,26 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       `}</style>
 
       {/* Page header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 24, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Quality Discrepancies</h1>
-          <p style={{ fontSize: 13, color: dim, margin: '4px 0 0' }}>{countLine}</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>Quality Discrepancies</h1>
+          <p style={{ fontSize: '0.85rem', color: dim, margin: '6px 0 0' }}>{countLine}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={exportCsv} className="qd-btn" style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: muted, fontWeight: 500, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={exportCsv} className="qd-btn" style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Download size={16} /> Export
           </button>
-          <button onClick={() => setShowRaise(true)} className="qd-primary" style={{ padding: '10px 18px', background: GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => setShowRaise(true)} className="qd-primary" style={{ padding: '10px 18px', background: GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
             <Plus size={16} /> Raise QD
           </button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${border}`, marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${border}`, marginBottom: 20 }}>
         {[{ key: 'qds', label: 'QD Register', Icon: ClipboardList }, { key: 'suppliers', label: 'Supplier Summary', Icon: Factory }].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            style={{ padding: '10px 18px', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? '#8B5CF6' : 'transparent'}`, color: tab === t.key ? text : muted, fontWeight: 600, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, marginBottom: -1 }}>
+            style={{ padding: '10px 16px', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? '#8B5CF6' : 'transparent'}`, color: tab === t.key ? text : muted, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, marginBottom: -1 }}>
             <t.Icon size={16} /> {t.label}
           </button>
         ))}
@@ -204,25 +208,27 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       {tab === 'qds' && (
         <>
           {/* KPI cards — every value derived server-side from real rows */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
             {kpis.map(kp => (
-              <div key={kp.label} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '20px 24px' }}>
+              <div key={kp.label} style={{ ...panel, padding: '18px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={sectionLabel}>{kp.label}</span>
-                  <kp.icon size={18} style={{ color: kp.color }} />
+                  <div style={{ width: 34, height: 34, borderRadius: 9, background: kp.ibg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: kp.ic }}>
+                    <kp.icon size={17} />
+                  </div>
                 </div>
-                <div style={{ fontSize: 26, fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginTop: 10 }}>{kp.value}</div>
-                <div style={{ fontSize: 12, color: dim, marginTop: 4 }}>{kp.sub}</div>
+                <div style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginTop: 10, lineHeight: 1 }}>{kp.value}</div>
+                <div style={{ fontSize: '0.75rem', color: dim, marginTop: 6 }}>{kp.sub}</div>
               </div>
             ))}
           </div>
 
           {/* Filter bar */}
-          <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: 20, marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 250, position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Search size={18} style={{ position: 'absolute', left: 14, color: dim, pointerEvents: 'none' }} />
+          <div style={{ ...panel, padding: '14px 16px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 240, position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search size={16} style={{ position: 'absolute', left: 13, color: dim, pointerEvents: 'none' }} />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, or issue…"
-                style={{ width: '100%', padding: '10px 14px 10px 42px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
             </div>
             <select value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>
               <option value="All">All plants</option><option value="GEX 1">GEX 1</option><option value="GEX 2">GEX 2</option>
@@ -231,20 +237,20 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
               <option value="All">All suppliers</option>
               {supplierOptions.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selectStyle, minWidth: 170 }}>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selectStyle, minWidth: 160 }}>
               <option value="All">All statuses</option>
               {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
             {hasFilters && (
               <button onClick={() => { setSearch(''); setPlant('All'); setSupplier('All'); setStatus('All'); }}
-                style={{ padding: '10px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                style={{ padding: '9px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <X size={14} /> Clear
               </button>
             )}
           </div>
 
           {/* Register table */}
-          <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ ...panel, borderRadius: 10, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -290,11 +296,19 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
               </tbody>
             </table>
             {!loading && filtered.length === 0 && (
-              <div style={{ padding: 40, textAlign: 'center', color: dim, fontSize: 13 }}>
-                {data.qds.length === 0 ? 'No QDs raised yet' : 'No QDs match your filters'}
+              <div style={{ padding: '56px 16px', textAlign: 'center' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 52, height: 52, borderRadius: 12, background: surfaceHover, color: dim, marginBottom: 14 }}>
+                  <AlertTriangle size={24} />
+                </div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: text }}>
+                  {data.qds.length === 0 ? 'No QDs raised yet' : 'No QDs match your filters'}
+                </div>
+                <div style={{ fontSize: '0.82rem', color: dim, marginTop: 4 }}>
+                  {data.qds.length === 0 ? 'Raise a QD against a received die to start tracking it here.' : 'Try clearing the search or filters.'}
+                </div>
               </div>
             )}
-            {loading && <div style={{ padding: 40, textAlign: 'center', color: dim, fontSize: 13 }}>Loading…</div>}
+            {loading && <div style={{ padding: '40px 16px', textAlign: 'center', color: dim, fontSize: '0.85rem' }}>Loading…</div>}
           </div>
         </>
       )}
@@ -317,7 +331,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 16, marginBottom: 20 }}>
             {/* Open QDs by stage */}
-            <div style={{ border: `1px solid ${border}`, borderRadius: 8, padding: 20 }}>
+            <div style={{ ...panel, padding: '18px 20px' }}>
               <div style={{ ...sectionLabel, marginBottom: 14 }}>Open QDs by stage</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {pipeline.map(p => (
@@ -333,10 +347,10 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
             </div>
 
             {/* Supplier performance */}
-            <div style={{ border: `1px solid ${border}`, borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ ...panel, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '14px 20px', borderBottom: `1px solid ${border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={sectionLabel}>Supplier performance</span>
-                <span style={{ fontSize: 11.5, color: dim }}>Sorted by open QDs · click to filter</span>
+                <span style={{ fontSize: '0.72rem', color: dim }}>Sorted by open QDs · click to filter</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: SUP_COLS, gap: 8, alignItems: 'center', padding: '8px 20px', borderBottom: `1px solid ${border}` }}>
                 {['Supplier', 'QDs', 'Open', 'FOC', 'Rejected', 'Avg res.', 'Trend'].map((h, i) => (
@@ -374,7 +388,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           </div>
 
           {/* QDs for the selected suppliers */}
-          <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ ...panel, borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${border}` }}>
               <span style={sectionLabel}>QDs for selected suppliers</span>
             </div>

@@ -25,8 +25,8 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const inputBg = theme.inputBg || '#09090b';
   const mono = "'JetBrains Mono', ui-monospace, monospace";
 
-  const label = { fontSize: 11, fontWeight: 700, color: dim, textTransform: 'uppercase', letterSpacing: '0.06em' };
-  const field = { padding: '10px 14px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: 14, outline: 'none', boxSizing: 'border-box' };
+  const label = { fontSize: '0.72rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' };
+  const field = { padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' };
   const group = { display: 'flex', flexDirection: 'column', gap: 6 };
 
   const canSubmit = !!dieNo.trim() && !!supplier.trim() && !submitting;
@@ -53,7 +53,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
       <style>{`@keyframes qdModalIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-cta:hover { filter: brightness(1.06); }`}</style>
 
-      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 20, width: 640, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 60px rgba(0,0,0,0.5)', animation: 'qdModalIn 0.2s ease-out', color: text }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 16, width: 640, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', animation: 'qdModalIn 0.2s ease-out', color: text }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '24px 28px', borderBottom: `1px solid ${border}` }}>
