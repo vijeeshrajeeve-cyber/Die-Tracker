@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, BarChart3, TrendingUp, Settings, Clock, ChevronLeft, ChevronRight, ClipboardList, Mail, Snowflake } from 'lucide-react';
+import { Package, BarChart3, TrendingUp, Settings, Clock, ChevronLeft, ChevronRight, ClipboardList, Mail, Snowflake, AlertTriangle } from 'lucide-react';
 import { PROCESS_FLOW_TABS, STATUS_CONFIG } from '../../utils/constants';
 
 const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed }) => {
@@ -18,6 +18,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
         { id: 'orders', label: 'Orders', icon: Package, pageId: 'orders' },
         { id: 'backup-requests', label: 'Backup Die Requests', icon: ClipboardList, pageId: 'backup-requests' },
         { id: 'frozen-designs', label: 'Frozen Designs', icon: Snowflake, pageId: 'frozen-designs' },
+        { id: 'qd-tracker', label: 'QD Tracker', icon: AlertTriangle, pageId: 'qd-tracker' },
         { id: 'email-inbox', label: 'Email Inbox', icon: Mail, pageId: 'email-inbox' },
         { id: 'analytics', label: 'Analytics', icon: BarChart3, pageId: 'analytics' },
         ...(user?.role === 'admin' ? [
@@ -30,8 +31,8 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
     const mainTabs = allTabs.filter(tab => hasAccess(tab.pageId));
 
     // Split tabs: before and after the process-flow insertion point
-    const topTabs = mainTabs.filter(t => ['dashboard', 'orders', 'backup-requests', 'frozen-designs', 'email-inbox'].includes(t.id));
-    const bottomTabs = mainTabs.filter(t => !['dashboard', 'orders', 'backup-requests', 'frozen-designs', 'email-inbox'].includes(t.id));
+    const topTabs = mainTabs.filter(t => ['dashboard', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'email-inbox'].includes(t.id));
+    const bottomTabs = mainTabs.filter(t => !['dashboard', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'email-inbox'].includes(t.id));
 
     // Filter flow tabs by individual access
     const accessibleFlowTabs = PROCESS_FLOW_TABS.filter(tab => hasAccess(tab.id));

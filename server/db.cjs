@@ -373,6 +373,55 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- ── Quality Discrepancies (QD Tracker) ──────────────────────────────
+      CREATE TABLE IF NOT EXISTS quality_discrepancies (
+        id SERIAL PRIMARY KEY,
+        qd_no            TEXT UNIQUE NOT NULL,
+        die_no           TEXT NOT NULL,
+        profile_number   TEXT,
+        die_order_id     INTEGER REFERENCES die_orders(id),
+        raised_date      DATE NOT NULL,
+        plant            TEXT NOT NULL,
+        supplier         TEXT NOT NULL,
+        corrector        TEXT,
+        status           TEXT NOT NULL DEFAULT 'Open',
+        outcome          TEXT,
+        issue_summary    TEXT NOT NULL,
+        issue_detail     TEXT,
+        eta_date         DATE,
+        input_at_failure TEXT,
+        closed_at        DATE,
+        created_by       INTEGER REFERENCES users(id),
+        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_qd_supplier ON quality_discrepancies (supplier);
+      CREATE INDEX IF NOT EXISTS idx_qd_status   ON quality_discrepancies (status);
+
+      CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
+        id SERIAL PRIMARY KEY,
+        qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+        actor       TEXT NOT NULL,
+        action      TEXT NOT NULL,
+        icon        TEXT,
+        tone        TEXT,
+        occurred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        user_id     INTEGER REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_qd_activity_qd ON quality_discrepancy_activity (qd_id);
+
+      CREATE TABLE IF NOT EXISTS quality_discrepancy_files (
+        id SERIAL PRIMARY KEY,
+        qd_id         INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+        original_name TEXT NOT NULL,
+        stored_path   TEXT NOT NULL,
+        mime_type     TEXT,
+        size_bytes    BIGINT,
+        uploaded_by   INTEGER REFERENCES users(id),
+        uploaded_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_qd_files_qd ON quality_discrepancy_files (qd_id);
+
       -- Press master (press name → code)
       CREATE TABLE IF NOT EXISTS presses (
         id SERIAL PRIMARY KEY,

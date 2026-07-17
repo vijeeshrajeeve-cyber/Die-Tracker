@@ -605,6 +605,41 @@ export const frozenDesignsAPI = {
     },
 };
 
+// Quality Discrepancies (QD Tracker) API
+export const qualityDiscrepanciesAPI = {
+    list: async () => apiRequest('/quality-discrepancies'),
+
+    create: async (payload) =>
+        apiRequest('/quality-discrepancies', { method: 'POST', body: JSON.stringify(payload) }),
+
+    setStatus: async (id, status) =>
+        apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+
+    addNote: async (id, note) =>
+        apiRequest(`/quality-discrepancies/${id}/notes`, { method: 'POST', body: JSON.stringify({ note }) }),
+
+    uploadFiles: async (id, fileList) => {
+        const form = new FormData();
+        Array.from(fileList).forEach((f) => form.append('files', f));
+        return apiRequest(`/quality-discrepancies/${id}/files`, { method: 'POST', body: form, isMultipart: true });
+    },
+
+    downloadFile: async (fileId, filename) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/quality-discrepancies/files/${fileId}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename || 'qd-file';
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+};
+
 // Plant Budgets API
 export const plantBudgetsAPI = {
     getAll: async () => {

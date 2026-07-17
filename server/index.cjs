@@ -27,6 +27,7 @@ const existingDataRouter = require('./routes/existing-data.cjs');
 const autoBackupsRouter = require('./routes/auto-backups.cjs');
 const autoBackupService = require('./services/autoBackup.cjs');
 const frozenDesignsRouter = require('./routes/frozen-designs.cjs');
+const qualityDiscrepanciesRouter = require('./routes/quality-discrepancies.cjs');
 
 
 const app = express();
@@ -94,6 +95,7 @@ app.use('/api/presses', pressesRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/backup-requests', authMiddleware, pageAccessMiddleware('backup-requests'), backupRequestsRouter);
 app.use('/api/frozen-designs', authMiddleware, pageAccessMiddleware('frozen-designs'), frozenDesignsRouter);
+app.use('/api/quality-discrepancies', authMiddleware, pageAccessMiddleware('qd-tracker'), qualityDiscrepanciesRouter);
 app.use('/api/api-keys', authMiddleware, adminMiddleware, apiKeysRouter);
 app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleFollowupsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
