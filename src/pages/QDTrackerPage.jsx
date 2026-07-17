@@ -306,7 +306,7 @@ export default function QDTrackerPage({ user, theme = {} }) {
                 {pipeline.map(p => (
                   <div key={p.label} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 24px', gap: 10, alignItems: 'center' }}>
                     <span style={{ fontSize: 12, color: muted }}>{p.label}</span>
-                    <span style={{ height: 8, borderRadius: 4, background: theme.primarySoft || '#27272a', position: 'relative', display: 'block' }}>
+                    <span style={{ height: 8, borderRadius: 4, background: theme.primaryLight || '#27272a', position: 'relative', display: 'block' }}>
                       <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 4, background: p.color, width: p.pct }} />
                     </span>
                     <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{p.count}</span>
