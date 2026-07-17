@@ -128,6 +128,7 @@ export const CONTROLLABLE_PAGES = [
   { id: 'orders', label: 'Orders' },
   { id: 'backup-requests', label: 'Backup Die Requests' },
   { id: 'frozen-designs', label: 'Frozen Designs' },
+  { id: 'qd-tracker', label: 'QD Tracker' },
   // Individual Process Flow pages
   { id: 'flow-pending-order', label: 'Pending Order', group: 'Process Flow' },
   { id: 'flow-awaiting-design', label: 'Awaiting Design', group: 'Process Flow' },
@@ -144,3 +145,27 @@ export const CONTROLLABLE_PAGES = [
 
 // Preset reasons for bypassing a frozen design and following the normal flow.
 export const BYPASS_REASONS = ['Profile revised', 'Customer change', 'Quality issue', 'Other'];
+
+// QD Tracker status vocabulary — colours match the QD Tracker design.
+export const QD_STATUS_CONFIG = {
+  'Open':             { fg: '#FBBF24', bg: 'rgba(245,158,11,0.15)' },
+  'Sent to Supplier': { fg: '#60A5FA', bg: 'rgba(59,130,246,0.15)' },
+  'FOC Accepted':     { fg: '#34D399', bg: 'rgba(16,185,129,0.15)' },
+  'Rejected':         { fg: '#FCA5A5', bg: 'rgba(239,68,68,0.15)' },
+  'Reference':        { fg: '#A1A1AA', bg: 'rgba(161,161,170,0.14)' },
+  'Rework In-house':  { fg: '#A78BFA', bg: 'rgba(139,92,246,0.15)' },
+  'Closed':           { fg: '#22D3EE', bg: 'rgba(6,182,212,0.14)' },
+};
+
+export const QD_STATUSES = Object.keys(QD_STATUS_CONFIG);
+
+export const QD_OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
+
+// Activity timeline dot tones — copied from the QD Tracker design's `tones` map.
+export const QD_ACTIVITY_TONES = {
+  flag:    { bg: 'rgba(245,158,11,0.18)', fg: '#FBBF24' },
+  send:    { bg: 'rgba(59,130,246,0.18)', fg: '#60A5FA' },
+  bad:     { bg: 'rgba(239,68,68,0.18)',  fg: '#FCA5A5' },
+  good:    { bg: 'rgba(16,185,129,0.18)', fg: '#34D399' },
+  neutral: { bg: 'rgba(161,161,170,0.16)', fg: '#A1A1AA' },
+};

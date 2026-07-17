@@ -25,6 +25,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
 import FrozenDesignsPage from './pages/FrozenDesignsPage';
+import QDTrackerPage from './pages/QDTrackerPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
 import FreezeDesignModal from './components/FreezeDesignModal';
 
@@ -2871,6 +2872,10 @@ export default function DieOrderingSystem() {
 
           {activeTab === 'frozen-designs' && hasPageAccess('frozen-designs') && (
             <FrozenDesignsPage user={user} theme={theme} />
+          )}
+
+          {activeTab === 'qd-tracker' && hasPageAccess('qd-tracker') && (
+            <QDTrackerPage user={user} theme={theme} />
           )}
 
           {activeTab === 'email-inbox' && hasPageAccess('email-inbox') && (
