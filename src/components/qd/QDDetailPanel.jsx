@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
-  Calendar, Check, MessageSquare, Pencil, XCircle,
+  Calendar, Check, MessageSquare, Pencil, XCircle, Mail,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES } from '../../utils/constants';
@@ -20,6 +20,27 @@ const ACTIVITY_ICON = {
 };
 
 const isPdf = (name) => /\.pdf$/i.test(String(name || ''));
+
+const esc = (v) => String(v == null || v === '' ? '—' : v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+// Shared markup for the QD summary table used by both outbound emails.
+const detailsTable = (qd) => `
+  <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;color:#0F172A;">
+    <tbody>
+      <tr><td style="padding:6px 12px;border:1px solid #CBD5E1;font-weight:600;">QD No</td><td style="padding:6px 12px;border:1px solid #CBD5E1;">${esc(qd.qd_no)}</td></tr>
+      <tr><td style="padding:6px 12px;border:1px solid #CBD5E1;font-weight:600;">Die No</td><td style="padding:6px 12px;border:1px solid #CBD5E1;">${esc(qd.die_no)}</td></tr>
+      <tr><td style="padding:6px 12px;border:1px solid #CBD5E1;font-weight:600;">Plant</td><td style="padding:6px 12px;border:1px solid #CBD5E1;">${esc(qd.plant)}</td></tr>
+      <tr><td style="padding:6px 12px;border:1px solid #CBD5E1;font-weight:600;">Raised</td><td style="padding:6px 12px;border:1px solid #CBD5E1;">${esc(qd.raised_date)}</td></tr>
+      <tr><td style="padding:6px 12px;border:1px solid #CBD5E1;font-weight:600;">Outcome sought</td><td style="padding:6px 12px;border:1px solid #CBD5E1;">${esc(qd.outcome)}</td></tr>
+      <tr><td style="padding:6px 12px;border:1px solid #CBD5E1;font-weight:600;">Status</td><td style="padding:6px 12px;border:1px solid #CBD5E1;">${esc(qd.status)}</td></tr>
+    </tbody>
+  </table>`;
+
+const attachmentNote = (qd) => ((qd.files || []).length
+  ? `<p>Supporting evidence on record: ${qd.files.map(f => esc(f.original_name)).join(', ')}. Please attach any of these that are needed before sending.</p>`
+  : '');
 const fmtWhen = (v) => {
   if (!v) return '';
   const d = new Date(v);
@@ -28,7 +49,7 @@ const fmtWhen = (v) => {
     : d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
 };
 
-export default function QDDetailPanel({ qd, theme = {}, onClose, onChanged }) {
+export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompose, onClose, onChanged }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -82,6 +103,64 @@ export default function QDDetailPanel({ qd, theme = {}, onClose, onChanged }) {
     run(() => qualityDiscrepanciesAPI.uploadFiles(qd.id, chosen));
   };
 
+  // Both mail actions open the compose modal pre-filled — they never send on
+  // their own. The timeline entry is written from onSent, so it only records
+  // mail that actually went out.
+  const composeEmail = () => {
+    if (!onCompose) return setError('Email compose is not available from this page.');
+    onCompose({
+      to: supplier?.contact_email || '',
+      subject: `QD ${qd.qd_no} — Die ${qd.die_no} — quality discrepancy raised`,
+      isHtml: true,
+      body: `
+        <p>Dear ${esc(qd.supplier)} Team,</p>
+        <p>A quality discrepancy has been raised against the following die received from you.</p>
+        ${detailsTable(qd)}
+        <p><strong>Quality issue</strong></p>
+        <p>${esc(qd.issue_detail || qd.issue_summary).replace(/\n/g, '<br/>')}</p>
+        ${attachmentNote(qd)}
+        <p>Please review and confirm the corrective action along with an ETA.</p>
+        <p>Best regards,<br/>Die Ordering Team</p>`,
+      onSent: async () => {
+        await qualityDiscrepanciesAPI.addNote(qd.id, `emailed ${qd.supplier} the QD details`, 'email');
+        onChanged();
+      },
+    });
+  };
+
+  const composeReminder = () => {
+    if (!onCompose) return setError('Email compose is not available from this page.');
+    const days = qd.age_days;
+    onCompose({
+      to: supplier?.contact_email || '',
+      importance: 'high',
+      subject: `REMINDER: QD ${qd.qd_no} — Die ${qd.die_no} — awaiting your response`,
+      isHtml: true,
+      body: `
+        <p>Dear ${esc(qd.supplier)} Team,</p>
+        <p>This is a reminder regarding the quality discrepancy below, raised
+           <strong>${days} day${days === 1 ? '' : 's'}</strong> ago and still open.</p>
+        ${detailsTable(qd)}
+        <p><strong>Quality issue</strong></p>
+        <p>${esc(qd.issue_detail || qd.issue_summary).replace(/\n/g, '<br/>')}</p>
+        <p>We have not yet received your confirmation${qd.eta_date ? '' : ' or an ETA'}.
+           Please respond at the earliest so this can be closed out.</p>
+        <p>Best regards,<br/>Die Ordering Team</p>`,
+      onSent: async () => {
+        await qualityDiscrepanciesAPI.addNote(
+          qd.id, `reminder sent to ${qd.supplier} — no response after ${days} day${days === 1 ? '' : 's'}`, 'reminder'
+        );
+        onChanged();
+      },
+    });
+  };
+
+  // No supplier contact on file is common right now, so say where mail will go
+  // rather than opening a draft with a mysteriously empty To field.
+  const mailTitle = supplier?.contact_email
+    ? `Opens a draft to ${supplier.contact_email}`
+    : `No contact email on file for ${qd.supplier} — add one in Settings, or type it into the draft`;
+
   const facts = [
     { label: 'Outcome sought', value: qd.outcome || '—' },
     { label: 'Input at failure', value: qd.input_at_failure || '—' },
@@ -92,7 +171,9 @@ export default function QDDetailPanel({ qd, theme = {}, onClose, onChanged }) {
   return (
     <>
       <style>{`@keyframes qdSlideIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
-        .qd-chip:hover { background: ${surfaceHover}; }`}</style>
+        .qd-chip:hover { background: ${surfaceHover}; }
+        .qd-action { transition: all .15s ease; }
+        .qd-action:hover { background: ${surfaceHover}; color: ${text}; }`}</style>
 
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 200 }} />
 
@@ -116,8 +197,16 @@ export default function QDDetailPanel({ qd, theme = {}, onClose, onChanged }) {
           </button>
         </div>
 
-        {/* Status control */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center' }}>
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={composeEmail} className="qd-action" title={mailTitle}
+            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Mail size={15} /> Email supplier
+          </button>
+          <button onClick={composeReminder} className="qd-action" title={mailTitle}
+            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Bell size={15} /> Send reminder
+          </button>
           <select value={qd.status} onChange={changeStatus} disabled={busy}
             style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
             {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}

@@ -3,7 +3,7 @@ import {
   Download, Plus, ClipboardList, Factory, Search, X,
   AlertTriangle, Truck, CheckCircle, Clock, Wrench, RefreshCcw, FileText, Eye,
 } from 'lucide-react';
-import { qualityDiscrepanciesAPI } from '../api';
+import { qualityDiscrepanciesAPI, suppliersAPI } from '../api';
 import { QD_STATUS_CONFIG, QD_STATUSES } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
@@ -36,9 +36,11 @@ const PIPELINE_STAGES = [
 
 const ageColor = (age, muted) => (age > 40 ? '#FCA5A5' : age > 20 ? '#FBBF24' : muted);
 
-export default function QDTrackerPage({ user, theme = {} }) {
+export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, suppliers: [] });
+  // Supplier master — the source for the Raise dropdown and for contact_email.
+  const [supplierMaster, setSupplierMaster] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [plant, setPlant] = useState('All');
@@ -70,9 +72,24 @@ export default function QDTrackerPage({ user, theme = {} }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    suppliersAPI.getAll()
+      .then(rows => { if (!cancelled) setSupplierMaster(rows || []); })
+      .catch(() => { if (!cancelled) setSupplierMaster([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Filter dropdown lists only suppliers that actually have QDs…
   const supplierOptions = useMemo(
     () => Array.from(new Set(data.qds.map(q => q.supplier).filter(Boolean))).sort(),
     [data.qds]
+  );
+  // …while raising a QD offers the full master, so names stay canonical and
+  // keep matching the supplier's contact_email.
+  const raiseSupplierOptions = useMemo(
+    () => supplierMaster.map(s => s.name).filter(Boolean).sort(),
+    [supplierMaster]
   );
 
   const filtered = useMemo(() => data.qds.filter(q => {
@@ -385,10 +402,18 @@ export default function QDTrackerPage({ user, theme = {} }) {
       )}
 
       {selected && (
-        <QDDetailPanel qd={selected} theme={theme} user={user} onClose={() => setSelectedId(null)} onChanged={load} />
+        <QDDetailPanel
+          qd={selected}
+          theme={theme}
+          user={user}
+          supplier={supplierMaster.find(s => (s.name || '').toLowerCase() === (selected.supplier || '').toLowerCase()) || null}
+          onCompose={onCompose}
+          onClose={() => setSelectedId(null)}
+          onChanged={load}
+        />
       )}
       {showRaise && (
-        <RaiseQDModal theme={theme} suppliers={supplierOptions} onClose={() => setShowRaise(false)}
+        <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} onClose={() => setShowRaise(false)}
           onCreated={(id) => { setShowRaise(false); load(); setSelectedId(id); }} />
       )}
     </div>

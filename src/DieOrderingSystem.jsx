@@ -2875,7 +2875,11 @@ export default function DieOrderingSystem() {
           )}
 
           {activeTab === 'qd-tracker' && hasPageAccess('qd-tracker') && (
-            <QDTrackerPage user={user} theme={theme} />
+            <QDTrackerPage
+              user={user}
+              theme={theme}
+              onCompose={(prefill) => setShowEmailCompose(prefill || {})}
+            />
           )}
 
           {activeTab === 'email-inbox' && hasPageAccess('email-inbox') && (

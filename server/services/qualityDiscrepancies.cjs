@@ -5,6 +5,14 @@ const STATUSES = ['Open', 'Sent to Supplier', 'FOC Accepted', 'Rejected', 'Refer
 const OPEN_STATUSES = ['Open', 'Sent to Supplier', 'Rework In-house', 'Rejected'];
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
+// Timeline entry kinds. The icon/tone are decided here rather than by the
+// client so the timeline vocabulary stays consistent (and unspoofable).
+const ACTIVITY_KINDS = {
+  note: { icon: 'message-square', tone: 'neutral' },
+  email: { icon: 'send', tone: 'send' },
+  reminder: { icon: 'bell', tone: 'send' },
+};
+
 // The legacy Excel sheet used a looser vocabulary (including the 'Refrance'
 // typo). Map it onto the 7 canonical statuses; unknown values fall back to Open.
 const SHEET_STATUS_MAP = {
@@ -135,6 +143,12 @@ async function addActivity(client, { qdId, actor, action, icon, tone, userId, oc
   );
 }
 
+async function addActivityOfKind(client, { qdId, kind, actor, note, userId }) {
+  const spec = ACTIVITY_KINDS[kind];
+  if (!spec) throw new Error(`Invalid activity kind: ${kind}`);
+  await addActivity(client, { qdId, actor, action: note, icon: spec.icon, tone: spec.tone, userId });
+}
+
 async function createQD(client, input) {
   const {
     qdNo, dieNo, raisedDate, plant, supplier, corrector, status, outcome,
@@ -172,8 +186,8 @@ async function updateStatus(client, { id, status, actor, userId }) {
 }
 
 module.exports = {
-  STATUSES, OPEN_STATUSES, OUTCOMES,
+  STATUSES, OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay,
   computeKpis, computeTrend, summarizeSuppliers,
-  listQDs, createQD, addActivity, updateStatus,
+  listQDs, createQD, addActivity, addActivityOfKind, updateStatus,
 };

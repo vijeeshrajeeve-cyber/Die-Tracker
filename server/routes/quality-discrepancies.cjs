@@ -158,22 +158,21 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
-// POST /api/quality-discrepancies/:id/notes  { note }
+// POST /api/quality-discrepancies/:id/notes  { note, kind? }
+// kind defaults to 'note'; 'email' / 'reminder' are logged by the drawer after
+// an email actually sends, so the timeline reflects what really happened.
 router.post('/:id/notes', async (req, res) => {
   try {
     const note = String(req.body?.note || '').trim();
+    const kind = String(req.body?.kind || 'note');
     if (!note) return res.status(400).json({ error: 'Note is required' });
+    if (!qd.ACTIVITY_KINDS[kind]) return res.status(400).json({ error: 'Invalid activity kind' });
     const exists = await pool.query('SELECT id FROM quality_discrepancies WHERE id = $1', [req.params.id]);
     if (exists.rowCount === 0) return res.status(404).json({ error: 'QD not found' });
-    await qd.addActivity(pool, {
-      qdId: req.params.id,
-      actor: actorFor(req),
-      action: note,
-      icon: 'message-square',
-      tone: 'neutral',
-      userId: req.user?.id,
+    await qd.addActivityOfKind(pool, {
+      qdId: req.params.id, kind, actor: actorFor(req), note, userId: req.user?.id,
     });
-    res.status(201).json({ message: 'Note added' });
+    res.status(201).json({ message: 'Activity added' });
   } catch (e) {
     console.error('Add QD note error:', e);
     res.status(500).json({ error: 'Internal server error' });

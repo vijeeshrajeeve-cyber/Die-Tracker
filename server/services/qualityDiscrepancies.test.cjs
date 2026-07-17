@@ -103,6 +103,30 @@ test('listQDs decorates rows with derived age, resolution and eta', async () => 
   assert.deepEqual(row.activity, []);
 });
 
+test('ACTIVITY_KINDS maps each kind to the design\'s icon and tone', () => {
+  assert.deepEqual(q.ACTIVITY_KINDS.note, { icon: 'message-square', tone: 'neutral' });
+  assert.deepEqual(q.ACTIVITY_KINDS.email, { icon: 'send', tone: 'send' });
+  assert.deepEqual(q.ACTIVITY_KINDS.reminder, { icon: 'bell', tone: 'send' });
+});
+
+test('addActivityOfKind writes the icon/tone for the kind, not client-supplied ones', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push(params); return { rows: [] }; } };
+  await q.addActivityOfKind(client, { qdId: 5, kind: 'reminder', actor: 'admin', note: 'reminder sent to PDTMC — no response after 31 days' });
+  // params: [qdId, actor, action, icon, tone, userId, occurredAt]
+  assert.equal(calls[0][3], 'bell');
+  assert.equal(calls[0][4], 'send');
+  assert.equal(calls[0][2], 'reminder sent to PDTMC — no response after 31 days');
+});
+
+test('addActivityOfKind rejects an unknown kind', async () => {
+  const client = { query: async () => ({ rows: [] }) };
+  await assert.rejects(
+    () => q.addActivityOfKind(client, { qdId: 1, kind: 'sneaky', actor: 'x', note: 'n' }),
+    /Invalid activity kind: sneaky/
+  );
+});
+
 test('updateStatus rejects a status outside the agreed vocabulary', async () => {
   const client = { query: async () => ({ rowCount: 1 }) };
   await assert.rejects(

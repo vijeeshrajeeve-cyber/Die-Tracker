@@ -615,8 +615,10 @@ export const qualityDiscrepanciesAPI = {
     setStatus: async (id, status) =>
         apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 
-    addNote: async (id, note) =>
-        apiRequest(`/quality-discrepancies/${id}/notes`, { method: 'POST', body: JSON.stringify({ note }) }),
+    // kind: 'note' (default) | 'email' | 'reminder' — the server decides the
+    // timeline icon/tone from the kind.
+    addNote: async (id, note, kind = 'note') =>
+        apiRequest(`/quality-discrepancies/${id}/notes`, { method: 'POST', body: JSON.stringify({ note, kind }) }),
 
     uploadFiles: async (id, fileList) => {
         const form = new FormData();
