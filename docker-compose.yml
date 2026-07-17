@@ -58,9 +58,11 @@ services:
       PORT: ${PORT:-3001}
       HOST: ${HOST:-0.0.0.0}
       FROZEN_DESIGNS_ROOT: /app/storage/frozen-designs
+      QD_FILES_ROOT: /app/storage/qd-files
     volumes:
       - order_backups:/app/backups
       - frozen_designs_data:/app/storage/frozen-designs
+      - qd_files_data:/app/storage/qd-files
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -168,6 +170,8 @@ volumes:
   order_backups:
     driver: local
   frozen_designs_data:
+    driver: local
+  qd_files_data:
     driver: local
 
 networks:

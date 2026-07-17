@@ -1,0 +1,45 @@
+'use strict';
+const path = require('path');
+
+const ALLOWED_EXTENSIONS = ['pdf', 'png', 'jpg', 'jpeg', 'webp'];
+const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB — QD evidence is photos and reports
+
+function getRoot() {
+  return process.env.QD_FILES_ROOT || '/app/storage/qd-files';
+}
+
+// Keep temp uploads on the same filesystem as the storage root so moving a
+// finished upload into place is an intra-device rename (no EXDEV across the
+// Docker volume boundary).
+function getTmpDir() {
+  return path.join(getRoot(), '.uploads-tmp');
+}
+
+function extOf(name) {
+  const base = String(name || '');
+  const dot = base.lastIndexOf('.');
+  if (dot < 0 || dot === base.length - 1) return '';
+  return base.slice(dot + 1).toLowerCase();
+}
+
+function isAllowedExtension(name) {
+  return ALLOWED_EXTENSIONS.includes(extOf(name));
+}
+
+function sanitizeFilename(name) {
+  const base = path.basename(String(name || '')).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  return base || 'file';
+}
+
+function sanitizeSegment(value) {
+  return String(value == null ? '' : value).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || '_';
+}
+
+function buildStoredPath(root, { qdNo, qdId, fileName }) {
+  return path.join(root, sanitizeSegment(qdNo), sanitizeSegment(qdId), sanitizeFilename(fileName));
+}
+
+module.exports = {
+  ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
+  getRoot, getTmpDir, isAllowedExtension, sanitizeFilename, sanitizeSegment, buildStoredPath,
+};
