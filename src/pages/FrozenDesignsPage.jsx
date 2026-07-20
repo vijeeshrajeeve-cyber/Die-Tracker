@@ -12,6 +12,9 @@ const PLANT_COLORS = { 'GEX 1': '#32a838', 'GEX 2': '#3234a8' };
 
 const statusOf = (r) => r.is_active ? 'Active' : (r.release_reason === 'superseded' ? 'Superseded' : 'Released');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
+// Whoever last acted on the row: the releaser once it is no longer active,
+// otherwise the person who froze it.
+const updatedBy = (r) => (r.is_active ? r.frozen_by_name : (r.released_by_name || r.frozen_by_name)) || '—';
 
 export default function FrozenDesignsPage({ user, theme = {} }) {
   const [rows, setRows] = useState([]);
@@ -89,10 +92,10 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
   const kBypassed = rows.reduce((a, r) => a + (Number(r.bypassed_count) || 0), 0);
 
   const exportCsv = () => {
-    const header = ['Profile', 'Supplier', 'Plant', 'Press', 'Cavity', 'Status', 'Frozen At', 'Files', 'Released', 'Bypassed'];
+    const header = ['Profile', 'Supplier', 'Plant', 'Press', 'Cavity', 'Status', 'Frozen At', 'Updated By', 'Files', 'Released', 'Bypassed'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = view.map(r => [
-      r.profile_number, r.supplier, r.plant, r.press, r.cavity, statusOf(r), fmtDate(r.frozen_at),
+      r.profile_number, r.supplier, r.plant, r.press, r.cavity, statusOf(r), fmtDate(r.frozen_at), updatedBy(r),
       (r.files || []).map(f => f.original_name).join('; '),
       r.released_count || 0, r.bypassed_count || 0,
     ].map(esc).join(','));
@@ -199,7 +202,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
           <thead>
             <tr style={{ borderBottom: `1px solid ${border}` }}>
               <th style={th}>Profile</th><th style={th}>Supplier</th><th style={th}>Plant</th><th style={th}>Press</th><th style={th}>Cavity</th>
-              <th style={th}>Status</th><th style={th}>Frozen At</th><th style={th}>Files</th>
+              <th style={th}>Status</th><th style={th}>Frozen At</th><th style={th}>Updated By</th><th style={th}>Files</th>
               <th style={th}>Released</th><th style={th}>Bypassed</th>
               <th style={{ ...th, textAlign: 'right' }}>Actions</th>
             </tr>
@@ -228,6 +231,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
                     </span>
                   </td>
                   <td style={{ ...td, fontFamily: mono, fontSize: 12.5, color: muted, fontVariantNumeric: 'tabular-nums' }}>{fmtDate(r.frozen_at)}</td>
+                  <td style={{ ...td, fontSize: 13, color: updatedBy(r) === '—' ? dim : text }}>{updatedBy(r)}</td>
                   <td style={td}>
                     {(r.files || []).length > 0 ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

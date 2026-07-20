@@ -101,6 +101,8 @@ async function listFrozenDesigns(client, { profile, plant, press, cavity, active
 
   const { rows } = await client.query(
     `SELECT fd.*,
+       fz.username AS frozen_by_name,
+       rl.username AS released_by_name,
        (SELECT COUNT(*) FROM die_orders o WHERE o.frozen_design_id = fd.id AND o.frozen_design_action = 'released')
        + (SELECT COUNT(*) FROM backup_die_requests b WHERE b.frozen_design_id = fd.id AND b.frozen_design_action = 'released')
          AS released_count,
@@ -108,6 +110,8 @@ async function listFrozenDesigns(client, { profile, plant, press, cavity, active
        + (SELECT COUNT(*) FROM backup_die_requests b WHERE b.frozen_design_id = fd.id AND b.frozen_design_action = 'bypassed')
          AS bypassed_count
        FROM frozen_designs fd
+       LEFT JOIN users fz ON fz.id = fd.frozen_by
+       LEFT JOIN users rl ON rl.id = fd.released_by
        ${whereSql}
        ORDER BY fd.frozen_at DESC`,
     params

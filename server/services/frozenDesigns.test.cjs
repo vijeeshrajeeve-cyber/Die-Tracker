@@ -108,6 +108,20 @@ test('listFrozenDesigns selects released/bypassed counts and orders by frozen_at
   assert.equal(rows[0].files.length, 1);
 });
 
+test('listFrozenDesigns joins usernames for frozen_by and released_by', async () => {
+  const client = makeClient([
+    { match: (s) => s.includes('FROM frozen_designs') && s.includes('released_count'),
+      result: () => ({ rows: [{ id: 1, frozen_by_name: 'anita', released_by_name: 'raj' }], rowCount: 1 }) },
+    { match: (s) => s.includes('FROM frozen_design_files'), result: () => ({ rows: [] }) },
+  ]);
+  const rows = await fd.listFrozenDesigns(client, {});
+  const listSql = client.calls.map(c => c.sql).find(s => s.includes('released_count'));
+  assert.ok(listSql.includes('LEFT JOIN users fz ON fz.id = fd.frozen_by'));
+  assert.ok(listSql.includes('LEFT JOIN users rl ON rl.id = fd.released_by'));
+  assert.equal(rows[0].frozen_by_name, 'anita');
+  assert.equal(rows[0].released_by_name, 'raj');
+});
+
 test('matchBulk maps order ids to matching active frozen designs (with normalization)', async () => {
   const client = makeClient([
     { match: (s) => s.includes('FROM presses'), result: () => ({ rows: PRESSES }) },
