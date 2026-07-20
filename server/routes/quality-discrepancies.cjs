@@ -72,15 +72,20 @@ async function nextQdNo(client) {
   return `${year}-${String(max + 1).padStart(2, '0')}`;
 }
 
-// GET /api/quality-discrepancies → rows + derived KPIs + supplier rollup
+// GET /api/quality-discrepancies?year=2026 → rows + derived KPIs + supplier rollup
+// The year is a period selector: it scopes the rows, the KPIs and the supplier
+// rollup together. `years` always lists every year on record so the filter can
+// still offer the others.
 router.get('/', async (req, res) => {
   try {
     const now = new Date();
-    const qds = await qd.listQDs(pool);
+    const all = await qd.listQDs(pool);
+    const qds = qd.filterByYear(all, req.query.year);
     res.json({
       qds,
       kpis: qd.computeKpis(qds, now),
       suppliers: qd.summarizeSuppliers(qds, now),
+      years: qd.availableYears(all),
     });
   } catch (e) {
     console.error('List QDs error:', e);

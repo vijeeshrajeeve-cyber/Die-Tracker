@@ -607,7 +607,9 @@ export const frozenDesignsAPI = {
 
 // Quality Discrepancies (QD Tracker) API
 export const qualityDiscrepanciesAPI = {
-    list: async () => apiRequest('/quality-discrepancies'),
+    // year scopes the rows, KPIs and supplier rollup together; omit for all years
+    list: async (year) =>
+        apiRequest(`/quality-discrepancies${year && year !== 'All' ? `?year=${encodeURIComponent(year)}` : ''}`),
 
     create: async (payload) =>
         apiRequest('/quality-discrepancies', { method: 'POST', body: JSON.stringify(payload) }),

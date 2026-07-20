@@ -73,6 +73,40 @@ test('computeKpis derives every tile from real rows, with no invented numbers', 
   assert.equal(k.avgResolution, 31);
 });
 
+test('computeKpis reports the total and the closed count', () => {
+  const rows = [
+    { status: 'Open',         raised_date: '2026-07-01', closed_at: null },
+    { status: 'Closed',       raised_date: '2026-01-01', closed_at: '2026-01-31' },
+    { status: 'Closed',       raised_date: '2025-01-01', closed_at: '2025-02-01' },
+    { status: 'Rejected',     raised_date: '2026-06-01', closed_at: null },
+  ];
+  const k = q.computeKpis(rows, NOW);
+  assert.equal(k.total, 4);
+  assert.equal(k.closedCount, 2);
+});
+
+test('availableYears lists the years QDs were raised in, newest first', () => {
+  const rows = [
+    { raised_date: '2026-07-01' }, { raised_date: '2025-03-04' },
+    { raised_date: '2026-01-01' }, { raised_date: '2024-11-30' },
+  ];
+  assert.deepEqual(q.availableYears(rows), [2026, 2025, 2024]);
+  assert.deepEqual(q.availableYears([]), []);
+});
+
+test('filterByYear scopes rows to one year, or passes everything through', () => {
+  const rows = [
+    { id: 1, raised_date: '2026-07-01' },
+    { id: 2, raised_date: '2025-03-04' },
+  ];
+  assert.deepEqual(q.filterByYear(rows, 2026).map(r => r.id), [1]);
+  assert.deepEqual(q.filterByYear(rows, '2025').map(r => r.id), [2]);
+  // no year, 'All', or junk means no scoping
+  assert.equal(q.filterByYear(rows, null).length, 2);
+  assert.equal(q.filterByYear(rows, 'All').length, 2);
+  assert.equal(q.filterByYear(rows, 'abc').length, 2);
+});
+
 test('computeKpis reports avgResolution null when nothing has closed', () => {
   const k = q.computeKpis([{ status: 'Open', raised_date: '2026-07-01', closed_at: null }], NOW);
   assert.equal(k.avgResolution, null);

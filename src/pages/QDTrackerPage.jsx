@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Download, Plus, ClipboardList, Factory, Search, X,
-  AlertTriangle, Truck, CheckCircle, Clock, Wrench, RefreshCcw, FileText, Eye,
+  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, suppliersAPI } from '../api';
 import { QD_STATUS_CONFIG, QD_STATUSES } from '../utils/constants';
@@ -40,7 +40,8 @@ const ageColor = (age, muted) => (age > 40 ? '#FCA5A5' : age > 20 ? '#FBBF24' : 
 
 export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const [tab, setTab] = useState('qds');
-  const [data, setData] = useState({ qds: [], kpis: null, suppliers: [] });
+  const [data, setData] = useState({ qds: [], kpis: null, suppliers: [], years: [] });
+  const [year, setYear] = useState('All');
   // Supplier master — the source for the Raise dropdown and for contact_email.
   const [supplierMaster, setSupplierMaster] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,13 +66,16 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   // effect (react-hooks/set-state-in-effect); `loading` starts true instead.
   const load = useCallback(async () => {
     try {
-      setData(await qualityDiscrepanciesAPI.list());
+      // Keep the known years when a scoped fetch returns none, so the filter
+      // does not empty itself and strand the user on a year with no QDs.
+      const next = await qualityDiscrepanciesAPI.list(year);
+      setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
     } catch {
-      setData({ qds: [], kpis: null, suppliers: [] });
+      setData(prev => ({ qds: [], kpis: null, suppliers: [], years: prev.years }));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [year]);
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
@@ -132,15 +136,18 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   };
 
   const selected = data.qds.find(q => q.id === selectedId) || null;
-  const hasFilters = !!(search || plant !== 'All' || supplier !== 'All' || status !== 'All');
+  const hasFilters = !!(search || plant !== 'All' || supplier !== 'All' || status !== 'All' || year !== 'All');
   const k = data.kpis;
 
   const countLine = tab === 'qds'
     ? `${filtered.length} of ${data.qds.length} QDs · raised against received dies`
     : `${visibleSuppliers.length} supplier${visibleSuppliers.length === 1 ? '' : 's'} · ${supplierTabQds.length} QD${supplierTabQds.length === 1 ? '' : 's'}`;
 
+  const scope = year === 'All' ? 'all years' : `in ${year}`;
   const kpis = k ? [
+    { label: 'Total QDs', value: k.total, sub: `raised · ${scope}`, icon: ClipboardList, ic: '#fff', ibg: GRADIENT },
     { label: 'Open QDs', value: k.openCount, sub: `${k.atSupplier} awaiting supplier action`, icon: AlertTriangle, ic: '#FBBF24', ibg: 'rgba(245,158,11,0.14)' },
+    { label: 'Closed QDs', value: k.closedCount, sub: 'settled and signed off', icon: CheckCircle2, ic: '#22D3EE', ibg: 'rgba(6,182,212,0.14)' },
     { label: 'At supplier', value: k.atSupplier, sub: 'sent back for rework / FOC', icon: Truck, ic: '#60A5FA', ibg: 'rgba(59,130,246,0.14)' },
     { label: 'FOC recovered', value: k.focRecovered, sub: 'dies + mandrels this FY', icon: CheckCircle, ic: '#34D399', ibg: 'rgba(16,185,129,0.14)' },
     { label: 'Avg resolution', value: k.avgResolution === null ? '—' : `${k.avgResolution}d`, sub: 'raised → closed', icon: Clock, ic: '#A78BFA', ibg: 'rgba(139,92,246,0.14)' },
@@ -211,7 +218,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       {tab === 'qds' && (
         <>
           {/* KPI cards — every value derived server-side from real rows */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(196px, 1fr))', gap: 16, marginBottom: 20 }}>
             {kpis.map(kp => (
               <div key={kp.label} style={{ ...panel, padding: '18px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -233,6 +240,12 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, corrector, or issue…"
                 style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
             </div>
+            {/* Year scopes the whole page (KPIs + supplier tab), unlike the
+                row filters beside it, so it is fetched rather than filtered. */}
+            <select value={year} onChange={(e) => setYear(e.target.value)} style={{ ...selectStyle, minWidth: 120 }}>
+              <option value="All">All years</option>
+              {(data.years || []).map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
             <select value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>
               <option value="All">All plants</option><option value="GEX 1">GEX 1</option><option value="GEX 2">GEX 2</option>
             </select>
@@ -245,7 +258,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
               {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
             {hasFilters && (
-              <button onClick={() => { setSearch(''); setPlant('All'); setSupplier('All'); setStatus('All'); }}
+              <button onClick={() => { setSearch(''); setPlant('All'); setSupplier('All'); setStatus('All'); setYear('All'); }}
                 style={{ padding: '9px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <X size={14} /> Clear
               </button>

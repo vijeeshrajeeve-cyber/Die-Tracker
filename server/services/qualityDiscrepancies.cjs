@@ -67,11 +67,34 @@ function computeKpis(rows, now = new Date()) {
   const fyStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   const resolutions = list.map(resolutionDays).filter((d) => d !== null);
   return {
+    total: list.length,
     openCount: list.filter((r) => OPEN_STATUSES.includes(r.status)).length,
+    closedCount: list.filter((r) => r.status === 'Closed').length,
     atSupplier: list.filter((r) => r.status === 'Sent to Supplier').length,
     focRecovered: list.filter((r) => r.status === 'FOC Accepted' && toDate(r.raised_date) >= fyStart).length,
     avgResolution: avgOrNull(resolutions),
   };
+}
+
+const yearOf = (row) => {
+  const d = toDate(row.raised_date);
+  return d ? d.getUTCFullYear() : null;
+};
+
+function availableYears(rows) {
+  const years = new Set();
+  for (const r of rows || []) {
+    const y = yearOf(r);
+    if (y) years.add(y);
+  }
+  return Array.from(years).sort((a, b) => b - a);
+}
+
+// Anything that is not a real year ('All', undefined, junk) means "no scoping".
+function filterByYear(rows, year) {
+  const y = Number(year);
+  if (!Number.isInteger(y) || y < 1900) return rows || [];
+  return (rows || []).filter((r) => yearOf(r) === y);
 }
 
 function computeTrend(recent, prior) {
@@ -282,6 +305,6 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
 module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay,
-  computeKpis, computeTrend, summarizeSuppliers,
+  computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
 };
