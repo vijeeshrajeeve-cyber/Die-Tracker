@@ -147,7 +147,34 @@ const startServer = async () => {
             }
         }
 
-        await initializeDatabase();
+        try {
+            await initializeDatabase();
+        } catch (dbErr) {
+            // 28P01 = password authentication failed. This means the password
+            // stored in the postgres_data volume has diverged from .env. Print
+            // the real cause and the exact fix instead of a bare stack trace.
+            if (dbErr && dbErr.code === '28P01') {
+                const db = process.env.PGDATABASE || 'die_ordering';
+                console.error([
+                    '',
+                    '  Database rejected the password (28P01: password authentication failed).',
+                    '  The password stored in the postgres_data volume does not match .env.',
+                    '  POSTGRES_PASSWORD only applies when the volume is FIRST created; changing',
+                    '  it in .env afterwards does not update the running database.',
+                    '',
+                    '  Fix it (this touches no data — only the login password):',
+                    '',
+                    `    docker exec -i die-ordering-db psql -U postgres -d ${db} \\`,
+                    "      -v pw=\"$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)\" <<'SQL'",
+                    "    ALTER USER postgres WITH PASSWORD :'pw';",
+                    '    SQL',
+                    '',
+                    '  Do NOT run "docker compose down -v" — that deletes the database.',
+                    '',
+                ].join('\n'));
+            }
+            throw dbErr;
+        }
 
         // Start scheduled Excel backup every 5 hours (configurable via BACKUP_INTERVAL_HOURS)
         autoBackupService.scheduleAutoBackup();
