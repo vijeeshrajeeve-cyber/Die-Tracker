@@ -5,11 +5,27 @@ const q = require('./qualityDiscrepancies.cjs');
 
 const NOW = new Date('2026-07-17T00:00:00Z');
 
-test('exposes exactly the 7 agreed statuses and 4 open statuses', () => {
+test('exposes exactly the 7 agreed statuses', () => {
   assert.deepEqual(q.STATUSES, [
     'Open', 'Sent to Supplier', 'FOC Accepted', 'Rejected', 'Reference', 'Rework In-house', 'Closed',
   ]);
-  assert.deepEqual(q.OPEN_STATUSES, ['Open', 'Sent to Supplier', 'Rework In-house', 'Rejected']);
+});
+
+test('a QD counts as open unless it is Closed, Rejected or Reference', () => {
+  assert.deepEqual(q.NOT_OPEN_STATUSES, ['Closed', 'Rejected', 'Reference']);
+  assert.deepEqual(q.OPEN_STATUSES, ['Open', 'Sent to Supplier', 'FOC Accepted', 'Rework In-house']);
+  // derived from STATUSES, so a status added later counts as open by default
+  assert.equal(q.OPEN_STATUSES.length + q.NOT_OPEN_STATUSES.length, q.STATUSES.length);
+});
+
+test('an accepted FOC still awaiting delivery counts as open', () => {
+  const rows = [
+    { status: 'FOC Accepted', raised_date: '2026-07-01', closed_at: null },
+    { status: 'Rejected',     raised_date: '2026-07-01', closed_at: null },
+    { status: 'Reference',    raised_date: '2026-07-01', closed_at: null },
+    { status: 'Closed',       raised_date: '2026-01-01', closed_at: '2026-02-01' },
+  ];
+  assert.equal(q.computeKpis(rows, NOW).openCount, 1);
 });
 
 test('mapSheetStatus maps the legacy Excel vocabulary onto the new one', () => {
@@ -49,7 +65,8 @@ test('computeKpis derives every tile from real rows, with no invented numbers', 
     { status: 'FOC Accepted',     raised_date: '2025-05-01', closed_at: '2025-06-01' }, // prior FY
   ];
   const k = q.computeKpis(rows, NOW);
-  assert.equal(k.openCount, 2);        // Open + Sent to Supplier
+  // Open + Sent to Supplier + both FOC Accepted rows; only Closed is excluded here
+  assert.equal(k.openCount, 4);
   assert.equal(k.atSupplier, 1);
   assert.equal(k.focRecovered, 1);     // only the current-calendar-year one
   // resolutions are 31 (May 1 -> Jun 1) and 30 (Jan 1 -> Jan 31); mean 30.5 rounds to 31

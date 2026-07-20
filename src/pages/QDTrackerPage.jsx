@@ -27,11 +27,13 @@ const TREND = {
   flat: { label: 'flat', bg: 'rgba(161,161,170,0.14)', fg: '#A1A1AA' },
 };
 
+// The stages an OPEN QD can sit in. Rejected and Reference are settled, so they
+// are not stages here — the supplier table's Rejected column still surfaces those.
 const PIPELINE_STAGES = [
   ['Open', 'Open', '#FBBF24'],
   ['At supplier', 'Sent to Supplier', '#60A5FA'],
+  ['FOC accepted', 'FOC Accepted', '#34D399'],
   ['Rework in-house', 'Rework In-house', '#A78BFA'],
-  ['Rejected / escalate', 'Rejected', '#FCA5A5'],
 ];
 
 const ageColor = (age, muted) => (age > 40 ? '#FCA5A5' : age > 20 ? '#FBBF24' : muted);

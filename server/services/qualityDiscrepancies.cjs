@@ -2,7 +2,13 @@
 const { extractProfileFromDie } = require('./frozenDesigns.cjs');
 
 const STATUSES = ['Open', 'Sent to Supplier', 'FOC Accepted', 'Rejected', 'Reference', 'Rework In-house', 'Closed'];
-const OPEN_STATUSES = ['Open', 'Sent to Supplier', 'Rework In-house', 'Rejected'];
+
+// A QD is open unless it has been settled: Closed (done), Rejected (claim
+// refused) or Reference (logged for information only — the sheet's old "info").
+// An accepted FOC is open, since the replacement is still to arrive.
+// Derived from STATUSES so any status added later counts as open by default.
+const NOT_OPEN_STATUSES = ['Closed', 'Rejected', 'Reference'];
+const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
 // Timeline entry kinds. The icon/tone are decided here rather than by the
@@ -274,7 +280,7 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
 }
 
 module.exports = {
-  STATUSES, OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
+  STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay,
   computeKpis, computeTrend, summarizeSuppliers,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
