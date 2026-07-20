@@ -10,6 +10,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const [plant, setPlant] = useState('GEX 2');
   const [supplier, setSupplier] = useState(suppliers[0] || '');
   const [corrector, setCorrector] = useState('');
+  const [inputAtFailure, setInputAtFailure] = useState('');
   const [issue, setIssue] = useState('');
   const [outcome, setOutcome] = useState('Supplier rework');
   const [files, setFiles] = useState([]);
@@ -39,6 +40,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
       const { id } = await qualityDiscrepanciesAPI.create({
         dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
         corrector: corrector.trim(), issue: issue.trim(), outcome,
+        inputAtFailure: inputAtFailure.trim(),
       });
       if (files.length) await qualityDiscrepanciesAPI.uploadFiles(id, files);
       onCreated(id);
@@ -97,6 +99,12 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
             <div style={group}>
               <label style={label}>Corrector</label>
               <input value={corrector} onChange={(e) => setCorrector(e.target.value)} placeholder="e.g. Sijith" style={field} />
+            </div>
+            {/* Odd one out in a 2-col grid — span it so the row reads as
+                deliberate rather than leaving an empty cell. */}
+            <div style={{ ...group, gridColumn: '1 / -1' }}>
+              <label style={label}>Input at failure</label>
+              <input value={inputAtFailure} onChange={(e) => setInputAtFailure(e.target.value)} placeholder="e.g. 3,417 kg — optional, can be added later" style={field} />
             </div>
           </div>
 

@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { dieNo, plant, supplier, corrector, issue, outcome } = req.body;
+    const { dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure } = req.body;
     if (!String(dieNo || '').trim()) { client.release(); return res.status(400).json({ error: 'Die No is required' }); }
     if (!String(plant || '').trim()) { client.release(); return res.status(400).json({ error: 'Plant is required' }); }
     if (!String(supplier || '').trim()) { client.release(); return res.status(400).json({ error: 'Supplier is required' }); }
@@ -114,6 +114,7 @@ router.post('/', async (req, res) => {
       outcome: outcome || null,
       issueSummary: summary,
       issueDetail: text,
+      inputAtFailure: String(inputAtFailure || '').trim() || null,
       createdBy: req.user?.id,
     });
     await qd.addActivity(client, {
