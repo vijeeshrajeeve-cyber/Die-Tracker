@@ -169,6 +169,58 @@ async function createQD(client, input) {
   return rows[0].id;
 }
 
+// Fields the drawer can edit after a QD is raised. Status has its own path
+// (it stamps closed_at), and everything else — qd_no, die_no, dates — is either
+// identity or derived, so it is deliberately not editable here.
+const EDITABLE_FIELDS = {
+  outcome: { label: 'Outcome sought' },
+  input_at_failure: { label: 'Input at failure' },
+  eta_date: { label: 'ETA from supplier' },
+  corrector: { label: 'Corrector' },
+};
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeField(column, raw) {
+  const value = raw == null ? '' : String(raw).trim();
+  if (!value) return null; // empty clears the field
+  if (column === 'outcome' && !OUTCOMES.includes(value)) {
+    throw new Error(`Invalid outcome: ${value}`);
+  }
+  if (column === 'eta_date' && !ISO_DATE.test(value)) {
+    throw new Error(`Invalid ETA date: ${value} (expected YYYY-MM-DD)`);
+  }
+  return value;
+}
+
+async function updateFields(client, { id, fields, actor, userId }) {
+  const entries = Object.entries(fields || {}).filter(([k]) => EDITABLE_FIELDS[k]);
+  if (entries.length === 0) return false;
+
+  const sets = [];
+  const params = [];
+  const changes = [];
+  for (const [column, raw] of entries) {
+    const value = normalizeField(column, raw);
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+    changes.push(value === null
+      ? `cleared ${EDITABLE_FIELDS[column].label}`
+      : `set ${EDITABLE_FIELDS[column].label} to ${value}`);
+  }
+  params.push(id);
+  const { rowCount } = await client.query(
+    `UPDATE quality_discrepancies SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $${params.length}`,
+    params
+  );
+  if (!rowCount) return false;
+  await addActivity(client, {
+    qdId: id, actor, action: changes.join(' · '), icon: 'pencil', tone: 'neutral', userId,
+  });
+  return true;
+}
+
 async function updateStatus(client, { id, status, actor, userId }) {
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   // Closing stamps closed_at; reopening clears it so age/resolution stay honest.
@@ -186,8 +238,8 @@ async function updateStatus(client, { id, status, actor, userId }) {
 }
 
 module.exports = {
-  STATUSES, OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS,
+  STATUSES, OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay,
   computeKpis, computeTrend, summarizeSuppliers,
-  listQDs, createQD, addActivity, addActivityOfKind, updateStatus,
+  listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
 };

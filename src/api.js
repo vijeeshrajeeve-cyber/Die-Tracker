@@ -612,6 +612,10 @@ export const qualityDiscrepanciesAPI = {
     create: async (payload) =>
         apiRequest('/quality-discrepancies', { method: 'POST', body: JSON.stringify(payload) }),
 
+    // fields: { outcome?, input_at_failure?, eta_date?, corrector? } — '' clears
+    update: async (id, fields) =>
+        apiRequest(`/quality-discrepancies/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+
     setStatus: async (id, status) =>
         apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 

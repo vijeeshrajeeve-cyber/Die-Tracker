@@ -136,6 +136,29 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PATCH /api/quality-discrepancies/:id  { outcome?, input_at_failure?, eta_date?, corrector? }
+// Editable detail fields. An empty string clears the field.
+router.patch('/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ok = await qd.updateFields(client, {
+      id: req.params.id, fields: req.body || {}, actor: actorFor(req), userId: req.user?.id,
+    });
+    await client.query('COMMIT');
+    if (!ok) return res.status(400).json({ error: 'No editable fields supplied, or QD not found' });
+    res.json({ message: 'Updated' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    // Validation failures are the caller's mistake — answer 400, not 500.
+    if (/^Invalid /.test(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Update QD fields error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // PATCH /api/quality-discrepancies/:id/status  { status }
 router.patch('/:id/status', async (req, res) => {
   const client = await pool.connect();

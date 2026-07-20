@@ -4,7 +4,7 @@ import {
   Calendar, Check, MessageSquare, Pencil, XCircle, Mail,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI } from '../../api';
-import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES } from '../../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES } from '../../utils/constants';
 
 // Activity rows store a lucide icon name; map the ones the app actually writes.
 const ACTIVITY_ICON = {
@@ -53,6 +53,8 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null); // column name being edited
+  const [draft, setDraft] = useState('');
   const fileRef = useRef(null);
 
   const bg = theme.cardBg || '#09090b';
@@ -161,19 +163,42 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
     ? `Opens a draft to ${supplier.contact_email}`
     : `No contact email on file for ${qd.supplier} — add one in Settings, or type it into the draft`;
 
+  // Three of the four facts are editable in place; Age is derived from the
+  // dates, so it stays read-only.
   const facts = [
-    { label: 'Outcome sought', value: qd.outcome || '—' },
-    { label: 'Input at failure', value: qd.input_at_failure || '—' },
-    { label: 'ETA from supplier', value: qd.eta_display || '—' },
+    { label: 'Outcome sought', value: qd.outcome || '—', field: 'outcome', type: 'select', current: qd.outcome || '' },
+    { label: 'Input at failure', value: qd.input_at_failure || '—', field: 'input_at_failure', type: 'text', current: qd.input_at_failure || '', placeholder: 'e.g. 3,417 kg' },
+    { label: 'ETA from supplier', value: qd.eta_display || '—', field: 'eta_date', type: 'date', current: qd.eta_date ? String(qd.eta_date).slice(0, 10) : '' },
     { label: 'Age', value: qd.closed_at ? 'Closed' : `${qd.age_days} days` },
   ];
+
+  const startEdit = (f) => { setEditing(f.field); setDraft(f.current); };
+  const cancelEdit = () => { setEditing(null); setDraft(''); };
+  const commitEdit = async (field) => {
+    const original = facts.find(f => f.field === field)?.current ?? '';
+    if (draft === original) return cancelEdit();
+    setBusy(true);
+    setError('');
+    try {
+      await qualityDiscrepanciesAPI.update(qd.id, { [field]: draft });
+      cancelEdit();
+      await onChanged();
+    } catch (e) {
+      setError(e.message || 'Could not save');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
       <style>{`@keyframes qdSlideIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-chip:hover { background: ${surfaceHover}; }
         .qd-action { transition: all .15s ease; }
-        .qd-action:hover { background: ${surfaceHover}; color: ${text}; }`}</style>
+        .qd-action:hover { background: ${surfaceHover}; color: ${text}; }
+        .qd-fact { transition: border-color .15s ease, background .15s ease; }
+        .qd-fact:hover { border-color: ${theme.accent || '#3B82F6'} !important; background: ${surfaceHover}; }
+        .qd-fact:hover .qd-fact-pen { opacity: 1 !important; }`}</style>
 
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 200 }} />
 
@@ -214,14 +239,54 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
           {error && <span style={{ fontSize: 12.5, color: '#FCA5A5' }}>{error}</span>}
         </div>
 
-        {/* Facts */}
+        {/* Facts — click an editable one to change it */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-          {facts.map(f => (
-            <div key={f.label} style={{ border: `1px solid ${border}`, borderRadius: 8, padding: '12px 14px' }}>
-              <div style={label}>{f.label}</div>
-              <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 4 }}>{f.value}</div>
-            </div>
-          ))}
+          {facts.map(f => {
+            const isEditing = editing === f.field;
+            const editable = !!f.field;
+            const fieldStyle = {
+              width: '100%', marginTop: 4, padding: '5px 8px', background: inputBg,
+              border: `1px solid ${theme.accent || '#3B82F6'}`, borderRadius: 6, color: text,
+              fontSize: 13, outline: 'none', boxSizing: 'border-box',
+            };
+            return (
+              <div key={f.label}
+                onClick={() => { if (editable && !isEditing) startEdit(f); }}
+                title={editable && !isEditing ? `Click to edit ${f.label.toLowerCase()}` : undefined}
+                className={editable && !isEditing ? 'qd-fact' : undefined}
+                style={{ border: `1px solid ${border}`, borderRadius: 8, padding: '12px 14px', cursor: editable && !isEditing ? 'pointer' : 'default', position: 'relative' }}>
+                <div style={{ ...label, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {f.label}
+                  {editable && !isEditing && <Pencil size={9} className="qd-fact-pen" style={{ opacity: 0, transition: 'opacity .15s ease' }} />}
+                </div>
+
+                {!isEditing && <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 4 }}>{f.value}</div>}
+
+                {isEditing && f.type === 'select' && (
+                  <select autoFocus value={draft} disabled={busy} style={{ ...fieldStyle, cursor: 'pointer' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => commitEdit(f.field)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}>
+                    <option value="">—</option>
+                    {QD_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                )}
+
+                {isEditing && f.type !== 'select' && (
+                  <input autoFocus type={f.type === 'date' ? 'date' : 'text'} value={draft} disabled={busy}
+                    placeholder={f.placeholder} style={fieldStyle}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => commitEdit(f.field)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitEdit(f.field);
+                      if (e.key === 'Escape') cancelEdit();
+                    }} />
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Quality issue + attachments */}

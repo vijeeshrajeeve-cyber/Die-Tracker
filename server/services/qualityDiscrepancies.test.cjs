@@ -127,6 +127,63 @@ test('addActivityOfKind rejects an unknown kind', async () => {
   );
 });
 
+test('updateFields writes only whitelisted columns', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateFields(client, {
+    id: 4,
+    fields: { outcome: 'FOC replacement', input_at_failure: '3,417 kg', status: 'Closed', qd_no: 'HACK' },
+    actor: 'Sijith',
+  });
+  const sql = calls[0].sql;
+  assert.match(sql, /outcome = /);
+  assert.match(sql, /input_at_failure = /);
+  // status and qd_no are not editable through this path
+  assert.doesNotMatch(sql, /status = /);
+  assert.doesNotMatch(sql, /qd_no = /);
+});
+
+test('updateFields validates the outcome against the agreed list', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { outcome: 'Free money' }, actor: 'x' }),
+    /Invalid outcome: Free money/
+  );
+});
+
+test('updateFields validates the ETA date format', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { eta_date: '29-08-2026' }, actor: 'x' }),
+    /Invalid ETA date/
+  );
+});
+
+test('updateFields clears a field when given an empty value', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateFields(client, { id: 4, fields: { eta_date: '' }, actor: 'x' });
+  assert.equal(calls[0].params[0], null); // stored as NULL, not an empty string
+});
+
+test('updateFields logs what changed on the timeline', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateFields(client, { id: 4, fields: { eta_date: '2026-08-29' }, actor: 'Sijith' });
+  const activity = calls.find(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql));
+  assert.ok(activity, 'expected an activity row');
+  assert.equal(activity.params[1], 'Sijith');
+  assert.equal(activity.params[2], 'set ETA from supplier to 2026-08-29');
+});
+
+test('updateFields is a no-op when nothing editable was sent', async () => {
+  let called = false;
+  const client = { query: async () => { called = true; return { rowCount: 1 }; } };
+  const ok = await q.updateFields(client, { id: 4, fields: { nonsense: 'x' }, actor: 'y' });
+  assert.equal(ok, false);
+  assert.equal(called, false);
+});
+
 test('updateStatus rejects a status outside the agreed vocabulary', async () => {
   const client = { query: async () => ({ rowCount: 1 }) };
   await assert.rejects(
