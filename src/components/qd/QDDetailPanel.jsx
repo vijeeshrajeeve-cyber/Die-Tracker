@@ -166,6 +166,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
   // Three of the four facts are editable in place; Age is derived from the
   // dates, so it stays read-only.
   const facts = [
+    { label: 'Corrector', value: qd.corrector || '—', field: 'corrector', type: 'text', current: qd.corrector || '', placeholder: 'e.g. Sijith' },
     { label: 'Outcome sought', value: qd.outcome || '—', field: 'outcome', type: 'select', current: qd.outcome || '' },
     { label: 'Input at failure', value: qd.input_at_failure || '—', field: 'input_at_failure', type: 'text', current: qd.input_at_failure || '', placeholder: 'e.g. 3,417 kg' },
     { label: 'ETA from supplier', value: qd.eta_display || '—', field: 'eta_date', type: 'date', current: qd.eta_date ? String(qd.eta_date).slice(0, 10) : '' },
@@ -240,7 +241,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
         </div>
 
         {/* Facts — click an editable one to change it */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 12, marginBottom: 20 }}>
           {facts.map(f => {
             const isEditing = editing === f.field;
             const editable = !!f.field;

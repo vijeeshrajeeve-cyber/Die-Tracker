@@ -97,6 +97,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       const s = search.toLowerCase();
       const hit = String(q.qd_no).toLowerCase().includes(s)
         || String(q.die_no).toLowerCase().includes(s)
+        || String(q.corrector || '').toLowerCase().includes(s)
         || String(q.issue_summary || '').toLowerCase().includes(s);
       if (!hit) return false;
     }
@@ -227,7 +228,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           <div style={{ ...panel, padding: '14px 16px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 240, position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={16} style={{ position: 'absolute', left: 13, color: dim, pointerEvents: 'none' }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, or issue…"
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, corrector, or issue…"
                 style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
             </div>
             <select value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>
@@ -254,7 +255,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['QD No', 'Die No', 'Plant', 'Supplier', 'Quality issue', 'Status', 'Outcome', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
+                  {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -276,6 +277,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
                         </span>
                       </td>
                       <td style={{ ...td, fontSize: 13, color: muted }}>{q.supplier}</td>
+                      <td style={{ ...td, fontSize: 13, color: q.corrector ? muted : dim, whiteSpace: 'nowrap' }}>{q.corrector || '—'}</td>
                       <td style={{ ...td, maxWidth: 320 }}>
                         <span style={{ fontSize: 13, color: muted, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.4 }}>{q.issue_summary}</span>
                       </td>
