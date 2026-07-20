@@ -21,6 +21,8 @@ const ACTIVITY_ICON = {
 };
 
 const isPdf = (name) => /\.pdf$/i.test(String(name || ''));
+const dateVal = (v) => (v ? String(v).slice(0, 10) : '');
+const dateOnly = (v) => (v ? String(v).slice(0, 10) : '—');
 
 const esc = (v) => String(v == null || v === '' ? '—' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -175,7 +177,24 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
     { label: 'Outcome sought', value: qd.outcome || '—', field: 'outcome', type: 'select', current: qd.outcome || '' },
     { label: 'Input at failure', value: qd.input_at_failure || '—', field: 'input_at_failure', type: 'text', current: qd.input_at_failure || '', placeholder: 'e.g. 3,417 kg' },
     { label: 'ETA from supplier', value: qd.eta_display || '—', field: 'eta_date', type: 'date', current: qd.eta_date ? String(qd.eta_date).slice(0, 10) : '' },
-    { label: 'Age', value: qd.closed_at ? 'Closed' : `${qd.age_days} days` },
+    {
+      label: 'Sent to purchase',
+      value: dateOnly(qd.sent_to_purchase_date),
+      field: 'sent_to_purchase_date', type: 'date',
+      current: dateVal(qd.sent_to_purchase_date),
+      hint: qd.handoff?.toPurchase === null || qd.handoff?.toPurchase === undefined
+        ? null : `${qd.handoff.toPurchase}d after raising`,
+    },
+    {
+      label: 'Sent to supplier',
+      value: dateOnly(qd.sent_to_supplier_date),
+      field: 'sent_to_supplier_date', type: 'date',
+      current: dateVal(qd.sent_to_supplier_date),
+      hint: qd.handoff?.purchaseToSupplier === null || qd.handoff?.purchaseToSupplier === undefined
+        ? (qd.handoff?.toSupplier == null ? null : `${qd.handoff.toSupplier}d after raising`)
+        : `${qd.handoff.purchaseToSupplier}d after purchase`,
+    },
+    { label: 'Age', value: qd.closed_at ? 'Settled' : `${qd.age_days} days` },
   ];
 
   const startEdit = (f) => { setEditing(f.field); setDraft(f.current); };
@@ -267,6 +286,9 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
                 </div>
 
                 {!isEditing && <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 4 }}>{f.value}</div>}
+                {!isEditing && f.hint && (
+                  <div style={{ fontSize: 10.5, color: dim, marginTop: 2 }}>{f.hint}</div>
+                )}
 
                 {isEditing && f.type === 'select' && (
                   <select autoFocus value={draft} disabled={busy} style={{ ...fieldStyle, cursor: 'pointer' }}

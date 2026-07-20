@@ -38,6 +38,21 @@ const PIPELINE_STAGES = [
 
 const ageColor = (age, muted) => (age > 40 ? '#FCA5A5' : age > 20 ? '#FBBF24' : muted);
 
+// A hand-off cell: the date, with the delay it represents beneath it. A slow
+// hand-off is the point of these columns, so tint it once it drags.
+const Handoff = ({ date, days, mono, muted, dim }) => {
+  if (!date) return <span style={{ fontSize: 12.5, color: dim }}>—</span>;
+  const late = days != null && days > 7;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontFamily: mono, fontSize: 12.5, color: muted, whiteSpace: 'nowrap' }}>{String(date).slice(0, 10)}</span>
+      {days != null && (
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: late ? '#FBBF24' : dim }}>+{days}d</span>
+      )}
+    </div>
+  );
+};
+
 export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, suppliers: [], years: [] });
@@ -154,11 +169,16 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   ] : [];
 
   const exportCsv = () => {
-    const header = ['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome', 'Raised', 'Age (days)'];
+    const header = ['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
+      'Raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const d = (v) => (v ? String(v).slice(0, 10) : '');
     const lines = filtered.map(q => [
       q.qd_no, q.die_no, q.plant, q.supplier, q.corrector, q.issue_summary,
-      q.status, q.outcome, q.raised_date, q.age_days,
+      q.status, q.outcome, d(q.raised_date),
+      d(q.sent_to_purchase_date), q.handoff?.toPurchase ?? '',
+      d(q.sent_to_supplier_date), q.handoff?.purchaseToSupplier ?? '',
+      d(q.eta_date), d(q.closed_at), q.age_days,
     ].map(esc).join(','));
     const csv = [header.map(esc).join(','), ...lines].join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -267,10 +287,14 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
           {/* Register table */}
           <div style={{ ...panel, borderRadius: 10, overflow: 'hidden' }}>
+            {/* 11 columns. No min-width on the table: the app shell's flex item
+                is min-width:auto, so a forced minimum cannot shrink and would
+                scroll the whole page sideways instead of just this card. */}
+            <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
+                  {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome', 'To purchase', 'To supplier', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -304,6 +328,8 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
                           <OIcon size={14} style={{ color: dim }} />{q.outcome || '—'}
                         </span>
                       </td>
+                      <td style={td}><Handoff date={q.sent_to_purchase_date} days={q.handoff?.toPurchase} mono={mono} muted={muted} dim={dim} /></td>
+                      <td style={td}><Handoff date={q.sent_to_supplier_date} days={q.handoff?.purchaseToSupplier ?? q.handoff?.toSupplier} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}>
                         <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: ageColor(q.age_days, muted) }}>{q.age_days}d</span>
                       </td>
@@ -312,6 +338,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
                 })}
               </tbody>
             </table>
+            </div>
             {!loading && filtered.length === 0 && (
               <div style={{ padding: '56px 16px', textAlign: 'center' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 52, height: 52, borderRadius: 12, background: surfaceHover, color: dim, marginBottom: 14 }}>

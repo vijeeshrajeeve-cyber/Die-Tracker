@@ -348,6 +348,8 @@ CREATE TABLE IF NOT EXISTS quality_discrepancies (
     issue_detail     TEXT,
     eta_date         DATE,
     input_at_failure TEXT,
+    sent_to_purchase_date DATE,
+    sent_to_supplier_date DATE,
     closed_at        DATE,
     created_by       INTEGER REFERENCES users(id),
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

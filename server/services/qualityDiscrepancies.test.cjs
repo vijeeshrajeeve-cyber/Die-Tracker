@@ -106,6 +106,60 @@ test('computeKpis derives every tile from real rows, with no invented numbers', 
   assert.equal(k.avgResolution, 31);
 });
 
+test('a rejected QD is settled, so it counts towards avg resolution', () => {
+  const rows = [
+    { status: 'Closed',   raised_date: '2026-01-01', closed_at: '2026-01-31' }, // 30
+    { status: 'Rejected', raised_date: '2026-02-01', closed_at: '2026-02-11' }, // 10
+    { status: 'Open',     raised_date: '2026-07-01', closed_at: null },         // excluded
+  ];
+  const k = q.computeKpis(rows, NOW);
+  assert.equal(k.avgResolution, 20);   // (30 + 10) / 2 — the rejection counts
+  assert.equal(k.openCount, 1);        // …but a rejection is still not open
+  assert.equal(k.closedCount, 1);      // …and it is not a "Closed" QD either
+});
+
+test('SETTLED_STATUSES are the ones that conclude a QD', () => {
+  assert.deepEqual(q.SETTLED_STATUSES, ['Closed', 'Rejected']);
+});
+
+test('updateStatus stamps closed_at for Rejected as well as Closed', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateStatus(client, { id: 7, status: 'Rejected', reason: 'HOD refused the claim', actor: 'X' });
+  assert.match(calls[0].sql, /IN \('Closed', 'Rejected'\)/);
+  // an accepted FOC is still in flight, so it must not appear here
+  assert.doesNotMatch(calls[0].sql, /FOC Accepted/);
+});
+
+test('handoffDelays measures raised→purchase and purchase→supplier', () => {
+  assert.deepEqual(
+    q.handoffDelays({ raised_date: '2026-01-01', sent_to_purchase_date: '2026-01-05', sent_to_supplier_date: '2026-01-12' }),
+    { toPurchase: 4, purchaseToSupplier: 7, toSupplier: 11 }
+  );
+  // missing dates give null rather than a misleading zero
+  assert.deepEqual(
+    q.handoffDelays({ raised_date: '2026-01-01', sent_to_purchase_date: null, sent_to_supplier_date: null }),
+    { toPurchase: null, purchaseToSupplier: null, toSupplier: null }
+  );
+  // sent straight to the supplier without a recorded purchase hand-off
+  assert.deepEqual(
+    q.handoffDelays({ raised_date: '2026-01-01', sent_to_purchase_date: null, sent_to_supplier_date: '2026-01-09' }),
+    { toPurchase: null, purchaseToSupplier: null, toSupplier: 8 }
+  );
+});
+
+test('the hand-off dates are editable and validated as dates', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { sent_to_purchase_date: '05-01-2026' }, actor: 'x' }),
+    /Invalid Sent to purchase/
+  );
+  const calls = [];
+  const ok = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateFields(ok, { id: 1, fields: { sent_to_supplier_date: '2026-01-12' }, actor: 'x' });
+  assert.match(calls[0].sql, /sent_to_supplier_date = /);
+});
+
 test('computeKpis reports the total and the closed count', () => {
   const rows = [
     { status: 'Open',         raised_date: '2026-07-01', closed_at: null },
@@ -296,13 +350,15 @@ test('updateStatus requires an ETA when accepting a FOC', async () => {
   );
 });
 
-test('updateStatus stamps closed_at only for Closed, not for FOC Accepted', async () => {
+test('updateStatus stamps closed_at for settled statuses only', async () => {
   const calls = [];
   const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
   await q.updateStatus(client, { id: 7, status: 'Closed', reason: 'corrected in-house', actor: 'Sijith' });
-  // a FOC that is still awaiting delivery is in flight, not resolved
-  assert.match(calls[0].sql, /WHEN \$1 = 'Closed'/);
+  assert.match(calls[0].sql, /IN \('Closed', 'Rejected'\)/);
+  // a FOC that is still awaiting delivery is in flight, not settled
   assert.doesNotMatch(calls[0].sql, /FOC Accepted/);
+  // nor is Reference, which was never a claim to resolve
+  assert.doesNotMatch(calls[0].sql, /Reference/);
 });
 
 test('updateStatus records the reason on the timeline', async () => {

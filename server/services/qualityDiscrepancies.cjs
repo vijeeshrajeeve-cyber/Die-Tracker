@@ -9,6 +9,13 @@ const STATUSES = ['Open', 'Sent to Supplier', 'FOC Accepted', 'Rejected', 'Refer
 // Derived from STATUSES so any status added later counts as open by default.
 const NOT_OPEN_STATUSES = ['Closed', 'Rejected', 'Reference'];
 const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
+
+// Statuses that conclude a QD and so stamp the settled date (closed_at).
+// A rejection ends the claim just as a closure does, so it counts towards
+// average resolution — otherwise rejections would sit in a blind spot,
+// neither open nor resolved. Reference is excluded: it is logged for
+// information and was never a claim to resolve.
+const SETTLED_STATUSES = ['Closed', 'Rejected'];
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
 // Timeline entry kinds. The icon/tone are decided here rather than by the
@@ -51,6 +58,21 @@ function resolutionDays(row) {
   const closed = toDate(row.closed_at);
   if (!raised || !closed) return null;
   return daysBetween(raised, closed);
+}
+
+// How long each hand-off took. Null (never 0) when a date is missing, so an
+// unrecorded step never looks like a same-day hand-off.
+function handoffDelays(row) {
+  const gap = (a, b) => {
+    const from = toDate(a);
+    const to = toDate(b);
+    return from && to ? daysBetween(from, to) : null;
+  };
+  return {
+    toPurchase: gap(row.raised_date, row.sent_to_purchase_date),
+    purchaseToSupplier: gap(row.sent_to_purchase_date, row.sent_to_supplier_date),
+    toSupplier: gap(row.raised_date, row.sent_to_supplier_date),
+  };
 }
 
 function etaDisplay(row, now = new Date()) {
@@ -187,6 +209,7 @@ async function listQDs(client) {
     age_days: ageDays(r, now),
     resolution_days: resolutionDays(r),
     eta_display: etaDisplay(r, now),
+    handoff: handoffDelays(r),
     files: files.filter((f) => f.qd_id === r.id),
     activity: activity.filter((a) => a.qd_id === r.id),
   }));
@@ -232,7 +255,9 @@ async function createQD(client, input) {
 const EDITABLE_FIELDS = {
   outcome: { label: 'Outcome sought' },
   input_at_failure: { label: 'Input at failure' },
-  eta_date: { label: 'ETA from supplier' },
+  eta_date: { label: 'ETA from supplier', isDate: true },
+  sent_to_purchase_date: { label: 'Sent to purchase', isDate: true },
+  sent_to_supplier_date: { label: 'Sent to supplier', isDate: true },
   corrector: { label: 'Corrector' },
 };
 
@@ -244,8 +269,9 @@ function normalizeField(column, raw) {
   if (column === 'outcome' && !OUTCOMES.includes(value)) {
     throw new Error(`Invalid outcome: ${value}`);
   }
-  if (column === 'eta_date' && !ISO_DATE.test(value)) {
-    throw new Error(`Invalid ETA date: ${value} (expected YYYY-MM-DD)`);
+  if (EDITABLE_FIELDS[column]?.isDate && !ISO_DATE.test(value)) {
+    const what = column === 'eta_date' ? 'ETA date' : EDITABLE_FIELDS[column].label;
+    throw new Error(`Invalid ${what}: ${value} (expected YYYY-MM-DD)`);
   }
   return value;
 }
@@ -312,7 +338,7 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
   const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
         SET status = $1,
-            closed_at = CASE WHEN $1 = 'Closed' THEN COALESCE(closed_at, CURRENT_DATE) ELSE NULL END${etaSql},
+            closed_at = CASE WHEN $1 IN ('Closed', 'Rejected') THEN COALESCE(closed_at, CURRENT_DATE) ELSE NULL END${etaSql},
             updated_at = CURRENT_TIMESTAMP
       WHERE id = $2`,
     params
@@ -331,8 +357,8 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
 }
 
 module.exports = {
-  STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
-  mapSheetStatus, ageDays, resolutionDays, etaDisplay,
+  STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
+  mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
   deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,

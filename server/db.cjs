@@ -422,6 +422,17 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_qd_supplier ON quality_discrepancies (supplier);
       CREATE INDEX IF NOT EXISTS idx_qd_status   ON quality_discrepancies (status);
 
+      -- Hand-off dates, so delays getting a QD to Purchase and on to the
+      -- supplier can be measured separately from the supplier's own response.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='sent_to_purchase_date') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN sent_to_purchase_date DATE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='sent_to_supplier_date') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN sent_to_supplier_date DATE;
+        END IF;
+      END $$;
+
       CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
         id SERIAL PRIMARY KEY,
         qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
