@@ -231,7 +231,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
 
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 200 }} />
 
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 720, maxWidth: '92vw', background: bg, borderLeft: `1px solid ${border}`, zIndex: 201, overflowY: 'auto', padding: '28px 32px', animation: 'qdSlideIn 0.2s ease-out', color: text, boxSizing: 'border-box' }}>
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 840, maxWidth: '92vw', background: bg, borderLeft: `1px solid ${border}`, zIndex: 201, overflowY: 'auto', padding: '28px 32px', animation: 'qdSlideIn 0.2s ease-out', color: text, boxSizing: 'border-box' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 12 }}>
@@ -269,7 +269,9 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
         </div>
 
         {/* Facts — click an editable one to change it */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {/* Wide enough for the date picker (trigger + calendar button) to sit
+            inside the card instead of spilling past its border. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
           {facts.map(f => {
             const isEditing = editing === f.field;
             const editable = !!f.field;
