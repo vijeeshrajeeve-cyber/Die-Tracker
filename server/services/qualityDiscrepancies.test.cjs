@@ -187,27 +187,61 @@ test('updateFields is a no-op when nothing editable was sent', async () => {
 test('updateStatus rejects a status outside the agreed vocabulary', async () => {
   const client = { query: async () => ({ rowCount: 1 }) };
   await assert.rejects(
-    () => q.updateStatus(client, { id: 1, status: 'Bogus', actor: 'Tester' }),
+    () => q.updateStatus(client, { id: 1, status: 'Bogus', reason: 'r', actor: 'Tester' }),
     /Invalid status: Bogus/
   );
 });
 
-test('updateStatus stamps closed_at when closing and logs the change', async () => {
+test('updateStatus requires a reason for every status change', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateStatus(client, { id: 1, status: 'Rejected', reason: '   ', actor: 'X' }),
+    /Reason is required/
+  );
+});
+
+test('updateStatus requires an ETA when accepting a FOC', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateStatus(client, { id: 1, status: 'FOC Accepted', reason: 'supplier agreed', actor: 'X' }),
+    /ETA is required/
+  );
+  await assert.rejects(
+    () => q.updateStatus(client, { id: 1, status: 'FOC Accepted', reason: 'supplier agreed', etaDate: '02-09-2026', actor: 'X' }),
+    /Invalid ETA date/
+  );
+});
+
+test('updateStatus stamps closed_at only for Closed, not for FOC Accepted', async () => {
   const calls = [];
-  const client = {
-    query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; },
-  };
-  const ok = await q.updateStatus(client, { id: 7, status: 'Closed', actor: 'Sijith', userId: 3 });
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateStatus(client, { id: 7, status: 'Closed', reason: 'corrected in-house', actor: 'Sijith' });
+  // a FOC that is still awaiting delivery is in flight, not resolved
+  assert.match(calls[0].sql, /WHEN \$1 = 'Closed'/);
+  assert.doesNotMatch(calls[0].sql, /FOC Accepted/);
+});
+
+test('updateStatus records the reason on the timeline', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  const ok = await q.updateStatus(client, { id: 7, status: 'Closed', reason: 'corrected in-house, ran 50 mT', actor: 'Sijith', userId: 3 });
   assert.equal(ok, true);
-  assert.match(calls[0].sql, /UPDATE quality_discrepancies/);
-  assert.equal(calls[0].params[0], 'Closed');
-  // the activity row records who changed it and to what
-  assert.match(calls[1].sql, /INSERT INTO quality_discrepancy_activity/);
-  assert.equal(calls[1].params[1], 'Sijith');
-  assert.equal(calls[1].params[2], 'changed status to Closed');
+  const act = calls.find(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql));
+  assert.equal(act.params[1], 'Sijith');
+  assert.equal(act.params[2], 'changed status to Closed — corrected in-house, ran 50 mT');
+});
+
+test('updateStatus saves the ETA and notes it on the timeline for a FOC', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateStatus(client, { id: 7, status: 'FOC Accepted', reason: 'supplier agreed to replace', etaDate: '2026-09-02', actor: 'Kailash' });
+  assert.match(calls[0].sql, /eta_date = /);
+  assert.ok(calls[0].params.includes('2026-09-02'));
+  const act = calls.find(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql));
+  assert.equal(act.params[2], 'changed status to FOC Accepted — supplier agreed to replace · ETA 2026-09-02');
 });
 
 test('updateStatus returns false when the QD does not exist', async () => {
   const client = { query: async () => ({ rowCount: 0 }) };
-  assert.equal(await q.updateStatus(client, { id: 999, status: 'Open', actor: 'X' }), false);
+  assert.equal(await q.updateStatus(client, { id: 999, status: 'Open', reason: 'r', actor: 'X' }), false);
 });

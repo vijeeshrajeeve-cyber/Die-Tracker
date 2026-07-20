@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES } from '../../utils/constants';
+import StatusChangeModal from './StatusChangeModal';
 
 // Activity rows store a lucide icon name; map the ones the app actually writes.
 const ACTIVITY_ICON = {
@@ -55,6 +56,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null); // column name being edited
   const [draft, setDraft] = useState('');
+  const [pendingStatus, setPendingStatus] = useState(null);
   const fileRef = useRef(null);
 
   const bg = theme.cardBg || '#09090b';
@@ -85,9 +87,12 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
     }
   };
 
+  // Status changes go through a modal so the reason (and the ETA, for a FOC)
+  // is captured and recorded rather than the change happening silently.
   const changeStatus = (e) => {
     const value = e.target.value;
-    run(() => qualityDiscrepanciesAPI.setStatus(qd.id, value));
+    if (value === qd.status) return;
+    setPendingStatus(value);
   };
 
   const postNote = () => {
@@ -233,7 +238,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
             style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Bell size={15} /> Send reminder
           </button>
-          <select value={qd.status} onChange={changeStatus} disabled={busy}
+          <select value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
             style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
             {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
@@ -355,6 +360,16 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
           </div>
         </div>
       </div>
+
+      {pendingStatus && (
+        <StatusChangeModal
+          qd={qd}
+          nextStatus={pendingStatus}
+          theme={theme}
+          onClose={() => setPendingStatus(null)}
+          onDone={onChanged}
+        />
+      )}
     </>
   );
 }

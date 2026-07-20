@@ -616,8 +616,9 @@ export const qualityDiscrepanciesAPI = {
     update: async (id, fields) =>
         apiRequest(`/quality-discrepancies/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
 
-    setStatus: async (id, status) =>
-        apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    // reason is mandatory; etaDate is mandatory when status is 'FOC Accepted'
+    setStatus: async (id, status, reason, etaDate) =>
+        apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason, etaDate }) }),
 
     // kind: 'note' (default) | 'email' | 'reminder' — the server decides the
     // timeline icon/tone from the kind.

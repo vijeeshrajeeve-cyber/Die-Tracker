@@ -160,21 +160,24 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// PATCH /api/quality-discrepancies/:id/status  { status }
+// PATCH /api/quality-discrepancies/:id/status  { status, reason, etaDate? }
+// A reason is mandatory; an ETA is mandatory when moving to FOC Accepted.
 router.patch('/:id/status', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { status } = req.body;
+    const { status, reason, etaDate } = req.body;
     if (!qd.STATUSES.includes(status)) { client.release(); return res.status(400).json({ error: 'Invalid status' }); }
     await client.query('BEGIN');
     const ok = await qd.updateStatus(client, {
-      id: req.params.id, status, actor: actorFor(req), userId: req.user?.id,
+      id: req.params.id, status, reason, etaDate, actor: actorFor(req), userId: req.user?.id,
     });
     await client.query('COMMIT');
     if (!ok) return res.status(404).json({ error: 'QD not found' });
     res.json({ message: 'Status updated' });
   } catch (e) {
     await client.query('ROLLBACK');
+    // Missing reason / missing or malformed ETA are caller mistakes.
+    if (/^(Reason|ETA|Invalid) /.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Update QD status error:', e);
     res.status(500).json({ error: 'Internal server error' });
   } finally {

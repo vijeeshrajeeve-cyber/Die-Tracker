@@ -221,19 +221,55 @@ async function updateFields(client, { id, fields, actor, userId }) {
   return true;
 }
 
-async function updateStatus(client, { id, status, actor, userId }) {
+// Tone the timeline dot by where the status lands, so the history reads at a glance.
+const STATUS_TONE = {
+  'FOC Accepted': 'good',
+  'Closed': 'good',
+  'Rejected': 'bad',
+  'Sent to Supplier': 'send',
+};
+
+async function updateStatus(client, { id, status, reason, etaDate, actor, userId }) {
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
-  // Closing stamps closed_at; reopening clears it so age/resolution stay honest.
+  const why = String(reason == null ? '' : reason).trim();
+  if (!why) throw new Error('Reason is required for a status change');
+
+  // Accepting a FOC means the supplier committed to a replacement — we need to
+  // know when it lands, so the ETA is mandatory here.
+  const eta = String(etaDate == null ? '' : etaDate).trim();
+  if (status === 'FOC Accepted' && !eta) {
+    throw new Error('ETA is required when the status is FOC Accepted');
+  }
+  if (eta && !ISO_DATE.test(eta)) {
+    throw new Error(`Invalid ETA date: ${eta} (expected YYYY-MM-DD)`);
+  }
+
+  // Only 'Closed' stamps closed_at. An accepted FOC is still in flight —
+  // treating it as closed would zero the age and skew avg resolution.
+  const params = [status, id];
+  let etaSql = '';
+  if (eta) {
+    params.push(eta);
+    etaSql = `, eta_date = $${params.length}`;
+  }
   const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
         SET status = $1,
-            closed_at = CASE WHEN $1 IN ('Closed', 'FOC Accepted') THEN COALESCE(closed_at, CURRENT_DATE) ELSE NULL END,
+            closed_at = CASE WHEN $1 = 'Closed' THEN COALESCE(closed_at, CURRENT_DATE) ELSE NULL END${etaSql},
             updated_at = CURRENT_TIMESTAMP
       WHERE id = $2`,
-    [status, id]
+    params
   );
   if (!rowCount) return false;
-  await addActivity(client, { qdId: id, actor, action: `changed status to ${status}`, icon: 'pencil', tone: 'neutral', userId });
+
+  await addActivity(client, {
+    qdId: id,
+    actor,
+    action: `changed status to ${status} — ${why}${eta ? ` · ETA ${eta}` : ''}`,
+    icon: 'pencil',
+    tone: STATUS_TONE[status] || 'neutral',
+    userId,
+  });
   return true;
 }
 
