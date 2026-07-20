@@ -58,18 +58,25 @@ async function moveIntoPlace(src, dest) {
 
 const actorFor = (req) => req.user?.username || 'You';
 
-// Next QD number for the current year: 2026-01, 2026-02, …
-async function nextQdNo(client) {
+// QD numbers run YYYY + supplier code + per-supplier sequence, e.g. 2026PD-01.
+// The code comes from the supplier master so collisions (PHOENIX/PHME) stay
+// resolved in one place; we only fall back to deriving it for suppliers that
+// have no row in the master yet.
+async function nextQdNo(client, supplierName) {
   const year = new Date().getFullYear();
+  const { rows: sup } = await client.query(
+    `SELECT name, qd_code FROM suppliers WHERE UPPER(name) = UPPER($1) LIMIT 1`,
+    [supplierName]
+  );
+  const code = sup[0]?.qd_code || qd.deriveQdCode(sup[0]?.name || supplierName);
+  if (!code) {
+    throw new Error(`No QD code for supplier "${supplierName}" — set one in Settings → Suppliers`);
+  }
   const { rows } = await client.query(
     `SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE $1`,
-    [`${year}-%`]
+    [`${year}${code}-%`]
   );
-  const max = rows.reduce((acc, r) => {
-    const n = parseInt(String(r.qd_no).split('-')[1], 10);
-    return Number.isFinite(n) && n > acc ? n : acc;
-  }, 0);
-  return `${year}-${String(max + 1).padStart(2, '0')}`;
+  return qd.formatQdNo(year, code, qd.nextSequence(rows.map(r => r.qd_no), year, code));
 }
 
 // GET /api/quality-discrepancies?year=2026 → rows + derived KPIs + supplier rollup
@@ -107,7 +114,7 @@ router.post('/', async (req, res) => {
     const summary = text.split('\n')[0].slice(0, 160);
 
     await client.query('BEGIN');
-    const qdNo = await nextQdNo(client);
+    const qdNo = await nextQdNo(client, String(supplier).trim());
     const id = await qd.createQD(client, {
       qdNo,
       dieNo: String(dieNo).trim(),
@@ -135,6 +142,7 @@ router.post('/', async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK');
     if (e.code === '23505') return res.status(409).json({ error: 'QD number already exists — please retry' });
+    if (/^No QD code/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Create QD error:', e);
     res.status(500).json({ error: 'Internal server error' });
   } finally {

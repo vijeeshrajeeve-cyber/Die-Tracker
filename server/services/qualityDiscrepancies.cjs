@@ -76,6 +76,34 @@ function computeKpis(rows, now = new Date()) {
   };
 }
 
+// ── QD numbering: YYYY + supplier code + '-' + per-supplier sequence ────────
+// e.g. the first PDTMC QD of 2026 is 2026PD-01, the second 2026PD-02.
+
+// Default code for a supplier: its first two letters. Suppliers whose codes
+// would collide (PHOENIX/PHME) carry an explicit qd_code instead.
+function deriveQdCode(name) {
+  const letters = String(name || '').replace(/[^A-Za-z]/g, '');
+  return letters.length >= 2 ? letters.slice(0, 2).toUpperCase() : null;
+}
+
+function formatQdNo(year, code, sequence) {
+  return `${year}${String(code).toUpperCase()}-${String(sequence).padStart(2, '0')}`;
+}
+
+// Continue from the highest number already issued in this supplier-year series.
+// Counting rows instead would re-issue a number after one was deleted.
+function nextSequence(existingNumbers, year, code) {
+  const prefix = `${year}${String(code).toUpperCase()}-`;
+  let max = 0;
+  for (const raw of existingNumbers || []) {
+    const no = String(raw || '').toUpperCase();
+    if (!no.startsWith(prefix)) continue;
+    const n = parseInt(no.slice(prefix.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
 const yearOf = (row) => {
   const d = toDate(row.raised_date);
   return d ? d.getUTCFullYear() : null;
@@ -306,5 +334,6 @@ module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
+  deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
 };

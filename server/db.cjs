@@ -373,6 +373,30 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- Supplier short code used to build QD numbers (e.g. 2026PD-01).
+      -- Defaults to the first two letters, but must be unique, so suppliers
+      -- that would collide (PHOENIX/PHME, COMES/COMPES) get an explicit code.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppliers' AND column_name='qd_code') THEN
+          ALTER TABLE suppliers ADD COLUMN qd_code TEXT;
+          -- Known exceptions first, so the derived pass cannot claim their code.
+          UPDATE suppliers SET qd_code = 'PM' WHERE UPPER(name) = 'PHME';
+          UPDATE suppliers SET qd_code = 'CP' WHERE UPPER(name) = 'COMPES';
+          -- Then the natural first-two-letters for everyone still unset,
+          -- skipping any that would duplicate a code already taken.
+          UPDATE suppliers s SET qd_code = UPPER(LEFT(regexp_replace(s.name, '[^A-Za-z]', '', 'g'), 2))
+            WHERE s.qd_code IS NULL
+              AND LENGTH(regexp_replace(s.name, '[^A-Za-z]', '', 'g')) >= 2
+              AND NOT EXISTS (
+                SELECT 1 FROM suppliers o
+                 WHERE o.id <> s.id
+                   AND UPPER(o.qd_code) = UPPER(LEFT(regexp_replace(s.name, '[^A-Za-z]', '', 'g'), 2))
+              );
+        END IF;
+      END $$;
+      CREATE UNIQUE INDEX IF NOT EXISTS uniq_supplier_qd_code
+        ON suppliers (UPPER(qd_code)) WHERE qd_code IS NOT NULL;
+
       -- ── Quality Discrepancies (QD Tracker) ──────────────────────────────
       CREATE TABLE IF NOT EXISTS quality_discrepancies (
         id SERIAL PRIMARY KEY,

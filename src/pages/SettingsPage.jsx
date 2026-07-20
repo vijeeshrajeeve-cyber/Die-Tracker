@@ -158,6 +158,7 @@ export default function SettingsPage({
                       <thead>
                         <tr>
                           <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Name</th>
+                          <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }} title="Two letters used to build QD numbers, e.g. 2026PD-01">QD Code</th>
                           <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Region</th>
                           <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Shipment</th>
                           <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Contact Email</th>
@@ -168,6 +169,22 @@ export default function SettingsPage({
                         {suppliers.map(supplier => (
                           <tr key={supplier.id}>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, fontWeight: 500, color: theme.text }}>{supplier.name}</td>
+                            <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                              <input
+                                type="text"
+                                maxLength={2}
+                                defaultValue={supplier.qd_code || ''}
+                                placeholder="—"
+                                title="Two letters used to build QD numbers for this supplier, e.g. PD gives 2026PD-01. Must be unique."
+                                onBlur={async (e) => {
+                                  const value = e.target.value.trim().toUpperCase();
+                                  if (value === (supplier.qd_code || '')) return;
+                                  try { await suppliersAPI.update(supplier.id, { qd_code: value }); fetchSuppliers(); }
+                                  catch (error) { alert('Failed to update: ' + error.message); e.target.value = supplier.qd_code || ''; }
+                                }}
+                                style={{ width: '52px', padding: '6px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', textTransform: 'uppercase', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}
+                              />
+                            </td>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
                               <select
                                 value={supplier.region || ''}
@@ -212,7 +229,7 @@ export default function SettingsPage({
                             </td>
                           </tr>
                         ))}
-                        {suppliers.length === 0 && <tr><td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
+                        {suppliers.length === 0 && <tr><td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: theme.textDim }}>No suppliers configured</td></tr>}
                       </tbody>
                     </table>
                   </div>

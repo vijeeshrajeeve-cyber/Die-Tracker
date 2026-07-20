@@ -28,6 +28,39 @@ test('an accepted FOC still awaiting delivery counts as open', () => {
   assert.equal(q.computeKpis(rows, NOW).openCount, 1);
 });
 
+test('deriveQdCode takes the first two letters, ignoring non-letters', () => {
+  assert.equal(q.deriveQdCode('PDTMC'), 'PD');
+  assert.equal(q.deriveQdCode('Ekstek'), 'EK');
+  assert.equal(q.deriveQdCode('  wefa '), 'WE');
+  assert.equal(q.deriveQdCode('3M Tools'), 'MT');   // digits skipped
+  assert.equal(q.deriveQdCode('A'), null);          // too short to be a code
+  assert.equal(q.deriveQdCode(''), null);
+});
+
+test('formatQdNo builds YYYY + supplier code + zero-padded sequence', () => {
+  assert.equal(q.formatQdNo(2026, 'PD', 1), '2026PD-01');
+  assert.equal(q.formatQdNo(2026, 'pd', 2), '2026PD-02');
+  assert.equal(q.formatQdNo(2025, 'PH', 12), '2025PH-12');
+  // a supplier busy enough to pass 99 keeps counting rather than wrapping
+  assert.equal(q.formatQdNo(2026, 'PD', 100), '2026PD-100');
+});
+
+test('nextSequence continues that supplier-year series, ignoring others', () => {
+  // only 2026 + PD numbers count towards the next PD number for 2026
+  const existing = ['2026PD-01', '2026PD-02', '2026PH-09', '2025PD-07', '2026-01', 'junk'];
+  assert.equal(q.nextSequence(existing, 2026, 'PD'), 3);
+  assert.equal(q.nextSequence(existing, 2026, 'PH'), 10);
+  assert.equal(q.nextSequence(existing, 2025, 'PD'), 8);
+  // a supplier with no QDs this year starts at 1
+  assert.equal(q.nextSequence(existing, 2026, 'EK'), 1);
+  assert.equal(q.nextSequence([], 2026, 'PD'), 1);
+});
+
+test('nextSequence fills from the highest number, not the count', () => {
+  // deleting 2026PD-02 must not hand 03 out twice
+  assert.equal(q.nextSequence(['2026PD-01', '2026PD-03'], 2026, 'PD'), 4);
+});
+
 test('mapSheetStatus maps the legacy Excel vocabulary onto the new one', () => {
   assert.equal(q.mapSheetStatus('OPEN'), 'Open');
   assert.equal(q.mapSheetStatus('Rejected '), 'Rejected');

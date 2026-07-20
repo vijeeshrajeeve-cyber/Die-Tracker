@@ -54,7 +54,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const { shipment_mode, region, contact_email } = req.body;
+        const { shipment_mode, region, contact_email, qd_code } = req.body;
 
         const existing = await pool.query('SELECT * FROM suppliers WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
@@ -75,13 +75,28 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
             ? (contact_email && contact_email.trim() ? contact_email.trim() : null)
             : current.contact_email;
 
+        // QD code: exactly two letters, used to build QD numbers (2026PD-01).
+        let newQdCode = current.qd_code;
+        if (qd_code !== undefined) {
+            const trimmed = String(qd_code || '').trim().toUpperCase();
+            if (trimmed && !/^[A-Z]{2}$/.test(trimmed)) {
+                return res.status(400).json({ error: 'QD code must be exactly two letters' });
+            }
+            newQdCode = trimmed || null;
+        }
+
         const result = await pool.query(
-            'UPDATE suppliers SET shipment_mode = $1, region = $2, contact_email = $3 WHERE id = $4 RETURNING *',
-            [mode, newRegion, newEmail, id]
+            'UPDATE suppliers SET shipment_mode = $1, region = $2, contact_email = $3, qd_code = $4 WHERE id = $5 RETURNING *',
+            [mode, newRegion, newEmail, newQdCode, id]
         );
 
         res.json(result.rows[0]);
     } catch (error) {
+        // The unique index keeps two suppliers from sharing a QD code, which
+        // would interleave their QD numbers.
+        if (error.code === '23505') {
+            return res.status(409).json({ error: 'That QD code is already used by another supplier' });
+        }
         console.error('Error updating supplier:', error);
         res.status(500).json({ error: 'Failed to update supplier' });
     }
