@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { X, Upload, FileText, Image as ImageIcon } from 'lucide-react';
 import { qualityDiscrepanciesAPI } from '../../api';
 import { QD_STATUS_CONFIG } from '../../utils/constants';
+import DatePickerField from '../DatePickerField';
 
 const GRADIENT = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
 const isPdf = (name) => /\.pdf$/i.test(String(name || ''));
@@ -92,7 +93,7 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
           {needsEta && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={label}>ETA from supplier <span style={{ color: '#FCA5A5' }}>*</span></label>
-              <input type="date" value={etaDate} onChange={(e) => setEtaDate(e.target.value)} style={field} />
+              <DatePickerField value={etaDate} theme={theme} onChange={setEtaDate} placeholder="Select ETA" />
               <span style={{ fontSize: '0.72rem', color: dim }}>When the free-of-charge replacement is expected.</span>
             </div>
           )}

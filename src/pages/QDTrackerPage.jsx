@@ -170,7 +170,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
   const exportCsv = () => {
     const header = ['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
-      'Raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)'];
+      'QD raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const d = (v) => (v ? String(v).slice(0, 10) : '');
     const lines = filtered.map(q => [
@@ -294,7 +294,8 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome', 'To purchase', 'To supplier', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
+                  {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
+                    'QD raised', 'Sent to purchase', 'Sent to supplier', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -304,12 +305,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
                   return (
                     <tr key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)}>
                       <td style={td}><span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600 }}>{q.qd_no}</span></td>
-                      <td style={td}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ fontFamily: mono, fontSize: 13.5, fontWeight: 600 }}>{q.die_no}</span>
-                          <span style={{ fontSize: 11, color: dim }}>{q.raised_date}</span>
-                        </div>
-                      </td>
+                      <td style={{ ...td, fontFamily: mono, fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{q.die_no}</td>
                       <td style={td}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLANT_COLORS[q.plant] || '#6366F1' }} />{q.plant}
@@ -328,6 +324,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
                           <OIcon size={14} style={{ color: dim }} />{q.outcome || '—'}
                         </span>
                       </td>
+                      <td style={td}><Handoff date={q.raised_date} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}><Handoff date={q.sent_to_purchase_date} days={q.handoff?.toPurchase} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}><Handoff date={q.sent_to_supplier_date} days={q.handoff?.purchaseToSupplier ?? q.handoff?.toSupplier} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}>

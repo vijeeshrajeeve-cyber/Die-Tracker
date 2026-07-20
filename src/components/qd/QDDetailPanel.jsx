@@ -6,6 +6,7 @@ import {
 import { qualityDiscrepanciesAPI } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES } from '../../utils/constants';
 import StatusChangeModal from './StatusChangeModal';
+import DatePickerField from '../DatePickerField';
 
 // Activity rows store a lucide icon name; map the ones the app actually writes.
 const ACTIVITY_ICON = {
@@ -199,13 +200,16 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
 
   const startEdit = (f) => { setEditing(f.field); setDraft(f.current); };
   const cancelEdit = () => { setEditing(null); setDraft(''); };
-  const commitEdit = async (field) => {
+  // valueOverride lets the date picker commit the date it just produced,
+  // without waiting for the draft state to settle.
+  const commitEdit = async (field, valueOverride) => {
+    const value = valueOverride === undefined ? draft : valueOverride;
     const original = facts.find(f => f.field === field)?.current ?? '';
-    if (draft === original) return cancelEdit();
+    if (value === original) return cancelEdit();
     setBusy(true);
     setError('');
     try {
-      await qualityDiscrepanciesAPI.update(qd.id, { [field]: draft });
+      await qualityDiscrepanciesAPI.update(qd.id, { [field]: value });
       cancelEdit();
       await onChanged();
     } catch (e) {
@@ -301,8 +305,21 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
                   </select>
                 )}
 
-                {isEditing && f.type !== 'select' && (
-                  <input autoFocus type={f.type === 'date' ? 'date' : 'text'} value={draft} disabled={busy}
+                {isEditing && f.type === 'date' && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+                    {/* The shared picker commits the date it produces directly —
+                        it also provides Today and Clear. */}
+                    <DatePickerField
+                      value={draft}
+                      theme={theme}
+                      disabled={busy}
+                      onChange={(iso) => commitEdit(f.field, iso)}
+                    />
+                  </div>
+                )}
+
+                {isEditing && f.type === 'text' && (
+                  <input autoFocus type="text" value={draft} disabled={busy}
                     placeholder={f.placeholder} style={fieldStyle}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setDraft(e.target.value)}
