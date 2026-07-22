@@ -116,7 +116,9 @@
       "Bash(MSYS_NO_PATHCONV=1 docker exec die-ordering-db psql -U postgres -d die_ordering -c \"DELETE FROM quality_discrepancies WHERE id = 53;\" -c \"SELECT id, qd_no, die_no, supplier, corrector, status FROM quality_discrepancies ORDER BY id;\")",
       "Bash(MSYS_NO_PATHCONV=1 docker exec die-ordering-db psql -U postgres -d die_ordering -c \"DELETE FROM quality_discrepancies WHERE id = 54;\" -c \"SELECT id, qd_no, die_no, supplier, corrector FROM quality_discrepancies ORDER BY id;\")",
       "PowerShell(node --test server/services/frozenDesigns.test.cjs 2>&1)",
-      "PowerShell(npx vite build --logLevel error 2>&1)"
+      "PowerShell(npx vite build --logLevel error 2>&1)",
+      "Bash(rm -f scripts/db-reconcile-entrypoint.sh .gitattributes)",
+      "Bash(rmdir scripts *)"
     ]
   }
 }

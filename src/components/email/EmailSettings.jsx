@@ -320,7 +320,7 @@ const EmailSettings = ({ theme }) => {
                             style={inputStyle}
                         />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            Time of day the reminder emails are sent (server time)
+                            Time of day the reminder emails are sent (server time, Asia/Dubai)
                         </p>
                     </div>
                 </div>

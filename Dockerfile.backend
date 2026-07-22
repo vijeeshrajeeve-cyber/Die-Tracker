@@ -1,7 +1,9 @@
 FROM node:20-alpine
 
 # wget is used by the docker-compose healthcheck.
-RUN apk add --no-cache wget tini
+# tzdata is required for named zones (TZ=Asia/Dubai) — without it Alpine
+# silently falls back to UTC, which would send the design reminders 4h late.
+RUN apk add --no-cache wget tini tzdata
 
 WORKDIR /app
 

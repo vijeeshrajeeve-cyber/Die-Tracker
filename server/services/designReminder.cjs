@@ -208,7 +208,11 @@ async function reminderTick() {
 function scheduleDesignReminders() {
     if (reminderInterval) clearInterval(reminderInterval);
     reminderInterval = setInterval(reminderTick, 60 * 1000); // Check every minute
-    console.log('Design reminder scheduler started (checks every minute)');
+    // Print the clock the scheduler compares against — a container without TZ
+    // set runs on UTC, which silently shifts when the reminders go out.
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || process.env.TZ || 'UTC';
+    console.log(`Design reminder scheduler started (checks every minute; ` +
+        `server time ${new Date().toLocaleTimeString('en-GB')} ${tz})`);
 }
 
 function getReminderState() {
