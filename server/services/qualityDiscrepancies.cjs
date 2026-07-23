@@ -290,19 +290,27 @@ async function createQD(client, input) {
     qdNo, dieNo, raisedDate, plant, supplier, corrector, status, outcome,
     issueSummary, issueDetail, etaDate, inputAtFailure, closedAt, createdBy, dieOrderId,
     approvalState, preparedBy,
+    dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
+    productionDate, manufacturingDefect, diePerformance, recommendedAction,
   } = input;
   const { rows } = await client.query(
     `INSERT INTO quality_discrepancies
        (qd_no, die_no, profile_number, die_order_id, raised_date, plant, supplier, corrector,
         status, outcome, issue_summary, issue_detail, eta_date, input_at_failure, closed_at,
-        created_by, approval_state, prepared_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        created_by, approval_state, prepared_by,
+        die_received_date, press, die_type, die_size, no_of_cavity, tooling, no_of_trials,
+        no_of_corrections, production_date, manufacturing_defect, die_performance, recommended_action)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+             $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
      RETURNING id`,
     [
       qdNo || null, dieNo, extractProfileFromDie(dieNo), dieOrderId || null, raisedDate, plant, supplier,
       corrector || null, status || 'Open', outcome || null, issueSummary, issueDetail || null,
       etaDate || null, inputAtFailure || null, closedAt || null, createdBy || null,
       approvalState || 'Draft', preparedBy || null,
+      dieReceivedDate || null, press || null, dieType || null, dieSize || null, noOfCavity || null,
+      tooling || null, noOfTrials || null, noOfCorrections || null, productionDate || null,
+      manufacturingDefect || null, diePerformance || null, recommendedAction || null,
     ]
   );
   return rows[0].id;

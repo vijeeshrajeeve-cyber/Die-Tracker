@@ -112,7 +112,11 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure } = req.body;
+    const {
+      dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure,
+      dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
+      productionDate, manufacturingDefect, diePerformance, recommendedAction,
+    } = req.body;
     if (!String(dieNo || '').trim()) { client.release(); return res.status(400).json({ error: 'Die No is required' }); }
     if (!String(plant || '').trim()) { client.release(); return res.status(400).json({ error: 'Plant is required' }); }
     if (!String(supplier || '').trim()) { client.release(); return res.status(400).json({ error: 'Supplier is required' }); }
@@ -137,12 +141,25 @@ router.post('/', async (req, res) => {
       inputAtFailure: String(inputAtFailure || '').trim() || null,
       preparedBy: String(corrector || '').trim() || actorFor(req),
       createdBy: req.user?.id,
+      dieReceivedDate: String(dieReceivedDate || '').trim() || null,
+      press: String(press || '').trim() || null,
+      dieType: String(dieType || '').trim() || null,
+      dieSize: String(dieSize || '').trim() || null,
+      noOfCavity: String(noOfCavity || '').trim() || null,
+      tooling: String(tooling || '').trim() || null,
+      noOfTrials: String(noOfTrials || '').trim() || null,
+      noOfCorrections: String(noOfCorrections || '').trim() || null,
+      productionDate: String(productionDate || '').trim() || null,
+      manufacturingDefect: String(manufacturingDefect || '').trim() || null,
+      diePerformance: String(diePerformance || '').trim() || null,
+      recommendedAction: String(recommendedAction || '').trim() || null,
     });
     await qd.addActivity(client, {
       qdId: id, actor: String(corrector || '').trim() || actorFor(req),
       action: `drafted QD against die ${String(dieNo).trim()}`,
       icon: 'flag', tone: 'flag', userId: req.user?.id,
     });
+    if (req.body.billets) await qd.saveBilletParameters(client, id, req.body.billets);
     await client.query('COMMIT');
     res.status(201).json({ id });
   } catch (e) {
@@ -357,15 +374,18 @@ router.post('/:id/files', acceptFiles, async (req, res) => {
     if (meta.rowCount === 0) return res.status(404).json({ error: 'QD not found' });
     const row = meta.rows[0];
     const root = store.getRoot();
+    const category = ['profile_image', 'approved_design', 'trial_photo', 'general'].includes(req.body.category)
+      ? req.body.category
+      : 'general';
     const saved = [];
     for (const file of (req.files || [])) {
       const dest = store.buildStoredPath(root, { qdNo: row.qd_no, qdId: row.id, fileName: file.originalname });
       await fsp.mkdir(path.dirname(dest), { recursive: true });
       await moveIntoPlace(file.path, dest);
       const ins = await pool.query(
-        `INSERT INTO quality_discrepancy_files (qd_id, original_name, stored_path, mime_type, size_bytes, uploaded_by)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [row.id, file.originalname, path.relative(root, dest), file.mimetype, file.size, req.user?.id || null]
+        `INSERT INTO quality_discrepancy_files (qd_id, original_name, stored_path, mime_type, size_bytes, uploaded_by, category)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [row.id, file.originalname, path.relative(root, dest), file.mimetype, file.size, req.user?.id || null, category]
       );
       saved.push({ id: ins.rows[0].id, original_name: file.originalname });
     }
