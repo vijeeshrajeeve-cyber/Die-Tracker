@@ -607,14 +607,42 @@ export const frozenDesignsAPI = {
 
 // Quality Discrepancies (QD Tracker) API
 export const qualityDiscrepanciesAPI = {
-    // year scopes the rows, KPIs and supplier rollup together; omit for all years
-    list: async (year) =>
-        apiRequest(`/quality-discrepancies${year && year !== 'All' ? `?year=${encodeURIComponent(year)}` : ''}`),
+    // year scopes the rows, KPIs and supplier rollup together; omit for all years.
+    // { drafts: true } asks the server to return only the caller's own drafts instead.
+    list: async (year, { drafts = false } = {}) => {
+        const params = new URLSearchParams();
+        if (year && year !== 'All') params.set('year', year);
+        if (drafts) params.set('drafts', '1');
+        const qs = params.toString();
+        return apiRequest(`/quality-discrepancies${qs ? `?${qs}` : ''}`);
+    },
 
     create: async (payload) =>
         apiRequest('/quality-discrepancies', { method: 'POST', body: JSON.stringify(payload) }),
 
-    // fields: { outcome?, input_at_failure?, eta_date?, corrector? } — '' clears
+    // Approval workflow: Draft/SentBack --submit--> Pending --approve--> Approved
+    // (emails Purchase), or --sendBack--> SentBack (reason required).
+    submit: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/submit`, { method: 'POST' }),
+
+    approve: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/approve`, { method: 'POST' }),
+
+    sendBack: async (id, reason) =>
+        apiRequest(`/quality-discrepancies/${id}/send-back`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+    resendPurchase: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/resend-purchase`, { method: 'POST' }),
+
+    getSettings: async () =>
+        apiRequest('/quality-discrepancies/settings'),
+
+    saveSettings: async (payload) =>
+        apiRequest('/quality-discrepancies/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+
+    // fields: { outcome?, input_at_failure?, eta_date?, corrector?, supplier_acceptance?,
+    // action_taken?, supplier_comments?, received_by_supplier?, ... } — '' clears each field.
+    // supplier_acceptance must be exactly 'Yes' | 'No' | '' — the server rejects anything else.
     update: async (id, fields) =>
         apiRequest(`/quality-discrepancies/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
 
@@ -627,9 +655,12 @@ export const qualityDiscrepanciesAPI = {
     addNote: async (id, note, kind = 'note') =>
         apiRequest(`/quality-discrepancies/${id}/notes`, { method: 'POST', body: JSON.stringify({ note, kind }) }),
 
-    uploadFiles: async (id, fileList) => {
+    // category (optional): 'profile_image' | 'approved_design' | 'trial_photo' | 'general'.
+    // Applies to every file in this call — the server reads one category per request.
+    uploadFiles: async (id, fileList, category) => {
         const form = new FormData();
         Array.from(fileList).forEach((f) => form.append('files', f));
+        if (category) form.append('category', category);
         return apiRequest(`/quality-discrepancies/${id}/files`, { method: 'POST', body: form, isMultipart: true });
     },
 
@@ -644,6 +675,22 @@ export const qualityDiscrepanciesAPI = {
         const a = document.createElement('a');
         a.href = url;
         a.download = filename || 'qd-file';
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+
+    // Streams the rendered QD form as a PDF and triggers a browser download.
+    downloadDocument: async (id, qdNo) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/quality-discrepancies/${id}/document`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Document failed (HTTP ${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `QD-${qdNo || id}.pdf`;
         a.click();
         URL.revokeObjectURL(url);
     },

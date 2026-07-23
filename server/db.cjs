@@ -433,6 +433,49 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- ── QD approval workflow ────────────────────────────────────────────
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='approval_state') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN approval_state TEXT NOT NULL DEFAULT 'Draft';
+          -- Existing QDs predate the workflow and are already live; treat them
+          -- as approved so they are never trapped behind the new gate. This
+          -- one-time backfill only runs when the column is first created.
+          UPDATE quality_discrepancies SET approval_state = 'Approved';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='submitted_by') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN submitted_by INTEGER REFERENCES users(id);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='submitted_at') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN submitted_at TIMESTAMP;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='approved_by') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN approved_by INTEGER REFERENCES users(id);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='approved_at') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN approved_at TIMESTAMP;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='sent_back_reason') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN sent_back_reason TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='sent_back_at') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN sent_back_at TIMESTAMP;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='prepared_by') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN prepared_by TEXT;
+        END IF;
+        -- Drafts carry no QD number until submitted, so qd_no must be nullable.
+        -- The UNIQUE constraint still holds: Postgres treats NULLs as distinct.
+        ALTER TABLE quality_discrepancies ALTER COLUMN qd_no DROP NOT NULL;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS qd_settings (
+        id                SERIAL PRIMARY KEY,
+        approver_user_ids TEXT DEFAULT '[]',
+        purchase_email_to TEXT DEFAULT '',
+        purchase_email_cc TEXT DEFAULT '',
+        updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
         id SERIAL PRIMARY KEY,
         qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
@@ -456,6 +499,44 @@ const initializeDatabase = async () => {
         uploaded_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_qd_files_qd ON quality_discrepancy_files (qd_id);
+
+      -- ── QD standard-format fields (Part-A header, classification, Part-B) ──
+      DO $$
+      DECLARE col TEXT;
+      BEGIN
+        FOREACH col IN ARRAY ARRAY[
+          'die_received_date','press','die_type','die_size','no_of_cavity','tooling',
+          'no_of_trials','no_of_corrections','production_date',
+          'manufacturing_defect','die_performance','recommended_action',
+          'supplier_acceptance','action_taken','supplier_comments','received_by_supplier'
+        ] LOOP
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='quality_discrepancies' AND column_name=col) THEN
+            EXECUTE format('ALTER TABLE quality_discrepancies ADD COLUMN %I TEXT', col);
+          END IF;
+        END LOOP;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name='quality_discrepancy_files' AND column_name='category') THEN
+          ALTER TABLE quality_discrepancy_files ADD COLUMN category TEXT DEFAULT 'general';
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS qd_billet_parameters (
+        id                   SERIAL PRIMARY KEY,
+        qd_id                INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+        billet               TEXT NOT NULL,               -- 'first' | 'last'
+        die_soaking_hours    TEXT,
+        die_temperature      TEXT,
+        billet_temp          TEXT,
+        breakthrough_pressure TEXT,
+        running_pressure     TEXT,
+        billet_length        TEXT,
+        alloy                TEXT,
+        ram_speed            TEXT,
+        any_delay_observed   TEXT,
+        UNIQUE (qd_id, billet)
+      );
+      CREATE INDEX IF NOT EXISTS idx_qd_billet_qd ON qd_billet_parameters (qd_id);
 
       -- Press master (press name → code)
       CREATE TABLE IF NOT EXISTS presses (

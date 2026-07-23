@@ -19,7 +19,7 @@ let imapPollInterval = null;
 
 // ── SMTP – send email ───────────────────────────────────────────────────────
 
-async function sendEmail({ to, cc, subject, body, importance = 'normal', orderId = null, sentBy = null }) {
+async function sendEmail({ to, cc, subject, body, importance = 'normal', orderId = null, sentBy = null, attachments = null }) {
     const config = await getEmailConfig();
     if (!config || !config.send_enabled) {
         throw new Error('SMTP sending is not enabled. Configure it in Email Settings.');
@@ -42,6 +42,7 @@ async function sendEmail({ to, cc, subject, body, importance = 'normal', orderId
             cc: cc || undefined,
             subject,
             html: body,
+            attachments: attachments || undefined,
             priority: importance === 'high' ? 'high' : importance === 'low' ? 'low' : 'normal'
         });
 

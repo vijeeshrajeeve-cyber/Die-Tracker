@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload, HardDrive, RefreshCw } from 'lucide-react';
-import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI, ordersAPI, autoBackupsAPI } from '../api';
+import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload, HardDrive, RefreshCw, ShieldCheck } from 'lucide-react';
+import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI, ordersAPI, autoBackupsAPI, usersAPI, qualityDiscrepanciesAPI, getUser } from '../api';
 import Papa from 'papaparse';
 import ExistingDataPage from './ExistingDataPage';
 
@@ -27,6 +27,16 @@ export default function SettingsPage({
   const [backupsLoading, setBackupsLoading] = useState(false);
   const [backupRunning, setBackupRunning] = useState(false);
 
+  // QD Approvers & Purchase settings
+  const me = getUser();
+  const isAdmin = me?.role === 'admin';
+  const [qdUsers, setQdUsers] = useState([]);
+  const [qdApproverIds, setQdApproverIds] = useState([]);
+  const [qdPurchaseTo, setQdPurchaseTo] = useState('');
+  const [qdPurchaseCc, setQdPurchaseCc] = useState('');
+  const [qdSettingsLoading, setQdSettingsLoading] = useState(false);
+  const [qdSettingsSaving, setQdSettingsSaving] = useState(false);
+
   const tabs = [
     { id: 'general', label: 'Plants & Suppliers', icon: Factory },
     { id: 'email', label: 'Email Templates', icon: FileText },
@@ -35,6 +45,7 @@ export default function SettingsPage({
     { id: 'integration', label: 'Excel Integration', icon: Download },
     { id: 'changelog', label: 'Change Log', icon: History },
     { id: 'backups', label: 'Data Backups', icon: HardDrive },
+    ...(isAdmin ? [{ id: 'qd', label: 'QD Approvers & Purchase', icon: ShieldCheck }] : []),
   ];
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -60,6 +71,45 @@ export default function SettingsPage({
   useEffect(() => {
     if (activeTab === 'backups') fetchBackups();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'qd' || !isAdmin) return;
+    let cancelled = false;
+    setQdSettingsLoading(true);
+    Promise.all([usersAPI.getAll(), qualityDiscrepanciesAPI.getSettings()])
+      .then(([users, settings]) => {
+        if (cancelled) return;
+        setQdUsers(users?.users || []);
+        setQdApproverIds(settings.approverUserIds || []);
+        setQdPurchaseTo(settings.purchaseEmailTo || '');
+        setQdPurchaseCc(settings.purchaseEmailCc || '');
+      })
+      .catch(() => { if (!cancelled) setToast?.({ message: 'Failed to load QD settings', type: 'error' }); })
+      .finally(() => { if (!cancelled) setQdSettingsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, isAdmin, setToast]);
+
+  const toggleQdApprover = (id) => {
+    setQdApproverIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const saveQdSettings = async () => {
+    setQdSettingsSaving(true);
+    try {
+      await qualityDiscrepanciesAPI.saveSettings({
+        approverUserIds: qdApproverIds,
+        purchaseEmailTo: qdPurchaseTo,
+        purchaseEmailCc: qdPurchaseCc,
+      });
+      setToast?.({ message: 'QD approver & Purchase settings saved', type: 'success' });
+      setTimeout(() => setToast?.(null), 3000);
+    } catch (err) {
+      setToast?.({ message: 'Failed to save: ' + err.message, type: 'error' });
+      setTimeout(() => setToast?.(null), 4000);
+    } finally {
+      setQdSettingsSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -827,6 +877,93 @@ export default function SettingsPage({
                   </div>
                 </div>
               </div>
+
+              {/* QD Approvers & Purchase tab (admin only) */}
+              {isAdmin && (
+                <div style={{ display: activeTab === 'qd' ? 'block' : 'none' }}>
+                  <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}><ShieldCheck size={20} /> QD Approvers &amp; Purchase</h3>
+                      <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '4px', marginBottom: 0 }}>
+                        Choose who can approve or send back a Quality Discrepancy, and where the Purchase notification email goes once one is approved.
+                      </p>
+                    </div>
+
+                    {qdSettingsLoading ? (
+                      <div style={{ padding: '2rem', textAlign: 'center', color: theme.textDim, fontSize: '0.875rem' }}>Loading…</div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '1.5rem' }}>
+                        {/* Approvers multi-select */}
+                        <div>
+                          <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted, marginBottom: '0.75rem' }}>Approvers</h4>
+                          <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden', maxHeight: '360px', overflowY: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>User</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Role</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Approver</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {qdUsers.map(u => (
+                                  <tr key={u.id}>
+                                    <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, fontWeight: 500, color: theme.text, fontSize: '0.85rem' }}>{u.username}</td>
+                                    <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textDim, fontSize: '0.8rem' }}>{u.role}</td>
+                                    <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                                      {u.role === 'admin' ? (
+                                        <span title="Admins can always approve" style={{ fontSize: '0.7rem', color: theme.textDim }}>Always</span>
+                                      ) : (
+                                        <input type="checkbox" checked={qdApproverIds.includes(u.id)} onChange={() => toggleQdApprover(u.id)}
+                                          style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {qdUsers.length === 0 && <tr><td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: theme.textDim, fontSize: '0.85rem' }}>No users found</td></tr>}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p style={{ fontSize: '0.72rem', color: theme.textDim, marginTop: '8px' }}>
+                            Admins can always approve, send back, and resend to Purchase — they do not need to be listed here.
+                          </p>
+                        </div>
+
+                        {/* Purchase recipients */}
+                        <div>
+                          <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted, marginBottom: '0.75rem' }}>Purchase Notification Email</h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }}>To</label>
+                              <input type="text" value={qdPurchaseTo} onChange={(e) => setQdPurchaseTo(e.target.value)}
+                                placeholder="purchase.team@company.com"
+                                style={{ width: '100%', padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }} />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }}>CC</label>
+                              <input type="text" value={qdPurchaseCc} onChange={(e) => setQdPurchaseCc(e.target.value)}
+                                placeholder="optional cc recipients, comma-separated"
+                                style={{ width: '100%', padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: theme.textDim }}>
+                              Sent automatically when a QD is approved, and again with "Resend to Purchase" from the QD detail drawer.
+                            </div>
+                            <div>
+                              <button
+                                disabled={qdSettingsSaving}
+                                onClick={saveQdSettings}
+                                style={{ padding: '9px 20px', background: qdSettingsSaving ? theme.cardBorder : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: qdSettingsSaving ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                              >
+                                {qdSettingsSaving ? 'Saving…' : 'Save QD Settings'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Add Plant Modal */}
               {showAddPlant && (

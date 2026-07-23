@@ -334,7 +334,7 @@ CREATE INDEX IF NOT EXISTS idx_existing_production_data_die_no ON existing_produ
 -- Quality Discrepancies (QD Tracker)
 CREATE TABLE IF NOT EXISTS quality_discrepancies (
     id SERIAL PRIMARY KEY,
-    qd_no            TEXT UNIQUE NOT NULL,
+    qd_no            TEXT UNIQUE,
     die_no           TEXT NOT NULL,
     profile_number   TEXT,
     die_order_id     INTEGER REFERENCES die_orders(id),
@@ -353,10 +353,42 @@ CREATE TABLE IF NOT EXISTS quality_discrepancies (
     closed_at        DATE,
     created_by       INTEGER REFERENCES users(id),
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approval_state   TEXT NOT NULL DEFAULT 'Draft',
+    submitted_by     INTEGER REFERENCES users(id),
+    submitted_at     TIMESTAMP,
+    approved_by      INTEGER REFERENCES users(id),
+    approved_at      TIMESTAMP,
+    sent_back_reason TEXT,
+    sent_back_at     TIMESTAMP,
+    prepared_by      TEXT,
+    die_received_date TEXT,
+    press              TEXT,
+    die_type           TEXT,
+    die_size           TEXT,
+    no_of_cavity       TEXT,
+    tooling            TEXT,
+    no_of_trials       TEXT,
+    no_of_corrections  TEXT,
+    production_date    TEXT,
+    manufacturing_defect TEXT,
+    die_performance      TEXT,
+    recommended_action   TEXT,
+    supplier_acceptance   TEXT,
+    action_taken          TEXT,
+    supplier_comments     TEXT,
+    received_by_supplier  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_qd_supplier ON quality_discrepancies(supplier);
 CREATE INDEX IF NOT EXISTS idx_qd_status ON quality_discrepancies(status);
+
+CREATE TABLE IF NOT EXISTS qd_settings (
+    id                SERIAL PRIMARY KEY,
+    approver_user_ids TEXT DEFAULT '[]',
+    purchase_email_to TEXT DEFAULT '',
+    purchase_email_cc TEXT DEFAULT '',
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
     id SERIAL PRIMARY KEY,
@@ -378,8 +410,26 @@ CREATE TABLE IF NOT EXISTS quality_discrepancy_files (
     mime_type     TEXT,
     size_bytes    BIGINT,
     uploaded_by   INTEGER REFERENCES users(id),
-    uploaded_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    uploaded_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    category      TEXT DEFAULT 'general'
 );
 CREATE INDEX IF NOT EXISTS idx_qd_files_qd ON quality_discrepancy_files(qd_id);
+
+CREATE TABLE IF NOT EXISTS qd_billet_parameters (
+    id                   SERIAL PRIMARY KEY,
+    qd_id                INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+    billet               TEXT NOT NULL,
+    die_soaking_hours    TEXT,
+    die_temperature      TEXT,
+    billet_temp          TEXT,
+    breakthrough_pressure TEXT,
+    running_pressure     TEXT,
+    billet_length        TEXT,
+    alloy                TEXT,
+    ram_speed            TEXT,
+    any_delay_observed   TEXT,
+    UNIQUE (qd_id, billet)
+);
+CREATE INDEX IF NOT EXISTS idx_qd_billet_qd ON qd_billet_parameters(qd_id);
 
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing

@@ -18,6 +18,22 @@ const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
 const SETTLED_STATUSES = ['Closed', 'Rejected'];
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
+const APPROVAL_STATES = ['Draft', 'Pending', 'Approved', 'SentBack'];
+const EDITABLE_APPROVAL_STATES = ['Draft', 'SentBack'];
+
+// Legal approval transitions. Throwing here (rather than returning null) means
+// an illegal action surfaces as a 400 at the route, not a silent no-op.
+const APPROVAL_TRANSITIONS = {
+  Draft:    { submit: 'Pending' },
+  SentBack: { submit: 'Pending' },
+  Pending:  { approve: 'Approved', sendBack: 'SentBack' },
+};
+function nextApprovalState(from, action) {
+  const to = APPROVAL_TRANSITIONS[from] && APPROVAL_TRANSITIONS[from][action];
+  if (!to) throw new Error(`Cannot ${action} a QD that is ${from}`);
+  return to;
+}
+
 // Timeline entry kinds. The icon/tone are decided here rather than by the
 // client so the timeline vocabulary stays consistent (and unspoofable).
 const ACTIVITY_KINDS = {
@@ -184,6 +200,43 @@ function summarizeSuppliers(rows, now = new Date()) {
     .sort((a, b) => b.open - a.open || b.total - a.total || a.name.localeCompare(b.name));
 }
 
+// ── Billet parameters (Part-A "first billet"/"last billet" readings) ───────
+
+const BILLETS = ['first', 'last'];
+const BILLET_COLS = ['die_soaking_hours','die_temperature','billet_temp','breakthrough_pressure',
+  'running_pressure','billet_length','alloy','ram_speed','any_delay_observed'];
+
+const hasAnyValue = (obj) => BILLET_COLS.some((c) => String(obj?.[c] ?? '').trim() !== '');
+
+async function saveBilletParameters(client, qdId, params) {
+  for (const billet of BILLETS) {
+    const data = params?.[billet];
+    if (!data || !hasAnyValue(data)) {
+      await client.query('DELETE FROM qd_billet_parameters WHERE qd_id = $1 AND billet = $2', [qdId, billet]);
+      continue;
+    }
+    const vals = BILLET_COLS.map((c) => String(data[c] ?? '').trim() || null);
+    await client.query(
+      `INSERT INTO qd_billet_parameters (qd_id, billet, ${BILLET_COLS.join(', ')})
+       VALUES ($1, $2, ${BILLET_COLS.map((_, i) => `$${i + 3}`).join(', ')})
+       ON CONFLICT (qd_id, billet) DO UPDATE SET
+         ${BILLET_COLS.map((c) => `${c} = EXCLUDED.${c}`).join(', ')}`,
+      [qdId, billet, ...vals]);
+  }
+}
+
+async function listBilletParameters(client, qdIds) {
+  const map = new Map();
+  if (!qdIds || !qdIds.length) return map;
+  const { rows } = await client.query(
+    `SELECT * FROM qd_billet_parameters WHERE qd_id = ANY($1)`, [qdIds]);
+  for (const r of rows) {
+    if (!map.has(r.qd_id)) map.set(r.qd_id, []);
+    map.get(r.qd_id).push(r);
+  }
+  return map;
+}
+
 async function listQDs(client) {
   const { rows } = await client.query(
     `SELECT * FROM quality_discrepancies ORDER BY raised_date DESC, id DESC`
@@ -191,6 +244,7 @@ async function listQDs(client) {
   const ids = rows.map((r) => r.id);
   let files = [];
   let activity = [];
+  let billets = new Map();
   if (ids.length) {
     files = (await client.query(
       `SELECT id, qd_id, original_name, mime_type, size_bytes, uploaded_at
@@ -202,6 +256,7 @@ async function listQDs(client) {
          FROM quality_discrepancy_activity WHERE qd_id = ANY($1) ORDER BY occurred_at ASC, id ASC`,
       [ids]
     )).rows;
+    billets = await listBilletParameters(client, ids);
   }
   const now = new Date();
   return rows.map((r) => ({
@@ -212,6 +267,7 @@ async function listQDs(client) {
     handoff: handoffDelays(r),
     files: files.filter((f) => f.qd_id === r.id),
     activity: activity.filter((a) => a.qd_id === r.id),
+    billets: billets.get(r.id) || [],
   }));
 }
 
@@ -233,17 +289,28 @@ async function createQD(client, input) {
   const {
     qdNo, dieNo, raisedDate, plant, supplier, corrector, status, outcome,
     issueSummary, issueDetail, etaDate, inputAtFailure, closedAt, createdBy, dieOrderId,
+    approvalState, preparedBy,
+    dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
+    productionDate, manufacturingDefect, diePerformance, recommendedAction,
   } = input;
   const { rows } = await client.query(
     `INSERT INTO quality_discrepancies
        (qd_no, die_no, profile_number, die_order_id, raised_date, plant, supplier, corrector,
-        status, outcome, issue_summary, issue_detail, eta_date, input_at_failure, closed_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        status, outcome, issue_summary, issue_detail, eta_date, input_at_failure, closed_at,
+        created_by, approval_state, prepared_by,
+        die_received_date, press, die_type, die_size, no_of_cavity, tooling, no_of_trials,
+        no_of_corrections, production_date, manufacturing_defect, die_performance, recommended_action)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+             $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
      RETURNING id`,
     [
-      qdNo, dieNo, extractProfileFromDie(dieNo), dieOrderId || null, raisedDate, plant, supplier,
+      qdNo || null, dieNo, extractProfileFromDie(dieNo), dieOrderId || null, raisedDate, plant, supplier,
       corrector || null, status || 'Open', outcome || null, issueSummary, issueDetail || null,
       etaDate || null, inputAtFailure || null, closedAt || null, createdBy || null,
+      approvalState || 'Draft', preparedBy || null,
+      dieReceivedDate || null, press || null, dieType || null, dieSize || null, noOfCavity || null,
+      tooling || null, noOfTrials || null, noOfCorrections || null, productionDate || null,
+      manufacturingDefect || null, diePerformance || null, recommendedAction || null,
     ]
   );
   return rows[0].id;
@@ -252,6 +319,8 @@ async function createQD(client, input) {
 // Fields the drawer can edit after a QD is raised. Status has its own path
 // (it stamps closed_at), and everything else — qd_no, die_no, dates — is either
 // identity or derived, so it is deliberately not editable here.
+const YES_NO = ['Yes', 'No'];
+
 const EDITABLE_FIELDS = {
   outcome: { label: 'Outcome sought' },
   input_at_failure: { label: 'Input at failure' },
@@ -259,6 +328,22 @@ const EDITABLE_FIELDS = {
   sent_to_purchase_date: { label: 'Sent to purchase', isDate: true },
   sent_to_supplier_date: { label: 'Sent to supplier', isDate: true },
   corrector: { label: 'Corrector' },
+  recommended_action:   { label: 'Recommended action' },
+  manufacturing_defect: { label: 'Manufacturing defect', oneOf: YES_NO },
+  die_performance:      { label: 'Die performance', oneOf: YES_NO },
+  supplier_acceptance:  { label: 'Supplier acceptance', oneOf: YES_NO },
+  action_taken:         { label: 'Action taken' },
+  supplier_comments:    { label: 'Supplier comments' },
+  received_by_supplier: { label: 'Received by (supplier)' },
+  press:                { label: 'Press' },
+  die_type:             { label: 'Die type' },
+  die_size:             { label: 'Die size' },
+  no_of_cavity:         { label: 'No of cavity' },
+  tooling:              { label: 'Tooling' },
+  no_of_trials:         { label: 'No of trials' },
+  no_of_corrections:    { label: 'No of corrections' },
+  die_received_date:    { label: 'Die received date' },
+  production_date:      { label: 'Production date' },
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -269,8 +354,12 @@ function normalizeField(column, raw) {
   if (column === 'outcome' && !OUTCOMES.includes(value)) {
     throw new Error(`Invalid outcome: ${value}`);
   }
-  if (EDITABLE_FIELDS[column]?.isDate && !ISO_DATE.test(value)) {
-    const what = column === 'eta_date' ? 'ETA date' : EDITABLE_FIELDS[column].label;
+  const spec = EDITABLE_FIELDS[column];
+  if (spec?.oneOf && !spec.oneOf.includes(value)) {
+    throw new Error(`Invalid ${spec.label}: ${value} (expected ${spec.oneOf.join(' or ')})`);
+  }
+  if (spec?.isDate && !ISO_DATE.test(value)) {
+    const what = column === 'eta_date' ? 'ETA date' : spec.label;
     throw new Error(`Invalid ${what}: ${value} (expected YYYY-MM-DD)`);
   }
   return value;
@@ -356,10 +445,95 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
   return true;
 }
 
+async function getApprovalRow(client, id) {
+  const { rows } = await client.query(
+    `SELECT id, qd_no, approval_state, supplier FROM quality_discrepancies WHERE id = $1`, [id]);
+  return rows[0] || null;
+}
+
+async function submitForApproval(client, { id, newQdNo, actor, userId }) {
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  const to = nextApprovalState(row.approval_state, 'submit');
+  const qdNo = row.qd_no || newQdNo;
+  if (!qdNo) throw new Error('A QD number is required to submit');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET qd_no = $1, approval_state = $2, submitted_by = $3,
+            submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4`,
+    [qdNo, to, userId || null, id]);
+  await addActivity(client, { qdId: id, actor, action: `submitted QD ${qdNo} for approval`, icon: 'send', tone: 'send', userId });
+  return { ok: true, qdNo, state: to };
+}
+
+async function approveQD(client, { id, actor, userId }) {
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  nextApprovalState(row.approval_state, 'approve');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET approval_state = 'Approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP,
+            sent_to_purchase_date = COALESCE(sent_to_purchase_date, CURRENT_DATE),
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2`,
+    [userId || null, id]);
+  await addActivity(client, { qdId: id, actor, action: `approved QD ${row.qd_no}`, icon: 'check', tone: 'good', userId });
+  return { ok: true, qdNo: row.qd_no };
+}
+
+async function sendBack(client, { id, reason, actor, userId }) {
+  const why = String(reason == null ? '' : reason).trim();
+  if (!why) throw new Error('Reason is required to send a QD back');
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  nextApprovalState(row.approval_state, 'sendBack');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET approval_state = 'SentBack', sent_back_reason = $1,
+            sent_back_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2`,
+    [why, id]);
+  await addActivity(client, { qdId: id, actor, action: `sent QD back — ${why}`, icon: 'undo', tone: 'bad', userId });
+  return { ok: true };
+}
+
+const excludeDrafts = (rows) => (rows || []).filter((r) => r.approval_state !== 'Draft');
+const onlyDrafts = (rows, userId) => (rows || []).filter(
+  (r) => r.approval_state === 'Draft' && (userId == null || r.created_by === userId));
+
+// ── Purchase email builders ────────────────────────────────────────────────
+
+const escapeHtml = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function purchaseEmailSubject(qd) {
+  return `QD ${qd.qd_no} approved — action required`;
+}
+
+function buildPurchaseEmailHtml(qd) {
+  const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
+    `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
+    <h2 style="margin:0 0 6px">Quality Discrepancy ${escapeHtml(qd.qd_no)}</h2>
+    <p>This QD has been approved and is handed over to Purchase for further processing.</p>
+    <table style="border-collapse:collapse;margin:8px 0">
+      ${row('QD No', qd.qd_no)}${row('Die No', qd.die_no)}${row('Profile', qd.profile_number)}
+      ${row('Supplier', qd.supplier)}${row('Raised', qd.raised_date)}
+      ${row('Recommended action', qd.recommended_action || qd.outcome)}
+    </table>
+    <p style="white-space:pre-wrap">${escapeHtml(qd.issue_detail || qd.issue_summary)}</p>
+  </div>`;
+}
+
 module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
   deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
+  APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
+  submitForApproval, approveQD, sendBack, excludeDrafts, onlyDrafts,
+  purchaseEmailSubject, buildPurchaseEmailHtml,
+  BILLETS, saveBilletParameters, listBilletParameters,
 };
