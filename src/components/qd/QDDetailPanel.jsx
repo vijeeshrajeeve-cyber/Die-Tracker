@@ -1,12 +1,22 @@
 import React, { useState, useRef } from 'react';
 import {
   X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
-  Calendar, Check, MessageSquare, Pencil, XCircle, Mail,
+  Calendar, Check, MessageSquare, Pencil, XCircle, Mail, ArrowUpCircle, CornerUpLeft, Repeat,
 } from 'lucide-react';
-import { qualityDiscrepanciesAPI } from '../../api';
+import { qualityDiscrepanciesAPI, getUser } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES } from '../../utils/constants';
 import StatusChangeModal from './StatusChangeModal';
 import DatePickerField from '../DatePickerField';
+
+const SB_GRADIENT = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
+
+// Approval-state pill shown next to the status badge in the header.
+const A_BADGE = {
+  Draft:    { label: 'Draft',     bg: 'rgba(161,161,170,0.15)', fg: '#a1a1aa' },
+  Pending:  { label: 'Pending',   bg: 'rgba(234,179,8,0.15)',   fg: '#EAB308' },
+  Approved: { label: 'Approved',  bg: 'rgba(34,197,94,0.15)',   fg: '#22C55E' },
+  SentBack: { label: 'Sent back', bg: 'rgba(239,68,68,0.15)',   fg: '#EF4444' },
+};
 
 // Activity rows store a lucide icon name; map the ones the app actually writes.
 const ACTIVITY_ICON = {
@@ -53,14 +63,21 @@ const fmtWhen = (v) => {
     : d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
 };
 
-export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompose, onClose, onChanged }) {
+export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, onCompose, onClose, onChanged }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null); // column name being edited
   const [draft, setDraft] = useState('');
   const [pendingStatus, setPendingStatus] = useState(null);
+  const [sendBackOpen, setSendBackOpen] = useState(false);
+  const [sendBackReason, setSendBackReason] = useState('');
   const fileRef = useRef(null);
+
+  const me = getUser();
+  const isOwner = !!me && qd.created_by === me.id;
+  const isDraftOrSentBack = qd.approval_state === 'Draft' || qd.approval_state === 'SentBack';
+  const aBadge = A_BADGE[qd.approval_state] || null;
 
   const bg = theme.cardBg || '#09090b';
   const border = theme.cardBorder || '#27272a';
@@ -219,6 +236,38 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
     }
   };
 
+  // Approval actions — each shows the busy spinner via `run`, and refreshes the
+  // drawer/list through onChanged so the new state and badge appear immediately.
+  const handleSubmit = () => run(() => qualityDiscrepanciesAPI.submit(qd.id));
+
+  // A failed Purchase email must not hide that the approval itself went
+  // through, so this reports the warning after refreshing rather than via `run`'s
+  // catch (which would skip onChanged and make it look like approval failed).
+  const handleApprove = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await qualityDiscrepanciesAPI.approve(qd.id);
+      await onChanged();
+      if (r?.emailWarning) setError(`Approved, but the Purchase email failed: ${r.emailWarning}`);
+    } catch (e) {
+      setError(e.message || 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResend = () => run(() => qualityDiscrepanciesAPI.resendPurchase(qd.id));
+
+  const submitSendBack = () => {
+    if (!sendBackReason.trim()) return;
+    run(async () => {
+      await qualityDiscrepanciesAPI.sendBack(qd.id, sendBackReason.trim());
+      setSendBackOpen(false);
+      setSendBackReason('');
+    });
+  };
+
   return (
     <>
       <style>{`@keyframes qdSlideIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
@@ -227,7 +276,8 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
         .qd-action:hover { background: ${surfaceHover}; color: ${text}; }
         .qd-fact { transition: border-color .15s ease, background .15s ease; }
         .qd-fact:hover { border-color: ${theme.accent || '#3B82F6'} !important; background: ${surfaceHover}; }
-        .qd-fact:hover .qd-fact-pen { opacity: 1 !important; }`}</style>
+        .qd-fact:hover .qd-fact-pen { opacity: 1 !important; }
+        .qd-sendback-cta:hover { filter: brightness(1.06); }`}</style>
 
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 200 }} />
 
@@ -237,8 +287,11 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <h2 style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, margin: 0 }}>QD {qd.qd_no}</h2>
+              <h2 style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, margin: 0 }}>QD {qd.qd_no || 'Draft'}</h2>
               <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>{qd.status}</span>
+              {aBadge && (
+                <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: aBadge.bg, color: aBadge.fg }}>{aBadge.label}</span>
+              )}
             </div>
             <div style={{ fontSize: 13, color: dim, marginTop: 6 }}>
               Die <span style={{ fontFamily: mono, fontWeight: 600, color: muted }}>{qd.die_no}</span>
@@ -267,6 +320,42 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
           </select>
           {error && <span style={{ fontSize: 12.5, color: '#FCA5A5' }}>{error}</span>}
         </div>
+
+        {/* Approval workflow actions — state-driven, per the brief in task-6 */}
+        {(isDraftOrSentBack && (isOwner || me?.role === 'admin')) || (qd.approval_state === 'Pending' && canApprove) || (qd.approval_state === 'Approved' && canApprove) ? (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            {isDraftOrSentBack && (isOwner || me?.role === 'admin') && (
+              <button onClick={handleSubmit} disabled={busy} className="qd-action"
+                style={{ padding: '8px 14px', background: primary, border: 'none', borderRadius: 8, color: primaryFg, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ArrowUpCircle size={15} /> Submit for approval
+              </button>
+            )}
+            {qd.approval_state === 'Pending' && canApprove && (
+              <>
+                <button onClick={handleApprove} disabled={busy} className="qd-action"
+                  style={{ padding: '8px 14px', background: '#22C55E', border: 'none', borderRadius: 8, color: '#052e16', fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Check size={15} /> Approve &amp; send to Purchase
+                </button>
+                <button onClick={() => setSendBackOpen(true)} disabled={busy} className="qd-action"
+                  style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CornerUpLeft size={15} /> Send back
+                </button>
+              </>
+            )}
+            {qd.approval_state === 'Approved' && canApprove && (
+              <button onClick={handleResend} disabled={busy} className="qd-action"
+                style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Repeat size={15} /> Resend to Purchase
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {qd.approval_state === 'SentBack' && qd.sent_back_reason && (
+          <div style={{ border: `1px solid rgba(239,68,68,0.35)`, background: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#FCA5A5' }}>
+            <strong>Sent back:</strong> {qd.sent_back_reason}
+          </div>
+        )}
 
         {/* Facts — click an editable one to change it */}
         {/* Wide enough for the date picker (trigger + calendar button) to sit
@@ -410,6 +499,47 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, onCompo
           onClose={() => setPendingStatus(null)}
           onDone={onChanged}
         />
+      )}
+
+      {sendBackOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => { setSendBackOpen(false); setSendBackReason(''); }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ background: bg, border: `1px solid ${border}`, borderRadius: 16, width: 460, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', animation: 'qdSlideIn 0.2s ease-out', color: text }}>
+
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${border}` }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '1rem', fontWeight: 700 }}>Send back to owner</div>
+                <div style={{ fontSize: '0.8rem', color: dim, marginTop: 6 }}>QD {qd.qd_no}</div>
+              </div>
+              <button onClick={() => { setSendBackOpen(false); setSendBackReason(''); }}
+                style={{ width: 32, height: 32, background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Reason <span style={{ color: '#FCA5A5' }}>*</span>
+                </label>
+                <textarea autoFocus value={sendBackReason} onChange={(e) => setSendBackReason(e.target.value)} rows={3}
+                  placeholder="Why is this being sent back? e.g. missing input-at-failure figure"
+                  style={{ padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box', width: '100%', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+              </div>
+              {error && <div style={{ fontSize: '0.78rem', color: '#FCA5A5' }}>{error}</div>}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${border}` }}>
+              <button onClick={() => { setSendBackOpen(false); setSendBackReason(''); }}
+                style={{ padding: '9px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: muted, fontWeight: 500, fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={submitSendBack} disabled={!sendBackReason.trim() || busy} className="qd-sendback-cta"
+                style={{ padding: '9px 18px', background: SB_GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: (!sendBackReason.trim() || busy) ? 'not-allowed' : 'pointer', opacity: (!sendBackReason.trim() || busy) ? 0.55 : 1, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+                {busy ? 'Sending back…' : 'Send back'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

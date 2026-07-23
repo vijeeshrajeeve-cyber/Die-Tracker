@@ -607,12 +607,38 @@ export const frozenDesignsAPI = {
 
 // Quality Discrepancies (QD Tracker) API
 export const qualityDiscrepanciesAPI = {
-    // year scopes the rows, KPIs and supplier rollup together; omit for all years
-    list: async (year) =>
-        apiRequest(`/quality-discrepancies${year && year !== 'All' ? `?year=${encodeURIComponent(year)}` : ''}`),
+    // year scopes the rows, KPIs and supplier rollup together; omit for all years.
+    // { drafts: true } asks the server to return only the caller's own drafts instead.
+    list: async (year, { drafts = false } = {}) => {
+        const params = new URLSearchParams();
+        if (year && year !== 'All') params.set('year', year);
+        if (drafts) params.set('drafts', '1');
+        const qs = params.toString();
+        return apiRequest(`/quality-discrepancies${qs ? `?${qs}` : ''}`);
+    },
 
     create: async (payload) =>
         apiRequest('/quality-discrepancies', { method: 'POST', body: JSON.stringify(payload) }),
+
+    // Approval workflow: Draft/SentBack --submit--> Pending --approve--> Approved
+    // (emails Purchase), or --sendBack--> SentBack (reason required).
+    submit: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/submit`, { method: 'POST' }),
+
+    approve: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/approve`, { method: 'POST' }),
+
+    sendBack: async (id, reason) =>
+        apiRequest(`/quality-discrepancies/${id}/send-back`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+    resendPurchase: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/resend-purchase`, { method: 'POST' }),
+
+    getSettings: async () =>
+        apiRequest('/quality-discrepancies/settings'),
+
+    saveSettings: async (payload) =>
+        apiRequest('/quality-discrepancies/settings', { method: 'PUT', body: JSON.stringify(payload) }),
 
     // fields: { outcome?, input_at_failure?, eta_date?, corrector? } — '' clears
     update: async (id, fields) =>

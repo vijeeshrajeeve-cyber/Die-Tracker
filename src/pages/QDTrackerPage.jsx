@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Download, Plus, ClipboardList, Factory, Search, X,
-  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye,
+  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, suppliersAPI } from '../api';
 import { QD_STATUS_CONFIG, QD_STATUSES } from '../utils/constants';
@@ -55,8 +55,11 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
 
 export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const [tab, setTab] = useState('qds');
-  const [data, setData] = useState({ qds: [], kpis: null, suppliers: [], years: [] });
+  const [data, setData] = useState({ qds: [], kpis: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
+  // Drafts view: the caller's own unsubmitted QDs, fetched separately from the
+  // normal (submitted) register rather than filtered client-side.
+  const [showDrafts, setShowDrafts] = useState(false);
   // Supplier master — the source for the Raise dropdown and for contact_email.
   const [supplierMaster, setSupplierMaster] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,14 +86,14 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
     try {
       // Keep the known years when a scoped fetch returns none, so the filter
       // does not empty itself and strand the user on a year with no QDs.
-      const next = await qualityDiscrepanciesAPI.list(year);
+      const next = await qualityDiscrepanciesAPI.list(year, { drafts: showDrafts });
       setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
     } catch {
-      setData(prev => ({ qds: [], kpis: null, suppliers: [], years: prev.years }));
+      setData(prev => ({ qds: [], kpis: null, suppliers: [], years: prev.years, canApprove: false }));
     } finally {
       setLoading(false);
     }
-  }, [year]);
+  }, [year, showDrafts]);
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
@@ -155,7 +158,9 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const k = data.kpis;
 
   const countLine = tab === 'qds'
-    ? `${filtered.length} of ${data.qds.length} QDs · raised against received dies`
+    ? showDrafts
+      ? `${filtered.length} of ${data.qds.length} of your drafts · not yet submitted for approval`
+      : `${filtered.length} of ${data.qds.length} QDs · raised against received dies`
     : `${visibleSuppliers.length} supplier${visibleSuppliers.length === 1 ? '' : 's'} · ${supplierTabQds.length} QD${supplierTabQds.length === 1 ? '' : 's'}`;
 
   const scope = year === 'All' ? 'all years' : `in ${year}`;
@@ -216,6 +221,10 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           <p style={{ fontSize: '0.85rem', color: dim, margin: '6px 0 0' }}>{countLine}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => setShowDrafts(v => !v)} className="qd-btn" title="Show only your own unsubmitted drafts"
+            style={{ padding: '10px 16px', background: showDrafts ? 'rgba(139,92,246,0.15)' : bg, border: `1px solid ${showDrafts ? 'rgba(139,92,246,0.4)' : border}`, borderRadius: 10, color: showDrafts ? '#A78BFA' : text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FileEdit size={16} /> {showDrafts ? 'Drafts (viewing)' : 'Drafts'}
+          </button>
           <button onClick={exportCsv} className="qd-btn" style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Download size={16} /> Export
           </button>
@@ -461,6 +470,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           qd={selected}
           theme={theme}
           user={user}
+          canApprove={!!data.canApprove}
           supplier={supplierMaster.find(s => (s.name || '').toLowerCase() === (selected.supplier || '').toLowerCase()) || null}
           onCompose={onCompose}
           onClose={() => setSelectedId(null)}
@@ -469,7 +479,14 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       )}
       {showRaise && (
         <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} onClose={() => setShowRaise(false)}
-          onCreated={(id) => { setShowRaise(false); load(); setSelectedId(id); }} />
+          onCreated={(id) => {
+            // A newly raised QD is a Draft (no number yet, excluded from the
+            // normal register), so switch to the Drafts view to reload with it
+            // included — otherwise the drawer would open on a row not in `data.qds`.
+            setShowRaise(false);
+            setShowDrafts(true);
+            setSelectedId(id);
+          }} />
       )}
     </div>
   );
