@@ -653,9 +653,12 @@ export const qualityDiscrepanciesAPI = {
     addNote: async (id, note, kind = 'note') =>
         apiRequest(`/quality-discrepancies/${id}/notes`, { method: 'POST', body: JSON.stringify({ note, kind }) }),
 
-    uploadFiles: async (id, fileList) => {
+    // category (optional): 'profile_image' | 'approved_design' | 'trial_photo' | 'general'.
+    // Applies to every file in this call — the server reads one category per request.
+    uploadFiles: async (id, fileList, category) => {
         const form = new FormData();
         Array.from(fileList).forEach((f) => form.append('files', f));
+        if (category) form.append('category', category);
         return apiRequest(`/quality-discrepancies/${id}/files`, { method: 'POST', body: form, isMultipart: true });
     },
 
