@@ -59,10 +59,14 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const [submitKind, setSubmitKind] = useState(null); // 'draft' | 'submit' — which footer button is busy
   const [error, setError] = useState('');
   const fileRef = useRef(null);
-  // Set once create() (and any file upload) succeeds. Lets a retry after a
-  // submit-only failure re-run just the submit step instead of creating a
-  // second, orphaned draft.
+  // Set only once create() itself succeeds. Lets a retry re-use the already
+  // created draft instead of creating a second, orphaned one.
   const createdIdRef = useRef(null);
+  // Set only once uploadFiles() itself succeeds. Tracked independently from
+  // createdIdRef so a retry re-attempts exactly the step(s) that haven't
+  // succeeded yet — an upload failure no longer causes the whole
+  // create+upload block to be silently skipped on retry.
+  const filesUploadedRef = useRef(false);
 
   // Part-A header fields + the two billet readings. Every field stays editable
   // even after an auto-fill match — this is a best-effort prefill, not a lock.
@@ -139,9 +143,9 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
     setSubmitting(true);
     setSubmitKind(doSubmit ? 'submit' : 'draft');
     setError('');
+    let phase = 'creating the QD';
     try {
-      let id = createdIdRef.current;
-      if (!id) {
+      if (!createdIdRef.current) {
         const created = await qualityDiscrepanciesAPI.create({
           dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
           corrector: corrector.trim(), issue: issue.trim(), outcome,
@@ -153,15 +157,22 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
           diePerformance: partA.diePerformance, recommendedAction: partA.recommendedAction,
           dieOrderId, billets,
         });
-        id = created.id;
-        createdIdRef.current = id;
-        if (files.length) await qualityDiscrepanciesAPI.uploadFiles(id, files, fileCategory);
+        createdIdRef.current = created.id;
       }
-      if (doSubmit) await qualityDiscrepanciesAPI.submit(id);
+      const id = createdIdRef.current;
+      if (files.length && !filesUploadedRef.current) {
+        phase = 'attaching files';
+        await qualityDiscrepanciesAPI.uploadFiles(id, files, fileCategory);
+        filesUploadedRef.current = true;
+      }
+      if (doSubmit) {
+        phase = 'submitting it for approval';
+        await qualityDiscrepanciesAPI.submit(id);
+      }
       onCreated(id, { submitted: doSubmit });
     } catch (e) {
       const message = createdIdRef.current
-        ? `Draft was saved, but ${doSubmit ? 'submitting it for approval' : 'attaching files'} failed: ${e.message || 'unknown error'}. Retrying will only retry that step, not create a duplicate draft.`
+        ? `Draft was saved, but ${phase} failed: ${e.message || 'unknown error'}. Retrying will resume from that step, not create a duplicate draft.`
         : (e.message || 'Failed to raise QD');
       setError(message);
       setSubmitting(false);
