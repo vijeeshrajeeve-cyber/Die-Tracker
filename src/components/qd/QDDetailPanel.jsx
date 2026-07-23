@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
   Calendar, Check, MessageSquare, Pencil, XCircle, Mail, ArrowUpCircle, CornerUpLeft, Repeat,
+  Download,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, getUser } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES } from '../../utils/constants';
@@ -9,6 +10,10 @@ import StatusChangeModal from './StatusChangeModal';
 import DatePickerField from '../DatePickerField';
 
 const SB_GRADIENT = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
+
+// Part-B's supplier_acceptance column only ever accepts these two values (or
+// '' to clear) — the server rejects anything else with a 400.
+const QD_YES_NO = ['Yes', 'No'];
 
 // Approval-state pill shown next to the status badge in the header.
 const A_BADGE = {
@@ -195,6 +200,11 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
     { label: 'Outcome sought', value: qd.outcome || '—', field: 'outcome', type: 'select', current: qd.outcome || '' },
     { label: 'Input at failure', value: qd.input_at_failure || '—', field: 'input_at_failure', type: 'text', current: qd.input_at_failure || '', placeholder: 'e.g. 3,417 kg' },
     { label: 'ETA from supplier', value: qd.eta_display || '—', field: 'eta_date', type: 'date', current: qd.eta_date ? String(qd.eta_date).slice(0, 10) : '' },
+    // Part-B — filled in once the supplier has responded.
+    { label: 'Supplier acceptance', value: qd.supplier_acceptance || '—', field: 'supplier_acceptance', type: 'select', options: QD_YES_NO, current: qd.supplier_acceptance || '' },
+    { label: 'Action taken', value: qd.action_taken || '—', field: 'action_taken', type: 'text', current: qd.action_taken || '', placeholder: 'e.g. Die reworked and re-trialled' },
+    { label: 'Supplier comments', value: qd.supplier_comments || '—', field: 'supplier_comments', type: 'text', current: qd.supplier_comments || '', placeholder: 'Supplier\'s remarks' },
+    { label: 'Received by (supplier)', value: qd.received_by_supplier || '—', field: 'received_by_supplier', type: 'text', current: qd.received_by_supplier || '', placeholder: 'e.g. Name of contact' },
     {
       label: 'Sent to purchase',
       value: dateOnly(qd.sent_to_purchase_date),
@@ -259,6 +269,20 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
 
   const handleResend = () => run(() => qualityDiscrepanciesAPI.resendPurchase(qd.id));
 
+  // Streams the rendered QD form as a PDF — doesn't touch any data, so it
+  // skips the onChanged refresh that `run` would otherwise trigger.
+  const handleDownloadDocument = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await qualityDiscrepanciesAPI.downloadDocument(qd.id, qd.qd_no);
+    } catch (e) {
+      setError(e.message || 'Could not download the document');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitSendBack = () => {
     if (!sendBackReason.trim()) return;
     run(async () => {
@@ -313,6 +337,10 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           <button onClick={composeReminder} className="qd-action" title={mailTitle}
             style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Bell size={15} /> Send reminder
+          </button>
+          <button onClick={handleDownloadDocument} disabled={busy} className="qd-action" title="Download the QD form as a PDF"
+            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Download size={15} /> Download QD PDF
           </button>
           <select value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
             style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
@@ -392,7 +420,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                     onBlur={() => commitEdit(f.field)}
                     onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}>
                     <option value="">—</option>
-                    {QD_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
+                    {(f.options || QD_OUTCOMES).map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 )}
 

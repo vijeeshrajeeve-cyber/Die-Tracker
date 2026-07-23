@@ -640,7 +640,9 @@ export const qualityDiscrepanciesAPI = {
     saveSettings: async (payload) =>
         apiRequest('/quality-discrepancies/settings', { method: 'PUT', body: JSON.stringify(payload) }),
 
-    // fields: { outcome?, input_at_failure?, eta_date?, corrector? } — '' clears
+    // fields: { outcome?, input_at_failure?, eta_date?, corrector?, supplier_acceptance?,
+    // action_taken?, supplier_comments?, received_by_supplier?, ... } — '' clears each field.
+    // supplier_acceptance must be exactly 'Yes' | 'No' | '' — the server rejects anything else.
     update: async (id, fields) =>
         apiRequest(`/quality-discrepancies/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
 
@@ -673,6 +675,22 @@ export const qualityDiscrepanciesAPI = {
         const a = document.createElement('a');
         a.href = url;
         a.download = filename || 'qd-file';
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+
+    // Streams the rendered QD form as a PDF and triggers a browser download.
+    downloadDocument: async (id, qdNo) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/quality-discrepancies/${id}/document`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Document failed (HTTP ${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `QD-${qdNo || id}.pdf`;
         a.click();
         URL.revokeObjectURL(url);
     },
