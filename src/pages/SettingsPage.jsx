@@ -79,7 +79,7 @@ export default function SettingsPage({
     Promise.all([usersAPI.getAll(), qualityDiscrepanciesAPI.getSettings()])
       .then(([users, settings]) => {
         if (cancelled) return;
-        setQdUsers(users || []);
+        setQdUsers(users?.users || []);
         setQdApproverIds(settings.approverUserIds || []);
         setQdPurchaseTo(settings.purchaseEmailTo || '');
         setQdPurchaseCc(settings.purchaseEmailCc || '');
