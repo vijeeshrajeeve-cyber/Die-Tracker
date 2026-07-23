@@ -220,12 +220,14 @@ async function buildQdPdfBytes(qdId) {
     const u = await pool.query('SELECT username FROM users WHERE id = $1', [row.approved_by]);
     row.approved_by_name = u.rows[0]?.username || '';
   }
-  const billets = (await qd.listBilletParameters(pool, [qdId])).get(qdId) || [];
+  const billets = (await qd.listBilletParameters(pool, [row.id])).get(row.id) || [];
   const fileBytes = new Map();
   const root = path.resolve(store.getRoot());
   for (const f of filesRes.rows) {
     if (!/(png|jpe?g|webp)$/i.test(f.original_name)) continue;
-    try { fileBytes.set(f.id, await fsp.readFile(path.resolve(root, f.stored_path))); } catch { /* skip */ }
+    const abs = path.resolve(root, f.stored_path);
+    if (!abs.startsWith(root)) continue;
+    try { fileBytes.set(f.id, await fsp.readFile(abs)); } catch { /* skip */ }
   }
   let logoBytes = null;
   try { logoBytes = await fsp.readFile(path.join(__dirname, '..', 'assets', 'gulfex-logo.png')); } catch { /* optional */ }
