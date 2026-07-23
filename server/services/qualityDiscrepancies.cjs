@@ -429,6 +429,30 @@ const excludeDrafts = (rows) => (rows || []).filter((r) => r.approval_state !== 
 const onlyDrafts = (rows, userId) => (rows || []).filter(
   (r) => r.approval_state === 'Draft' && (userId == null || r.created_by === userId));
 
+// ── Purchase email builders ────────────────────────────────────────────────
+
+const escapeHtml = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function purchaseEmailSubject(qd) {
+  return `QD ${qd.qd_no} approved — action required`;
+}
+
+function buildPurchaseEmailHtml(qd) {
+  const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
+    `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
+    <h2 style="margin:0 0 6px">Quality Discrepancy ${escapeHtml(qd.qd_no)}</h2>
+    <p>This QD has been approved and is handed over to Purchase for further processing.</p>
+    <table style="border-collapse:collapse;margin:8px 0">
+      ${row('QD No', qd.qd_no)}${row('Die No', qd.die_no)}${row('Profile', qd.profile_number)}
+      ${row('Supplier', qd.supplier)}${row('Raised', qd.raised_date)}
+      ${row('Recommended action', qd.recommended_action || qd.outcome)}
+    </table>
+    <p style="white-space:pre-wrap">${escapeHtml(qd.issue_detail || qd.issue_summary)}</p>
+  </div>`;
+}
+
 module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
@@ -437,4 +461,5 @@ module.exports = {
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   submitForApproval, approveQD, sendBack, excludeDrafts, onlyDrafts,
+  purchaseEmailSubject, buildPurchaseEmailHtml,
 };

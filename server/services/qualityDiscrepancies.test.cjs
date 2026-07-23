@@ -468,3 +468,22 @@ test('excludeDrafts / onlyDrafts split rows by approval_state', () => {
   assert.deepEqual(q.onlyDrafts(rows, 2).map(r => r.id), [1]);
   assert.deepEqual(q.onlyDrafts(rows, null).map(r => r.id), [1, 3]);
 });
+
+test('purchaseEmailSubject names the QD', () => {
+  assert.equal(q.purchaseEmailSubject({ qd_no: '2026PH-04' }),
+    'QD 2026PH-04 approved — action required');
+});
+
+test('buildPurchaseEmailHtml includes key fields and escapes the issue text', () => {
+  const html = q.buildPurchaseEmailHtml({
+    qd_no: '2026PH-04', die_no: '30601-201', profile_number: '30601',
+    supplier: 'Phoenix', raised_date: '2026-06-04',
+    recommended_action: 'Provide FOC replacement die',
+    issue_detail: 'Heavy blend <observed> on profile',
+  });
+  assert.match(html, /2026PH-04/);
+  assert.match(html, /Phoenix/);
+  assert.match(html, /Provide FOC replacement die/);
+  assert.match(html, /&lt;observed&gt;/);      // escaped, not raw HTML
+  assert.doesNotMatch(html, /<observed>/);
+});
