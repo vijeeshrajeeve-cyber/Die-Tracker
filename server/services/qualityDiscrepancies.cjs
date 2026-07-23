@@ -18,6 +18,22 @@ const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
 const SETTLED_STATUSES = ['Closed', 'Rejected'];
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
+const APPROVAL_STATES = ['Draft', 'Pending', 'Approved', 'SentBack'];
+const EDITABLE_APPROVAL_STATES = ['Draft', 'SentBack'];
+
+// Legal approval transitions. Throwing here (rather than returning null) means
+// an illegal action surfaces as a 400 at the route, not a silent no-op.
+const APPROVAL_TRANSITIONS = {
+  Draft:    { submit: 'Pending' },
+  SentBack: { submit: 'Pending' },
+  Pending:  { approve: 'Approved', sendBack: 'SentBack' },
+};
+function nextApprovalState(from, action) {
+  const to = APPROVAL_TRANSITIONS[from] && APPROVAL_TRANSITIONS[from][action];
+  if (!to) throw new Error(`Cannot ${action} a QD that is ${from}`);
+  return to;
+}
+
 // Timeline entry kinds. The icon/tone are decided here rather than by the
 // client so the timeline vocabulary stays consistent (and unspoofable).
 const ACTIVITY_KINDS = {
@@ -356,10 +372,69 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
   return true;
 }
 
+async function getApprovalRow(client, id) {
+  const { rows } = await client.query(
+    `SELECT id, qd_no, approval_state, supplier FROM quality_discrepancies WHERE id = $1`, [id]);
+  return rows[0] || null;
+}
+
+async function submitForApproval(client, { id, newQdNo, actor, userId }) {
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  const to = nextApprovalState(row.approval_state, 'submit');
+  const qdNo = row.qd_no || newQdNo;
+  if (!qdNo) throw new Error('A QD number is required to submit');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET qd_no = $1, approval_state = $2, submitted_by = $3,
+            submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4`,
+    [qdNo, to, userId || null, id]);
+  await addActivity(client, { qdId: id, actor, action: `submitted QD ${qdNo} for approval`, icon: 'send', tone: 'send', userId });
+  return { ok: true, qdNo, state: to };
+}
+
+async function approveQD(client, { id, actor, userId }) {
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  nextApprovalState(row.approval_state, 'approve');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET approval_state = 'Approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP,
+            sent_to_purchase_date = COALESCE(sent_to_purchase_date, CURRENT_DATE),
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2`,
+    [userId || null, id]);
+  await addActivity(client, { qdId: id, actor, action: `approved QD ${row.qd_no}`, icon: 'check', tone: 'good', userId });
+  return { ok: true, qdNo: row.qd_no };
+}
+
+async function sendBack(client, { id, reason, actor, userId }) {
+  const why = String(reason == null ? '' : reason).trim();
+  if (!why) throw new Error('Reason is required to send a QD back');
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  nextApprovalState(row.approval_state, 'sendBack');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET approval_state = 'SentBack', sent_back_reason = $1,
+            sent_back_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2`,
+    [why, id]);
+  await addActivity(client, { qdId: id, actor, action: `sent QD back — ${why}`, icon: 'undo', tone: 'bad', userId });
+  return { ok: true };
+}
+
+const excludeDrafts = (rows) => (rows || []).filter((r) => r.approval_state !== 'Draft');
+const onlyDrafts = (rows, userId) => (rows || []).filter(
+  (r) => r.approval_state === 'Draft' && (userId == null || r.created_by === userId));
+
 module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
   deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
+  APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
+  submitForApproval, approveQD, sendBack, excludeDrafts, onlyDrafts,
 };

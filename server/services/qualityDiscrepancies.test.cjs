@@ -385,3 +385,86 @@ test('updateStatus returns false when the QD does not exist', async () => {
   const client = { query: async () => ({ rowCount: 0 }) };
   assert.equal(await q.updateStatus(client, { id: 999, status: 'Open', reason: 'r', actor: 'X' }), false);
 });
+
+test('APPROVAL_STATES and the editable subset are the agreed values', () => {
+  assert.deepEqual(q.APPROVAL_STATES, ['Draft', 'Pending', 'Approved', 'SentBack']);
+  assert.deepEqual(q.EDITABLE_APPROVAL_STATES, ['Draft', 'SentBack']);
+});
+
+test('nextApprovalState allows only legal transitions', () => {
+  assert.equal(q.nextApprovalState('Draft', 'submit'), 'Pending');
+  assert.equal(q.nextApprovalState('SentBack', 'submit'), 'Pending');
+  assert.equal(q.nextApprovalState('Pending', 'approve'), 'Approved');
+  assert.equal(q.nextApprovalState('Pending', 'sendBack'), 'SentBack');
+  assert.throws(() => q.nextApprovalState('Approved', 'approve'), /Cannot approve/);
+  assert.throws(() => q.nextApprovalState('Draft', 'approve'), /Cannot approve/);
+  assert.throws(() => q.nextApprovalState('Pending', 'submit'), /Cannot submit/);
+});
+
+test('submitForApproval assigns a number to an unnumbered draft and moves it to Pending', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
+    return { rowCount: 1, rows: [] };
+  } };
+  const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 });
+  assert.deepEqual(out, { ok: true, qdNo: '2026PH-04', state: 'Pending' });
+  const upd = calls.find(c => /SET qd_no = \$1, approval_state = \$2/.test(c.sql));
+  assert.equal(upd.params[0], '2026PH-04');
+  assert.equal(upd.params[1], 'Pending');
+});
+
+test('submitForApproval keeps an existing number when resubmitting a SentBack QD', async () => {
+  const calls = [];
+  const client = { query: async (sql) => {
+    calls.push(sql);
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix' }] };
+    return { rowCount: 1, rows: [] };
+  } };
+  const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-99', actor: 'Veera', userId: 2 });
+  assert.equal(out.qdNo, '2026PH-04'); // not the freshly-computed candidate
+});
+
+test('approveQD stamps approver + purchase date and requires Pending', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending' }] };
+    return { rowCount: 1, rows: [] };
+  } };
+  const out = await q.approveQD(client, { id: 5, actor: 'Imran', userId: 3 });
+  assert.deepEqual(out, { ok: true, qdNo: '2026PH-04' });
+  const upd = calls.find(c => /approval_state = 'Approved'/.test(c.sql));
+  assert.match(upd.sql, /sent_to_purchase_date = COALESCE\(sent_to_purchase_date, CURRENT_DATE\)/);
+});
+
+test('approveQD refuses a QD that is not Pending', async () => {
+  const client = { query: async (sql) => (/SELECT id, qd_no, approval_state/.test(sql)
+    ? { rows: [{ id: 5, qd_no: null, approval_state: 'Draft' }] } : { rowCount: 1 }) };
+  await assert.rejects(() => q.approveQD(client, { id: 5, actor: 'X' }), /Cannot approve/);
+});
+
+test('sendBack requires a reason and only works from Pending', async () => {
+  const okRow = { query: async (sql) => (/SELECT id, qd_no, approval_state/.test(sql)
+    ? { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending' }] } : { rowCount: 1 }) };
+  await assert.rejects(() => q.sendBack(okRow, { id: 5, reason: '  ', actor: 'X' }), /Reason is required/);
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    return /SELECT id, qd_no, approval_state/.test(sql) ? { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending' }] } : { rowCount: 1 }; } };
+  const out = await q.sendBack(client, { id: 5, reason: 'billet temps missing', actor: 'Imran', userId: 3 });
+  assert.equal(out.ok, true);
+  const upd = calls.find(c => /approval_state = 'SentBack'/.test(c.sql));
+  assert.equal(upd.params[0], 'billet temps missing');
+});
+
+test('excludeDrafts / onlyDrafts split rows by approval_state', () => {
+  const rows = [
+    { id: 1, approval_state: 'Draft', created_by: 2 },
+    { id: 2, approval_state: 'Approved', created_by: 2 },
+    { id: 3, approval_state: 'Draft', created_by: 9 },
+  ];
+  assert.deepEqual(q.excludeDrafts(rows).map(r => r.id), [2]);
+  assert.deepEqual(q.onlyDrafts(rows, 2).map(r => r.id), [1]);
+  assert.deepEqual(q.onlyDrafts(rows, null).map(r => r.id), [1, 3]);
+});
