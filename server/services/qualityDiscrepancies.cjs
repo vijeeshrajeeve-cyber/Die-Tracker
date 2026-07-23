@@ -249,17 +249,20 @@ async function createQD(client, input) {
   const {
     qdNo, dieNo, raisedDate, plant, supplier, corrector, status, outcome,
     issueSummary, issueDetail, etaDate, inputAtFailure, closedAt, createdBy, dieOrderId,
+    approvalState, preparedBy,
   } = input;
   const { rows } = await client.query(
     `INSERT INTO quality_discrepancies
        (qd_no, die_no, profile_number, die_order_id, raised_date, plant, supplier, corrector,
-        status, outcome, issue_summary, issue_detail, eta_date, input_at_failure, closed_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        status, outcome, issue_summary, issue_detail, eta_date, input_at_failure, closed_at,
+        created_by, approval_state, prepared_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING id`,
     [
-      qdNo, dieNo, extractProfileFromDie(dieNo), dieOrderId || null, raisedDate, plant, supplier,
+      qdNo || null, dieNo, extractProfileFromDie(dieNo), dieOrderId || null, raisedDate, plant, supplier,
       corrector || null, status || 'Open', outcome || null, issueSummary, issueDetail || null,
       etaDate || null, inputAtFailure || null, closedAt || null, createdBy || null,
+      approvalState || 'Draft', preparedBy || null,
     ]
   );
   return rows[0].id;

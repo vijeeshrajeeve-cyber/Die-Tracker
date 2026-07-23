@@ -7,6 +7,8 @@ const multer = require('multer');
 const { pool } = require('../db.cjs');
 const qd = require('../services/qualityDiscrepancies.cjs');
 const store = require('../services/qdStorage.cjs');
+const qdSettings = require('../services/qdSettings.cjs');
+const email = require('../services/email.cjs');
 
 const router = express.Router();
 
@@ -87,12 +89,18 @@ router.get('/', async (req, res) => {
   try {
     const now = new Date();
     const all = await qd.listQDs(pool);
-    const qds = qd.filterByYear(all, req.query.year);
+    const scoped = qd.filterByYear(all, req.query.year);
+    const { approverUserIds } = await qdSettings.getQdSettings(pool);
+    const visible = req.query.drafts === '1'
+      ? qd.onlyDrafts(scoped, req.user?.id)
+      : qd.excludeDrafts(scoped);
+    const forKpis = qd.excludeDrafts(scoped);
     res.json({
-      qds,
-      kpis: qd.computeKpis(qds, now),
-      suppliers: qd.summarizeSuppliers(qds, now),
+      qds: visible,
+      kpis: qd.computeKpis(forKpis, now),
+      suppliers: qd.summarizeSuppliers(forKpis, now),
       years: qd.availableYears(all),
+      canApprove: qdSettings.isApprover(req.user, approverUserIds),
     });
   } catch (e) {
     console.error('List QDs error:', e);
@@ -114,31 +122,29 @@ router.post('/', async (req, res) => {
     const summary = text.split('\n')[0].slice(0, 160);
 
     await client.query('BEGIN');
-    const qdNo = await nextQdNo(client, String(supplier).trim());
     const id = await qd.createQD(client, {
-      qdNo,
+      qdNo: null,
       dieNo: String(dieNo).trim(),
       raisedDate: new Date().toISOString().slice(0, 10),
       plant: String(plant).trim(),
       supplier: String(supplier).trim(),
       corrector: String(corrector || '').trim() || null,
       status: 'Open',
+      approvalState: 'Draft',
       outcome: outcome || null,
       issueSummary: summary,
       issueDetail: text,
       inputAtFailure: String(inputAtFailure || '').trim() || null,
+      preparedBy: String(corrector || '').trim() || actorFor(req),
       createdBy: req.user?.id,
     });
     await qd.addActivity(client, {
-      qdId: id,
-      actor: String(corrector || '').trim() || actorFor(req),
-      action: `raised QD against die ${String(dieNo).trim()}`,
-      icon: 'flag',
-      tone: 'flag',
-      userId: req.user?.id,
+      qdId: id, actor: String(corrector || '').trim() || actorFor(req),
+      action: `drafted QD against die ${String(dieNo).trim()}`,
+      icon: 'flag', tone: 'flag', userId: req.user?.id,
     });
     await client.query('COMMIT');
-    res.status(201).json({ id, qd_no: qdNo });
+    res.status(201).json({ id });
   } catch (e) {
     await client.query('ROLLBACK');
     if (e.code === '23505') return res.status(409).json({ error: 'QD number already exists — please retry' });
@@ -148,6 +154,131 @@ router.post('/', async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// GET /settings → approver ids + Purchase recipients (any authed user may read;
+// the client uses it to prefill the admin form, and canApprove is derived here too)
+router.get('/settings', async (req, res) => {
+  try {
+    res.json(await qdSettings.getQdSettings(pool));
+  } catch (e) { console.error('QD settings read error:', e); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// PUT /settings → admin only
+router.put('/settings', async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { approverUserIds, purchaseEmailTo, purchaseEmailCc } = req.body || {};
+    await qdSettings.saveQdSettings(pool, {
+      approverUserIds: Array.isArray(approverUserIds) ? approverUserIds : [],
+      purchaseEmailTo: String(purchaseEmailTo || ''),
+      purchaseEmailCc: String(purchaseEmailCc || ''),
+    });
+    res.json({ message: 'Saved' });
+  } catch (e) { console.error('QD settings save error:', e); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+const requireApprover = async (req, res, next) => {
+  try {
+    const { approverUserIds } = await qdSettings.getQdSettings(pool);
+    if (!qdSettings.isApprover(req.user, approverUserIds)) {
+      return res.status(403).json({ error: 'Not authorized to approve QDs' });
+    }
+    next();
+  } catch (e) { console.error('Approver check error:', e); res.status(500).json({ error: 'Internal server error' }); }
+};
+
+// Shared: build + send the Purchase email for an already-approved QD.
+// Non-blocking — the caller decides how to report a send failure.
+async function sendPurchaseEmail(qdId, sentBy) {
+  const { rows } = await pool.query('SELECT * FROM quality_discrepancies WHERE id = $1', [qdId]);
+  const row = rows[0];
+  if (!row) throw new Error('QD not found');
+  const { purchaseEmailTo, purchaseEmailCc } = await qdSettings.getQdSettings(pool);
+  if (!purchaseEmailTo) throw new Error('No Purchase recipient configured (Settings → QD)');
+  await email.sendEmail({
+    to: purchaseEmailTo, cc: purchaseEmailCc || undefined,
+    subject: qd.purchaseEmailSubject(row), body: qd.buildPurchaseEmailHtml(row),
+    importance: 'high', sentBy,
+  });
+}
+
+// POST /:id/submit → Draft/SentBack → Pending (assigns a number if unnumbered)
+router.post('/:id/submit', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const row = await qd.getApprovalRow(client, req.params.id);
+    if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'QD not found' }); }
+    const newQdNo = row.qd_no || await nextQdNo(client, row.supplier);
+    const out = await qd.submitForApproval(client, {
+      id: req.params.id, newQdNo, actor: actorFor(req), userId: req.user?.id,
+    });
+    await client.query('COMMIT');
+    res.json({ message: 'Submitted', qd_no: out.qdNo, approval_state: out.state });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    if (/^Cannot submit/.test(e.message)) return res.status(400).json({ error: e.message });
+    if (/^No QD code/.test(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Submit QD error:', e); res.status(500).json({ error: 'Internal server error' });
+  } finally { client.release(); }
+});
+
+// POST /:id/approve → Pending → Approved, then email Purchase (non-blocking)
+router.post('/:id/approve', requireApprover, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const out = await qd.approveQD(client, { id: req.params.id, actor: actorFor(req), userId: req.user?.id });
+    if (!out.ok) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'QD not found' }); }
+    await client.query('COMMIT');
+    // Email after commit — a mail failure must not undo the approval.
+    try {
+      await sendPurchaseEmail(req.params.id, req.user?.id);
+      await qd.addActivityOfKind(pool, { qdId: req.params.id, kind: 'email',
+        actor: actorFor(req), note: 'QD emailed to Purchase team', userId: req.user?.id });
+      res.json({ message: 'Approved and sent to Purchase' });
+    } catch (mailErr) {
+      console.error('Purchase email failed:', mailErr.message);
+      res.json({ message: 'Approved', emailWarning: mailErr.message });
+    }
+  } catch (e) {
+    await client.query('ROLLBACK');
+    if (/^Cannot approve/.test(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Approve QD error:', e); res.status(500).json({ error: 'Internal server error' });
+  } finally { client.release(); }
+});
+
+// POST /:id/resend-purchase → re-send the Purchase email for an Approved QD
+router.post('/:id/resend-purchase', requireApprover, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT approval_state FROM quality_discrepancies WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'QD not found' });
+    if (rows[0].approval_state !== 'Approved') return res.status(400).json({ error: 'Only an approved QD can be sent to Purchase' });
+    await sendPurchaseEmail(req.params.id, req.user?.id);
+    await qd.addActivityOfKind(pool, { qdId: req.params.id, kind: 'email',
+      actor: actorFor(req), note: 'QD re-sent to Purchase team', userId: req.user?.id });
+    res.json({ message: 'Re-sent to Purchase' });
+  } catch (e) {
+    console.error('Resend Purchase error:', e); res.status(500).json({ error: e.message || 'Internal server error' });
+  }
+});
+
+// POST /:id/send-back → Pending → SentBack (reason required), approver only
+router.post('/:id/send-back', requireApprover, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const out = await qd.sendBack(client, {
+      id: req.params.id, reason: req.body?.reason, actor: actorFor(req), userId: req.user?.id });
+    if (!out.ok) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'QD not found' }); }
+    await client.query('COMMIT');
+    res.json({ message: 'Sent back' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    if (/^Reason is required/.test(e.message) || /^Cannot sendBack/.test(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Send-back QD error:', e); res.status(500).json({ error: 'Internal server error' });
+  } finally { client.release(); }
 });
 
 // PATCH /api/quality-discrepancies/:id  { outcome?, input_at_failure?, eta_date?, corrector? }
