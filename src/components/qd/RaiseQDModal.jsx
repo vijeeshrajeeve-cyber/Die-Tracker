@@ -59,6 +59,10 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const [submitKind, setSubmitKind] = useState(null); // 'draft' | 'submit' — which footer button is busy
   const [error, setError] = useState('');
   const fileRef = useRef(null);
+  // Set once create() (and any file upload) succeeds. Lets a retry after a
+  // submit-only failure re-run just the submit step instead of creating a
+  // second, orphaned draft.
+  const createdIdRef = useRef(null);
 
   // Part-A header fields + the two billet readings. Every field stays editable
   // even after an auto-fill match — this is a best-effort prefill, not a lock.
@@ -136,22 +140,30 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
     setSubmitKind(doSubmit ? 'submit' : 'draft');
     setError('');
     try {
-      const { id } = await qualityDiscrepanciesAPI.create({
-        dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
-        corrector: corrector.trim(), issue: issue.trim(), outcome,
-        inputAtFailure: inputAtFailure.trim(),
-        dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType,
-        dieSize: partA.dieSize, noOfCavity: partA.noOfCavity, tooling: partA.tooling,
-        noOfTrials: partA.noOfTrials, noOfCorrections: partA.noOfCorrections,
-        productionDate: partA.productionDate, manufacturingDefect: partA.manufacturingDefect,
-        diePerformance: partA.diePerformance, recommendedAction: partA.recommendedAction,
-        dieOrderId, billets,
-      });
-      if (files.length) await qualityDiscrepanciesAPI.uploadFiles(id, files, fileCategory);
+      let id = createdIdRef.current;
+      if (!id) {
+        const created = await qualityDiscrepanciesAPI.create({
+          dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
+          corrector: corrector.trim(), issue: issue.trim(), outcome,
+          inputAtFailure: inputAtFailure.trim(),
+          dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType,
+          dieSize: partA.dieSize, noOfCavity: partA.noOfCavity, tooling: partA.tooling,
+          noOfTrials: partA.noOfTrials, noOfCorrections: partA.noOfCorrections,
+          productionDate: partA.productionDate, manufacturingDefect: partA.manufacturingDefect,
+          diePerformance: partA.diePerformance, recommendedAction: partA.recommendedAction,
+          dieOrderId, billets,
+        });
+        id = created.id;
+        createdIdRef.current = id;
+        if (files.length) await qualityDiscrepanciesAPI.uploadFiles(id, files, fileCategory);
+      }
       if (doSubmit) await qualityDiscrepanciesAPI.submit(id);
       onCreated(id, { submitted: doSubmit });
     } catch (e) {
-      setError(e.message || 'Failed to raise QD');
+      const message = createdIdRef.current
+        ? `Draft was saved, but ${doSubmit ? 'submitting it for approval' : 'attaching files'} failed: ${e.message || 'unknown error'}. Retrying will only retry that step, not create a duplicate draft.`
+        : (e.message || 'Failed to raise QD');
+      setError(message);
       setSubmitting(false);
       setSubmitKind(null);
     }

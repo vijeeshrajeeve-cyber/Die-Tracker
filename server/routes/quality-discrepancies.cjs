@@ -264,6 +264,7 @@ router.post('/:id/submit', async (req, res) => {
     res.json({ message: 'Submitted', qd_no: out.qdNo, approval_state: out.state });
   } catch (e) {
     await client.query('ROLLBACK');
+    if (e.code === '23505') return res.status(409).json({ error: 'QD number already exists — please retry' });
     if (/^Cannot submit/.test(e.message)) return res.status(400).json({ error: e.message });
     if (/^No QD code/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Submit QD error:', e); res.status(500).json({ error: 'Internal server error' });
@@ -273,12 +274,17 @@ router.post('/:id/submit', async (req, res) => {
 // POST /:id/approve → Pending → Approved, then email Purchase (non-blocking)
 router.post('/:id/approve', requireApprover, async (req, res) => {
   const client = await pool.connect();
+  let released = false;
   try {
     await client.query('BEGIN');
     const out = await qd.approveQD(client, { id: req.params.id, actor: actorFor(req), userId: req.user?.id });
     if (!out.ok) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'QD not found' }); }
     await client.query('COMMIT');
-    // Email after commit — a mail failure must not undo the approval.
+    client.release();
+    released = true;
+    // Email after commit and after releasing the pooled client — a mail
+    // failure must not undo the approval, and buildQdPdfBytes acquires more
+    // pool connections of its own, so holding this one idle risks starvation.
     try {
       await sendPurchaseEmail(req.params.id, req.user?.id);
       await qd.addActivityOfKind(pool, { qdId: req.params.id, kind: 'email',
@@ -292,7 +298,7 @@ router.post('/:id/approve', requireApprover, async (req, res) => {
     await client.query('ROLLBACK');
     if (/^Cannot approve/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Approve QD error:', e); res.status(500).json({ error: 'Internal server error' });
-  } finally { client.release(); }
+  } finally { if (!released) client.release(); }
 });
 
 // POST /:id/resend-purchase → re-send the Purchase email for an Approved QD
@@ -306,7 +312,9 @@ router.post('/:id/resend-purchase', requireApprover, async (req, res) => {
       actor: actorFor(req), note: 'QD re-sent to Purchase team', userId: req.user?.id });
     res.json({ message: 'Re-sent to Purchase' });
   } catch (e) {
-    console.error('Resend Purchase error:', e); res.status(500).json({ error: e.message || 'Internal server error' });
+    if (/^No Purchase recipient configured/.test(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Resend Purchase error:', e);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
