@@ -334,7 +334,7 @@ CREATE INDEX IF NOT EXISTS idx_existing_production_data_die_no ON existing_produ
 -- Quality Discrepancies (QD Tracker)
 CREATE TABLE IF NOT EXISTS quality_discrepancies (
     id SERIAL PRIMARY KEY,
-    qd_no            TEXT UNIQUE NOT NULL,
+    qd_no            TEXT UNIQUE,
     die_no           TEXT NOT NULL,
     profile_number   TEXT,
     die_order_id     INTEGER REFERENCES die_orders(id),
@@ -353,10 +353,26 @@ CREATE TABLE IF NOT EXISTS quality_discrepancies (
     closed_at        DATE,
     created_by       INTEGER REFERENCES users(id),
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approval_state   TEXT NOT NULL DEFAULT 'Draft',
+    submitted_by     INTEGER REFERENCES users(id),
+    submitted_at     TIMESTAMP,
+    approved_by      INTEGER REFERENCES users(id),
+    approved_at      TIMESTAMP,
+    sent_back_reason TEXT,
+    sent_back_at     TIMESTAMP,
+    prepared_by      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_qd_supplier ON quality_discrepancies(supplier);
 CREATE INDEX IF NOT EXISTS idx_qd_status ON quality_discrepancies(status);
+
+CREATE TABLE IF NOT EXISTS qd_settings (
+    id                SERIAL PRIMARY KEY,
+    approver_user_ids TEXT DEFAULT '[]',
+    purchase_email_to TEXT DEFAULT '',
+    purchase_email_cc TEXT DEFAULT '',
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
     id SERIAL PRIMARY KEY,
