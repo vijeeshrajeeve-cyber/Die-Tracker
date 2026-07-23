@@ -479,12 +479,24 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       )}
       {showRaise && (
         <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} onClose={() => setShowRaise(false)}
-          onCreated={(id) => {
-            // A newly raised QD is a Draft (no number yet, excluded from the
-            // normal register), so switch to the Drafts view to reload with it
-            // included — otherwise the drawer would open on a row not in `data.qds`.
+          onCreated={async (id, { submitted } = {}) => {
+            // A freshly-saved Draft has no number yet and is excluded from the
+            // normal register, so it only shows up in the Drafts view. A
+            // Submitted QD is the opposite — it's now Pending, not a Draft, so
+            // it only shows up in the normal (non-drafts) register. Reload the
+            // list that will actually contain the new row, and wait for that
+            // reload to resolve before opening the drawer, so it doesn't try
+            // to open on a row not yet present in `data.qds`.
             setShowRaise(false);
-            setShowDrafts(true);
+            const wantDrafts = !submitted;
+            setShowDrafts(wantDrafts);
+            try {
+              const next = await qualityDiscrepanciesAPI.list(year, { drafts: wantDrafts });
+              setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
+            } catch {
+              // Best-effort — the effect-driven load() (triggered by the
+              // setShowDrafts above) will retry the fetch regardless.
+            }
             setSelectedId(id);
           }} />
       )}

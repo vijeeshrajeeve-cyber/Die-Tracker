@@ -149,7 +149,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
       });
       if (files.length) await qualityDiscrepanciesAPI.uploadFiles(id, files, fileCategory);
       if (doSubmit) await qualityDiscrepanciesAPI.submit(id);
-      onCreated(id);
+      onCreated(id, { submitted: doSubmit });
     } catch (e) {
       setError(e.message || 'Failed to raise QD');
       setSubmitting(false);

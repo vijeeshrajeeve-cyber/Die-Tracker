@@ -116,7 +116,7 @@ router.post('/', async (req, res) => {
     const {
       dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure,
       dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
-      productionDate, manufacturingDefect, diePerformance, recommendedAction,
+      productionDate, manufacturingDefect, diePerformance, recommendedAction, dieOrderId,
     } = req.body;
     if (!String(dieNo || '').trim()) { client.release(); return res.status(400).json({ error: 'Die No is required' }); }
     if (!String(plant || '').trim()) { client.release(); return res.status(400).json({ error: 'Plant is required' }); }
@@ -154,6 +154,7 @@ router.post('/', async (req, res) => {
       manufacturingDefect: String(manufacturingDefect || '').trim() || null,
       diePerformance: String(diePerformance || '').trim() || null,
       recommendedAction: String(recommendedAction || '').trim() || null,
+      dieOrderId: dieOrderId || null,
     });
     await qd.addActivity(client, {
       qdId: id, actor: String(corrector || '').trim() || actorFor(req),
