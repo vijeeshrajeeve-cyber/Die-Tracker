@@ -500,6 +500,44 @@ const initializeDatabase = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_qd_files_qd ON quality_discrepancy_files (qd_id);
 
+      -- ── QD standard-format fields (Part-A header, classification, Part-B) ──
+      DO $$
+      DECLARE col TEXT;
+      BEGIN
+        FOREACH col IN ARRAY ARRAY[
+          'die_received_date','press','die_type','die_size','no_of_cavity','tooling',
+          'no_of_trials','no_of_corrections','production_date',
+          'manufacturing_defect','die_performance','recommended_action',
+          'supplier_acceptance','action_taken','supplier_comments','received_by_supplier'
+        ] LOOP
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='quality_discrepancies' AND column_name=col) THEN
+            EXECUTE format('ALTER TABLE quality_discrepancies ADD COLUMN %I TEXT', col);
+          END IF;
+        END LOOP;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name='quality_discrepancy_files' AND column_name='category') THEN
+          ALTER TABLE quality_discrepancy_files ADD COLUMN category TEXT DEFAULT 'general';
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS qd_billet_parameters (
+        id                   SERIAL PRIMARY KEY,
+        qd_id                INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+        billet               TEXT NOT NULL,               -- 'first' | 'last'
+        die_soaking_hours    TEXT,
+        die_temperature      TEXT,
+        billet_temp          TEXT,
+        breakthrough_pressure TEXT,
+        running_pressure     TEXT,
+        billet_length        TEXT,
+        alloy                TEXT,
+        ram_speed            TEXT,
+        any_delay_observed   TEXT,
+        UNIQUE (qd_id, billet)
+      );
+      CREATE INDEX IF NOT EXISTS idx_qd_billet_qd ON qd_billet_parameters (qd_id);
+
       -- Press master (press name → code)
       CREATE TABLE IF NOT EXISTS presses (
         id SERIAL PRIMARY KEY,
