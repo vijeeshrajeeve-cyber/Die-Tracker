@@ -200,6 +200,43 @@ function summarizeSuppliers(rows, now = new Date()) {
     .sort((a, b) => b.open - a.open || b.total - a.total || a.name.localeCompare(b.name));
 }
 
+// ── Billet parameters (Part-A "first billet"/"last billet" readings) ───────
+
+const BILLETS = ['first', 'last'];
+const BILLET_COLS = ['die_soaking_hours','die_temperature','billet_temp','breakthrough_pressure',
+  'running_pressure','billet_length','alloy','ram_speed','any_delay_observed'];
+
+const hasAnyValue = (obj) => BILLET_COLS.some((c) => String(obj?.[c] ?? '').trim() !== '');
+
+async function saveBilletParameters(client, qdId, params) {
+  for (const billet of BILLETS) {
+    const data = params?.[billet];
+    if (!data || !hasAnyValue(data)) {
+      await client.query('DELETE FROM qd_billet_parameters WHERE qd_id = $1 AND billet = $2', [qdId, billet]);
+      continue;
+    }
+    const vals = BILLET_COLS.map((c) => String(data[c] ?? '').trim() || null);
+    await client.query(
+      `INSERT INTO qd_billet_parameters (qd_id, billet, ${BILLET_COLS.join(', ')})
+       VALUES ($1, $2, ${BILLET_COLS.map((_, i) => `$${i + 3}`).join(', ')})
+       ON CONFLICT (qd_id, billet) DO UPDATE SET
+         ${BILLET_COLS.map((c) => `${c} = EXCLUDED.${c}`).join(', ')}`,
+      [qdId, billet, ...vals]);
+  }
+}
+
+async function listBilletParameters(client, qdIds) {
+  const map = new Map();
+  if (!qdIds || !qdIds.length) return map;
+  const { rows } = await client.query(
+    `SELECT * FROM qd_billet_parameters WHERE qd_id = ANY($1)`, [qdIds]);
+  for (const r of rows) {
+    if (!map.has(r.qd_id)) map.set(r.qd_id, []);
+    map.get(r.qd_id).push(r);
+  }
+  return map;
+}
+
 async function listQDs(client) {
   const { rows } = await client.query(
     `SELECT * FROM quality_discrepancies ORDER BY raised_date DESC, id DESC`
@@ -207,6 +244,7 @@ async function listQDs(client) {
   const ids = rows.map((r) => r.id);
   let files = [];
   let activity = [];
+  let billets = new Map();
   if (ids.length) {
     files = (await client.query(
       `SELECT id, qd_id, original_name, mime_type, size_bytes, uploaded_at
@@ -218,6 +256,7 @@ async function listQDs(client) {
          FROM quality_discrepancy_activity WHERE qd_id = ANY($1) ORDER BY occurred_at ASC, id ASC`,
       [ids]
     )).rows;
+    billets = await listBilletParameters(client, ids);
   }
   const now = new Date();
   return rows.map((r) => ({
@@ -228,6 +267,7 @@ async function listQDs(client) {
     handoff: handoffDelays(r),
     files: files.filter((f) => f.qd_id === r.id),
     activity: activity.filter((a) => a.qd_id === r.id),
+    billets: billets.get(r.id) || [],
   }));
 }
 
@@ -271,6 +311,8 @@ async function createQD(client, input) {
 // Fields the drawer can edit after a QD is raised. Status has its own path
 // (it stamps closed_at), and everything else — qd_no, die_no, dates — is either
 // identity or derived, so it is deliberately not editable here.
+const YES_NO = ['Yes', 'No'];
+
 const EDITABLE_FIELDS = {
   outcome: { label: 'Outcome sought' },
   input_at_failure: { label: 'Input at failure' },
@@ -278,6 +320,22 @@ const EDITABLE_FIELDS = {
   sent_to_purchase_date: { label: 'Sent to purchase', isDate: true },
   sent_to_supplier_date: { label: 'Sent to supplier', isDate: true },
   corrector: { label: 'Corrector' },
+  recommended_action:   { label: 'Recommended action' },
+  manufacturing_defect: { label: 'Manufacturing defect', oneOf: YES_NO },
+  die_performance:      { label: 'Die performance', oneOf: YES_NO },
+  supplier_acceptance:  { label: 'Supplier acceptance', oneOf: YES_NO },
+  action_taken:         { label: 'Action taken' },
+  supplier_comments:    { label: 'Supplier comments' },
+  received_by_supplier: { label: 'Received by (supplier)' },
+  press:                { label: 'Press' },
+  die_type:             { label: 'Die type' },
+  die_size:             { label: 'Die size' },
+  no_of_cavity:         { label: 'No of cavity' },
+  tooling:              { label: 'Tooling' },
+  no_of_trials:         { label: 'No of trials' },
+  no_of_corrections:    { label: 'No of corrections' },
+  die_received_date:    { label: 'Die received date' },
+  production_date:      { label: 'Production date' },
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -288,8 +346,12 @@ function normalizeField(column, raw) {
   if (column === 'outcome' && !OUTCOMES.includes(value)) {
     throw new Error(`Invalid outcome: ${value}`);
   }
-  if (EDITABLE_FIELDS[column]?.isDate && !ISO_DATE.test(value)) {
-    const what = column === 'eta_date' ? 'ETA date' : EDITABLE_FIELDS[column].label;
+  const spec = EDITABLE_FIELDS[column];
+  if (spec?.oneOf && !spec.oneOf.includes(value)) {
+    throw new Error(`Invalid ${spec.label}: ${value} (expected ${spec.oneOf.join(' or ')})`);
+  }
+  if (spec?.isDate && !ISO_DATE.test(value)) {
+    const what = column === 'eta_date' ? 'ETA date' : spec.label;
     throw new Error(`Invalid ${what}: ${value} (expected YYYY-MM-DD)`);
   }
   return value;
@@ -465,4 +527,5 @@ module.exports = {
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   submitForApproval, approveQD, sendBack, excludeDrafts, onlyDrafts,
   purchaseEmailSubject, buildPurchaseEmailHtml,
+  BILLETS, saveBilletParameters, listBilletParameters,
 };

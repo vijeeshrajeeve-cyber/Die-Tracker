@@ -487,3 +487,32 @@ test('buildPurchaseEmailHtml includes key fields and escapes the issue text', ()
   assert.match(html, /&lt;observed&gt;/);      // escaped, not raw HTML
   assert.doesNotMatch(html, /<observed>/);
 });
+
+test('EDITABLE_FIELDS now covers the Part-A/Part-B format fields', () => {
+  for (const f of ['recommended_action','manufacturing_defect','die_performance',
+                   'supplier_acceptance','action_taken','supplier_comments','received_by_supplier',
+                   'press','die_type','die_size','no_of_cavity','tooling','no_of_trials',
+                   'no_of_corrections','die_received_date','production_date']) {
+    assert.ok(q.EDITABLE_FIELDS[f], `expected ${f} to be editable`);
+  }
+});
+
+test('manufacturing_defect only accepts Yes/No', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { manufacturing_defect: 'maybe' }, actor: 'x' }),
+    /Invalid Manufacturing defect/);
+});
+
+test('saveBilletParameters upserts given billets and deletes empty ones', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [], rowCount: 1 }; } };
+  await q.saveBilletParameters(client, 5, {
+    first: { billet_temp: '502', running_pressure: '167' },
+    last: {},   // empty → should be deleted, not inserted
+  });
+  const del = calls.find(c => /DELETE FROM qd_billet_parameters/.test(c.sql) && c.params.includes('last'));
+  const up = calls.find(c => /INSERT INTO qd_billet_parameters/.test(c.sql) && c.params.includes('first'));
+  assert.ok(del, 'empty last billet should be deleted');
+  assert.ok(up, 'first billet should be upserted');
+});
