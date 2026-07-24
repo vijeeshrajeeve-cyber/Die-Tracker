@@ -393,6 +393,58 @@ async function updateFields(client, { id, fields, actor, userId }) {
   return true;
 }
 
+// Columns the full "Edit QD" form may write. A superset of the fact-card path:
+// it adds the identity-ish Part-A fields (discrepancy text, supplier, profile,
+// plant) that the raise form captures. qd_no, die_no and raised_date stay out —
+// they are identity/derived. Editing is gated to Draft/SentBack in editQdDetails.
+const EXTRA_EDIT_LABELS = {
+  issue_detail: 'Discrepancy', profile_number: 'Profile number', supplier: 'Supplier', plant: 'Plant',
+};
+const EDIT_DETAIL_COLUMNS = new Set([
+  ...Object.keys(EDITABLE_FIELDS), ...Object.keys(EXTRA_EDIT_LABELS),
+]);
+const editDetailLabel = (col) => EDITABLE_FIELDS[col]?.label || EXTRA_EDIT_LABELS[col] || col;
+
+// Bulk edit of a QD's Part-A / discrepancy fields and billet readings. Allowed
+// only while the QD is a Draft or has been sent back — an approved (or
+// in-review) record must not shift under the approver. Validation reuses
+// normalizeField, so dates and Yes/No fields are checked exactly as the
+// fact-card path checks them. Returns false if the QD is gone or nothing changed.
+async function editQdDetails(client, { id, fields = {}, billets, actor, userId }) {
+  const row = await getApprovalRow(client, id);
+  if (!row) return false;
+  if (!EDITABLE_APPROVAL_STATES.includes(row.approval_state)) {
+    throw new Error(`Cannot edit a QD in ${row.approval_state} state`);
+  }
+  const changes = [];
+  const entries = Object.entries(fields).filter(([k]) => EDIT_DETAIL_COLUMNS.has(k));
+  if (entries.length) {
+    const sets = [];
+    const params = [];
+    for (const [column, raw] of entries) {
+      const value = normalizeField(column, raw);
+      params.push(value);
+      sets.push(`${column} = $${params.length}`);
+      changes.push(value === null ? `cleared ${editDetailLabel(column)}` : `set ${editDetailLabel(column)}`);
+    }
+    params.push(id);
+    await client.query(
+      `UPDATE quality_discrepancies SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $${params.length}`,
+      params
+    );
+  }
+  if (billets !== undefined) {
+    await saveBilletParameters(client, id, billets);
+    changes.push('updated production parameters');
+  }
+  if (!changes.length) return false;
+  await addActivity(client, {
+    qdId: id, actor, action: `edited the QD — ${changes.join(', ')}`, icon: 'pencil', tone: 'neutral', userId,
+  });
+  return true;
+}
+
 // Tone the timeline dot by where the status lands, so the history reads at a glance.
 const STATUS_TONE = {
   'FOC Accepted': 'good',
@@ -531,7 +583,7 @@ module.exports = {
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
   deriveQdCode, formatQdNo, nextSequence,
-  listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields,
+  listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   submitForApproval, approveQD, sendBack, excludeDrafts, onlyDrafts,
   purchaseEmailSubject, buildPurchaseEmailHtml,

@@ -372,6 +372,43 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+// PUT /api/quality-discrepancies/:id  — full "Edit QD" save (Part-A, discrepancy
+// text, billets). Allowed only while the QD is a Draft or has been sent back.
+// The body reuses the raise form's camelCase field names; billets is
+// { first:{…}, last:{…} }. The PDF is generated live, so no regenerate step.
+const EDIT_BODY_MAP = {
+  profileNumber: 'profile_number', supplier: 'supplier', plant: 'plant', corrector: 'corrector',
+  dieReceivedDate: 'die_received_date', press: 'press', dieType: 'die_type', dieSize: 'die_size',
+  noOfCavity: 'no_of_cavity', tooling: 'tooling', noOfTrials: 'no_of_trials', noOfCorrections: 'no_of_corrections',
+  productionDate: 'production_date', manufacturingDefect: 'manufacturing_defect', diePerformance: 'die_performance',
+  issue: 'issue_detail', recommendedAction: 'recommended_action', inputAtFailure: 'input_at_failure', outcome: 'outcome',
+};
+router.put('/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const fields = {};
+    for (const [bodyKey, col] of Object.entries(EDIT_BODY_MAP)) {
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, bodyKey)) fields[col] = req.body[bodyKey];
+    }
+    const ok = await qd.editQdDetails(client, {
+      id: req.params.id, fields, billets: req.body?.billets,
+      actor: actorFor(req), userId: req.user?.id,
+    });
+    await client.query('COMMIT');
+    if (!ok) return res.status(404).json({ error: 'QD not found, or no changes supplied' });
+    res.json({ message: 'Saved' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    if (/^Cannot edit a QD/.test(e.message)) return res.status(409).json({ error: e.message });
+    if (/^Invalid /.test(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Edit QD error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // PATCH /api/quality-discrepancies/:id/status  { status, reason, etaDate? }
 // A reason is mandatory; an ETA is mandatory when moving to FOC Accepted.
 router.patch('/:id/status', async (req, res) => {
@@ -443,6 +480,38 @@ router.post('/:id/files', acceptFiles, async (req, res) => {
     res.status(201).json({ files: saved });
   } catch (e) {
     console.error('Upload QD files error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/quality-discrepancies/:id/files/:fileId  — remove an image while
+// editing. Destructive, so gated to the editable states (Draft/SentBack) like
+// the rest of the Edit flow. Deletes the row, then best-effort unlinks the file.
+router.delete('/:id/files/:fileId', async (req, res) => {
+  try {
+    const meta = await pool.query('SELECT approval_state FROM quality_discrepancies WHERE id = $1', [req.params.id]);
+    if (meta.rowCount === 0) return res.status(404).json({ error: 'QD not found' });
+    if (!qd.EDITABLE_APPROVAL_STATES.includes(meta.rows[0].approval_state)) {
+      return res.status(409).json({ error: `Cannot edit a QD in ${meta.rows[0].approval_state} state` });
+    }
+    const fr = await pool.query(
+      'SELECT stored_path, original_name FROM quality_discrepancy_files WHERE id = $1 AND qd_id = $2',
+      [req.params.fileId, req.params.id]
+    );
+    if (fr.rowCount === 0) return res.status(404).json({ error: 'File not found' });
+    await pool.query('DELETE FROM quality_discrepancy_files WHERE id = $1', [req.params.fileId]);
+    try {
+      const root = path.resolve(store.getRoot());
+      const abs = path.resolve(root, fr.rows[0].stored_path);
+      if (abs.startsWith(root)) await fsp.unlink(abs);
+    } catch { /* the DB row is gone; a stray file on disk is harmless */ }
+    await qd.addActivity(pool, {
+      qdId: req.params.id, actor: actorFor(req),
+      action: `removed image ${fr.rows[0].original_name}`, icon: 'trash', tone: 'neutral', userId: req.user?.id,
+    });
+    res.json({ message: 'Deleted' });
+  } catch (e) {
+    console.error('Delete QD file error:', e);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

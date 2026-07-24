@@ -386,6 +386,70 @@ test('updateStatus returns false when the QD does not exist', async () => {
   assert.equal(await q.updateStatus(client, { id: 999, status: 'Open', reason: 'r', actor: 'X' }), false);
 });
 
+// ── editQdDetails (bulk edit, allowed only in Draft/SentBack) ───────────────
+function editMock(approvalState) {
+  const calls = [];
+  const client = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (/SELECT id, qd_no, approval_state/.test(sql)) {
+        return { rows: approvalState ? [{ id: params[0], qd_no: 'x', approval_state: approvalState, supplier: 'S' }] : [] };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  return { client, calls };
+}
+
+test('editQdDetails updates whitelisted fields + billets and logs, in an editable state', async () => {
+  const { client, calls } = editMock('SentBack');
+  const ok = await q.editQdDetails(client, {
+    id: 5, actor: 'Veera', userId: 3,
+    fields: { press: 'P2', issue_detail: 'heavy blend on the profile' },
+    billets: { first: { billet_temp: '502' }, last: {} },
+  });
+  assert.equal(ok, true);
+  const upd = calls.find((c) => /UPDATE quality_discrepancies SET/.test(c.sql));
+  assert.match(upd.sql, /press = /);
+  assert.match(upd.sql, /issue_detail = /);
+  assert.ok(calls.some((c) => /INSERT INTO qd_billet_parameters/.test(c.sql)), 'first billet upserted');
+  assert.ok(calls.some((c) => /DELETE FROM qd_billet_parameters/.test(c.sql)), 'empty last billet cleared');
+  assert.ok(calls.some((c) => /INSERT INTO quality_discrepancy_activity/.test(c.sql)), 'change logged');
+});
+
+test('editQdDetails refuses to edit a QD that is not Draft or SentBack', async () => {
+  for (const state of ['Pending', 'Approved']) {
+    const { client } = editMock(state);
+    await assert.rejects(
+      () => q.editQdDetails(client, { id: 1, fields: { press: 'P2' }, actor: 'x' }),
+      /Cannot edit a QD/,
+      `state ${state} must be rejected`
+    );
+  }
+});
+
+test('editQdDetails validates fields the same way as the fact-card path', async () => {
+  const { client } = editMock('Draft');
+  await assert.rejects(
+    () => q.editQdDetails(client, { id: 1, fields: { manufacturing_defect: 'Maybe' }, actor: 'x' }),
+    /Invalid Manufacturing defect/
+  );
+});
+
+test('editQdDetails ignores identity/derived columns it must never write', async () => {
+  const { client, calls } = editMock('Draft');
+  await q.editQdDetails(client, { id: 1, actor: 'x', fields: { qd_no: 'HACK', die_no: 'ZZ', press: 'P2' } });
+  const upd = calls.find((c) => /UPDATE quality_discrepancies SET/.test(c.sql));
+  assert.match(upd.sql, /press = /);
+  assert.doesNotMatch(upd.sql, /qd_no = /);
+  assert.doesNotMatch(upd.sql, /die_no = /);
+});
+
+test('editQdDetails returns false when the QD does not exist', async () => {
+  const { client } = editMock(null);
+  assert.equal(await q.editQdDetails(client, { id: 999, fields: { press: 'P2' }, actor: 'x' }), false);
+});
+
 test('APPROVAL_STATES and the editable subset are the agreed values', () => {
   assert.deepEqual(q.APPROVAL_STATES, ['Draft', 'Pending', 'Approved', 'SentBack']);
   assert.deepEqual(q.EDITABLE_APPROVAL_STATES, ['Draft', 'SentBack']);
