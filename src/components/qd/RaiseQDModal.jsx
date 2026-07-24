@@ -53,8 +53,8 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const [inputAtFailure, setInputAtFailure] = useState('');
   const [issue, setIssue] = useState('');
   const [outcome, setOutcome] = useState('Supplier rework');
-  const [files, setFiles] = useState([]);
-  const [fileCategory, setFileCategory] = useState('general');
+  const [staged, setStaged] = useState([]); // [{ file, category }] — each image carries its own category
+  const [fileCategory, setFileCategory] = useState('general'); // default category applied to newly added files
   const [submitting, setSubmitting] = useState(false);
   const [submitKind, setSubmitKind] = useState(null); // 'draft' | 'submit' — which footer button is busy
   const [error, setError] = useState('');
@@ -62,11 +62,11 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   // Set only once create() itself succeeds. Lets a retry re-use the already
   // created draft instead of creating a second, orphaned one.
   const createdIdRef = useRef(null);
-  // Set only once uploadFiles() itself succeeds. Tracked independently from
-  // createdIdRef so a retry re-attempts exactly the step(s) that haven't
-  // succeeded yet — an upload failure no longer causes the whole
-  // create+upload block to be silently skipped on retry.
-  const filesUploadedRef = useRef(false);
+  // Tracks which category groups have already uploaded. Files are sent one
+  // request per category (the server takes one category per request), so a
+  // retry re-attempts only the groups that haven't succeeded yet — an upload
+  // failure no longer causes the whole create+upload block to be skipped.
+  const uploadedCatsRef = useRef(new Set());
 
   // Part-A header fields + the two billet readings. Every field stays editable
   // even after an auto-fill match — this is a best-effort prefill, not a lock.
@@ -160,10 +160,19 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
         createdIdRef.current = created.id;
       }
       const id = createdIdRef.current;
-      if (files.length && !filesUploadedRef.current) {
+      const pending = staged.filter((s) => !uploadedCatsRef.current.has(s.category));
+      if (pending.length) {
         phase = 'attaching files';
-        await qualityDiscrepanciesAPI.uploadFiles(id, files, fileCategory);
-        filesUploadedRef.current = true;
+        // Group the pending files by category and upload one request per group.
+        const byCat = new Map();
+        for (const s of pending) {
+          if (!byCat.has(s.category)) byCat.set(s.category, []);
+          byCat.get(s.category).push(s.file);
+        }
+        for (const [cat, group] of byCat) {
+          await qualityDiscrepanciesAPI.uploadFiles(id, group, cat);
+          uploadedCatsRef.current.add(cat);
+        }
       }
       if (doSubmit) {
         phase = 'submitting it for approval';
@@ -366,23 +375,43 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
           {/* 5. Images / files */}
           <Section id="images" title="Images" open={open.images} onToggle={toggle} colors={sectionColors}>
             <div style={group}>
-              <label style={label}>Category for the files below</label>
+              <label style={label}>Category for files added next</label>
               <select value={fileCategory} onChange={(e) => setFileCategory(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
                 {FILE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
 
             <input ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }}
-              onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+              onChange={(e) => {
+                const picked = Array.from(e.target.files || []);
+                if (picked.length) setStaged((prev) => [...prev, ...picked.map((file) => ({ file, category: fileCategory }))]);
+                e.target.value = ''; // reset so the same file can be re-added (e.g. under a different category)
+              }} />
             <div onClick={() => fileRef.current && fileRef.current.click()}
               style={{ border: `2px dashed ${border}`, borderRadius: 8, padding: 20, textAlign: 'center', color: dim, fontSize: 13, cursor: 'pointer' }}>
               <Upload size={18} style={{ marginBottom: 6 }} />
-              <div>
-                {files.length
-                  ? `${files.length} file${files.length === 1 ? '' : 's'} ready to attach`
-                  : <>Drop images or PDF reports here, or <span style={{ color: '#60A5FA', fontWeight: 600 }}>Browse Files</span></>}
-              </div>
+              <div>Add images or PDF reports — pick a category above, then <span style={{ color: '#60A5FA', fontWeight: 600 }}>Browse Files</span>. Repeat to add more under other categories.</div>
             </div>
+
+            {staged.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {staged.map((s, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.file.name}>{s.file.name}</span>
+                    <select value={s.category}
+                      onChange={(e) => setStaged((prev) => prev.map((it, j) => (j === i ? { ...it, category: e.target.value } : it)))}
+                      style={{ ...field, padding: '5px 8px', fontSize: '0.78rem', cursor: 'pointer', flex: 'none' }}>
+                      {FILE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                    <button type="button" aria-label="Remove file"
+                      onClick={() => setStaged((prev) => prev.filter((_, j) => j !== i))}
+                      style={{ background: 'transparent', border: 'none', color: dim, cursor: 'pointer', display: 'flex', padding: 2 }}>
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </Section>
 
           {error && <div style={{ fontSize: 12.5, color: '#FCA5A5' }}>{error}</div>}
