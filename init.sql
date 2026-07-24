@@ -387,6 +387,9 @@ CREATE TABLE IF NOT EXISTS qd_settings (
     approver_user_ids TEXT DEFAULT '[]',
     purchase_email_to TEXT DEFAULT '',
     purchase_email_cc TEXT DEFAULT '',
+    press_options     TEXT DEFAULT '[]',
+    die_type_options  TEXT DEFAULT '[]',
+    alloy_options     TEXT DEFAULT '[]',
     updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

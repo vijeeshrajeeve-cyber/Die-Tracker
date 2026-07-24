@@ -91,7 +91,7 @@ router.get('/', async (req, res) => {
     const now = new Date();
     const all = await qd.listQDs(pool);
     const scoped = qd.filterByYear(all, req.query.year);
-    const { approverUserIds } = await qdSettings.getQdSettings(pool);
+    const settings = await qdSettings.getQdSettings(pool);
     const visible = req.query.drafts === '1'
       ? qd.onlyDrafts(scoped, req.user?.id)
       : qd.excludeDrafts(scoped);
@@ -101,7 +101,9 @@ router.get('/', async (req, res) => {
       kpis: qd.computeKpis(forKpis, now),
       suppliers: qd.summarizeSuppliers(forKpis, now),
       years: qd.availableYears(all),
-      canApprove: qdSettings.isApprover(req.user, approverUserIds),
+      canApprove: qdSettings.isApprover(req.user, settings.approverUserIds),
+      // Dropdown option lists for the raise/edit form (admin-managed in Settings).
+      options: { press: settings.pressOptions, dieType: settings.dieTypeOptions, alloy: settings.alloyOptions },
     });
   } catch (e) {
     console.error('List QDs error:', e);
@@ -187,11 +189,16 @@ router.get('/settings', async (req, res) => {
 router.put('/settings', async (req, res) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { approverUserIds, purchaseEmailTo, purchaseEmailCc } = req.body || {};
+    const body = req.body || {};
+    // Merge onto current settings so a payload that omits a field leaves it intact.
+    const cur = await qdSettings.getQdSettings(pool);
     await qdSettings.saveQdSettings(pool, {
-      approverUserIds: Array.isArray(approverUserIds) ? approverUserIds : [],
-      purchaseEmailTo: String(purchaseEmailTo || ''),
-      purchaseEmailCc: String(purchaseEmailCc || ''),
+      approverUserIds: Array.isArray(body.approverUserIds) ? body.approverUserIds : cur.approverUserIds,
+      purchaseEmailTo: body.purchaseEmailTo != null ? String(body.purchaseEmailTo) : cur.purchaseEmailTo,
+      purchaseEmailCc: body.purchaseEmailCc != null ? String(body.purchaseEmailCc) : cur.purchaseEmailCc,
+      pressOptions: Array.isArray(body.pressOptions) ? body.pressOptions : cur.pressOptions,
+      dieTypeOptions: Array.isArray(body.dieTypeOptions) ? body.dieTypeOptions : cur.dieTypeOptions,
+      alloyOptions: Array.isArray(body.alloyOptions) ? body.alloyOptions : cur.alloyOptions,
     });
     res.json({ message: 'Saved' });
   } catch (e) { console.error('QD settings save error:', e); res.status(500).json({ error: 'Internal server error' }); }

@@ -480,7 +480,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
         />
       )}
       {(showRaise || editQd) && (
-        <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} editQd={editQd}
+        <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} editQd={editQd} options={data.options}
           onClose={() => { setShowRaise(false); setEditQd(null); }}
           onCreated={async (id, { submitted, isEdit, wasDraft } = {}) => {
             // A freshly-saved Draft has no number yet and is excluded from the

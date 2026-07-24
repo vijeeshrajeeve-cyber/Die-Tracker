@@ -475,6 +475,11 @@ const initializeDatabase = async () => {
         purchase_email_cc TEXT DEFAULT '',
         updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      -- Admin-managed option lists (JSON) for the raise/edit form dropdowns.
+      -- Empty means "use the app defaults" (see qdSettings.cjs).
+      ALTER TABLE qd_settings ADD COLUMN IF NOT EXISTS press_options    TEXT DEFAULT '[]';
+      ALTER TABLE qd_settings ADD COLUMN IF NOT EXISTS die_type_options TEXT DEFAULT '[]';
+      ALTER TABLE qd_settings ADD COLUMN IF NOT EXISTS alloy_options    TEXT DEFAULT '[]';
 
       CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
         id SERIAL PRIMARY KEY,

@@ -34,6 +34,10 @@ export default function SettingsPage({
   const [qdApproverIds, setQdApproverIds] = useState([]);
   const [qdPurchaseTo, setQdPurchaseTo] = useState('');
   const [qdPurchaseCc, setQdPurchaseCc] = useState('');
+  // Dropdown option lists for the raise/edit form — edited as comma-separated text.
+  const [qdPressOptions, setQdPressOptions] = useState('');
+  const [qdDieTypeOptions, setQdDieTypeOptions] = useState('');
+  const [qdAlloyOptions, setQdAlloyOptions] = useState('');
   const [qdSettingsLoading, setQdSettingsLoading] = useState(false);
   const [qdSettingsSaving, setQdSettingsSaving] = useState(false);
 
@@ -83,6 +87,9 @@ export default function SettingsPage({
         setQdApproverIds(settings.approverUserIds || []);
         setQdPurchaseTo(settings.purchaseEmailTo || '');
         setQdPurchaseCc(settings.purchaseEmailCc || '');
+        setQdPressOptions((settings.pressOptions || []).join(', '));
+        setQdDieTypeOptions((settings.dieTypeOptions || []).join(', '));
+        setQdAlloyOptions((settings.alloyOptions || []).join(', '));
       })
       .catch(() => { if (!cancelled) setToast?.({ message: 'Failed to load QD settings', type: 'error' }); })
       .finally(() => { if (!cancelled) setQdSettingsLoading(false); });
@@ -96,10 +103,14 @@ export default function SettingsPage({
   const saveQdSettings = async () => {
     setQdSettingsSaving(true);
     try {
+      const toList = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
       await qualityDiscrepanciesAPI.saveSettings({
         approverUserIds: qdApproverIds,
         purchaseEmailTo: qdPurchaseTo,
         purchaseEmailCc: qdPurchaseCc,
+        pressOptions: toList(qdPressOptions),
+        dieTypeOptions: toList(qdDieTypeOptions),
+        alloyOptions: toList(qdAlloyOptions),
       });
       setToast?.({ message: 'QD approver & Purchase settings saved', type: 'success' });
       setTimeout(() => setToast?.(null), 3000);
@@ -948,6 +959,23 @@ export default function SettingsPage({
                             <div style={{ fontSize: '0.72rem', color: theme.textDim }}>
                               Sent automatically when a QD is approved, and again with "Resend to Purchase" from the QD detail drawer.
                             </div>
+
+                            <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted, margin: '0.5rem 0 0.25rem' }}>Form dropdown options</h4>
+                            <div style={{ fontSize: '0.72rem', color: theme.textDim, marginBottom: '0.25rem' }}>
+                              Comma-separated. These populate the Press, Die Type and Alloy dropdowns on the raise/edit form. Leave a list blank to use the built-in defaults.
+                            </div>
+                            {[
+                              { label: 'Press', value: qdPressOptions, set: setQdPressOptions, ph: 'e.g. P1, P2, 1200T, 1650T' },
+                              { label: 'Die Type', value: qdDieTypeOptions, set: setQdDieTypeOptions, ph: 'e.g. Solid, Hollow, Semi-hollow' },
+                              { label: 'Alloy', value: qdAlloyOptions, set: setQdAlloyOptions, ph: 'e.g. 6060, 6063, 6061, 6082' },
+                            ].map((f) => (
+                              <div key={f.label}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }}>{f.label}</label>
+                                <input type="text" value={f.value} onChange={(e) => f.set(e.target.value)} placeholder={f.ph}
+                                  style={{ width: '100%', padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }} />
+                              </div>
+                            ))}
+
                             <div>
                               <button
                                 disabled={qdSettingsSaving}

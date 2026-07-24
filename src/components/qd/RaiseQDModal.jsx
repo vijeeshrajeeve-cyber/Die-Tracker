@@ -45,11 +45,15 @@ function Section({ id, title, hint, open, onToggle, colors, children }) {
   );
 }
 
-export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCreated, editQd = null }) {
+export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCreated, editQd = null, options = {} }) {
   // Edit mode: the same form, pre-filled from an existing QD. The server only
   // permits this while the QD is a Draft or has been sent back.
   const isEdit = !!editQd;
   const isSentBack = isEdit && editQd.approval_state === 'SentBack';
+  // Admin-managed dropdown option lists (from the QD list response).
+  const pressOptions = options.press || [];
+  const dieTypeOptions = options.dieType || [];
+  const alloyOptions = options.alloy || [];
   const [dieNo, setDieNo] = useState(editQd?.die_no || '');
   const [plant, setPlant] = useState(editQd?.plant || 'GEX 2');
   const [supplier, setSupplier] = useState(editQd?.supplier || suppliers[0] || '');
@@ -244,6 +248,16 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
     </div>
   );
 
+  // A strict dropdown that still surfaces a pre-existing value not in the list,
+  // so editing an older QD never silently drops its Press / Die Type / Alloy.
+  const optionSelect = (list, value, onChange) => (
+    <select value={value || ''} onChange={onChange} style={{ ...field, cursor: 'pointer' }}>
+      <option value="">—</option>
+      {value && !list.includes(value) && <option value={value}>{value}</option>}
+      {list.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+
   const sectionColors = { border, text, dim, muted };
 
   return (
@@ -318,11 +332,11 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
               </div>
               <div style={group}>
                 <label style={label}>Press</label>
-                <input value={partA.press} onChange={setPA('press')} placeholder="e.g. 1200T" style={field} />
+                {optionSelect(pressOptions, partA.press, setPA('press'))}
               </div>
               <div style={group}>
                 <label style={label}>Die Type</label>
-                <input value={partA.dieType} onChange={setPA('dieType')} style={field} />
+                {optionSelect(dieTypeOptions, partA.dieType, setPA('dieType'))}
               </div>
               <div style={group}>
                 <label style={label}>Die Size</label>
@@ -360,7 +374,9 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
                   {BILLET_FIELDS.map((bf) => (
                     <div key={bf.key} style={group}>
                       <label style={{ ...label, fontSize: '0.65rem' }}>{bf.label}</label>
-                      <input value={billets[which]?.[bf.key] || ''} onChange={setBilletField(which, bf.key)} style={field} />
+                      {bf.key === 'alloy'
+                        ? optionSelect(alloyOptions, billets[which]?.alloy, setBilletField(which, 'alloy'))
+                        : <input value={billets[which]?.[bf.key] || ''} onChange={setBilletField(which, bf.key)} style={field} />}
                     </div>
                   ))}
                 </div>
