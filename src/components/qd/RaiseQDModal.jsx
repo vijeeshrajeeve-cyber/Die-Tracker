@@ -45,38 +45,52 @@ function Section({ id, title, hint, open, onToggle, colors, children }) {
   );
 }
 
-export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCreated }) {
-  const [dieNo, setDieNo] = useState('');
-  const [plant, setPlant] = useState('GEX 2');
-  const [supplier, setSupplier] = useState(suppliers[0] || '');
-  const [corrector, setCorrector] = useState('');
-  const [inputAtFailure, setInputAtFailure] = useState('');
-  const [issue, setIssue] = useState('');
-  const [outcome, setOutcome] = useState('Supplier rework');
-  const [staged, setStaged] = useState([]); // [{ file, category }] — each image carries its own category
+export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCreated, editQd = null }) {
+  // Edit mode: the same form, pre-filled from an existing QD. The server only
+  // permits this while the QD is a Draft or has been sent back.
+  const isEdit = !!editQd;
+  const isSentBack = isEdit && editQd.approval_state === 'SentBack';
+  const [dieNo, setDieNo] = useState(editQd?.die_no || '');
+  const [plant, setPlant] = useState(editQd?.plant || 'GEX 2');
+  const [supplier, setSupplier] = useState(editQd?.supplier || suppliers[0] || '');
+  const [corrector, setCorrector] = useState(editQd?.corrector || '');
+  const [inputAtFailure, setInputAtFailure] = useState(editQd?.input_at_failure || '');
+  const [issue, setIssue] = useState(editQd?.issue_detail || '');
+  const [outcome, setOutcome] = useState(editQd?.outcome || 'Supplier rework');
+  const [staged, setStaged] = useState([]); // [{ file, category }] — newly added images, each with its own category
   const [fileCategory, setFileCategory] = useState('general'); // default category applied to newly added files
+  const [existingFiles] = useState(editQd?.files || []); // already-attached images (edit mode)
+  const [removedFileIds, setRemovedFileIds] = useState([]); // existing images marked for deletion; applied on save
   const [submitting, setSubmitting] = useState(false);
   const [submitKind, setSubmitKind] = useState(null); // 'draft' | 'submit' — which footer button is busy
   const [error, setError] = useState('');
   const fileRef = useRef(null);
   // Set only once create() itself succeeds. Lets a retry re-use the already
   // created draft instead of creating a second, orphaned one.
-  const createdIdRef = useRef(null);
+  const createdIdRef = useRef(isEdit ? editQd.id : null);
   // Tracks which category groups have already uploaded. Files are sent one
   // request per category (the server takes one category per request), so a
   // retry re-attempts only the groups that haven't succeeded yet — an upload
   // failure no longer causes the whole create+upload block to be skipped.
   const uploadedCatsRef = useRef(new Set());
+  const appliedDeletesRef = useRef(new Set()); // image removals already applied, so a retry doesn't repeat them
 
   // Part-A header fields + the two billet readings. Every field stays editable
   // even after an auto-fill match — this is a best-effort prefill, not a lock.
   const [partA, setPartA] = useState({
-    profileNumber: '', dieReceivedDate: '', press: '', dieType: '', dieSize: '',
-    noOfCavity: '', tooling: '', noOfTrials: '', noOfCorrections: '', productionDate: '',
-    manufacturingDefect: '', diePerformance: '', recommendedAction: '',
+    profileNumber: editQd?.profile_number || '', dieReceivedDate: editQd?.die_received_date || '',
+    press: editQd?.press || '', dieType: editQd?.die_type || '', dieSize: editQd?.die_size || '',
+    noOfCavity: editQd?.no_of_cavity || '', tooling: editQd?.tooling || '', noOfTrials: editQd?.no_of_trials || '',
+    noOfCorrections: editQd?.no_of_corrections || '', productionDate: editQd?.production_date || '',
+    manufacturingDefect: editQd?.manufacturing_defect || '', diePerformance: editQd?.die_performance || '',
+    recommendedAction: editQd?.recommended_action || '',
   });
-  const [billets, setBillets] = useState({ first: {}, last: {} });
-  const [dieOrderId, setDieOrderId] = useState(null);
+  const [billets, setBillets] = useState(() => {
+    const rows = editQd?.billets || [];
+    const pick = (which) => rows.find((b) => b.billet === which) || {};
+    return { first: pick('first'), last: pick('last') };
+  });
+  const [dieOrderId, setDieOrderId] = useState(editQd?.die_order_id || null);
   const [lookupNote, setLookupNote] = useState('');
   const ordersCacheRef = useRef(null);
 
@@ -138,32 +152,57 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
     }
   };
 
+  // Camel-case payload for the Edit (PUT) endpoint — mirrors the raise form.
+  const buildEditPayload = () => ({
+    profileNumber: partA.profileNumber, supplier: supplier.trim(), plant, corrector: corrector.trim(),
+    dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType, dieSize: partA.dieSize,
+    noOfCavity: partA.noOfCavity, tooling: partA.tooling, noOfTrials: partA.noOfTrials, noOfCorrections: partA.noOfCorrections,
+    productionDate: partA.productionDate, manufacturingDefect: partA.manufacturingDefect, diePerformance: partA.diePerformance,
+    issue: issue.trim(), recommendedAction: partA.recommendedAction, inputAtFailure: inputAtFailure.trim(), outcome,
+    billets,
+  });
+
   const save = async (doSubmit) => {
     if (!canSubmit) return;
     setSubmitting(true);
     setSubmitKind(doSubmit ? 'submit' : 'draft');
     setError('');
-    let phase = 'creating the QD';
+    let phase = isEdit ? 'saving your changes' : 'creating the QD';
     try {
-      if (!createdIdRef.current) {
-        const created = await qualityDiscrepanciesAPI.create({
-          dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
-          corrector: corrector.trim(), issue: issue.trim(), outcome,
-          inputAtFailure: inputAtFailure.trim(),
-          dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType,
-          dieSize: partA.dieSize, noOfCavity: partA.noOfCavity, tooling: partA.tooling,
-          noOfTrials: partA.noOfTrials, noOfCorrections: partA.noOfCorrections,
-          productionDate: partA.productionDate, manufacturingDefect: partA.manufacturingDefect,
-          diePerformance: partA.diePerformance, recommendedAction: partA.recommendedAction,
-          dieOrderId, billets,
-        });
-        createdIdRef.current = created.id;
+      let id;
+      if (isEdit) {
+        id = editQd.id;
+        await qualityDiscrepanciesAPI.updateDetails(id, buildEditPayload());
+        // Apply pending image removals. Idempotent on retry (skip applied ones;
+        // a file already gone answers 404, which we treat as done).
+        for (const fid of removedFileIds) {
+          if (appliedDeletesRef.current.has(fid)) continue;
+          phase = 'removing images';
+          try { await qualityDiscrepanciesAPI.deleteFile(id, fid); }
+          catch (err) { if (!/404/.test(String(err.message))) throw err; }
+          appliedDeletesRef.current.add(fid);
+        }
+      } else {
+        if (!createdIdRef.current) {
+          const created = await qualityDiscrepanciesAPI.create({
+            dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
+            corrector: corrector.trim(), issue: issue.trim(), outcome,
+            inputAtFailure: inputAtFailure.trim(),
+            dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType,
+            dieSize: partA.dieSize, noOfCavity: partA.noOfCavity, tooling: partA.tooling,
+            noOfTrials: partA.noOfTrials, noOfCorrections: partA.noOfCorrections,
+            productionDate: partA.productionDate, manufacturingDefect: partA.manufacturingDefect,
+            diePerformance: partA.diePerformance, recommendedAction: partA.recommendedAction,
+            dieOrderId, billets,
+          });
+          createdIdRef.current = created.id;
+        }
+        id = createdIdRef.current;
       }
-      const id = createdIdRef.current;
+      // Attach any newly staged images (both modes), one request per category.
       const pending = staged.filter((s) => !uploadedCatsRef.current.has(s.category));
       if (pending.length) {
         phase = 'attaching files';
-        // Group the pending files by category and upload one request per group.
         const byCat = new Map();
         for (const s of pending) {
           if (!byCat.has(s.category)) byCat.set(s.category, []);
@@ -175,13 +214,14 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
         }
       }
       if (doSubmit) {
-        phase = 'submitting it for approval';
+        phase = isSentBack ? 'resubmitting it for approval' : 'submitting it for approval';
         await qualityDiscrepanciesAPI.submit(id);
       }
-      onCreated(id, { submitted: doSubmit });
+      onCreated(id, { submitted: doSubmit, isEdit, wasDraft: isEdit ? editQd.approval_state === 'Draft' : true });
     } catch (e) {
-      const message = createdIdRef.current
-        ? `Draft was saved, but ${phase} failed: ${e.message || 'unknown error'}. Retrying will resume from that step, not create a duplicate draft.`
+      const savedSomething = isEdit || createdIdRef.current;
+      const message = savedSomething
+        ? `${isEdit ? 'Some changes were saved' : 'Draft was saved'}, but ${phase} failed: ${e.message || 'unknown error'}. Retrying resumes from that step.`
         : (e.message || 'Failed to raise QD');
       setError(message);
       setSubmitting(false);
@@ -219,9 +259,13 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
             <AlertTriangle size={18} style={{ color: '#fff' }} />
           </span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 17, fontWeight: 700 }}>Raise Quality Discrepancy</div>
+            <div style={{ fontSize: 17, fontWeight: 700 }}>{isEdit ? 'Edit Quality Discrepancy' : 'Raise Quality Discrepancy'}</div>
             {/* The server assigns the QD number on submit — no client-side guess. */}
-            <div style={{ fontSize: 12.5, color: dim, marginTop: 2 }}>Against a received die · QD no assigned on submit · Save Draft needs only Die No + Supplier</div>
+            <div style={{ fontSize: 12.5, color: dim, marginTop: 2 }}>
+              {isEdit
+                ? `${editQd.qd_no || 'Draft'}${isSentBack ? ' · sent back — fix and resubmit to the approver' : ' · changes save on this QD'}`
+                : 'Against a received die · QD no assigned on submit · Save Draft needs only Die No + Supplier'}
+            </div>
           </div>
           <button onClick={onClose} style={{ width: 34, height: 34, background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} />
@@ -374,6 +418,22 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
 
           {/* 5. Images / files */}
           <Section id="images" title="Images" open={open.images} onToggle={toggle} colors={sectionColors}>
+            {isEdit && existingFiles.filter((f) => !removedFileIds.includes(f.id)).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={label}>Existing images</label>
+                {existingFiles.filter((f) => !removedFileIds.includes(f.id)).map((f) => (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.original_name}>{f.original_name}</span>
+                    <button type="button" aria-label="Remove image"
+                      onClick={() => setRemovedFileIds((prev) => [...prev, f.id])}
+                      style={{ background: 'transparent', border: 'none', color: dim, cursor: 'pointer', display: 'flex', padding: 2 }}>
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+                <span style={{ fontSize: 11, color: dim }}>Removals apply when you save.</span>
+              </div>
+            )}
             <div style={group}>
               <label style={label}>Category for files added next</label>
               <select value={fileCategory} onChange={(e) => setFileCategory(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
@@ -422,11 +482,11 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
           <button onClick={onClose} style={{ padding: '10px 18px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: muted, fontWeight: 500, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
           <button onClick={() => save(false)} disabled={!canSubmit}
             style={{ padding: '10px 20px', background: bg, color: text, border: `1px solid ${border}`, borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.55 }}>
-            {submitting && submitKind === 'draft' ? 'Saving…' : 'Save Draft'}
+            {submitting && submitKind === 'draft' ? 'Saving…' : (isSentBack ? 'Save changes' : 'Save Draft')}
           </button>
           <button onClick={() => save(true)} disabled={!canSubmit} className="qd-cta"
             style={{ padding: '10px 20px', background: GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.55, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
-            {submitting && submitKind === 'submit' ? 'Submitting…' : 'Submit for approval'}
+            {submitting && submitKind === 'submit' ? (isSentBack ? 'Resubmitting…' : 'Submitting…') : (isSentBack ? 'Resubmit for approval' : 'Submit for approval')}
           </button>
         </div>
       </div>

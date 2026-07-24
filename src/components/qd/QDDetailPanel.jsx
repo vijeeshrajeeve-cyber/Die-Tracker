@@ -68,7 +68,7 @@ const fmtWhen = (v) => {
     : d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
 };
 
-export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, onCompose, onClose, onChanged }) {
+export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, onCompose, onClose, onEdit, onChanged }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -353,10 +353,18 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
         {(isDraftOrSentBack && (isOwner || me?.role === 'admin')) || (qd.approval_state === 'Pending' && canApprove) || (qd.approval_state === 'Approved' && canApprove) ? (
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
             {isDraftOrSentBack && (isOwner || me?.role === 'admin') && (
-              <button onClick={handleSubmit} disabled={busy} className="qd-action"
-                style={{ padding: '8px 14px', background: primary, border: 'none', borderRadius: 8, color: primaryFg, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <ArrowUpCircle size={15} /> Submit for approval
-              </button>
+              <>
+                {onEdit && (
+                  <button onClick={onEdit} disabled={busy} className="qd-action" title="Edit this QD's details and images"
+                    style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Pencil size={15} /> Edit QD
+                  </button>
+                )}
+                <button onClick={handleSubmit} disabled={busy} className="qd-action"
+                  style={{ padding: '8px 14px', background: primary, border: 'none', borderRadius: 8, color: primaryFg, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ArrowUpCircle size={15} /> Submit for approval
+                </button>
+              </>
             )}
             {qd.approval_state === 'Pending' && canApprove && (
               <>

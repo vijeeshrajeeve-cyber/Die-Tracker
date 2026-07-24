@@ -69,6 +69,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const [status, setStatus] = useState('All');
   const [selectedId, setSelectedId] = useState(null);
   const [showRaise, setShowRaise] = useState(false);
+  const [editQd, setEditQd] = useState(null); // the QD being edited (Draft/SentBack), or null
   const [pickedSuppliers, setPickedSuppliers] = useState([]);
 
   // Theme tokens (defaults match the app's zinc dark theme / the design mockup).
@@ -474,21 +475,25 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           supplier={supplierMaster.find(s => (s.name || '').toLowerCase() === (selected.supplier || '').toLowerCase()) || null}
           onCompose={onCompose}
           onClose={() => setSelectedId(null)}
+          onEdit={() => setEditQd(selected)}
           onChanged={load}
         />
       )}
-      {showRaise && (
-        <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} onClose={() => setShowRaise(false)}
-          onCreated={async (id, { submitted } = {}) => {
+      {(showRaise || editQd) && (
+        <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} editQd={editQd}
+          onClose={() => { setShowRaise(false); setEditQd(null); }}
+          onCreated={async (id, { submitted, isEdit, wasDraft } = {}) => {
             // A freshly-saved Draft has no number yet and is excluded from the
             // normal register, so it only shows up in the Drafts view. A
             // Submitted QD is the opposite — it's now Pending, not a Draft, so
-            // it only shows up in the normal (non-drafts) register. Reload the
-            // list that will actually contain the new row, and wait for that
-            // reload to resolve before opening the drawer, so it doesn't try
-            // to open on a row not yet present in `data.qds`.
+            // it only shows up in the normal (non-drafts) register. Editing an
+            // existing non-draft QD (e.g. a sent-back one) must stay on the
+            // normal register. Reload the list that will actually contain the
+            // row, and wait for that reload before opening the drawer, so it
+            // doesn't try to open on a row not yet present in `data.qds`.
             setShowRaise(false);
-            const wantDrafts = !submitted;
+            setEditQd(null);
+            const wantDrafts = !submitted && (isEdit ? !!wasDraft : true);
             setShowDrafts(wantDrafts);
             try {
               const next = await qualityDiscrepanciesAPI.list(year, { drafts: wantDrafts });

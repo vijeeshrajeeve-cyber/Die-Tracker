@@ -646,6 +646,12 @@ export const qualityDiscrepanciesAPI = {
     update: async (id, fields) =>
         apiRequest(`/quality-discrepancies/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
 
+    // Full "Edit QD" save (Part-A, discrepancy text, billets). Body reuses the
+    // raise form's camelCase keys plus billets:{ first:{…}, last:{…} }. The
+    // server allows this only while the QD is a Draft or has been sent back.
+    updateDetails: async (id, payload) =>
+        apiRequest(`/quality-discrepancies/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+
     // reason is mandatory; etaDate is mandatory when status is 'FOC Accepted'
     setStatus: async (id, status, reason, etaDate) =>
         apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason, etaDate }) }),
@@ -663,6 +669,10 @@ export const qualityDiscrepanciesAPI = {
         if (category) form.append('category', category);
         return apiRequest(`/quality-discrepancies/${id}/files`, { method: 'POST', body: form, isMultipart: true });
     },
+
+    // Removes one already-attached image. Server-gated to Draft/SentBack.
+    deleteFile: async (id, fileId) =>
+        apiRequest(`/quality-discrepancies/${id}/files/${fileId}`, { method: 'DELETE' }),
 
     downloadFile: async (fileId, filename) => {
         const token = getToken();
