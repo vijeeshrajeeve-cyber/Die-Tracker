@@ -1,7 +1,14 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { PDFDocument } = require('pdf-lib');
 const { generateQdPdf } = require('./qdPdf.cjs');
+
+// Smallest valid 1x1 PNG — enough for pdf-lib to embed.
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64'
+);
 
 const baseQd = {
   qd_no: '2026PH-04', die_no: '30601-201', profile_number: '30601', supplier: 'Phoenix',
@@ -26,6 +33,21 @@ test('generateQdPdf returns a non-empty PDF for a fully-populated QD', async () 
 test('generateQdPdf tolerates missing optional fields and no images', async () => {
   const bytes = await generateQdPdf({ qd_no: '2026PH-05', die_no: 'x' }, { files: [], billets: [], fileBytes: new Map() });
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString(), '%PDF-');
+});
+
+test('generateQdPdf renders every uploaded image across categories, paginating (regression: not just 2 slots)', async () => {
+  const cats = ['profile_image', 'approved_design', 'trial_photo', 'general'];
+  const files = [];
+  const fileBytes = new Map();
+  for (let i = 1; i <= 8; i++) {
+    files.push({ id: i, original_name: `img${i}.png`, mime_type: 'image/png', category: cats[i % cats.length] });
+    fileBytes.set(i, PNG_1x1);
+  }
+  const bytes = await generateQdPdf(baseQd, { files, billets: [], fileBytes });
+  const loaded = await PDFDocument.load(bytes);
+  // The old renderer had two fixed slots on one page; eight images must now
+  // overflow onto at least a second page instead of being dropped.
+  assert.ok(loaded.getPageCount() >= 2, `expected pagination for 8 images, got ${loaded.getPageCount()} page(s)`);
 });
 
 test('generateQdPdf sanitizes non-WinAnsi characters (em dash, curly quotes) without throwing', async () => {

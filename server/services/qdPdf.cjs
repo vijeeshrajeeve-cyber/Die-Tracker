@@ -1,9 +1,9 @@
 'use strict';
-// Renders a Quality Discrepancy (QD) form to a single-page A4 PDF using pdf-lib.
+// Renders a Quality Discrepancy (QD) form to an A4 PDF using pdf-lib.
 // Faithful-but-pragmatic: this mirrors the standard QD paper form (header, Part-A
-// tables, production-parameter grid, wrapped discrepancy text, image slots,
-// recommended action, Part-B, sign-off). Overflow onto extra content within the
-// page is tolerated rather than paginating - see task brief for rationale.
+// tables, production-parameter grid, wrapped discrepancy text, image grid,
+// recommended action, Part-B, sign-off). The form body is one page; the image
+// grid paginates onto additional pages so every uploaded image is included.
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 const GREEN = rgb(0.13, 0.70, 0.36);
@@ -113,8 +113,12 @@ async function generateQdPdf(qd, { files = [], billets = [], logoBytes = null, f
   text(`Manufacturing Defect: ${t(qd.manufacturing_defect) || '-'}    Die Performance: ${t(qd.die_performance) || '-'}`, M, y, { size: 9, f: bold });
   y -= 20;
 
-  // Images: profile_image + approved_design slots
-  y = await drawImageSlots(doc, page, files, fileBytes, M, y);
+  // Images: every uploaded image, grouped by category, paginating as needed.
+  const newPage = () => doc.addPage([595, 842]);
+  ({ page, y } = await drawImages(doc, page, files, fileBytes, M, y, newPage));
+  // If the images filled the page, start a fresh one so the closing sections
+  // (Recommended Action, Part-B, sign-off) don't render off the bottom edge.
+  if (y < 180) { page = newPage(); y = 812; }
 
   // Recommended action
   text('Recommended Action:', M, y, { f: bold, size: 10 }); y -= 14;
@@ -148,24 +152,40 @@ function drawWrapped(page, font, str, x, y, maxW, size) {
   return yy;
 }
 
-async function drawImageSlots(doc, page, files, fileBytes, x, y) {
-  const slots = [['profile_image', 'Profile Image'], ['approved_design', 'Approved design']];
-  const boxW = 260, boxH = 120; let sx = x;
+// Draws every uploaded (embeddable) image, ordered by category, into a 2-up
+// grid of labelled boxes. Adds pages as it fills, and returns the page/cursor
+// the caller should continue drawing on. pdf-lib embeds only PNG/JPEG, so webp
+// and PDF attachments are skipped here (they still live on the QD record).
+const CAT_LABEL = { profile_image: 'Profile Image', approved_design: 'Approved design', trial_photo: 'Trial photo', general: 'Image' };
+const CAT_ORDER = ['profile_image', 'approved_design', 'trial_photo', 'general'];
+
+async function drawImages(doc, page, files, fileBytes, x, y, newPage) {
+  const renderable = files.filter((f) => fileBytes.get(f.id) && /(png|jpe?g)$/i.test(f.original_name || ''));
+  if (!renderable.length) return { page, y };
+  const ordered = [...renderable].sort(
+    (a, b) => ((CAT_ORDER.indexOf(a.category) + 1) || 99) - ((CAT_ORDER.indexOf(b.category) + 1) || 99)
+  );
+  const boxW = 260, boxH = 130, gap = 15, bottom = 40;
   const labelFont = await doc.embedFont(StandardFonts.HelveticaBold);
-  for (const [cat, label] of slots) {
-    page.drawRectangle({ x: sx, y: y - boxH, width: boxW, height: boxH, borderColor: rgb(0, 0, 0), borderWidth: 0.7 });
-    page.drawText(sanitize(label), { x: sx + 4, y: y - 12, size: 8, font: labelFont });
-    const f = files.find((ff) => ff.category === cat);
-    const bytes = f && fileBytes.get(f.id);
-    if (bytes) {
-      try {
-        const img = /png$/i.test(f.mime_type || f.original_name) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-        page.drawImage(img, { x: sx + 4, y: y - boxH + 4, width: boxW - 8, height: boxH - 20 });
-      } catch { /* skip unrenderable image */ }
-    }
-    sx += boxW + 15;
+  let col = 0, rowY = y;
+  for (const f of ordered) {
+    if (col === 0 && rowY - boxH < bottom) { page = newPage(); rowY = 812; }
+    const sx = x + col * (boxW + gap);
+    page.drawRectangle({ x: sx, y: rowY - boxH, width: boxW, height: boxH, borderColor: rgb(0, 0, 0), borderWidth: 0.7 });
+    page.drawText(sanitize(CAT_LABEL[f.category] || 'Image'), { x: sx + 4, y: rowY - 12, size: 8, font: labelFont });
+    const bytes = fileBytes.get(f.id);
+    try {
+      const img = /png$/i.test(f.mime_type || f.original_name) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      // Fit inside the box preserving aspect ratio, centred below the label.
+      const availW = boxW - 8, availH = boxH - 22;
+      const scale = Math.min(availW / img.width, availH / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      page.drawImage(img, { x: sx + 4 + (availW - w) / 2, y: rowY - boxH + 4 + (availH - h) / 2, width: w, height: h });
+    } catch { /* skip unrenderable image */ }
+    col += 1;
+    if (col === 2) { col = 0; rowY -= boxH + 10; }
   }
-  return y - boxH - 10;
+  return { page, y: col === 0 ? rowY : rowY - boxH - 10 };
 }
 
 module.exports = { generateQdPdf };
