@@ -206,6 +206,12 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
     { label: 'Supplier comments', value: qd.supplier_comments || '—', field: 'supplier_comments', type: 'text', current: qd.supplier_comments || '', placeholder: 'Supplier\'s remarks' },
     { label: 'Received by (supplier)', value: qd.received_by_supplier || '—', field: 'received_by_supplier', type: 'text', current: qd.received_by_supplier || '', placeholder: 'e.g. Name of contact' },
     {
+      label: 'QD requested',
+      value: dateOnly(qd.qd_requested_date),
+      field: 'qd_requested_date', type: 'date',
+      current: dateVal(qd.qd_requested_date),
+    },
+    {
       label: 'Sent to purchase',
       value: dateOnly(qd.sent_to_purchase_date),
       field: 'sent_to_purchase_date', type: 'date',
