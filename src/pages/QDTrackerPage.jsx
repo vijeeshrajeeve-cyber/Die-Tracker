@@ -176,12 +176,12 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
   const exportCsv = () => {
     const header = ['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
-      'QD raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)'];
+      'QD requested', 'QD raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const d = (v) => (v ? String(v).slice(0, 10) : '');
     const lines = filtered.map(q => [
       q.qd_no, q.die_no, q.plant, q.supplier, q.corrector, q.issue_summary,
-      q.status, q.outcome, d(q.raised_date),
+      q.status, q.outcome, d(q.qd_requested_date), d(q.raised_date),
       d(q.sent_to_purchase_date), q.handoff?.toPurchase ?? '',
       d(q.sent_to_supplier_date), q.handoff?.purchaseToSupplier ?? '',
       d(q.eta_date), d(q.closed_at), q.age_days,
@@ -297,7 +297,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
           {/* Register table */}
           <div style={{ ...panel, borderRadius: 10, overflow: 'hidden' }}>
-            {/* 11 columns. No min-width on the table: the app shell's flex item
+            {/* 13 columns. No min-width on the table: the app shell's flex item
                 is min-width:auto, so a forced minimum cannot shrink and would
                 scroll the whole page sideways instead of just this card. */}
             <div style={{ overflowX: 'auto' }}>
@@ -305,7 +305,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
               <thead>
                 <tr>
                   {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
-                    'QD raised', 'Sent to purchase', 'Sent to supplier', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
+                    'QD requested', 'QD raised', 'Sent to purchase', 'Sent to supplier', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -334,6 +334,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
                           <OIcon size={14} style={{ color: dim }} />{q.outcome || '—'}
                         </span>
                       </td>
+                      <td style={td}><Handoff date={q.qd_requested_date} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}><Handoff date={q.raised_date} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}><Handoff date={q.sent_to_purchase_date} days={q.handoff?.toPurchase} mono={mono} muted={muted} dim={dim} /></td>
                       <td style={td}><Handoff date={q.sent_to_supplier_date} days={q.handoff?.purchaseToSupplier ?? q.handoff?.toSupplier} mono={mono} muted={muted} dim={dim} /></td>
