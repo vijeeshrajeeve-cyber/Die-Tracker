@@ -433,6 +433,18 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- When the plant actually requested the QD, as entered by the person
+      -- raising it — distinct from raised_date, which is the system's own
+      -- "record created" stamp. Rows predating this column stay NULL rather
+      -- than being backfilled from raised_date, which would assert a date the
+      -- legacy sheet never recorded. Required by the API for new QDs, so the
+      -- column itself stays nullable.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='qd_requested_date') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN qd_requested_date DATE;
+        END IF;
+      END $$;
+
       -- ── QD approval workflow ────────────────────────────────────────────
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='approval_state') THEN

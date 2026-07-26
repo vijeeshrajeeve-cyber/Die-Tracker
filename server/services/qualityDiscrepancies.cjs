@@ -291,7 +291,7 @@ async function createQD(client, input) {
     issueSummary, issueDetail, etaDate, inputAtFailure, closedAt, createdBy, dieOrderId,
     approvalState, preparedBy,
     dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
-    productionDate, manufacturingDefect, diePerformance, recommendedAction,
+    productionDate, manufacturingDefect, diePerformance, recommendedAction, qdRequestedDate,
   } = input;
   const { rows } = await client.query(
     `INSERT INTO quality_discrepancies
@@ -299,9 +299,10 @@ async function createQD(client, input) {
         status, outcome, issue_summary, issue_detail, eta_date, input_at_failure, closed_at,
         created_by, approval_state, prepared_by,
         die_received_date, press, die_type, die_size, no_of_cavity, tooling, no_of_trials,
-        no_of_corrections, production_date, manufacturing_defect, die_performance, recommended_action)
+        no_of_corrections, production_date, manufacturing_defect, die_performance, recommended_action,
+        qd_requested_date)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-             $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+             $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
      RETURNING id`,
     [
       qdNo || null, dieNo, extractProfileFromDie(dieNo), dieOrderId || null, raisedDate, plant, supplier,
@@ -311,6 +312,7 @@ async function createQD(client, input) {
       dieReceivedDate || null, press || null, dieType || null, dieSize || null, noOfCavity || null,
       tooling || null, noOfTrials || null, noOfCorrections || null, productionDate || null,
       manufacturingDefect || null, diePerformance || null, recommendedAction || null,
+      qdRequestedDate || null,
     ]
   );
   return rows[0].id;
@@ -342,6 +344,7 @@ const EDITABLE_FIELDS = {
   tooling:              { label: 'Tooling' },
   no_of_trials:         { label: 'No of trials' },
   no_of_corrections:    { label: 'No of corrections' },
+  qd_requested_date:    { label: 'QD requested date', isDate: true, required: true },
   die_received_date:    { label: 'Die received date' },
   production_date:      { label: 'Production date' },
 };
@@ -350,11 +353,16 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function normalizeField(column, raw) {
   const value = raw == null ? '' : String(raw).trim();
-  if (!value) return null; // empty clears the field
+  const spec = EDITABLE_FIELDS[column];
+  if (!value) {
+    // A required field must not be cleared. The raise form insists on it, so
+    // neither edit path may become a back door to emptying it.
+    if (spec?.required) throw new Error(`Invalid ${spec.label}: a value is required`);
+    return null; // empty clears the field
+  }
   if (column === 'outcome' && !OUTCOMES.includes(value)) {
     throw new Error(`Invalid outcome: ${value}`);
   }
-  const spec = EDITABLE_FIELDS[column];
   if (spec?.oneOf && !spec.oneOf.includes(value)) {
     throw new Error(`Invalid ${spec.label}: ${value} (expected ${spec.oneOf.join(' or ')})`);
   }
@@ -579,7 +587,7 @@ function buildPurchaseEmailHtml(qd) {
 }
 
 module.exports = {
-  STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS,
+  STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS, ISO_DATE,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
   deriveQdCode, formatQdNo, nextSequence,

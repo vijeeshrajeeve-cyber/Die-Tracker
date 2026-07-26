@@ -339,6 +339,7 @@ CREATE TABLE IF NOT EXISTS quality_discrepancies (
     profile_number   TEXT,
     die_order_id     INTEGER REFERENCES die_orders(id),
     raised_date      DATE NOT NULL,
+    qd_requested_date DATE,
     plant            TEXT NOT NULL,
     supplier         TEXT NOT NULL,
     corrector        TEXT,

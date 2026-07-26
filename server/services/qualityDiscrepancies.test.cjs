@@ -580,3 +580,46 @@ test('saveBilletParameters upserts given billets and deletes empty ones', async 
   assert.ok(del, 'empty last billet should be deleted');
   assert.ok(up, 'first billet should be upserted');
 });
+
+test('the QD requested date is an editable, validated date field', async () => {
+  assert.equal(q.EDITABLE_FIELDS.qd_requested_date.label, 'QD requested date');
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateFields(client, { id: 1, fields: { qd_requested_date: '2026-07-20' }, actor: 'x' });
+  assert.match(calls[0].sql, /qd_requested_date = /);
+  assert.equal(calls[0].params[0], '2026-07-20');
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { qd_requested_date: '20-07-2026' }, actor: 'x' }),
+    /Invalid QD requested date/
+  );
+});
+
+test('a required field cannot be cleared, while other fields still clear', async () => {
+  const client = { query: async () => ({ rowCount: 1 }) };
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { qd_requested_date: '' }, actor: 'x' }),
+    /Invalid QD requested date: a value is required/
+  );
+  // the `required` flag must not leak into the other editable fields
+  const calls = [];
+  const ok = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  await q.updateFields(ok, { id: 4, fields: { eta_date: '' }, actor: 'x' });
+  assert.equal(calls[0].params[0], null);
+});
+
+test('createQD writes the QD requested date, and tolerates its absence', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [{ id: 7 }] }; } };
+  const base = {
+    dieNo: '029780-2502', raisedDate: '2026-07-26', plant: 'GEX 2',
+    supplier: 'PDTMC', issueSummary: 'Profile out of tolerance',
+  };
+  const id = await q.createQD(client, { ...base, qdRequestedDate: '2026-07-20' });
+  assert.equal(id, 7);
+  assert.match(calls[0].sql, /qd_requested_date/);
+  assert.equal(calls[0].params.at(-1), '2026-07-20');
+  // the sheet importer calls createQD without one — that must not throw
+  calls.length = 0;
+  await q.createQD(client, base);
+  assert.equal(calls[0].params.at(-1), null);
+});
