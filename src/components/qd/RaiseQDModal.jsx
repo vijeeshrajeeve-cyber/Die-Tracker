@@ -55,6 +55,14 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const dieTypeOptions = options.dieType || [];
   const alloyOptions = options.alloy || [];
   const [dieNo, setDieNo] = useState(editQd?.die_no || '');
+  // Required on every QD. A new QD defaults to today; editing an older QD that
+  // predates the field starts empty, so the editor picks a real date rather
+  // than having today's silently stamped on it.
+  const [qdRequestedDate, setQdRequestedDate] = useState(
+    isEdit
+      ? (editQd.qd_requested_date ? String(editQd.qd_requested_date).slice(0, 10) : '')
+      : new Date().toISOString().slice(0, 10)
+  );
   const [plant, setPlant] = useState(editQd?.plant || 'GEX 2');
   const [supplier, setSupplier] = useState(editQd?.supplier || suppliers[0] || '');
   const [corrector, setCorrector] = useState(editQd?.corrector || '');
@@ -113,7 +121,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const field = { padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' };
   const group = { display: 'flex', flexDirection: 'column', gap: 6 };
 
-  const canSubmit = !!dieNo.trim() && !!supplier.trim() && !submitting;
+  const canSubmit = !!dieNo.trim() && !!supplier.trim() && !!qdRequestedDate && !submitting;
 
   const setPA = (f) => (e) => setPartA((prev) => ({ ...prev, [f]: e.target.value }));
   const setPADate = (f) => (iso) => setPartA((prev) => ({ ...prev, [f]: iso }));
@@ -159,6 +167,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   // Camel-case payload for the Edit (PUT) endpoint — mirrors the raise form.
   const buildEditPayload = () => ({
     profileNumber: partA.profileNumber, supplier: supplier.trim(), plant, corrector: corrector.trim(),
+    qdRequestedDate,
     dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType, dieSize: partA.dieSize,
     noOfCavity: partA.noOfCavity, tooling: partA.tooling, noOfTrials: partA.noOfTrials, noOfCorrections: partA.noOfCorrections,
     productionDate: partA.productionDate, manufacturingDefect: partA.manufacturingDefect, diePerformance: partA.diePerformance,
@@ -189,7 +198,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
       } else {
         if (!createdIdRef.current) {
           const created = await qualityDiscrepanciesAPI.create({
-            dieNo: dieNo.trim(), plant, supplier: supplier.trim(),
+            dieNo: dieNo.trim(), plant, supplier: supplier.trim(), qdRequestedDate,
             corrector: corrector.trim(), issue: issue.trim(), outcome,
             inputAtFailure: inputAtFailure.trim(),
             dieReceivedDate: partA.dieReceivedDate, press: partA.press, dieType: partA.dieType,
@@ -278,7 +287,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
             <div style={{ fontSize: 12.5, color: dim, marginTop: 2 }}>
               {isEdit
                 ? `${editQd.qd_no || 'Draft'}${isSentBack ? ' · sent back — fix and resubmit to the approver' : ' · changes save on this QD'}`
-                : 'Against a received die · QD no assigned on submit · Save Draft needs only Die No + Supplier'}
+                : 'Against a received die · QD no assigned on submit · Save Draft needs Die No + Supplier + Requested date'}
             </div>
           </div>
           <button onClick={onClose} style={{ width: 34, height: 34, background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -297,6 +306,11 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
                 <input value={dieNo} onChange={(e) => setDieNo(e.target.value)} onBlur={lookupDie}
                   placeholder="e.g. 029780-2502" style={{ ...field, fontFamily: mono }} />
                 {partA.profileNumber && <span style={{ fontSize: 11.5, color: dim }}>Profile {partA.profileNumber}</span>}
+              </div>
+              <div style={group}>
+                <label style={label}>QD Requested Date</label>
+                <DatePickerField value={qdRequestedDate} onChange={setQdRequestedDate} theme={theme} />
+                {!qdRequestedDate && <span style={{ fontSize: 11.5, color: dim }}>Required</span>}
               </div>
               <div style={group}>
                 <label style={label}>Plant</label>
