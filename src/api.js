@@ -617,6 +617,7 @@ export const qualityDiscrepanciesAPI = {
         return apiRequest(`/quality-discrepancies${qs ? `?${qs}` : ''}`);
     },
 
+    // payload.qdRequestedDate (YYYY-MM-DD) is required — the server answers 400 without it.
     create: async (payload) =>
         apiRequest('/quality-discrepancies', { method: 'POST', body: JSON.stringify(payload) }),
 

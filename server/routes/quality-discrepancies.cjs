@@ -119,10 +119,16 @@ router.post('/', async (req, res) => {
       dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure,
       dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
       productionDate, manufacturingDefect, diePerformance, recommendedAction, dieOrderId,
+      qdRequestedDate,
     } = req.body;
     if (!String(dieNo || '').trim()) { client.release(); return res.status(400).json({ error: 'Die No is required' }); }
     if (!String(plant || '').trim()) { client.release(); return res.status(400).json({ error: 'Plant is required' }); }
     if (!String(supplier || '').trim()) { client.release(); return res.status(400).json({ error: 'Supplier is required' }); }
+    // Required on every new QD: the plant's own request date, which the system
+    // cannot infer. Nullable in the DB only because pre-existing rows have none.
+    const requestedDate = String(qdRequestedDate || '').trim();
+    if (!requestedDate) { client.release(); return res.status(400).json({ error: 'QD requested date is required' }); }
+    if (!qd.ISO_DATE.test(requestedDate)) { client.release(); return res.status(400).json({ error: 'Invalid QD requested date (expected YYYY-MM-DD)' }); }
     if (outcome && !qd.OUTCOMES.includes(outcome)) { client.release(); return res.status(400).json({ error: 'Invalid outcome' }); }
 
     const text = String(issue || '').trim() || 'Quality discrepancy raised';
@@ -133,6 +139,7 @@ router.post('/', async (req, res) => {
       qdNo: null,
       dieNo: String(dieNo).trim(),
       raisedDate: new Date().toISOString().slice(0, 10),
+      qdRequestedDate: requestedDate,
       plant: String(plant).trim(),
       supplier: String(supplier).trim(),
       corrector: String(corrector || '').trim() || null,
@@ -386,6 +393,7 @@ router.patch('/:id', async (req, res) => {
 const EDIT_BODY_MAP = {
   profileNumber: 'profile_number', supplier: 'supplier', plant: 'plant', corrector: 'corrector',
   dieReceivedDate: 'die_received_date', press: 'press', dieType: 'die_type', dieSize: 'die_size',
+  qdRequestedDate: 'qd_requested_date',
   noOfCavity: 'no_of_cavity', tooling: 'tooling', noOfTrials: 'no_of_trials', noOfCorrections: 'no_of_corrections',
   productionDate: 'production_date', manufacturingDefect: 'manufacturing_defect', diePerformance: 'die_performance',
   issue: 'issue_detail', recommendedAction: 'recommended_action', inputAtFailure: 'input_at_failure', outcome: 'outcome',
