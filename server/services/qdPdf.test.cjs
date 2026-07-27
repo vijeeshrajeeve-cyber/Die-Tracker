@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { PDFDocument } = require('pdf-lib');
-const { generateQdPdf } = require('./qdPdf.cjs');
+const { generateQdPdf, buildDelayLine } = require('./qdPdf.cjs');
 
 // Smallest valid 1x1 PNG — enough for pdf-lib to embed.
 const PNG_1x1 = Buffer.from(
@@ -58,4 +58,31 @@ test('generateQdPdf sanitizes non-WinAnsi characters (em dash, curly quotes) wit
   };
   const bytes = await generateQdPdf(qd, { files: [], billets: [], fileBytes: new Map() });
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString(), '%PDF-');
+});
+
+test('buildDelayLine renders each billet that has an answer', () => {
+  assert.equal(
+    buildDelayLine([
+      { billet: 'first', any_delay_observed: 'No' },
+      { billet: 'last', any_delay_observed: 'Yes', any_delay_details: 'press held 20 min for billet change' },
+    ]),
+    'Delay observed - 1st billet: No · Last billet: Yes - press held 20 min for billet change'
+  );
+});
+
+test('buildDelayLine is empty when neither billet answered, so existing PDFs are unchanged', () => {
+  assert.equal(buildDelayLine([]), '');
+  assert.equal(buildDelayLine([{ billet: 'first', billet_temp: '502' }]), '');
+  assert.equal(buildDelayLine([{ billet: 'first', any_delay_observed: '   ' }]), '');
+});
+
+test('buildDelayLine drops details under a No and tolerates legacy uppercase', () => {
+  assert.equal(
+    buildDelayLine([{ billet: 'first', any_delay_observed: 'NO', any_delay_details: 'stale note' }]),
+    'Delay observed - 1st billet: NO'
+  );
+  assert.equal(
+    buildDelayLine([{ billet: 'last', any_delay_observed: 'YES', any_delay_details: 'die change' }]),
+    'Delay observed - Last billet: YES - die change'
+  );
 });

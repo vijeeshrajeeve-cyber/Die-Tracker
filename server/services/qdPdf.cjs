@@ -104,6 +104,15 @@ async function generateQdPdf(qd, { files = [], billets = [], logoBytes = null, f
   }
   y -= 8;
 
+  // One wrapped line rather than a tenth column in the table above, which would
+  // squeeze all nine existing columns below legibility. drawWrapped (unlike
+  // text) does not truncate, so a long explanation flows onto further lines.
+  const delayLine = buildDelayLine(billets);
+  if (delayLine) {
+    y = drawWrapped(page, font, delayLine, M, y, 535, 8);
+    y -= 6;
+  }
+
   // Quality Discrepancy description (wrapped)
   text('Quality Discrepancy:', M, y, { f: bold, size: 10 }); y -= 14;
   y = drawWrapped(page, font, t(qd.issue_detail || qd.issue_summary), M, y, 535, 9);
@@ -152,6 +161,25 @@ function drawWrapped(page, font, str, x, y, maxW, size) {
   return yy;
 }
 
+// The delay answer as one line for under the Production Parameters table.
+// Returns '' when neither billet answered, so QDs raised before this field
+// existed render exactly as they did before.
+const BILLET_LABEL = { first: '1st billet', last: 'Last billet' };
+
+function buildDelayLine(billets = []) {
+  const parts = [];
+  for (const which of ['first', 'last']) {
+    const b = (billets || []).find((x) => x.billet === which);
+    const answer = t(b?.any_delay_observed).trim();
+    if (!answer) continue;
+    const details = t(b?.any_delay_details).trim();
+    // Legacy rows hold 'YES'/'NO'; print them as stored but match case-insensitively.
+    const showDetails = answer.toLowerCase() === 'yes' && details;
+    parts.push(`${BILLET_LABEL[which]}: ${answer}${showDetails ? ` - ${details}` : ''}`);
+  }
+  return parts.length ? `Delay observed - ${parts.join(' · ')}` : '';
+}
+
 // Draws every uploaded (embeddable) image, ordered by category, into a 2-up
 // grid of labelled boxes. Adds pages as it fills, and returns the page/cursor
 // the caller should continue drawing on. pdf-lib embeds only PNG/JPEG, so webp
@@ -188,4 +216,4 @@ async function drawImages(doc, page, files, fileBytes, x, y, newPage) {
   return { page, y: col === 0 ? rowY : rowY - boxH - 10 };
 }
 
-module.exports = { generateQdPdf };
+module.exports = { generateQdPdf, buildDelayLine };
