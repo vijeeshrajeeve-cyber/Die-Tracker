@@ -16,7 +16,7 @@ const BILLET_FIELDS = [
   { key: 'billet_length', label: 'Billet Length' },
   { key: 'alloy', label: 'Alloy' },
   { key: 'ram_speed', label: 'Ram Speed' },
-  { key: 'any_delay_observed', label: 'Any Delay Observed' },
+  { key: 'any_delay_observed', label: 'Any Delay Observed', type: 'yesNo', detailsKey: 'any_delay_details' },
 ];
 
 const FILE_CATEGORIES = [
@@ -127,6 +127,21 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const setPADate = (f) => (iso) => setPartA((prev) => ({ ...prev, [f]: iso }));
   const setBilletField = (which, f) => (e) =>
     setBillets((prev) => ({ ...prev, [which]: { ...prev[which], [f]: e.target.value } }));
+
+  // Rows created while this was a free-text box hold 'YES'/'NO', so match
+  // case-insensitively; the canonical 'Yes'/'No' is what gets written back.
+  const normalizeYesNo = (v) => {
+    const s = String(v ?? '').trim().toLowerCase();
+    return s === 'yes' ? 'Yes' : s === 'no' ? 'No' : '';
+  };
+
+  // Answering 'No' clears the details — an explanation must never outlive the
+  // 'Yes' it belonged to.
+  const setBilletYesNo = (which, bf) => (v) =>
+    setBillets((prev) => ({
+      ...prev,
+      [which]: { ...prev[which], [bf.key]: v, ...(v === 'Yes' ? null : { [bf.detailsKey]: '' }) },
+    }));
 
   // Best-effort auto-fill: match the typed Die No against orders already on
   // file. `ordersAPI.getAll` doesn't expose a by-die-no lookup, so this loads
@@ -385,14 +400,31 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
               <div key={which} style={{ border: `1px solid ${border}`, borderRadius: 8, padding: 12 }}>
                 <div style={{ ...label, marginBottom: 10 }}>{which === 'first' ? '1st Billet' : 'Last Billet'}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-                  {BILLET_FIELDS.map((bf) => (
-                    <div key={bf.key} style={group}>
-                      <label style={{ ...label, fontSize: '0.65rem' }}>{bf.label}</label>
-                      {bf.key === 'alloy'
-                        ? optionSelect(alloyOptions, billets[which]?.alloy, setBilletField(which, 'alloy'))
-                        : <input value={billets[which]?.[bf.key] || ''} onChange={setBilletField(which, bf.key)} style={field} />}
-                    </div>
-                  ))}
+                  {BILLET_FIELDS.map((bf) => {
+                    const answer = bf.type === 'yesNo' ? normalizeYesNo(billets[which]?.[bf.key]) : null;
+                    return (
+                      // A Yes/No plus its details box cannot fit a 130px grid
+                      // cell, so this field takes the whole row.
+                      <div key={bf.key} style={bf.type === 'yesNo' ? { ...group, gridColumn: '1 / -1' } : group}>
+                        <label style={{ ...label, fontSize: '0.65rem' }}>{bf.label}</label>
+                        {bf.type === 'yesNo' ? (
+                          <>
+                            {yesNo(answer, setBilletYesNo(which, bf))}
+                            {answer === 'Yes' && (
+                              <textarea value={billets[which]?.[bf.detailsKey] || ''}
+                                onChange={setBilletField(which, bf.detailsKey)} rows={2}
+                                placeholder="What was the delay?"
+                                style={{ ...field, marginTop: 8, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+                            )}
+                          </>
+                        ) : bf.key === 'alloy' ? (
+                          optionSelect(alloyOptions, billets[which]?.alloy, setBilletField(which, 'alloy'))
+                        ) : (
+                          <input value={billets[which]?.[bf.key] || ''} onChange={setBilletField(which, bf.key)} style={field} />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
