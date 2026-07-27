@@ -164,10 +164,17 @@ const startServer = async () => {
                     '',
                     '  Fix it (this touches no data — only the login password):',
                     '',
-                    `    docker exec -i die-ordering-db psql -U postgres -d ${db} \\`,
+                    // -h /var/run/postgresql is required, not optional: the db
+                    // container also loads env_file .env, so a stale PGHOST there
+                    // makes a bare psql connect over TCP and hit the same rejected
+                    // password. Only the socket (and loopback) are trusted.
+                    `    docker exec -i die-ordering-db psql -h /var/run/postgresql -U postgres -d ${db} \\`,
                     "      -v pw=\"$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)\" <<'SQL'",
                     "    ALTER USER postgres WITH PASSWORD :'pw';",
                     '    SQL',
+                    '',
+                    '  If .env quotes the value (POSTGRES_PASSWORD="..."), strip the quotes',
+                    '  first — neither the command above nor docker compose strips them.',
                     '',
                     '  Do NOT run "docker compose down -v" — that deletes the database.',
                     '',
