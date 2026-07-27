@@ -40,6 +40,15 @@ export const logout = () => {
 // Check if logged in
 export const isLoggedIn = () => !!getToken();
 
+// Not every failure comes from our API. The nginx proxy answers 413/502/504
+// with its own HTML page, so there is no { error } to read — this supplies a
+// message the user can act on instead of a JSON parse error.
+const nonApiErrorMessage = (status) => {
+    if (status === 413) return 'Those files are too large to upload in one go. Attach fewer or smaller files and try again.';
+    if (status === 502 || status === 503 || status === 504) return 'The server is not responding. Please try again in a moment.';
+    return `Request failed (HTTP ${status})`;
+};
+
 // API request helper
 const apiRequest = async (endpoint, options = {}) => {
     const token = getToken();
@@ -56,17 +65,24 @@ const apiRequest = async (endpoint, options = {}) => {
         headers,
     });
 
-    const data = await response.json();
+    // Read the body as text first. Calling response.json() straight away turns
+    // any non-JSON response (a proxy's HTML error page) into an opaque
+    // "Unexpected token '<'" that hides the real status from the user.
+    const raw = await response.text();
+    let data = null;
+    if (raw) {
+        try { data = JSON.parse(raw); } catch { /* not JSON — handled below */ }
+    }
 
     if (!response.ok) {
         if (response.status === 401) {
             logout();
             window.location.reload();
         }
-        throw new Error(data.detail || data.error || 'API request failed');
+        throw new Error(data?.detail || data?.error || nonApiErrorMessage(response.status));
     }
 
-    return data;
+    return data ?? {};
 };
 
 // Auth API
