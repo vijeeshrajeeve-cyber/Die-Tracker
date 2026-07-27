@@ -1,6 +1,15 @@
+// Dump every page's text items grouped by Y, with their x positions — for
+// working out a PDF's layout before writing a parser against it. More detail
+// than extract_pdf_text.cjs, which just dumps the flat text.
+//
+//   node extract_text.mjs [directory] [--limit N]
+//
+// Defaults to the sample batch below. That folder is not in the repo, so pass a
+// directory when you have your own batch to look at.
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 class DM {
   constructor(i) {
@@ -18,15 +27,34 @@ if(!globalThis.DOMMatrix) globalThis.DOMMatrix=DM;
 if(!globalThis.ImageData) globalThis.ImageData=class{constructor(w,h){this.width=w;this.height=h;this.data=new Uint8ClampedArray(w*h*4)}};
 if(!globalThis.Path2D) globalThis.Path2D=class{moveTo(){}lineTo(){}bezierCurveTo(){}quadraticCurveTo(){}closePath(){}rect(){}arc(){}};
 
-const dir='E:/Die-Tracker/New die ordering request-GEX-1-Fast track die -Batch -1';
-const files=fs.readdirSync(dir).filter(f=>f.endsWith('.pdf'));
+const DEFAULT_DIR='New die ordering request-GEX-1-Fast track die -Batch -1';
+const here=path.dirname(fileURLToPath(import.meta.url));
+// pdfjs concatenates the font filename onto this and rejects anything not
+// ending in a forward slash — so a Windows path.sep will not do.
+const STANDARD_FONTS=path.join(here,'node_modules','pdfjs-dist','standard_fonts').replace(/\\/g,'/')+'/';
+const dirArg=process.argv.slice(2).find(a=>!a.startsWith('--')&&Number.isNaN(Number(a)));
+const dir=path.resolve(dirArg||path.join(here,DEFAULT_DIR));
+const limitIdx=process.argv.indexOf('--limit');
+const limitArg=limitIdx===-1?NaN:Number(process.argv[limitIdx+1]);
+const limit=Number.isFinite(limitArg)&&limitArg>0?limitArg:5;
 
-// Sample: first file (201), a 601 file, a 401 file, and the last file
-const sample=[files[0], files[7], files[16], files[17], files[20]].filter(Boolean);
+if(!fs.existsSync(dir)){
+  console.error(`No such directory: ${dir}`);
+  console.error('Pass the folder holding the PDFs, e.g. node extract_text.mjs "C:/batches/gex-1"');
+  process.exit(1);
+}
+
+const sample=fs.readdirSync(dir).filter(f=>f.toLowerCase().endsWith('.pdf')).slice(0,limit);
+if(!sample.length){
+  console.error(`No PDF files in ${dir}`);
+  process.exit(1);
+}
 
 for(const file of sample){
   const data=new Uint8Array(fs.readFileSync(path.join(dir,file)));
-  const pdf=await pdfjsLib.getDocument({data}).promise;
+  // Without standardFontDataUrl pdfjs warns on every standard-font PDF and
+  // falls back, which can garble the text it hands back.
+  const pdf=await pdfjsLib.getDocument({data,standardFontDataUrl:STANDARD_FONTS}).promise;
 
   console.log('\n' + '='.repeat(90));
   console.log('FILE:', file, '| pages:', pdf.numPages);
