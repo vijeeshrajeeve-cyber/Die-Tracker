@@ -2,10 +2,7 @@
 // working out a PDF's layout before writing a parser against it. More detail
 // than extract_pdf_text.cjs, which just dumps the flat text.
 //
-//   node extract_text.mjs [directory] [--limit N]
-//
-// Defaults to the sample batch below. That folder is not in the repo, so pass a
-// directory when you have your own batch to look at.
+//   node extract_text.mjs <directory> [--limit N]
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import fs from 'fs';
 import path from 'path';
@@ -27,20 +24,23 @@ if(!globalThis.DOMMatrix) globalThis.DOMMatrix=DM;
 if(!globalThis.ImageData) globalThis.ImageData=class{constructor(w,h){this.width=w;this.height=h;this.data=new Uint8ClampedArray(w*h*4)}};
 if(!globalThis.Path2D) globalThis.Path2D=class{moveTo(){}lineTo(){}bezierCurveTo(){}quadraticCurveTo(){}closePath(){}rect(){}arc(){}};
 
-const DEFAULT_DIR='New die ordering request-GEX-1-Fast track die -Batch -1';
 const here=path.dirname(fileURLToPath(import.meta.url));
 // pdfjs concatenates the font filename onto this and rejects anything not
 // ending in a forward slash — so a Windows path.sep will not do.
 const STANDARD_FONTS=path.join(here,'node_modules','pdfjs-dist','standard_fonts').replace(/\\/g,'/')+'/';
 const dirArg=process.argv.slice(2).find(a=>!a.startsWith('--')&&Number.isNaN(Number(a)));
-const dir=path.resolve(dirArg||path.join(here,DEFAULT_DIR));
 const limitIdx=process.argv.indexOf('--limit');
 const limitArg=limitIdx===-1?NaN:Number(process.argv[limitIdx+1]);
 const limit=Number.isFinite(limitArg)&&limitArg>0?limitArg:5;
 
+if(!dirArg){
+  console.error('Usage: node extract_text.mjs <directory> [--limit N]');
+  process.exit(1);
+}
+
+const dir=path.resolve(dirArg);
 if(!fs.existsSync(dir)){
   console.error(`No such directory: ${dir}`);
-  console.error('Pass the folder holding the PDFs, e.g. node extract_text.mjs "C:/batches/gex-1"');
   process.exit(1);
 }
 
