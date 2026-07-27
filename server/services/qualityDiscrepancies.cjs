@@ -204,7 +204,7 @@ function summarizeSuppliers(rows, now = new Date()) {
 
 const BILLETS = ['first', 'last'];
 const BILLET_COLS = ['die_soaking_hours','die_temperature','billet_temp','breakthrough_pressure',
-  'running_pressure','billet_length','alloy','ram_speed','any_delay_observed'];
+  'running_pressure','billet_length','alloy','ram_speed','any_delay_observed','any_delay_details'];
 
 const hasAnyValue = (obj) => BILLET_COLS.some((c) => String(obj?.[c] ?? '').trim() !== '');
 

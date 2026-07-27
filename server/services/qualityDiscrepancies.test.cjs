@@ -623,3 +623,27 @@ test('createQD writes the QD requested date, and tolerates its absence', async (
   await q.createQD(client, base);
   assert.equal(calls[0].params.at(-1), null);
 });
+
+test('saveBilletParameters persists the delay details alongside the Yes/No answer', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [], rowCount: 1 }; } };
+  await q.saveBilletParameters(client, 7, {
+    first: { any_delay_observed: 'Yes', any_delay_details: 'press held 20 min for billet change' },
+    last: {},
+  });
+  const up = calls.find(c => /INSERT INTO qd_billet_parameters/.test(c.sql) && c.params.includes('first'));
+  assert.ok(up, 'first billet should be upserted');
+  assert.match(up.sql, /any_delay_details/);
+  assert.match(up.sql, /any_delay_details = EXCLUDED\.any_delay_details/);
+  assert.ok(up.params.includes('press held 20 min for billet change'));
+});
+
+test('a billet carrying only delay details is kept, not deleted as empty', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [], rowCount: 1 }; } };
+  await q.saveBilletParameters(client, 8, { first: { any_delay_details: 'waiting on the press log' }, last: {} });
+  const del = calls.find(c => /DELETE FROM qd_billet_parameters/.test(c.sql) && c.params.includes('first'));
+  const up = calls.find(c => /INSERT INTO qd_billet_parameters/.test(c.sql) && c.params.includes('first'));
+  assert.equal(del, undefined, 'a details-only billet must not be deleted as empty');
+  assert.ok(up, 'a details-only billet should be upserted so it can be corrected');
+});

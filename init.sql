@@ -432,6 +432,7 @@ CREATE TABLE IF NOT EXISTS qd_billet_parameters (
     alloy                TEXT,
     ram_speed            TEXT,
     any_delay_observed   TEXT,
+    any_delay_details    TEXT,
     UNIQUE (qd_id, billet)
 );
 CREATE INDEX IF NOT EXISTS idx_qd_billet_qd ON qd_billet_parameters(qd_id);

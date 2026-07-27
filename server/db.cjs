@@ -555,6 +555,15 @@ const initializeDatabase = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_qd_billet_qd ON qd_billet_parameters (qd_id);
 
+      -- Delay explanation. Split out of any_delay_observed, which now holds only
+      -- Yes/No; the two need to coexist so the answer stays filterable.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name='qd_billet_parameters' AND column_name='any_delay_details') THEN
+          ALTER TABLE qd_billet_parameters ADD COLUMN any_delay_details TEXT;
+        END IF;
+      END $$;
+
       -- Press master (press name → code)
       CREATE TABLE IF NOT EXISTS presses (
         id SERIAL PRIMARY KEY,

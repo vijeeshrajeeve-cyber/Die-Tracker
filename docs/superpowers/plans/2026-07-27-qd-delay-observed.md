@@ -135,10 +135,12 @@ to:
 Run:
 
 ```bash
-docker compose restart backend && sleep 8 && MSYS_NO_PATHCONV=1 docker exec die-ordering-db psql -h /var/run/postgresql -U postgres -d die_ordering -c "\d qd_billet_parameters"
+docker compose build backend && docker compose up -d backend && sleep 12 && MSYS_NO_PATHCONV=1 docker exec die-ordering-db psql -h /var/run/postgresql -U postgres -d die_ordering -c "\d qd_billet_parameters"
 ```
 
-Expected: the table listing includes `any_delay_details | text`. The `-h /var/run/postgresql` is required — the db container inherits a stale `PGHOST` from `.env` and a bare `psql` goes out over TCP into the scram rule and fails.
+Expected: the table listing includes `any_delay_details | text`.
+
+Two things this command gets right that the obvious version does not. `docker compose restart backend` is **not** enough — `Dockerfile.backend` copies the source in and the service has no bind-mount for `server/` (only the storage volumes), so a restart re-runs the old `db.cjs` and the column never appears. And `-h /var/run/postgresql` is required, because the db container inherits a stale `PGHOST` from `.env`, so a bare `psql` goes out over TCP into the scram rule and fails to authenticate.
 
 - [ ] **Step 8: Run the full server suite**
 
