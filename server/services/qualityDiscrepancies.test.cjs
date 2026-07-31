@@ -982,3 +982,53 @@ test('listPendingApprovals asks only for Pending rows and filters the rest in JS
   assert.match(calls[0].sql, /approval_state = 'Pending'/);
   assert.deepEqual(rows.map((r) => r.id), [1, 2]);
 });
+
+// "Is this mine to fix?" — the counterpart of isInApprovalQueue's "is this mine
+// to approve". Being an approver or an admin has nothing to do with it.
+test('a QD I raised and had sent back is mine to fix', () => {
+  assert.equal(q.isSentBackToMe({ approval_state: 'SentBack', created_by: 7 }, 7), true);
+});
+
+test('someone else\'s sent-back QD is not mine to fix, admin or not', () => {
+  assert.equal(q.isSentBackToMe({ approval_state: 'SentBack', created_by: 9 }, 7), false);
+});
+
+test('only SentBack QDs count as rework', () => {
+  for (const state of ['Draft', 'Pending', 'Approved']) {
+    assert.equal(q.isSentBackToMe({ approval_state: state, created_by: 7 }, 7), false, state);
+  }
+});
+
+test('listMyQueue splits the two buckets from one query', async () => {
+  const calls = [];
+  const client = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      return { rows: [
+        { id: 1, approval_state: 'Pending',  assigned_approver: 7,    created_by: 3 },
+        { id: 2, approval_state: 'Pending',  assigned_approver: null, created_by: 3 },
+        { id: 3, approval_state: 'Pending',  assigned_approver: 9,    created_by: 3 },
+        { id: 4, approval_state: 'SentBack', assigned_approver: 9,    created_by: 7 },
+        { id: 5, approval_state: 'SentBack', assigned_approver: 9,    created_by: 3 },
+      ] };
+    },
+  };
+  const out = await q.listMyQueue(client, 7, { isApprover: true });
+  assert.equal(calls.length, 1, 'both buckets must come from a single query');
+  assert.deepEqual(out.awaitingApproval.map((r) => r.id), [1, 2]);
+  assert.deepEqual(out.sentBack.map((r) => r.id), [4]);
+});
+
+test('a non-approver still gets their own sent-back QDs', async () => {
+  // Raising a QD does not require being an approver, so the rework bucket must
+  // not be gated on approver eligibility the way the approval bucket is.
+  const client = {
+    query: async () => ({ rows: [
+      { id: 1, approval_state: 'Pending',  assigned_approver: null, created_by: 3 },
+      { id: 4, approval_state: 'SentBack', assigned_approver: 9,    created_by: 7 },
+    ] }),
+  };
+  const out = await q.listMyQueue(client, 7, { isApprover: false });
+  assert.deepEqual(out.awaitingApproval, []);
+  assert.deepEqual(out.sentBack.map((r) => r.id), [4]);
+});

@@ -709,6 +709,33 @@ async function listPendingApprovals(client, userId) {
   return rows.filter((r) => isInApprovalQueue(r, userId));
 }
 
+// "Is this mine to fix?" — the counterpart of isInApprovalQueue's "is this mine
+// to approve". Strictly the raiser: an approver or an admin looking at someone
+// else's returned QD has nothing to do about it.
+function isSentBackToMe(row, userId) {
+  return !!row && row.approval_state === 'SentBack' && row.created_by === userId;
+}
+
+// Both of a user's queues from one query, so the Alerts bell polls once a
+// minute rather than twice. Draft rows are excluded: they are the owner's own
+// unsubmitted work and belong to the Drafts view, not to a queue.
+//
+// `isApprover` gates only the approval bucket. Raising a QD does not require
+// being an approver, so the rework bucket is computed for everyone.
+async function listMyQueue(client, userId, { isApprover = false } = {}) {
+  const { rows } = await client.query(
+    `SELECT id, qd_no, die_no, supplier, plant, submitted_at, prepared_by,
+            approval_state, assigned_approver, created_by, sent_back_reason
+       FROM quality_discrepancies
+      WHERE approval_state IN ('Pending', 'SentBack')
+      ORDER BY submitted_at DESC NULLS LAST, id DESC`
+  );
+  return {
+    awaitingApproval: isApprover ? rows.filter((r) => isInApprovalQueue(r, userId)) : [],
+    sentBack: rows.filter((r) => isSentBackToMe(r, userId)),
+  };
+}
+
 async function approveQD(client, { id, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
@@ -805,7 +832,7 @@ module.exports = {
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
-  isInApprovalQueue, listPendingApprovals,
+  isInApprovalQueue, listPendingApprovals, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,
   sendBackEmailSubject, buildSendBackEmailHtml,
   BILLETS, saveBilletParameters, listBilletParameters,
