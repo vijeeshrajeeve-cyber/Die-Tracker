@@ -4,7 +4,7 @@ import {
   AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, suppliersAPI } from '../api';
-import { QD_STATUS_CONFIG, QD_STATUSES } from '../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
 import FocPendingPanel from '../components/qd/FocPendingPanel';
@@ -230,6 +230,19 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, pendingAppr
   const sectionLabel = { fontSize: '0.75rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' };
   const panel = { background: bg, border: `1px solid ${border}`, borderRadius: 12, boxShadow: theme.shadowSm };
 
+  // Marks a QD that is not simply approved. Rendered inside the QD No cell
+  // rather than as a 14th column — the table is already wide, and this is where
+  // the eye lands when scanning for a particular QD.
+  const approvalPill = (state) => {
+    if (!QD_LIST_BADGE_STATES.includes(state)) return null;
+    const b = QD_APPROVAL_BADGE[state];
+    return (
+      <span style={{ padding: '2px 7px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap', background: b.bg, color: b.fg }}>
+        {b.label}
+      </span>
+    );
+  };
+
   return (
     <div style={{ padding: '32px 28px', color: text }}>
       <style>{`
@@ -349,7 +362,12 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, pendingAppr
                   const OIcon = OUTCOME_ICON[q.outcome] || Eye;
                   return (
                     <tr key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)}>
-                      <td style={td}><span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600 }}>{q.qd_no}</span></td>
+                      <td style={td}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600 }}>{q.qd_no}</span>
+                          {approvalPill(q.approval_state)}
+                        </span>
+                      </td>
                       <td style={{ ...td, fontFamily: mono, fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{q.die_no}</td>
                       <td style={td}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>
@@ -484,7 +502,10 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, pendingAppr
               return (
                 <div key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)}
                   style={{ display: 'grid', gridTemplateColumns: '100px 130px 100px 1fr 160px 70px', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: `1px solid ${border}` }}>
-                  <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no}</span>
+                    {approvalPill(q.approval_state)}
+                  </span>
                   <span style={{ fontFamily: mono, fontSize: 12.5, color: muted }}>{q.die_no}</span>
                   <span style={{ fontSize: 12, color: muted }}>{q.supplier}</span>
                   <span style={{ fontSize: 12.5, color: muted, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{q.issue_summary}</span>

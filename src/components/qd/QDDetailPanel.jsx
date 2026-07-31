@@ -5,7 +5,7 @@ import {
   Download, Eye,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, getUser } from '../../api';
-import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS } from '../../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS, QD_APPROVAL_BADGE } from '../../utils/constants';
 import { dieDesignSignature, userSignature } from '../../utils/emailSignature';
 import StatusChangeModal from './StatusChangeModal';
 import FocTrialModal from './FocTrialModal';
@@ -19,14 +19,6 @@ import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 // Part-B's supplier_acceptance column only ever accepts these two values (or
 // '' to clear) — the server rejects anything else with a 400.
 const QD_YES_NO = ['Yes', 'No'];
-
-// Approval-state pill shown next to the status badge in the header.
-const A_BADGE = {
-  Draft:    { label: 'Draft',     bg: 'rgba(161,161,170,0.15)', fg: '#a1a1aa' },
-  Pending:  { label: 'Pending',   bg: 'rgba(234,179,8,0.15)',   fg: '#EAB308' },
-  Approved: { label: 'Approved',  bg: 'rgba(34,197,94,0.15)',   fg: '#22C55E' },
-  SentBack: { label: 'Sent back', bg: 'rgba(239,68,68,0.15)',   fg: '#EF4444' },
-};
 
 // Activity rows store a lucide icon name; map the ones the app actually writes.
 const ACTIVITY_ICON = {
@@ -107,7 +99,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   // has sent it to someone specific. Older responses only carried the
   // account-wide flag, so fall back to it.
   const mayApprove = qd.can_approve != null ? qd.can_approve : canApprove;
-  const aBadge = A_BADGE[qd.approval_state] || null;
+  const aBadge = QD_APPROVAL_BADGE[qd.approval_state] || null;
 
   // Only needed while a QD is waiting to be sent, so it is fetched on demand
   // rather than with every drawer open. Defaults to whoever it went to last,

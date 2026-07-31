@@ -182,3 +182,17 @@ export const QD_ACTIVITY_TONES = {
   good:    { bg: 'rgba(16,185,129,0.18)', fg: '#34D399' },
   neutral: { bg: 'rgba(161,161,170,0.16)', fg: '#A1A1AA' },
 };
+
+// Approval-state pill, shared by the QD drawer header and the register so the
+// two cannot drift apart. Moved here from QDDetailPanel, where it was private
+// and the register would have needed a second copy.
+export const QD_APPROVAL_BADGE = {
+  Draft:    { label: 'Draft',     bg: 'rgba(161,161,170,0.15)', fg: '#a1a1aa' },
+  Pending:  { label: 'Pending',   bg: 'rgba(234,179,8,0.15)',   fg: '#EAB308' },
+  Approved: { label: 'Approved',  bg: 'rgba(34,197,94,0.15)',   fg: '#22C55E' },
+  SentBack: { label: 'Sent back', bg: 'rgba(239,68,68,0.15)',   fg: '#EF4444' },
+};
+
+// Which of those the register marks. Approved is left out on purpose: most QDs
+// end up approved, and a pill on nearly every row teaches the eye to skip it.
+export const QD_LIST_BADGE_STATES = ['Draft', 'Pending', 'SentBack'];
