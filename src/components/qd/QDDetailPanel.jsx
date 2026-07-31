@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
   Calendar, Check, MessageSquare, Pencil, XCircle, Mail, ArrowUpCircle, CornerUpLeft, Repeat,
-  Download,
+  Download, Eye,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, getUser } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS } from '../../utils/constants';
@@ -10,6 +10,7 @@ import { dieDesignSignature, userSignature } from '../../utils/emailSignature';
 import StatusChangeModal from './StatusChangeModal';
 import FocTrialModal from './FocTrialModal';
 import FocRounds from './FocRounds';
+import QDFormPreviewModal from './QDFormPreviewModal';
 import DatePickerField from '../DatePickerField';
 import useDialog from '../../hooks/useDialog';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
@@ -87,6 +88,9 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   const [trialOpen, setTrialOpen] = useState(false);
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [sendBackReason, setSendBackReason] = useState('');
+  // Nothing is fetched until this opens — a QD drawer must not pay for a
+  // server-side PDF render that nobody asked for.
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Escape closes the drawer, but not while an inline fact edit is open — that
   // key already means "cancel this edit" (see the field's own onKeyDown), and a
@@ -407,6 +411,10 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Download size={15} /> Download QD PDF
           </button>
+          <button onClick={() => setPreviewOpen(true)} className="qd-action" title="Read the QD form without leaving the app"
+            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Eye size={15} /> Preview QD form
+          </button>
           <select value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
             style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
             {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
@@ -629,6 +637,14 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           theme={theme}
           onClose={() => setTrialOpen(false)}
           onDone={onChanged}
+        />
+      )}
+
+      {previewOpen && (
+        <QDFormPreviewModal
+          qd={qd}
+          theme={theme}
+          onClose={() => setPreviewOpen(false)}
         />
       )}
 
