@@ -763,14 +763,28 @@ export const qualityDiscrepanciesAPI = {
         URL.revokeObjectURL(url);
     },
 
-    // Streams the rendered QD form as a PDF and triggers a browser download.
-    downloadDocument: async (id, qdNo) => {
+    // One authenticated fetch of the rendered QD form, shared by the download and
+    // the in-app preview so the two can never show different bytes. The route is
+    // behind authMiddleware and needs this Bearer header — which is exactly why
+    // the preview cannot point an <iframe> straight at the API.
+    documentBlob: async (id) => {
         const token = getToken();
         const response = await fetch(`${API_BASE_URL}/quality-discrepancies/${id}/document`, {
             headers: { ...(token && { Authorization: `Bearer ${token}` }) },
         });
         if (!response.ok) throw new Error(`Document failed (HTTP ${response.status})`);
-        const blob = await response.blob();
+        return response.blob();
+    },
+
+    // Object URL for the preview iframe. The caller owns it and MUST call
+    // URL.revokeObjectURL on it — otherwise every re-open strands another copy
+    // of the PDF in memory for the life of the tab.
+    documentUrl: async (id) =>
+        URL.createObjectURL(await qualityDiscrepanciesAPI.documentBlob(id)),
+
+    // Streams the rendered QD form as a PDF and triggers a browser download.
+    downloadDocument: async (id, qdNo) => {
+        const blob = await qualityDiscrepanciesAPI.documentBlob(id);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
