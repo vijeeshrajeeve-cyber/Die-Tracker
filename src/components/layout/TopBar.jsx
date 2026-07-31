@@ -20,6 +20,7 @@ const TopBar = ({
     showNotifications,
     setShowNotifications,
     notificationDropdown, // Prop to pass the rendered dropdown
+    qdApprovalCount = 0, // QDs awaiting this user's approval, counted in the badge
     onLogout,
     onChangePassword,
     onManageSignature
@@ -43,7 +44,9 @@ const TopBar = ({
         return hoursDiff > 24;
     });
 
-    const totalNotifications = designOverdueOrders.length + pendingOrderingOrders.length;
+    // Must match the dropdown's own total in DieOrderingSystem, or the badge
+    // promises a number the panel does not show.
+    const totalNotifications = designOverdueOrders.length + pendingOrderingOrders.length + qdApprovalCount;
 
     // Minimal re-implementation of email generation for the dropdown if needed
     // But maybe we just show the count and list for now to keep it valid.

@@ -685,6 +685,11 @@ export const qualityDiscrepanciesAPI = {
     // Readable by any QD user, since the raiser has to pick one when submitting.
     listApprovers: async () => apiRequest('/quality-discrepancies/approvers'),
 
+    // The signed-in user's approval queue. Answers { count: 0, qds: [] } for a
+    // user who is not an approver, so callers need no role check of their own.
+    pendingApprovals: async () =>
+        apiRequest('/quality-discrepancies/pending-approvals'),
+
     approve: async (id) =>
         apiRequest(`/quality-discrepancies/${id}/approve`, { method: 'POST' }),
 
