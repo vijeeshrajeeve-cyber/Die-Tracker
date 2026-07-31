@@ -86,6 +86,11 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 title={tab.label}
+                // nav-item: stronger hover tint than the app default, because these
+                // sit on the bare sidebar background rather than on a card.
+                // press-soft: a 260px-wide row scaled to 0.97 reads as the row
+                // moving, not as a press — the tint carries the feedback instead.
+                className="nav-item press-soft"
                 style={getNavButtonStyle(active, variant, tab.status)}
             >
                 <tab.icon size={20} />
@@ -165,6 +170,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
                 <button
                     onClick={() => setCollapsed(!collapsed)}
                     title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    className="nav-item press-soft"
                     style={{
                         display: 'flex',
                         alignItems: 'center',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, X, Eye, Trash2, ClipboardList, Download } from 'lucide-react';
 import { ordersAPI, sampleFollowupsAPI } from '../api';
+import { dialogs } from '../components/ui/DialogProvider';
 import { formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
 
@@ -94,7 +95,7 @@ export default function SampleFollowupPage({
   fetchOrders,
   fetchSampleFollowups,
 }) {
-  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
+  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm };
   const tableStyle = { width: '100%' };
   const scrollVars = {
     '--dt-border': theme.cardBorder,
@@ -140,7 +141,12 @@ export default function SampleFollowupPage({
 
   const handleDeleteSampleFollowup = async (sf) => {
     if (sf._source === 'standalone') {
-      if (!window.confirm('Delete this sample followup record? This cannot be undone.')) return;
+      const ok = await dialogs.confirm({
+        title: 'Delete sample followup',
+        message: 'This removes the followup record permanently. It cannot be undone.',
+        confirmLabel: 'Delete record',
+      });
+      if (!ok) return;
       try {
         await sampleFollowupsAPI.delete(sf._raw.id);
         setToast({ message: 'Sample followup deleted', type: 'success' });
@@ -152,7 +158,13 @@ export default function SampleFollowupPage({
       }
       return;
     }
-    if (!window.confirm('Clear the sample-followup data for this die? The underlying die order will remain; only sample/trial fields will be reset.')) return;
+    const ok = await dialogs.confirm({
+      title: 'Clear sample followup data',
+      message: 'Only the sample and trial fields are reset. The underlying die order is kept.',
+      confirmLabel: 'Clear fields',
+      tone: 'warning',
+    });
+    if (!ok) return;
     try {
       const existing = sf._order;
       await ordersAPI.patch(existing.id, {

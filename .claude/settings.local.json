@@ -118,7 +118,13 @@
       "PowerShell(node --test server/services/frozenDesigns.test.cjs 2>&1)",
       "PowerShell(npx vite build --logLevel error 2>&1)",
       "Bash(rm -f scripts/db-reconcile-entrypoint.sh .gitattributes)",
-      "Bash(rmdir scripts *)"
+      "Bash(rmdir scripts *)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec die-ordering-db psql -h /var/run/postgresql -U postgres -d die_ordering -c \"SELECT column_name FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name IN \\('raised_date','qd_requested_date'\\);\")",
+      "PowerShell(claude mcp *)",
+      "PowerShell(npx -y @agent-native/core@latest skills add visual-plan 2>&1 | Select-Object -First 80)",
+      "PowerShell($out = npx -y @agent-native/core@latest skills add visual-plan --client claude-code 2>&1 | Where-Object { $_ -notmatch '^npm warn' }; $out | Select-Object -Last 50)",
+      "PowerShell(npm cache *)",
+      "PowerShell($p = \"C:\\\\Users\\\\vijee\\\\AppData\\\\Local\\\\npm-cache\\\\_npx\"; foreach \\($d in @\\('70c9d65422c7baee','218f5d799962bf90'\\)\\) { $full = Join-Path $p $d; if \\(Test-Path $full\\) { Remove-Item $full -Recurse -Force -Confirm:$false; \"removed $d\" } })"
     ]
   }
 }

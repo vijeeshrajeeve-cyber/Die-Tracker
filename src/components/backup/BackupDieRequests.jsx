@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
-import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../../api';
+import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, extractProfileFromDie, getUser } from '../../api';
+import { userSignature } from '../../utils/emailSignature';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
 import FrozenDesignBanner from '../FrozenDesignBanner';
+import { dialogs } from '../ui/DialogProvider';
 
 const StatusBadge = ({ status }) => {
   const config = BACKUP_REQUEST_STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
@@ -286,11 +288,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
   const handleRequestPdfDrawings = () => {
     if (selectedRequests.length === 0) {
-      alert('Select at least one backup request first.');
+      dialogs.notify('Select at least one backup request first.', 'info');
       return;
     }
     if (!onCompose) {
-      alert('Email compose is not available from this page.');
+      dialogs.notify('Email compose is not available from this page.', 'info');
       return;
     }
 
@@ -332,7 +334,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
           <tbody>${requestRows}</tbody>
         </table>
         <p>Please share the drawings at the earliest so the requests can proceed without delay.</p>
-        <p>Best regards,<br/>Die Ordering Team</p>`,
+        ${userSignature(getUser())}`,
       importance: 'high',
       isHtml: true,
       onSent: async () => {
@@ -342,7 +344,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             backupRequestsAPI.update(request.id, { ...request, 'Drawing Requested': today })
           ));
         } catch (error) {
-          alert('Email sent, but failed to update Drawing Requested date: ' + error.message);
+          dialogs.notify('Email sent, but the Drawing Requested date could not be updated: ' + error.message, 'error', { title: 'Partially completed' });
         }
         setSelectedRequestIds([]);
         onRefresh();
@@ -395,7 +397,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     const duplicateWarning = getDuplicateDieWarning(die);
     if (duplicateWarning) {
       setDieWarning(duplicateWarning);
-      alert(duplicateWarning);
+      dialogs.notify(duplicateWarning, 'error', { title: 'Duplicate die' });
       return;
     }
 
@@ -420,7 +422,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
         const entered = window.prompt(`No customer found for profile ${profile} (die ${die}).\nEnter customer name to save to Profile Master:`);
         if (entered === null) { setSaving(false); return; } // cancelled
         customer = entered.trim();
-        if (!customer) { alert('Customer name is required.'); setSaving(false); return; }
+        if (!customer) { dialogs.notify('Customer name is required.', 'error'); setSaving(false); return; }
         try { await profilesAPI.save(die, customer); } catch (e) { console.error('Save profile failed:', e); }
       }
 
@@ -434,19 +436,25 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       setShowModal(false);
       onRefresh();
     } catch (error) {
-      alert('Error: ' + error.message);
+      dialogs.notify(error.message, 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (request) => {
-    if (!window.confirm(`Delete backup request for "${request['DIE NO']}"? This cannot be undone.`)) return;
+    const ok = await dialogs.confirm({
+      title: 'Delete backup request',
+      message: `The backup request for ${request['DIE NO']} will be permanently removed. This cannot be undone.`,
+      confirmLabel: 'Delete request',
+    });
+    if (!ok) return;
     try {
       await backupRequestsAPI.delete(request.id);
+      dialogs.notify('Backup request deleted', 'success');
       onRefresh();
     } catch (error) {
-      alert('Error: ' + error.message);
+      dialogs.notify(error.message, 'error');
     }
   };
 
@@ -593,9 +601,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
       const mergedNote = frozenMerged ? `\n\nFrozen design merged: ${frozenMerged} PDF page-set(s) appended.` : '';
       if (jFileError) {
-        alert(`${orderSavedNote}.${mergedNote}\n\nWarning: J-file could not be generated: ${jFileError}`);
+        dialogs.notify(`${orderSavedNote}.${mergedNote}\n\nThe J-file could not be generated: ${jFileError}`, 'error', { title: 'Saved, with a warning' });
       } else {
-        alert(`${orderSavedNote} and J-file downloaded as "${jFileName}".${mergedNote}`);
+        dialogs.notify(`${orderSavedNote} and J-file downloaded as "${jFileName}".${mergedNote}`, 'success');
       }
     } catch (error) {
       setOrderError(error.message || String(error));
@@ -695,7 +703,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       <div style={{
         background: theme.cardBg, borderRadius: '20px', padding: '1.25rem',
         border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        boxShadow: theme.shadowMd,
       }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
           <div style={{ flex: 1, minWidth: '250px', position: 'relative' }}>
@@ -759,7 +767,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       <div style={{
         background: theme.cardBg, borderRadius: '20px',
         border: `1px solid ${theme.cardBorder}`, overflow: 'hidden',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        boxShadow: theme.shadowMd,
       }}>
         <div className="dt-scroll" style={scrollVars}>
           <table className="dt-table" style={{ width: '100%' }}>

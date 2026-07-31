@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, AlertTriangle, Upload, ChevronDown, ChevronRight } from 'lucide-react';
 import { qualityDiscrepanciesAPI, ordersAPI, extractProfileFromDie } from '../../api';
 import { QD_OUTCOMES } from '../../utils/constants';
 import DatePickerField from '../DatePickerField';
+import useDialog from '../../hooks/useDialog';
+import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 
-const GRADIENT = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
 
 // qd_billet_parameters columns — order here drives the Production parameters grid.
 const BILLET_FIELDS = [
@@ -46,6 +47,7 @@ function Section({ id, title, hint, open, onToggle, colors, children }) {
 }
 
 export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCreated, editQd = null, options = {} }) {
+  const dialogRef = useDialog({ open: true, onClose });
   // Edit mode: the same form, pre-filled from an existing QD. The server only
   // permits this while the QD is a Draft or has been sent back.
   const isEdit = !!editQd;
@@ -76,6 +78,10 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const [submitting, setSubmitting] = useState(false);
   const [submitKind, setSubmitKind] = useState(null); // 'draft' | 'submit' — which footer button is busy
   const [error, setError] = useState('');
+  // Submitting routes the QD to a named approver, so the footer needs the list.
+  // Saving a draft does not, which is why an empty list only blocks Submit.
+  const [approvers, setApprovers] = useState([]);
+  const [approverId, setApproverId] = useState(editQd?.assigned_approver ? String(editQd.assigned_approver) : '');
   const fileRef = useRef(null);
   // Set only once create() itself succeeds. Lets a retry re-use the already
   // created draft instead of creating a second, orphaned one.
@@ -122,6 +128,16 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const group = { display: 'flex', flexDirection: 'column', gap: 6 };
 
   const canSubmit = !!dieNo.trim() && !!supplier.trim() && !!qdRequestedDate && !submitting;
+  // Sending for approval additionally needs somebody to send it to.
+  const canSubmitForApproval = canSubmit && !!approverId;
+
+  useEffect(() => {
+    let cancelled = false;
+    qualityDiscrepanciesAPI.listApprovers()
+      .then((r) => { if (!cancelled) setApprovers(r.approvers || []); })
+      .catch(() => { if (!cancelled) setApprovers([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   const setPA = (f) => (e) => setPartA((prev) => ({ ...prev, [f]: e.target.value }));
   const setPADate = (f) => (iso) => setPartA((prev) => ({ ...prev, [f]: iso }));
@@ -243,7 +259,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
       }
       if (doSubmit) {
         phase = isSentBack ? 'resubmitting it for approval' : 'submitting it for approval';
-        await qualityDiscrepanciesAPI.submit(id);
+        await qualityDiscrepanciesAPI.submit(id, Number(approverId));
       }
       onCreated(id, { submitted: doSubmit, isEdit, wasDraft: isEdit ? editQd.approval_state === 'Draft' : true });
     } catch (e) {
@@ -285,7 +301,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const sectionColors = { border, text, dim, muted };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <style>{`@keyframes qdModalIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-cta:hover { filter: brightness(1.06); }`}</style>
 
@@ -293,7 +309,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '24px 28px', borderBottom: `1px solid ${border}` }}>
-          <span style={{ width: 44, height: 44, borderRadius: 12, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <span style={{ width: 44, height: 44, borderRadius: 12, background: BRAND.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <AlertTriangle size={18} style={{ color: '#fff' }} />
           </span>
           <div style={{ flex: 1 }}>
@@ -540,14 +556,21 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
         </div>
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '18px 28px', borderTop: `1px solid ${border}` }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, padding: '18px 28px', borderTop: `1px solid ${border}` }}>
+          <select value={approverId} onChange={(e) => setApproverId(e.target.value)} disabled={submitting || !approvers.length}
+            title="Who should approve this QD"
+            style={{ marginRight: 'auto', padding: '10px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: approverId ? text : muted, fontSize: 14, fontWeight: 500, cursor: submitting ? 'wait' : 'pointer' }}>
+            <option value="">{approvers.length ? 'Send to approver…' : 'No approvers configured'}</option>
+            {approvers.map((a) => <option key={a.id} value={a.id}>{a.username}</option>)}
+          </select>
           <button onClick={onClose} style={{ padding: '10px 18px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: muted, fontWeight: 500, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
           <button onClick={() => save(false)} disabled={!canSubmit}
             style={{ padding: '10px 20px', background: bg, color: text, border: `1px solid ${border}`, borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.55 }}>
             {submitting && submitKind === 'draft' ? 'Saving…' : (isSentBack ? 'Save changes' : 'Save Draft')}
           </button>
-          <button onClick={() => save(true)} disabled={!canSubmit} className="qd-cta"
-            style={{ padding: '10px 20px', background: GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.55, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+          <button onClick={() => save(true)} disabled={!canSubmitForApproval} className="qd-cta"
+            title={approverId ? '' : 'Choose who should approve this QD first'}
+            style={{ padding: '10px 20px', background: BRAND.navy, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: canSubmitForApproval ? 'pointer' : 'not-allowed', opacity: canSubmitForApproval ? 1 : 0.55, boxShadow: `0 4px 12px ${BRAND_ALPHA.navyGlow}` }}>
             {submitting && submitKind === 'submit' ? (isSentBack ? 'Resubmitting…' : 'Submitting…') : (isSentBack ? 'Resubmit for approval' : 'Submit for approval')}
           </button>
         </div>

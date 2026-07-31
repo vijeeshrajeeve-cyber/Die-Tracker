@@ -1,5 +1,7 @@
 import React from 'react';
-import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, Menu, AlignJustify } from 'lucide-react';
+import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, Menu, AlignJustify, PenTool } from 'lucide-react';
+import useDismissable from '../../hooks/useDismissable';
+import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 
 const TopBar = ({
     user,
@@ -19,7 +21,8 @@ const TopBar = ({
     setShowNotifications,
     notificationDropdown, // Prop to pass the rendered dropdown
     onLogout,
-    onChangePassword
+    onChangePassword,
+    onManageSignature
 }) => {
 
     // Notification logic replicated/moved here for counter
@@ -47,6 +50,13 @@ const TopBar = ({
 
     const [showUserMenu, setShowUserMenu] = React.useState(false);
     const [showPDFMenu, setShowPDFMenu] = React.useState(false);
+
+    // Both dropdowns used to be closable only by hitting their own trigger
+    // again — clicking anywhere else left them hanging over the page.
+    const pdfMenuRef = React.useRef(null);
+    const userMenuRef = React.useRef(null);
+    useDismissable(showPDFMenu, React.useCallback(() => setShowPDFMenu(false), []), [pdfMenuRef]);
+    useDismissable(showUserMenu, React.useCallback(() => setShowUserMenu(false), []), [userMenuRef]);
     const accentColor = theme.accent || '#3B82F6';
 
     const actionButtonStyle = (active = false) => ({
@@ -115,7 +125,7 @@ const TopBar = ({
                             color: theme.text,
                             fontSize: '0.9rem',
                             outline: 'none',
-                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
+                            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.20)'
                         }}
                     />
                 </div>
@@ -124,17 +134,19 @@ const TopBar = ({
             {/* Right side interactions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {/* PDF Import Dropdown */}
-                <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative' }} ref={pdfMenuRef}>
                     <button
                         onClick={() => setShowPDFMenu(!showPDFMenu)}
                         title="Import PDF"
+                        aria-haspopup="menu"
+                        aria-expanded={showPDFMenu}
                         style={actionButtonStyle(showPDFMenu)}
                     >
                         <FileText size={18} />
                         <span style={actionLabelStyle(showPDFMenu)}>Import PDF</span>
                     </button>
                     {showPDFMenu && (
-                        <div style={{
+                        <div role="menu" aria-label="Import PDF" style={{
                             position: 'absolute',
                             top: '100%',
                             right: 0,
@@ -236,9 +248,9 @@ const TopBar = ({
                 </div>
 
                 {/* User Profile */}
-                <div style={{ position: 'relative', marginLeft: '8px' }}>
-                    <button onClick={() => setShowUserMenu(!showUserMenu)} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 600 }}>
+                <div style={{ position: 'relative', marginLeft: '8px' }} ref={userMenuRef}>
+                    <button onClick={() => setShowUserMenu(!showUserMenu)} aria-haspopup="menu" aria-expanded={showUserMenu} aria-label={`Account menu for ${user?.username || 'user'}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '20px' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: BRAND.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 600 }}>
                             {user?.username?.[0]?.toUpperCase() || 'U'}
                         </div>
                         <div style={{ textAlign: 'left', display: 'none', '@media (min-width: 1200px)': { display: 'block' } }}>
@@ -250,7 +262,7 @@ const TopBar = ({
                     </button>
 
                     {showUserMenu && (
-                        <div style={{
+                        <div role="menu" aria-label="Account" style={{
                             position: 'absolute', top: '100%', right: 0, marginTop: '12px',
                             background: theme.cardBg, border: `1px solid ${theme.cardBorder}`,
                             borderRadius: '16px', padding: '8px', minWidth: '200px',
@@ -258,6 +270,9 @@ const TopBar = ({
                         }}>
                             <button onClick={onChangePassword} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>
                                 <Key size={16} /> Change Password
+                            </button>
+                            <button onClick={() => { setShowUserMenu(false); onManageSignature?.(); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>
+                                <PenTool size={16} /> My Signature
                             </button>
                             <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>
                                 <LogOut size={16} /> Logout

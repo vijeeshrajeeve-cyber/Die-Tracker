@@ -475,6 +475,25 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='prepared_by') THEN
           ALTER TABLE quality_discrepancies ADD COLUMN prepared_by TEXT;
         END IF;
+        -- Who the raiser sent this QD to for approval. Null on QDs submitted
+        -- before this existed, which stay approvable by any approver.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='assigned_approver') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN assigned_approver INTEGER REFERENCES users(id);
+        END IF;
+        -- Where the app writes to a user (e.g. their QD was sent back).
+        -- Optional: an account with no address simply gets no email.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='email') THEN
+          ALTER TABLE users ADD COLUMN email TEXT;
+        END IF;
+        -- How this person is presented in an outgoing email signature. A login
+        -- name like "jaypee" is not something to sign a supplier email with, so
+        -- full_name is used when set and the username is only the fallback.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='full_name') THEN
+          ALTER TABLE users ADD COLUMN full_name TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='phone') THEN
+          ALTER TABLE users ADD COLUMN phone TEXT;
+        END IF;
         -- Drafts carry no QD number until submitted, so qd_no must be nullable.
         -- The UNIQUE constraint still holds: Postgres treats NULLs as distinct.
         ALTER TABLE quality_discrepancies ALTER COLUMN qd_no DROP NOT NULL;
@@ -564,6 +583,53 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- ── FOC replacement rounds ──────────────────────────────────────────
+      -- One row per attempt at a free-of-charge replacement: what the supplier
+      -- promised, when it actually arrived, and how it did on trial. A QD loops
+      -- when a replacement fails, so this cannot be columns on the QD itself —
+      -- round 2 would overwrite round 1 and destroy the evidence of a supplier
+      -- who has now sent two bad dies against the same claim.
+      CREATE TABLE IF NOT EXISTS qd_foc_rounds (
+        id            SERIAL PRIMARY KEY,
+        qd_id         INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+        round_no      INTEGER NOT NULL,
+        promised_eta  DATE,
+        accepted_at   DATE,
+        received_date DATE,
+        received_by   INTEGER REFERENCES users(id),
+        trial_date    DATE,
+        trial_result  TEXT CHECK (trial_result IN ('Pass', 'Fail')),
+        trial_notes   TEXT,
+        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (qd_id, round_no)
+      );
+      CREATE INDEX IF NOT EXISTS idx_qd_foc_rounds_qd ON qd_foc_rounds (qd_id);
+
+      -- Give QDs that were already sitting on 'FOC Accepted' the round they
+      -- would have opened under the new flow, carrying over the ETA that was
+      -- recorded at the time. Everything else stays NULL: accepted_at, the
+      -- arrival and the trial were never captured, and inventing them would put
+      -- dates on this tracker that nothing on the shop floor ever recorded.
+      -- Idempotent by the NOT EXISTS guard, so it is safe on every startup and
+      -- will never add a second round to a QD that already has one.
+      INSERT INTO qd_foc_rounds (qd_id, round_no, promised_eta)
+      SELECT q.id, 1, q.eta_date
+        FROM quality_discrepancies q
+       WHERE q.status = 'FOC Accepted'
+         AND NOT EXISTS (SELECT 1 FROM qd_foc_rounds r WHERE r.qd_id = q.id);
+
+      -- One scanned signature per user, drawn into the Signature column of the
+      -- QD form. Held in the database rather than on disk: the images are small,
+      -- there is exactly one per user, and this way they ride along in the
+      -- existing pg_dump backup instead of needing their own volume. Separate
+      -- table so the blob never loads with an ordinary SELECT * FROM users.
+      CREATE TABLE IF NOT EXISTS user_signatures (
+        user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        mime_type  TEXT NOT NULL,
+        image      BYTEA NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Press master (press name → code)
       CREATE TABLE IF NOT EXISTS presses (
         id SERIAL PRIMARY KEY,
@@ -645,6 +711,19 @@ const initializeDatabase = async () => {
         design_reminder_last_run DATE,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Chaser settings for the two FOC buckets: one mail out to the supplier
+      -- about replacements they promised and have not delivered, one mail in to
+      -- our own owner about replacements that arrived and are sitting untrialled.
+      -- foc_idle_days is how long a received die may sit before it is chased.
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_supplier_enabled  BOOLEAN DEFAULT false;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_supplier_time     TEXT DEFAULT '08:00';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_supplier_last_run DATE;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_internal_enabled  BOOLEAN DEFAULT false;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_internal_time     TEXT DEFAULT '08:00';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_internal_last_run DATE;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_internal_to       TEXT DEFAULT '';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_idle_days         INTEGER DEFAULT 3;
 
       -- Email log (sent and received emails)
       CREATE TABLE IF NOT EXISTS email_log (

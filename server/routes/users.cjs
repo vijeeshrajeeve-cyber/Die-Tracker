@@ -5,6 +5,14 @@ const { pool } = require('../db.cjs');
 
 const router = express.Router();
 
+// Blank means "no address on file", which must be NULL rather than '' so the
+// send-back notifier can treat it as "nobody to write to".
+const blankToNull = (v) => {
+    const trimmed = String(v == null ? '' : v).trim();
+    return trimmed || null;
+};
+const normalizeEmail = blankToNull;
+
 // Validation error handler
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
@@ -33,9 +41,17 @@ const createUserValidation = [
     body('role')
         .optional()
         .isIn(['admin', 'user', 'die_designer', 'simulation_engineer']).withMessage('Role must be "admin", "user", "die_designer", or "simulation_engineer"'),
+    // Optional, but a typo here means a silently undelivered notification, so a
+    // blank is allowed and a malformed address is not.
+    body('email')
+        .optional({ values: 'falsy' })
+        .isEmail().withMessage('Enter a valid email address'),
 ];
 
 const updateUserValidation = [
+    body('email')
+        .optional({ values: 'falsy' })
+        .isEmail().withMessage('Enter a valid email address'),
     body('username')
         .optional()
         .trim()
@@ -74,7 +90,7 @@ const VALID_PAGE_IDS = [
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, role, page_access, created_at FROM users ORDER BY created_at DESC'
+            'SELECT id, username, full_name, email, phone, role, page_access, created_at FROM users ORDER BY created_at DESC'
         );
         res.json({
             users: result.rows.map(u => ({
@@ -91,7 +107,7 @@ router.get('/', async (req, res) => {
 // Create new user (admin only)
 router.post('/', createUserValidation, handleValidationErrors, async (req, res) => {
     try {
-        const { username, password, role = 'user', page_access } = req.body;
+        const { username, password, email, full_name, phone, role = 'user', page_access } = req.body;
 
         // Validate page_access if provided
         if (page_access != null) {
@@ -114,14 +130,17 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
 
         const passwordHash = bcrypt.hashSync(password, 12);
         const result = await pool.query(
-            'INSERT INTO users (username, password_hash, role, password_must_change, page_access) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [username, passwordHash, role, true, storedPageAccess]
+            'INSERT INTO users (username, password_hash, email, full_name, phone, role, password_must_change, page_access) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+            [username, passwordHash, normalizeEmail(email), blankToNull(full_name), blankToNull(phone), role, true, storedPageAccess]
         );
 
         res.status(201).json({
             user: {
                 id: result.rows[0].id,
                 username,
+                email: normalizeEmail(email),
+                full_name: blankToNull(full_name),
+                phone: blankToNull(phone),
                 role,
                 page_access: storedPageAccess ? JSON.parse(storedPageAccess) : null
             }
@@ -173,7 +192,7 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
     try {
         const { id } = req.params;
         const userId = parseInt(id, 10);
-        const { username, role, page_access } = req.body;
+        const { username, email, full_name, phone, role, page_access } = req.body;
 
         if (page_access != null) {
             if (!Array.isArray(page_access) || !page_access.every(p => VALID_PAGE_IDS.includes(p))) {
@@ -213,6 +232,10 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
         const values = [];
         let idx = 1;
         if (username) { fields.push(`username = $${idx++}`); values.push(username); }
+        // Sent as '' to clear the address, which stores NULL.
+        if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(normalizeEmail(email)); }
+        if (full_name !== undefined) { fields.push(`full_name = $${idx++}`); values.push(blankToNull(full_name)); }
+        if (phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(blankToNull(phone)); }
         if (role) { fields.push(`role = $${idx++}`); values.push(role); }
         if (storedPageAccess !== undefined) { fields.push(`page_access = $${idx++}`); values.push(storedPageAccess); }
         // If switching to admin, force page_access null regardless of payload
@@ -227,7 +250,7 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
 
         values.push(userId);
         const result = await pool.query(
-            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, username, role, page_access, created_at`,
+            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, username, full_name, email, phone, role, page_access, created_at`,
             values
         );
 

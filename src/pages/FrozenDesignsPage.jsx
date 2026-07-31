@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Snowflake, Download, Upload, Lock, FileText, Layers, Send, ShieldAlert, Search } from 'lucide-react';
 import { frozenDesignsAPI } from '../api';
+import { dialogs } from '../components/ui/DialogProvider';
 import FreezeDesignModal from '../components/FreezeDesignModal';
+import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 const STATUS_CONFIG = {
   Active:     { c: '#16A34A', b: 'rgba(22,163,74,0.14)' },
@@ -48,7 +50,13 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
   useEffect(() => { load(); }, [load]);
 
   const release = async (id) => {
-    if (!window.confirm('Release (unfreeze) this design? Future orders will no longer be flagged.')) return;
+    const ok = await dialogs.confirm({
+      title: 'Release frozen design',
+      message: 'Future orders against this design will no longer be flagged as frozen.',
+      confirmLabel: 'Release design',
+      tone: 'warning',
+    });
+    if (!ok) return;
     await frozenDesignsAPI.release(id);
     load();
   };
@@ -63,7 +71,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
     if (!id || !chosen || !chosen.length) return;
     setUploadingId(id);
     try { await frozenDesignsAPI.uploadFiles(id, chosen); load(); }
-    catch (err) { window.alert('Upload failed: ' + err.message); }
+    catch (err) { dialogs.notify('Upload failed: ' + err.message, 'error'); }
     finally { setUploadingId(null); pendingUploadId.current = null; }
   };
 
@@ -115,14 +123,14 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
           : { color: dim, background: surfaceHover, border: `1px solid ${border}` }),
   });
 
-  const card = { background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' };
+  const card = { background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '18px 20px', boxShadow: theme.shadowSm };
   const th = { padding: '13px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em' };
   const td = { padding: '14px 16px' };
   const mono = "'JetBrains Mono', ui-monospace, monospace";
   const selectStyle = { padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', cursor: 'pointer', minWidth: 140, outline: 'none' };
 
   const kpis = [
-    { label: 'Total Frozen', value: kTotal, sub: 'across all plants', icon: Layers, ic: '#fff', ibg: 'linear-gradient(135deg,#3B82F6,#8B5CF6)' },
+    { label: 'Total Frozen', value: kTotal, sub: 'across all plants', icon: Layers, ic: '#fff', ibg: BRAND.navy },
     { label: 'Active', value: kActive, sub: 'currently locked', icon: Snowflake, ic: '#16A34A', ibg: 'rgba(22,163,74,0.14)' },
     { label: 'Released', value: kReleased, sub: 'to production, lifetime', icon: Send, ic: '#0891B2', ibg: 'rgba(8,145,178,0.14)' },
     { label: 'Bypassed', value: kBypassed, sub: 'released without freeze', icon: ShieldAlert, ic: '#D97706', ibg: 'rgba(217,119,6,0.14)' },
@@ -155,7 +163,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
           <button onClick={exportCsv} className="fd-hoverbtn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>
             <Download size={16} /> Export
           </button>
-          <button onClick={() => setShowFreeze(true)} className="fd-primary" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: 'linear-gradient(135deg,#3B82F6,#8B5CF6)', border: 'none', borderRadius: 10, color: '#fff', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+          <button onClick={() => setShowFreeze(true)} className="fd-primary" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: BRAND.navy, border: 'none', borderRadius: 10, color: '#fff', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', boxShadow: `0 4px 12px ${BRAND_ALPHA.navyGlow}` }}>
             <Snowflake size={16} /> Freeze Design
           </button>
         </div>
@@ -178,7 +186,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
       </div>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: theme.shadowSm }}>
         <div style={{ flex: 1, minWidth: 240, position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: dim }} />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by profile, supplier, press, or file…"
@@ -197,7 +205,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
       </div>
 
       {/* Table */}
-      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, overflow: 'hidden', boxShadow: theme.shadowSm }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${border}` }}>

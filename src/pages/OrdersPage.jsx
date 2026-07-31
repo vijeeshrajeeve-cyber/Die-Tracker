@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronUp, ChevronDown, Plane, Truck, Eye, Trash2, ChevronLeft, ChevronRight, History, Download } from 'lucide-react';
 import { STATUS_CONFIG } from '../utils/constants';
 import { ordersAPI } from '../api';
+import { dialogs } from '../components/ui/DialogProvider';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import DatePickerField from '../components/DatePickerField';
 import { parseDateDMY, formatDate } from '../utils/helpers';
@@ -119,12 +120,12 @@ export default function OrdersPage({
     });
   };
 
-  const filterBar = { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
+  const filterBar = { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: theme.shadowSm };
   const filterRow = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' };
   const filterSelect = { padding: '10px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px', transition: 'all 0.15s', outline: 'none' };
   const dateFieldLabel = { display: 'flex', flexDirection: 'column', gap: '4px' };
   const dateLabelText = { fontSize: '0.7rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.03em' };
-  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
+  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm };
   const tableStyle = { width: '100%' };
   // Color tokens consumed by the shared .dt-table CSS (see index.css)
   const scrollVars = {
@@ -316,7 +317,12 @@ export default function OrdersPage({
                         onClick={async (e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          if (window.confirm(`Delete order "${order['DIE NO']}"? This cannot be undone.`)) {
+                          const confirmed = await dialogs.confirm({
+                            title: 'Delete order',
+                            message: `Order ${order['DIE NO']} will be permanently removed. This cannot be undone.`,
+                            confirmLabel: 'Delete order',
+                          });
+                          if (confirmed) {
                             try {
                               await ordersAPI.delete(order.id);
                               setToast({ message: `Order ${order['DIE NO']} deleted successfully`, type: 'success' });

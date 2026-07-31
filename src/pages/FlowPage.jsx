@@ -4,6 +4,7 @@ import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
 import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
+import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
 // are recorded on the revision row via the complete-stage endpoint.
@@ -117,7 +118,7 @@ export default function FlowPage({
   const workflow = WORKFLOW_STEPS[currentFlow.status];
 
   const styles = {
-    tableContainer: { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    tableContainer: { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm },
     table: { width: '100%', borderCollapse: 'collapse' },
     th: { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` },
     td: { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text },
@@ -217,7 +218,7 @@ export default function FlowPage({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {isPendingOrder && (
-            <button onClick={() => setShowAddOrderModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 18px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <button onClick={() => setShowAddOrderModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 18px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               <Plus size={16} /> New Order
             </button>
           )}

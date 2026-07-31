@@ -1,6 +1,7 @@
 import React from 'react';
 import { CONTROLLABLE_PAGES } from '../utils/constants';
 import { usersAPI } from '../api';
+import { dialogs } from '../components/ui/DialogProvider';
 import AddUserModal from '../components/modals/AddUserModal';
 import ResetPasswordModal from '../components/modals/ResetPasswordModal';
 
@@ -12,7 +13,7 @@ export default function UsersPage({
   resettingUser, setResettingUser,
   handleDeleteUser,
 }) {
-  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' };
+  const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm };
   const tableStyle = { width: '100%' };
   const scrollVars = {
     '--dt-border': theme.cardBorder,
@@ -39,6 +40,7 @@ export default function UsersPage({
                     <tr>
                       <th style={th} className="dt-num">ID</th>
                       <th style={th}>Username</th>
+                      <th style={th}>Email</th>
                       <th style={th}>Role</th>
                       <th style={th}>Page Access</th>
                       <th style={th}>Created At</th>
@@ -50,6 +52,8 @@ export default function UsersPage({
                       <tr key={u.id}>
                         <td style={td} className="dt-num">{u.id}</td>
                         <td style={{ ...td, fontWeight: 600, color: theme.text }}>{u.username}</td>
+                        {/* No address means QD notifications cannot reach them. */}
+                        <td style={td}>{u.email || <span style={{ color: theme.textDim, fontStyle: 'italic' }}>not set</span>}</td>
                         <td style={td}><span style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, background: u.role === 'admin' ? '#3B82F620' : '#64748B20', color: u.role === 'admin' ? '#3B82F6' : '#94A3B8' }}>{u.role}</span></td>
                         <td style={td}>
                           {u.role === 'admin' ? (
@@ -105,11 +109,11 @@ export default function UsersPage({
                   onClose={() => setShowAddUser(false)}
                   onSubmit={async (userData) => {
                     try {
-                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess);
+                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess, userData.email, userData.fullName, userData.phone);
                       setShowAddUser(false);
                       fetchUsers();
                     } catch (error) {
-                      alert(error.message);
+                      dialogs.notify(error.message, 'error');
                     }
                   }}
                   theme={theme}
@@ -127,12 +131,15 @@ export default function UsersPage({
                       await usersAPI.update(editingUser.id, {
                         username: userData.username,
                         role: userData.role,
+                        email: userData.email ?? '',
+                        fullName: userData.fullName ?? '',
+                        phone: userData.phone ?? '',
                         pageAccess: userData.role === 'admin' ? null : userData.pageAccess,
                       });
                       setEditingUser(null);
                       fetchUsers();
                     } catch (error) {
-                      alert(error.message);
+                      dialogs.notify(error.message, 'error');
                     }
                   }}
                   theme={theme}

@@ -1,11 +1,18 @@
 'use strict';
+const signature = require('./emailSignature.cjs');
 const { extractProfileFromDie } = require('./frozenDesigns.cjs');
+const focRounds = require('./qdFocRounds.cjs');
 
-const STATUSES = ['Open', 'Sent to Supplier', 'FOC Accepted', 'Rejected', 'Reference', 'Rework In-house', 'Closed'];
+// 'FOC Received' sits between the supplier's promise and closure: the
+// replacement is physically in the plant but has not been trialled, so the
+// claim is neither outstanding nor settled. Without it a die sitting on the
+// floor is indistinguishable from one still at the supplier.
+const STATUSES = ['Open', 'Sent to Supplier', 'FOC Accepted', 'FOC Received', 'Rejected', 'Reference', 'Rework In-house', 'Closed'];
 
 // A QD is open unless it has been settled: Closed (done), Rejected (claim
 // refused) or Reference (logged for information only — the sheet's old "info").
-// An accepted FOC is open, since the replacement is still to arrive.
+// An accepted FOC is open, since the replacement is still to arrive; a received
+// one is too, since it still has to prove itself on a trial.
 // Derived from STATUSES so any status added later counts as open by default.
 const NOT_OPEN_STATUSES = ['Closed', 'Rejected', 'Reference'];
 const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
@@ -100,17 +107,78 @@ function etaDisplay(row, now = new Date()) {
 
 const avgOrNull = (nums) => (nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null);
 
+// "Recovered" means the replacement arrived and passed its trial. This used to
+// count QDs merely sitting on 'FOC Accepted', which reported the supplier's
+// promises as though they were dies back in production.
+function focRecoveredInFy(row, fyStart) {
+  const f = row.foc;
+  if (!f || f.state !== 'trial-passed' || !f.receivedDate) return false;
+  return toDate(f.receivedDate) >= fyStart;
+}
+
+// A supplier has a FOC claim once a round exists. Rows loaded without their
+// rounds fall back to the status, which after migration says the same thing.
+const hasFocClaim = (r) => (r.foc
+  ? r.foc.roundCount > 0
+  : ['FOC Accepted', 'FOC Received'].includes(r.status));
+
 function computeKpis(rows, now = new Date()) {
   const list = rows || [];
   const fyStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   const resolutions = list.map(resolutionDays).filter((d) => d !== null);
+  const pending = pendingFoc(list, now);
   return {
     total: list.length,
     openCount: list.filter((r) => OPEN_STATUSES.includes(r.status)).length,
     closedCount: list.filter((r) => r.status === 'Closed').length,
     atSupplier: list.filter((r) => r.status === 'Sent to Supplier').length,
-    focRecovered: list.filter((r) => r.status === 'FOC Accepted' && toDate(r.raised_date) >= fyStart).length,
+    focRecovered: list.filter((r) => focRecoveredInFy(r, fyStart)).length,
+    focAwaitingReceipt: pending.awaitingReceipt.length,
+    focOverdue: pending.overdueCount,
+    focAwaitingTrial: pending.awaitingTrial.length,
     avgResolution: avgOrNull(resolutions),
+  };
+}
+
+// The two things that can be pending against an accepted FOC. Settled QDs are
+// excluded: a claim that was closed or rejected is nobody's to chase, whatever
+// state its last round was left in.
+function focPendingRow(r) {
+  const f = r.foc;
+  return {
+    id: r.id,
+    qd_no: r.qd_no,
+    die_no: r.die_no,
+    profile_number: r.profile_number,
+    supplier: r.supplier,
+    plant: r.plant,
+    status: r.status,
+    round_no: focRounds.latestRound(f.rounds)?.round_no ?? null,
+    round_count: f.roundCount,
+    promised_eta: f.promisedEta,
+    received_date: f.receivedDate,
+    days_overdue: f.daysOverdue,
+    days_idle: f.daysIdle,
+  };
+}
+
+// Rows with no ETA sort last rather than poisoning the comparison with NaN.
+const overdueKey = (r) => (r.days_overdue == null ? -Infinity : r.days_overdue);
+
+function pendingFoc(rows, now = new Date()) {
+  const awaitingReceipt = [];
+  const awaitingTrial = [];
+  for (const r of rows || []) {
+    if (!r.foc || NOT_OPEN_STATUSES.includes(r.status)) continue;
+    if (r.foc.state === 'awaiting-receipt') awaitingReceipt.push(focPendingRow(r));
+    else if (r.foc.state === 'awaiting-trial') awaitingTrial.push(focPendingRow(r));
+  }
+  awaitingReceipt.sort((a, b) => overdueKey(b) - overdueKey(a) || String(a.qd_no).localeCompare(String(b.qd_no)));
+  awaitingTrial.sort((a, b) => (b.days_idle || 0) - (a.days_idle || 0) || String(a.qd_no).localeCompare(String(b.qd_no)));
+  return {
+    awaitingReceipt,
+    awaitingTrial,
+    overdueCount: awaitingReceipt.filter((r) => r.days_overdue > 0).length,
   };
 }
 
@@ -191,7 +259,7 @@ function summarizeSuppliers(rows, now = new Date()) {
         name,
         total: list.length,
         open: list.filter((r) => OPEN_STATUSES.includes(r.status)).length,
-        foc: list.filter((r) => r.status === 'FOC Accepted').length,
+        foc: list.filter(hasFocClaim).length,
         rejected: list.filter((r) => r.status === 'Rejected').length,
         avg: avgOrNull(list.map(resolutionDays).filter((d) => d !== null)),
         trend: computeTrend(raised(recentFrom, now), raised(priorFrom, recentFrom)),
@@ -245,6 +313,7 @@ async function listQDs(client) {
   let files = [];
   let activity = [];
   let billets = new Map();
+  let rounds = new Map();
   if (ids.length) {
     files = (await client.query(
       `SELECT id, qd_id, original_name, mime_type, size_bytes, uploaded_at
@@ -257,6 +326,7 @@ async function listQDs(client) {
       [ids]
     )).rows;
     billets = await listBilletParameters(client, ids);
+    rounds = await focRounds.listRounds(client, ids);
   }
   const now = new Date();
   return rows.map((r) => ({
@@ -265,6 +335,7 @@ async function listQDs(client) {
     resolution_days: resolutionDays(r),
     eta_display: etaDisplay(r, now),
     handoff: handoffDelays(r),
+    foc: focRounds.focSummary(rounds.get(r.id) || [], now),
     files: files.filter((f) => f.qd_id === r.id),
     activity: activity.filter((a) => a.qd_id === r.id),
     billets: billets.get(r.id) || [],
@@ -323,31 +394,42 @@ async function createQD(client, input) {
 // identity or derived, so it is deliberately not editable here.
 const YES_NO = ['Yes', 'No'];
 
+// `progress: true` marks a field that only becomes knowable after the QD has
+// been approved and sent out — the supplier's reply, the hand-off dates, the
+// ETA they gave. Those must stay editable for the QD's whole life.
+//
+// Everything else is Part-A: the description of the discrepancy as it was
+// raised, which is printed on the form that goes to Purchase on approval. Once
+// that document exists, its contents must not move underneath it, so these lock
+// exactly as editQdDetails locks them. A new field with no `progress` flag is
+// treated as Part-A, which is the safe default.
 const EDITABLE_FIELDS = {
-  outcome: { label: 'Outcome sought' },
-  input_at_failure: { label: 'Input at failure' },
-  eta_date: { label: 'ETA from supplier', isDate: true },
-  sent_to_purchase_date: { label: 'Sent to purchase', isDate: true },
-  sent_to_supplier_date: { label: 'Sent to supplier', isDate: true },
-  corrector: { label: 'Corrector' },
-  recommended_action:   { label: 'Recommended action' },
-  manufacturing_defect: { label: 'Manufacturing defect', oneOf: YES_NO },
-  die_performance:      { label: 'Die performance', oneOf: YES_NO },
-  supplier_acceptance:  { label: 'Supplier acceptance', oneOf: YES_NO },
-  action_taken:         { label: 'Action taken' },
-  supplier_comments:    { label: 'Supplier comments' },
-  received_by_supplier: { label: 'Received by (supplier)' },
-  press:                { label: 'Press' },
-  die_type:             { label: 'Die type' },
-  die_size:             { label: 'Die size' },
-  no_of_cavity:         { label: 'No of cavity' },
-  tooling:              { label: 'Tooling' },
-  no_of_trials:         { label: 'No of trials' },
-  no_of_corrections:    { label: 'No of corrections' },
-  qd_requested_date:    { label: 'QD requested date', isDate: true, required: true },
-  die_received_date:    { label: 'Die received date' },
-  production_date:      { label: 'Production date' },
+  outcome: { label: 'Outcome sought', progress: false },
+  input_at_failure: { label: 'Input at failure', progress: false },
+  eta_date: { label: 'ETA from supplier', isDate: true, progress: true },
+  sent_to_purchase_date: { label: 'Sent to purchase', isDate: true, progress: true },
+  sent_to_supplier_date: { label: 'Sent to supplier', isDate: true, progress: true },
+  corrector: { label: 'Corrector', progress: false },
+  recommended_action:   { label: 'Recommended action', progress: false },
+  manufacturing_defect: { label: 'Manufacturing defect', oneOf: YES_NO, progress: false },
+  die_performance:      { label: 'Die performance', oneOf: YES_NO, progress: false },
+  supplier_acceptance:  { label: 'Supplier acceptance', oneOf: YES_NO, progress: true },
+  action_taken:         { label: 'Action taken', progress: true },
+  supplier_comments:    { label: 'Supplier comments', progress: true },
+  received_by_supplier: { label: 'Received by (supplier)', progress: true },
+  press:                { label: 'Press', progress: false },
+  die_type:             { label: 'Die type', progress: false },
+  die_size:             { label: 'Die size', progress: false },
+  no_of_cavity:         { label: 'No of cavity', progress: false },
+  tooling:              { label: 'Tooling', progress: false },
+  no_of_trials:         { label: 'No of trials', progress: false },
+  no_of_corrections:    { label: 'No of corrections', progress: false },
+  qd_requested_date:    { label: 'QD requested date', isDate: true, required: true, progress: false },
+  die_received_date:    { label: 'Die received date', progress: false },
+  production_date:      { label: 'Production date', progress: false },
 };
+
+const isProgressField = (column) => EDITABLE_FIELDS[column]?.progress === true;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -376,6 +458,16 @@ function normalizeField(column, raw) {
 async function updateFields(client, { id, fields, actor, userId }) {
   const entries = Object.entries(fields || {}).filter(([k]) => EDITABLE_FIELDS[k]);
   if (entries.length === 0) return false;
+
+  // Checked before anything is validated or written, so a payload that mixes
+  // locked and progress fields is refused whole rather than half-applied.
+  if (entries.some(([column]) => !isProgressField(column))) {
+    const row = await getApprovalRow(client, id);
+    if (!row) return false;
+    if (!EDITABLE_APPROVAL_STATES.includes(row.approval_state)) {
+      throw new Error(`Cannot edit a QD in ${row.approval_state} state`);
+    }
+  }
 
   const sets = [];
   const params = [];
@@ -456,12 +548,13 @@ async function editQdDetails(client, { id, fields = {}, billets, actor, userId }
 // Tone the timeline dot by where the status lands, so the history reads at a glance.
 const STATUS_TONE = {
   'FOC Accepted': 'good',
+  'FOC Received': 'good',
   'Closed': 'good',
   'Rejected': 'bad',
   'Sent to Supplier': 'send',
 };
 
-async function updateStatus(client, { id, status, reason, etaDate, actor, userId }) {
+async function updateStatus(client, { id, status, reason, etaDate, receivedDate, actor, userId }) {
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const why = String(reason == null ? '' : reason).trim();
   if (!why) throw new Error('Reason is required for a status change');
@@ -474,6 +567,16 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
   }
   if (eta && !ISO_DATE.test(eta)) {
     throw new Error(`Invalid ETA date: ${eta} (expected YYYY-MM-DD)`);
+  }
+
+  // Same bargain on the other side: the point of this status is the arrival
+  // date, so it cannot be set without one.
+  const received = String(receivedDate == null ? '' : receivedDate).trim();
+  if (status === 'FOC Received' && !received) {
+    throw new Error('Received date is required when the status is FOC Received');
+  }
+  if (received && !ISO_DATE.test(received)) {
+    throw new Error(`Invalid received date: ${received} (expected YYYY-MM-DD)`);
   }
 
   // Only 'Closed' stamps closed_at. An accepted FOC is still in flight —
@@ -494,10 +597,25 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
   );
   if (!rowCount) return false;
 
+  // The round table is the record of what was promised and what turned up.
+  // These throw on an impossible move (a receipt against no promise), which
+  // rolls the whole transaction back — the status change goes with it.
+  let detail = eta ? ` · ETA ${eta}` : '';
+  if (status === 'FOC Accepted') {
+    const { roundNo, revised } = await focRounds.openFocRound(client, { qdId: id, promisedEta: eta });
+    detail = `${revised ? ' · revised ETA' : ` · FOC round ${roundNo}, ETA`} ${eta}`;
+  }
+  if (status === 'FOC Received') {
+    const { roundNo } = await focRounds.recordReceipt(client, {
+      qdId: id, receivedDate: received, receivedBy: userId || null,
+    });
+    detail = ` · FOC round ${roundNo} received ${received}`;
+  }
+
   await addActivity(client, {
     qdId: id,
     actor,
-    action: `changed status to ${status} — ${why}${eta ? ` · ETA ${eta}` : ''}`,
+    action: `changed status to ${status} — ${why}${detail}`,
     icon: 'pencil',
     tone: STATUS_TONE[status] || 'neutral',
     userId,
@@ -505,13 +623,38 @@ async function updateStatus(client, { id, status, reason, etaDate, actor, userId
   return true;
 }
 
+// Recording the trial verdict. The round closes here; the QD's next status is a
+// separate, deliberate decision by the user (see the route), because a failed
+// trial can mean going back to the supplier, reworking in-house, or giving up.
+async function recordFocTrial(client, { id, trialDate, result, notes, actor, userId }) {
+  const { rowCount } = await client.query('SELECT 1 FROM quality_discrepancies WHERE id = $1', [id]);
+  if (!rowCount) return false;
+  const { roundNo } = await focRounds.recordTrial(client, {
+    qdId: id, trialDate, result, notes,
+  });
+  const why = String(notes || '').trim();
+  await addActivity(client, {
+    qdId: id,
+    actor,
+    action: `FOC round ${roundNo} trialled ${trialDate} — ${result}${why ? ` — ${why}` : ''}`,
+    icon: result === 'Pass' ? 'check' : 'undo',
+    tone: result === 'Pass' ? 'good' : 'bad',
+    userId,
+  });
+  return true;
+}
+
 async function getApprovalRow(client, id) {
   const { rows } = await client.query(
-    `SELECT id, qd_no, approval_state, supplier FROM quality_discrepancies WHERE id = $1`, [id]);
+    `SELECT id, qd_no, approval_state, supplier, assigned_approver, created_by
+       FROM quality_discrepancies WHERE id = $1`, [id]);
   return rows[0] || null;
 }
 
-async function submitForApproval(client, { id, newQdNo, actor, userId }) {
+// `approverUserId` is the approver the raiser is sending this QD to. The route
+// checks they are actually eligible; resubmitting a sent-back QD may name a
+// different one, so this always overwrites rather than coalescing.
+async function submitForApproval(client, { id, newQdNo, actor, userId, approverUserId = null, approverName = '' }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   const to = nextApprovalState(row.approval_state, 'submit');
@@ -519,12 +662,24 @@ async function submitForApproval(client, { id, newQdNo, actor, userId }) {
   if (!qdNo) throw new Error('A QD number is required to submit');
   await client.query(
     `UPDATE quality_discrepancies
-        SET qd_no = $1, approval_state = $2, submitted_by = $3,
+        SET qd_no = $1, approval_state = $2, submitted_by = $3, assigned_approver = $4,
             submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4`,
-    [qdNo, to, userId || null, id]);
-  await addActivity(client, { qdId: id, actor, action: `submitted QD ${qdNo} for approval`, icon: 'send', tone: 'send', userId });
+      WHERE id = $5`,
+    [qdNo, to, userId || null, approverUserId, id]);
+  const to_whom = approverName ? ` to ${approverName}` : '';
+  await addActivity(client, { qdId: id, actor, action: `submitted QD ${qdNo} for approval${to_whom}`, icon: 'send', tone: 'send', userId });
   return { ok: true, qdNo, state: to };
+}
+
+// Who may act on this QD's approval. Anyone in the approver list can act on a
+// QD that names nobody (QDs submitted before assignment existed), but once the
+// raiser has sent it to a named approver only they — or an admin, who must be
+// able to unblock an absent approver — can approve or send it back.
+function canActOnApproval(user, row) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (!row?.assigned_approver) return true;
+  return row.assigned_approver === user.id;
 }
 
 async function approveQD(client, { id, actor, userId }) {
@@ -571,7 +726,10 @@ function purchaseEmailSubject(qd) {
   return `QD ${qd.qd_no} approved — action required`;
 }
 
-function buildPurchaseEmailHtml(qd) {
+// `sender` is the approver whose action sent this — the mail is from a person,
+// so it signs as them (falling back to the department when their account has
+// no name or contact details on file).
+function buildPurchaseEmailHtml(qd, sender) {
   const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
     `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
@@ -583,6 +741,31 @@ function buildPurchaseEmailHtml(qd) {
       ${row('Recommended action', qd.recommended_action || qd.outcome)}
     </table>
     <p style="white-space:pre-wrap">${escapeHtml(qd.issue_detail || qd.issue_summary)}</p>
+    ${signature.userSignature(sender)}
+  </div>`;
+}
+
+// Sent back to the raiser. Unlike the Purchase mail this goes to one person and
+// carries no PDF: the QD is unfinished, and the point is to get them back into
+// the app to fix it.
+function sendBackEmailSubject(qd) {
+  return `QD ${qd.qd_no} sent back — changes needed`;
+}
+
+function buildSendBackEmailHtml(qd, { reason, by, sender } = {}) {
+  const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
+    `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
+    <h2 style="margin:0 0 6px">Quality Discrepancy ${escapeHtml(qd.qd_no)} was sent back</h2>
+    <p>${escapeHtml(by) || 'The approver'} has returned this QD to you for changes. It is not approved and has not gone to Purchase.</p>
+    <table style="border-collapse:collapse;margin:8px 0">
+      ${row('QD No', qd.qd_no)}${row('Die No', qd.die_no)}${row('Supplier', qd.supplier)}
+      ${row('Sent back by', by)}
+    </table>
+    <p style="margin:12px 0 4px;color:#555">Reason given:</p>
+    <blockquote style="margin:0;padding:8px 12px;border-left:3px solid #EF4444;background:#FEF2F2;white-space:pre-wrap">${escapeHtml(reason)}</blockquote>
+    <p style="margin-top:14px">Open the QD Tracker, edit the QD, and resubmit it for approval.</p>
+    ${signature.userSignature(sender)}
   </div>`;
 }
 
@@ -590,10 +773,12 @@ module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS, ISO_DATE,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
   computeKpis, computeTrend, summarizeSuppliers, availableYears, filterByYear,
+  pendingFoc, focRecoveredInFy, hasFocClaim, TRIAL_RESULTS: focRounds.TRIAL_RESULTS,
   deriveQdCode, formatQdNo, nextSequence,
-  listQDs, createQD, addActivity, addActivityOfKind, updateStatus, updateFields, editQdDetails,
+  listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
-  submitForApproval, approveQD, sendBack, excludeDrafts, onlyDrafts,
+  submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
   purchaseEmailSubject, buildPurchaseEmailHtml,
+  sendBackEmailSubject, buildSendBackEmailHtml,
   BILLETS, saveBilletParameters, listBilletParameters,
 };

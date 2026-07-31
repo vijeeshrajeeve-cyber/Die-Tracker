@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Snowflake, X, Upload } from 'lucide-react';
 import { frozenDesignsAPI, extractProfileFromDie } from '../api';
+import useDialog from '../hooks/useDialog';
 
 // "Freeze / Final Design" action. Works two ways:
 //  - From an order (Order Detail modal): profile/plant/press/cavity prefilled from the order.
 //  - Standalone (Frozen Designs page): all fields entered manually.
 // Files upload in the same step.
 export default function FreezeDesignModal({ order = null, theme = {}, onClose, onDone }) {
+  const dialogRef = useDialog({ open: true, onClose });
   const [profile, setProfile] = useState(order ? (extractProfileFromDie(order['DIE NO']) || '') : '');
   const [plant, setPlant] = useState(order ? (order.Plant || order.plant || '') : '');
   const [press, setPress] = useState(order ? (order['Press'] || order.press || '') : '');
@@ -54,7 +56,7 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }} onClick={onClose}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }} onClick={onClose}>
       <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: '14px', width: '440px', maxWidth: '100%', boxShadow: '0 12px 32px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: `1px solid ${border}` }}>
           <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: text, fontSize: '1rem' }}>

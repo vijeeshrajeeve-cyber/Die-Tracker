@@ -7,6 +7,7 @@
 
 const { pool } = require('../db.cjs');
 const emailService = require('./email.cjs');
+const signature = require('./emailSignature.cjs');
 
 let reminderInterval = null;
 
@@ -84,7 +85,7 @@ function buildReminderBody(supplier, orders, days) {
             <tbody>${tableRows}</tbody>
         </table>
         <p>Please provide the design drawings at the earliest to avoid further delays in production.</p>
-        <p>Best regards,<br/>Die Ordering Team</p>`;
+        ${signature.dieDesignSignature()}`;
 }
 
 // ── Sending ─────────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ const qd = require('../services/qualityDiscrepancies.cjs');
 const store = require('../services/qdStorage.cjs');
 const qdSettings = require('../services/qdSettings.cjs');
 const email = require('../services/email.cjs');
-const qdPdf = require('../services/qdPdf.cjs');
+const qdDocument = require('../services/qdDocument.cjs');
 
 const router = express.Router();
 
@@ -82,6 +82,14 @@ async function nextQdNo(client, supplierName) {
   return qd.formatQdNo(year, code, qd.nextSequence(rows.map(r => r.qd_no), year, code));
 }
 
+// Resolves the assigned approvers of a page of QDs to usernames in one query.
+async function approverNameMap(rows) {
+  const ids = [...new Set((rows || []).map((r) => r.assigned_approver).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const { rows: users } = await pool.query('SELECT id, username FROM users WHERE id = ANY($1::int[])', [ids]);
+  return new Map(users.map((u) => [u.id, u.username]));
+}
+
 // GET /api/quality-discrepancies?year=2026 → rows + derived KPIs + supplier rollup
 // The year is a period selector: it scopes the rows, the KPIs and the supplier
 // rollup together. `years` always lists every year on record so the filter can
@@ -96,9 +104,21 @@ router.get('/', async (req, res) => {
       ? qd.onlyDrafts(scoped, req.user?.id)
       : qd.excludeDrafts(scoped);
     const forKpis = qd.excludeDrafts(scoped);
+    // Approving is per-QD now, so each row carries its own verdict rather than
+    // the drawer deciding from a single account-wide flag.
+    const isApprover = qdSettings.isApprover(req.user, settings.approverUserIds);
+    const approverNames = await approverNameMap(visible);
+    const decorated = visible.map((r) => ({
+      ...r,
+      assigned_approver_name: approverNames.get(r.assigned_approver) || null,
+      can_approve: isApprover && qd.canActOnApproval(req.user, r),
+    }));
     res.json({
-      qds: visible,
+      qds: decorated,
       kpis: qd.computeKpis(forKpis, now),
+      // The two FOC buckets, ready to render: promised-but-not-arrived, and
+      // arrived-but-not-trialled. Scoped by the same year filter as the KPIs.
+      foc: qd.pendingFoc(forKpis, now),
       suppliers: qd.summarizeSuppliers(forKpis, now),
       years: qd.availableYears(all),
       canApprove: qdSettings.isApprover(req.user, settings.approverUserIds),
@@ -113,24 +133,27 @@ router.get('/', async (req, res) => {
 
 // POST /api/quality-discrepancies
 router.post('/', async (req, res) => {
+  const {
+    dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure,
+    dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
+    productionDate, manufacturingDefect, diePerformance, recommendedAction, dieOrderId,
+    qdRequestedDate,
+  } = req.body || {};
+  // Validated before taking a pool connection: none of these checks need the
+  // database, and releasing on a validation path left the finally block below
+  // releasing the same client twice — which pg throws on.
+  if (!String(dieNo || '').trim()) return res.status(400).json({ error: 'Die No is required' });
+  if (!String(plant || '').trim()) return res.status(400).json({ error: 'Plant is required' });
+  if (!String(supplier || '').trim()) return res.status(400).json({ error: 'Supplier is required' });
+  // Required on every new QD: the plant's own request date, which the system
+  // cannot infer. Nullable in the DB only because pre-existing rows have none.
+  const requestedDate = String(qdRequestedDate || '').trim();
+  if (!requestedDate) return res.status(400).json({ error: 'QD requested date is required' });
+  if (!qd.ISO_DATE.test(requestedDate)) return res.status(400).json({ error: 'Invalid QD requested date (expected YYYY-MM-DD)' });
+  if (outcome && !qd.OUTCOMES.includes(outcome)) return res.status(400).json({ error: 'Invalid outcome' });
+
   const client = await pool.connect();
   try {
-    const {
-      dieNo, plant, supplier, corrector, issue, outcome, inputAtFailure,
-      dieReceivedDate, press, dieType, dieSize, noOfCavity, tooling, noOfTrials, noOfCorrections,
-      productionDate, manufacturingDefect, diePerformance, recommendedAction, dieOrderId,
-      qdRequestedDate,
-    } = req.body;
-    if (!String(dieNo || '').trim()) { client.release(); return res.status(400).json({ error: 'Die No is required' }); }
-    if (!String(plant || '').trim()) { client.release(); return res.status(400).json({ error: 'Plant is required' }); }
-    if (!String(supplier || '').trim()) { client.release(); return res.status(400).json({ error: 'Supplier is required' }); }
-    // Required on every new QD: the plant's own request date, which the system
-    // cannot infer. Nullable in the DB only because pre-existing rows have none.
-    const requestedDate = String(qdRequestedDate || '').trim();
-    if (!requestedDate) { client.release(); return res.status(400).json({ error: 'QD requested date is required' }); }
-    if (!qd.ISO_DATE.test(requestedDate)) { client.release(); return res.status(400).json({ error: 'Invalid QD requested date (expected YYYY-MM-DD)' }); }
-    if (outcome && !qd.OUTCOMES.includes(outcome)) { client.release(); return res.status(400).json({ error: 'Invalid outcome' }); }
-
     const text = String(issue || '').trim() || 'Quality discrepancy raised';
     const summary = text.split('\n')[0].slice(0, 160);
 
@@ -149,7 +172,11 @@ router.post('/', async (req, res) => {
       issueSummary: summary,
       issueDetail: text,
       inputAtFailure: String(inputAtFailure || '').trim() || null,
-      preparedBy: String(corrector || '').trim() || actorFor(req),
+      // "Prepared By" on the QD form is who raised the record, not who is
+      // fixing the die -- the corrector is a different person and belongs in
+      // its own field. Left null rather than defaulted so the signed form never
+      // names someone who did not prepare it.
+      preparedBy: req.user?.username || null,
       createdBy: req.user?.id,
       dieReceivedDate: String(dieReceivedDate || '').trim() || null,
       press: String(press || '').trim() || null,
@@ -211,42 +238,100 @@ router.put('/settings', async (req, res) => {
   } catch (e) { console.error('QD settings save error:', e); res.status(500).json({ error: 'Internal server error' }); }
 });
 
+// Everyone eligible to approve: the users an admin ticked in Settings, plus
+// admins, who can always approve. Readable by any QD user because the raiser has
+// to choose one when submitting — and /api/users is admin-only.
+async function listEligibleApprovers() {
+  const { approverUserIds } = await qdSettings.getQdSettings(pool);
+  const { rows } = await pool.query(
+    `SELECT id, username, role FROM users
+      WHERE role = 'admin' OR id = ANY($1::int[])
+      ORDER BY username`,
+    [(approverUserIds || []).map(Number).filter(Number.isFinite)]
+  );
+  return rows;
+}
+
+// GET /approvers → [{ id, username, role }] for the submit-time picker
+router.get('/approvers', async (req, res) => {
+  try {
+    res.json({ approvers: await listEligibleApprovers() });
+  } catch (e) { console.error('List approvers error:', e); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Gate for approve / send back / resend. Being an approver is necessary but not
+// sufficient: once a QD names an approver, only they (or an admin) may act, so
+// two approvers cannot both act on the same QD.
 const requireApprover = async (req, res, next) => {
   try {
     const { approverUserIds } = await qdSettings.getQdSettings(pool);
     if (!qdSettings.isApprover(req.user, approverUserIds)) {
       return res.status(403).json({ error: 'Not authorized to approve QDs' });
     }
+    const { rows } = await pool.query(
+      'SELECT assigned_approver FROM quality_discrepancies WHERE id = $1', [req.params.id]);
+    if (rows[0] && !qd.canActOnApproval(req.user, rows[0])) {
+      return res.status(403).json({ error: 'This QD was sent to another approver' });
+    }
     next();
   } catch (e) { console.error('Approver check error:', e); res.status(500).json({ error: 'Internal server error' }); }
 };
 
-// Loads everything generateQdPdf needs for a single QD: the row (with
-// approved_by resolved to a username), its files, billet parameters, and the
-// bytes of any image files/logo it can render inline.
-async function buildQdPdfBytes(qdId) {
-  const [{ rows: qrows }, filesRes] = await Promise.all([
-    pool.query('SELECT * FROM quality_discrepancies WHERE id = $1', [qdId]),
-    pool.query('SELECT id, original_name, mime_type, stored_path, category FROM quality_discrepancy_files WHERE qd_id = $1', [qdId]),
-  ]);
-  const row = qrows[0];
-  if (!row) throw new Error('QD not found');
-  if (row.approved_by) {
-    const u = await pool.query('SELECT username FROM users WHERE id = $1', [row.approved_by]);
-    row.approved_by_name = u.rows[0]?.username || '';
+// The rendered QD form, built by the shared service (also used by the
+// supplier email sent from the compose modal).
+const buildQdPdfBytes = (qdId) => qdDocument.buildQdPdfBytes(pool, qdId);
+
+// The acting user's signature details. Returns null when there is no user (or
+// the lookup fails), which the signature builder handles by falling back to
+// the department block rather than signing with a blank name.
+async function signatureUser(userId) {
+  if (!userId) return null;
+  try {
+    const { rows } = await pool.query('SELECT username, full_name, email, phone FROM users WHERE id = $1', [userId]);
+    return rows[0] || null;
+  } catch { return null; }
+}
+
+// Emails the raiser that their QD came back, and records on the timeline
+// whether they were actually reached. Never throws: the send-back has already
+// been committed by the time this runs. Returns { emailWarning } when the
+// raiser could not be told, so the approver sees it instead of assuming.
+async function notifySendBack(qdId, { reason, by, userId }) {
+  let warning = null;
+  const senderUser = await signatureUser(userId);
+  try {
+    const { rows } = await pool.query(
+      `SELECT q.qd_no, q.die_no, q.supplier, u.username, u.email
+         FROM quality_discrepancies q
+         LEFT JOIN users u ON u.id = q.created_by
+        WHERE q.id = $1`, [qdId]);
+    const row = rows[0];
+    if (!row) return {};
+    const to = String(row.email || '').trim();
+    if (!to) {
+      warning = `${row.username || 'The raiser'} has no email address on file, so they were not notified`;
+    } else {
+      await email.sendEmail({
+        to,
+        subject: qd.sendBackEmailSubject(row),
+        body: qd.buildSendBackEmailHtml(row, { reason, by, sender: senderUser }),
+        importance: 'high', sentBy: userId,
+      });
+      await qd.addActivityOfKind(pool, {
+        qdId, kind: 'email', actor: by, note: `sent-back notice emailed to ${row.username || to}`, userId,
+      });
+    }
+  } catch (e) {
+    console.error('Send-back notification failed:', e.message);
+    warning = e.message;
   }
-  const billets = (await qd.listBilletParameters(pool, [row.id])).get(row.id) || [];
-  const fileBytes = new Map();
-  const root = path.resolve(store.getRoot());
-  for (const f of filesRes.rows) {
-    if (!/(png|jpe?g|webp)$/i.test(f.original_name)) continue;
-    const abs = path.resolve(root, f.stored_path);
-    if (!abs.startsWith(root)) continue;
-    try { fileBytes.set(f.id, await fsp.readFile(abs)); } catch { /* skip */ }
+  if (warning) {
+    // Recorded as a note, not an email: no mail went out.
+    await qd.addActivityOfKind(pool, {
+      qdId, kind: 'note', actor: by, note: `raiser not notified — ${warning}`, userId,
+    }).catch(() => { /* the send-back itself still stands */ });
   }
-  let logoBytes = null;
-  try { logoBytes = await fsp.readFile(path.join(__dirname, '..', 'assets', 'gulfex-logo.png')); } catch { /* optional */ }
-  return { row, bytes: await qdPdf.generateQdPdf(row, { files: filesRes.rows, billets, fileBytes, logoBytes }) };
+  return warning ? { emailWarning: warning } : {};
 }
 
 // Shared: build + send the Purchase email for an already-approved QD.
@@ -257,9 +342,9 @@ async function sendPurchaseEmail(qdId, sentBy) {
   if (!purchaseEmailTo) throw new Error('No Purchase recipient configured (Settings → QD)');
   await email.sendEmail({
     to: purchaseEmailTo, cc: purchaseEmailCc || undefined,
-    subject: qd.purchaseEmailSubject(row), body: qd.buildPurchaseEmailHtml(row),
+    subject: qd.purchaseEmailSubject(row), body: qd.buildPurchaseEmailHtml(row, await signatureUser(sentBy)),
     importance: 'high', sentBy,
-    attachments: [{ filename: `QD-${row.qd_no || row.id}.pdf`, content: Buffer.from(bytes), contentType: 'application/pdf' }],
+    attachments: [{ filename: qdDocument.qdPdfFilename(row), content: Buffer.from(bytes), contentType: 'application/pdf' }],
   });
 }
 
@@ -270,9 +355,22 @@ router.post('/:id/submit', async (req, res) => {
     await client.query('BEGIN');
     const row = await qd.getApprovalRow(client, req.params.id);
     if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'QD not found' }); }
+    // The raiser names the approver. Validated against the eligible list so a
+    // QD cannot be parked with someone who has no power to act on it.
+    const approverUserId = Number(req.body?.approverUserId);
+    if (!Number.isFinite(approverUserId)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Choose an approver to send this QD to' });
+    }
+    const approver = (await listEligibleApprovers()).find((a) => a.id === approverUserId);
+    if (!approver) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'That user cannot approve QDs' });
+    }
     const newQdNo = row.qd_no || await nextQdNo(client, row.supplier);
     const out = await qd.submitForApproval(client, {
       id: req.params.id, newQdNo, actor: actorFor(req), userId: req.user?.id,
+      approverUserId, approverName: approver.username,
     });
     await client.query('COMMIT');
     res.json({ message: 'Submitted', qd_no: out.qdNo, approval_state: out.state });
@@ -341,7 +439,14 @@ router.post('/:id/send-back', requireApprover, async (req, res) => {
       id: req.params.id, reason: req.body?.reason, actor: actorFor(req), userId: req.user?.id });
     if (!out.ok) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'QD not found' }); }
     await client.query('COMMIT');
-    res.json({ message: 'Sent back' });
+    // Telling the raiser is the whole point, but a mail failure must not undo a
+    // send-back that already happened — same rule as the Purchase email on
+    // approve. The outcome goes on the timeline either way, so nobody is left
+    // assuming the raiser was told when they were not.
+    const notice = await notifySendBack(req.params.id, {
+      reason: req.body?.reason, by: actorFor(req), userId: req.user?.id,
+    });
+    res.json({ message: 'Sent back', ...notice });
   } catch (e) {
     await client.query('ROLLBACK');
     if (/^Reason is required/.test(e.message) || /^Cannot sendBack/.test(e.message)) return res.status(400).json({ error: e.message });
@@ -364,7 +469,9 @@ router.get('/:id/document', async (req, res) => {
 });
 
 // PATCH /api/quality-discrepancies/:id  { outcome?, input_at_failure?, eta_date?, corrector? }
-// Editable detail fields. An empty string clears the field.
+// Editable detail fields. An empty string clears the field. Part-A fields are
+// refused once the QD is Pending or Approved, exactly as PUT /:id refuses them —
+// the progress fields (supplier reply, hand-off dates, ETA) stay open.
 router.patch('/:id', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -377,6 +484,8 @@ router.patch('/:id', async (req, res) => {
     res.json({ message: 'Updated' });
   } catch (e) {
     await client.query('ROLLBACK');
+    // Same mapping as PUT /:id: a locked QD is a conflict, not a bad request.
+    if (/^Cannot edit a QD/.test(e.message)) return res.status(409).json({ error: e.message });
     // Validation failures are the caller's mistake — answer 400, not 500.
     if (/^Invalid /.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Update QD fields error:', e);
@@ -424,25 +533,81 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// PATCH /api/quality-discrepancies/:id/status  { status, reason, etaDate? }
-// A reason is mandatory; an ETA is mandatory when moving to FOC Accepted.
+// Caller mistakes the QD service reports by throwing: a missing reason, a bad
+// or absent date, or an impossible FOC move (a receipt against no promise).
+// These are 400s, not 500s — the UI shows the message as-is.
+const isClientError = (message) => /^(Reason|ETA|Received date|Invalid|No FOC round|This FOC round|Record the receipt|Trial date) /.test(message);
+
+// PATCH /api/quality-discrepancies/:id/status  { status, reason, etaDate?, receivedDate? }
+// A reason is always mandatory; an ETA is mandatory when moving to FOC Accepted,
+// and an arrival date when moving to FOC Received.
 router.patch('/:id/status', async (req, res) => {
+  const { status, reason, etaDate, receivedDate } = req.body || {};
+  // Validated before connecting, so the finally block is the only release path.
+  if (!qd.STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
   const client = await pool.connect();
   try {
-    const { status, reason, etaDate } = req.body;
-    if (!qd.STATUSES.includes(status)) { client.release(); return res.status(400).json({ error: 'Invalid status' }); }
     await client.query('BEGIN');
     const ok = await qd.updateStatus(client, {
-      id: req.params.id, status, reason, etaDate, actor: actorFor(req), userId: req.user?.id,
+      id: req.params.id, status, reason, etaDate, receivedDate,
+      actor: actorFor(req), userId: req.user?.id,
     });
     await client.query('COMMIT');
     if (!ok) return res.status(404).json({ error: 'QD not found' });
     res.json({ message: 'Status updated' });
   } catch (e) {
     await client.query('ROLLBACK');
-    // Missing reason / missing or malformed ETA are caller mistakes.
-    if (/^(Reason|ETA|Invalid) /.test(e.message)) return res.status(400).json({ error: e.message });
+    if (isClientError(e.message)) return res.status(400).json({ error: e.message });
     console.error('Update QD status error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/quality-discrepancies/:id/foc-trial
+//   { trialDate, result, notes?, nextStatus?, reason?, etaDate? }
+//
+// Records the verdict on the open FOC round. A failed trial must be answered
+// with a next status and a reason in the same request: the round is closed
+// either way, and leaving the QD parked on 'FOC Received' with nothing left to
+// receive would put it in a state nobody owns. What that status should be is
+// the user's judgement — back to the supplier, reworked in-house, or given up.
+router.post('/:id/foc-trial', async (req, res) => {
+  const { trialDate, result, notes, nextStatus, reason, etaDate } = req.body || {};
+  if (!qd.TRIAL_RESULTS.includes(result)) {
+    return res.status(400).json({ error: 'Trial result must be Pass or Fail' });
+  }
+  if (result === 'Fail' && !qd.STATUSES.includes(nextStatus)) {
+    return res.status(400).json({ error: 'A next status is required after a failed trial' });
+  }
+  if (nextStatus !== undefined && nextStatus !== null && !qd.STATUSES.includes(nextStatus)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ok = await qd.recordFocTrial(client, {
+      id: req.params.id, trialDate, result, notes, actor: actorFor(req), userId: req.user?.id,
+    });
+    if (!ok) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'QD not found' });
+    }
+    if (nextStatus) {
+      await qd.updateStatus(client, {
+        id: req.params.id, status: nextStatus, reason, etaDate,
+        actor: actorFor(req), userId: req.user?.id,
+      });
+    }
+    await client.query('COMMIT');
+    res.json({ message: 'Trial recorded' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    if (isClientError(e.message)) return res.status(400).json({ error: e.message });
+    console.error('Record FOC trial error:', e);
     res.status(500).json({ error: 'Internal server error' });
   } finally {
     client.release();

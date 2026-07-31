@@ -8,7 +8,8 @@ import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
-import { PDFImportModal, PIImportModal, MissingCustomerPromptModal, RevisionModal, RevisionHistoryModal, ChangeLogModal } from './components/modals';
+import DialogProvider, { dialogs } from './components/ui/DialogProvider';
+import { PDFImportModal, PIImportModal, MissingCustomerPromptModal, RevisionModal, RevisionHistoryModal, ChangeLogModal, SignatureModal } from './components/modals';
 import BackupDieRequests from './components/backup/BackupDieRequests';
 import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
@@ -28,6 +29,8 @@ import FrozenDesignsPage from './pages/FrozenDesignsPage';
 import QDTrackerPage from './pages/QDTrackerPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
 import FreezeDesignModal from './components/FreezeDesignModal';
+import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
+import { BRAND, BRAND_ALPHA } from './utils/brand';
 
 
 
@@ -361,7 +364,7 @@ const ImportModal = ({ onClose, onImport }) => {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: '1px solid #334155' }}>
           <button onClick={onClose} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => { if (preview?.data) { onImport(preview.data); onClose(); } }} disabled={!preview} style={{ padding: '0.75rem 1.5rem', background: preview ? 'linear-gradient(135deg, #3B82F6, #8B5CF6)' : '#475569', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: preview ? 'pointer' : 'not-allowed', opacity: preview ? 1 : 0.5 }}>Import {preview?.count || 0} Records</button>
+          <button onClick={() => { if (preview?.data) { onImport(preview.data); onClose(); } }} disabled={!preview} style={{ padding: '0.75rem 1.5rem', background: preview ? BRAND.navy : '#475569', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: preview ? 'pointer' : 'not-allowed', opacity: preview ? 1 : 0.5 }}>Import {preview?.count || 0} Records</button>
         </div>
       </div>
     </div>
@@ -510,7 +513,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: BRAND.navy, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Plus size={22} color="white" />
             </div>
             <div>
@@ -637,7 +640,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
         {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '1rem 1.5rem', borderTop: `1px solid ${border}`, flexShrink: 0 }}>
           <button onClick={onClose} style={{ padding: '9px 20px', background: 'transparent', color: textColor, border: `1px solid ${border}`, borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>Cancel</button>
-          <button onClick={handleSubmit} disabled={submitting} style={{ padding: '9px 24px', background: submitting ? '#475569' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '8px', opacity: submitting ? 0.7 : 1 }}>
+          <button onClick={handleSubmit} disabled={submitting} style={{ padding: '9px 24px', background: submitting ? '#475569' : BRAND.navy, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '8px', opacity: submitting ? 0.7 : 1 }}>
             <Plus size={16} />{submitting ? 'Saving…' : 'Create Order'}
           </button>
         </div>
@@ -760,7 +763,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
               width: '48px', height: '48px', borderRadius: '14px',
-              background: isForced ? 'linear-gradient(135deg, #F59E0B, #EF4444)' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
+              background: isForced ? 'linear-gradient(135deg, #F59E0B, #EF4444)' : BRAND.navy,
               display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}>
               {isForced ? <ShieldCheck size={24} color="white" /> : <Key size={24} color="white" />}
@@ -868,7 +871,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
             disabled={loading}
             style={{
               width: '100%', padding: '14px',
-              background: loading ? '#475569' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
+              background: loading ? '#475569' : BRAND.navy,
               color: 'white', border: 'none', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', cursor: loading ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
@@ -1063,7 +1066,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
       setIsEditing(false);
       setPendingStatusLog(null);
     } catch (error) {
-      alert('Failed to save: ' + error.message);
+      dialogs.notify('Failed to save: ' + error.message, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -1525,6 +1528,9 @@ export default function DieOrderingSystem() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  // Opened from the user menu: every user needs to manage their own QD-form
+  // signature, and the Settings page is behind page access most of them lack.
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [forcePasswordChange, setForcePasswordChange] = useState(false);
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
   const [backupRequests, setBackupRequests] = useState([]);
@@ -1827,18 +1833,24 @@ export default function DieOrderingSystem() {
       setShowAddUser(false);
       fetchUsers();
     } catch (error) {
-      alert(error.message);
+      dialogs.notify(error.message, 'error');
     }
   };
 
   // Delete user handler (admin)
   const handleDeleteUser = async (id) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    const ok = await dialogs.confirm({
+      title: 'Delete user',
+      message: 'This removes the account and its page access. It cannot be undone.',
+      confirmLabel: 'Delete user',
+    });
+    if (!ok) return;
     try {
       await usersAPI.delete(id);
+      dialogs.notify('User deleted', 'success');
       fetchUsers();
     } catch (error) {
-      alert(error.message);
+      dialogs.notify(error.message, 'error');
     }
   };
 
@@ -2099,10 +2111,10 @@ export default function DieOrderingSystem() {
       // Refresh orders from database
       await fetchOrders();
       setCurrentPage(1);
-      alert(`Successfully imported ${newData.length} orders to database`);
+      dialogs.notify(`Imported ${newData.length} order(s) to the database.`, 'success');
     } catch (error) {
       console.error('Import error:', error);
-      alert('Failed to import some records: ' + error.message);
+      dialogs.notify('Failed to import some records: ' + error.message, 'error');
     }
   }, [fetchOrders]);
   const handleAddRecord = useCallback(async (newRecord) => {
@@ -2315,15 +2327,24 @@ export default function DieOrderingSystem() {
   };
 
   // Theme colors - Shadcn Zinc Aesthetic
+  //
+  // Surface hierarchy: `bg` is the page, `cardBg` is one step raised from it,
+  // `inputBg`/`tableHeaderBg` one step further. Previously all three were the
+  // same value in both themes, which left the entire UI resting on a single 1px
+  // border. Dark lifts surfaces *lighter* than the page; light tints the page
+  // *down* so white cards read against it.
+  //
+  // Shadows are tuned per theme rather than shared: the old
+  // `rgba(0,0,0,0.02)` was mathematically invisible on a #09090b page.
   const theme = isDarkMode ? {
     bg: '#09090b',
     text: '#fafafa',
     textMuted: '#a1a1aa',
     textDim: '#71717a',
-    cardBg: '#09090b',
+    cardBg: '#131316',
     cardBorder: '#27272a',
-    inputBg: '#09090b',
-    headerBg: '#09090b', 
+    inputBg: '#18181b',
+    headerBg: '#131316',
     navBg: 'transparent',
     tableBg: 'transparent',
     tableHeaderBg: '#18181b',
@@ -2333,18 +2354,26 @@ export default function DieOrderingSystem() {
     rowHover: 'rgba(255,255,255,0.06)',
     tooltipBg: '#27272a',
     sidebarBg: '#09090b',
-    primary: '#fafafa',
-    primaryText: '#18181b',
-    primaryLight: '#27272a',
-    accent: '#fafafa'
+    // Navy is 48% of the brand ratio, so it carries primary actions and the
+    // active/accent state. The zinc greys stay as the surface system underneath.
+    primary: BRAND.navy,
+    primaryText: '#ffffff',
+    primaryLight: BRAND_ALPHA.navySoft,
+    accent: BRAND.navy,
+    shadowSm: '0 1px 2px rgba(0,0,0,0.28)',
+    shadowMd: '0 4px 12px rgba(0,0,0,0.34)',
+    shadowLg: '0 16px 40px rgba(0,0,0,0.45)',
+    focusRing: BRAND.navy,
+    focusRingContrast: 'rgba(255,255,255,0.55)',
+    overlayBg: 'rgba(0,0,0,0.62)'
   } : {
-    bg: '#ffffff',
+    bg: '#fafafa',
     text: '#09090b',
     textMuted: '#71717a',
     textDim: '#a1a1aa',
     cardBg: '#ffffff',
     cardBorder: '#e4e4e7',
-    inputBg: '#ffffff',
+    inputBg: '#f4f4f5',
     headerBg: '#ffffff',
     navBg: 'transparent',
     tableBg: 'transparent',
@@ -2355,11 +2384,27 @@ export default function DieOrderingSystem() {
     rowHover: 'rgba(0,0,0,0.045)',
     tooltipBg: '#09090b',
     sidebarBg: '#ffffff',
-    primary: '#18181b',
-    primaryText: '#fafafa',
-    primaryLight: '#f4f4f5',
-    accent: '#18181b'
+    primary: BRAND.navy,
+    primaryText: '#ffffff',
+    primaryLight: BRAND_ALPHA.navySoft,
+    accent: BRAND.navy,
+    shadowSm: '0 1px 2px rgba(0,0,0,0.06)',
+    shadowMd: '0 4px 12px rgba(0,0,0,0.09)',
+    shadowLg: '0 16px 40px rgba(0,0,0,0.16)',
+    focusRing: BRAND.navy,
+    focusRingContrast: 'rgba(255,255,255,0.85)',
+    overlayBg: 'rgba(9,9,11,0.42)'
   };
+
+  // Hand the focus-ring tones to CSS, which owns :focus-visible (index.css).
+  // Inline `outline: 'none'` appears 43 times and beats any selector, so the
+  // ring has to live in a stylesheet with !important — which means it needs
+  // the theme's colours pushed to it rather than read from it.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--focus-ring', theme.focusRing);
+    root.style.setProperty('--focus-ring-contrast', theme.focusRingContrast);
+  }, [theme.focusRing, theme.focusRingContrast]);
 
   // Inline styles - Strict Shadcn UI
   const styles = {
@@ -2383,25 +2428,25 @@ export default function DieOrderingSystem() {
     logoIcon: { width: '40px', height: '40px', background: theme.primary, color: theme.primaryText, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
     navTabs: { display: 'flex', gap: '4px', background: theme.navBg, padding: '4px', borderRadius: '8px' },
     navTab: (active) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', color: active ? theme.text : theme.textMuted, background: active ? theme.primaryLight : 'transparent', border: 'none', cursor: 'pointer', transition: 'all 0.15s' }),
-    actionBtn: (primary) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', border: primary ? 'none' : `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: primary ? theme.primary : theme.cardBg, color: primary ? theme.primaryText : theme.text, transition: 'all 0.15s ease', boxShadow: primary ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.02)' }),
+    actionBtn: (primary) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', border: primary ? 'none' : `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: primary ? theme.primary : theme.cardBg, color: primary ? theme.primaryText : theme.text, transition: 'all 0.15s ease', boxShadow: theme.shadowSm }),
     main: { maxWidth: '100%', margin: '0 auto', padding: '2rem 1.5rem' },
     kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2.5rem' },
-    kpiCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    kpiCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
     chartsGrid: { display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2.5rem' },
-    chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
-    filterBar: { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
+    filterBar: { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: theme.shadowSm },
     filterRow: { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' },
     searchBox: { flex: 1, minWidth: '250px', position: 'relative' },
     searchInput: { width: '100%', padding: '10px 16px 10px 40px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', transition: 'all 0.15s', outline: 'none' },
     filterSelect: { padding: '10px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px', transition: 'all 0.15s', outline: 'none' },
-    tableContainer: { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    tableContainer: { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm },
     table: { width: '100%', borderCollapse: 'collapse' },
     th: { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` },
     td: { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text },
-    pipelineSection: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    pipelineSection: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
     pipelineColumns: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' },
     pipelineColumn: (color) => ({ borderRadius: '8px', padding: '1rem', background: isDarkMode ? `${color}10` : `${color}1A`, border: `1px solid ${color}33` }), 
-    pipelineItem: { background: theme.cardBg, borderRadius: '6px', padding: '12px', marginBottom: '8px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.03)', width: 'calc(100% - 2px)', overflow: 'hidden', transition: 'all 0.15s ease' },
+    pipelineItem: { background: theme.cardBg, borderRadius: '6px', padding: '12px', marginBottom: '8px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm, width: 'calc(100% - 2px)', overflow: 'hidden', transition: 'all 0.15s ease' },
   };
 
   // Login Screen
@@ -2503,7 +2548,7 @@ export default function DieOrderingSystem() {
               </div>
             </div>
             {loginError && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(244,63,94,0.1)', color: '#F43F5E', padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.875rem' }}><AlertTriangle size={16} />{loginError}</div>}
-            <button type="submit" disabled={loginLoading} style={{ width: '100%', padding: '12px', background: loginLoading ? '#475569' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: loginLoading ? 'not-allowed' : 'pointer' }}>{loginLoading ? 'Signing in...' : 'Sign In'}</button>
+            <button type="submit" disabled={loginLoading} style={{ width: '100%', padding: '12px', background: loginLoading ? '#475569' : BRAND.navy, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: loginLoading ? 'not-allowed' : 'pointer' }}>{loginLoading ? 'Signing in...' : 'Sign In'}</button>
           </form>
         </div>
       </div>
@@ -2549,12 +2594,12 @@ export default function DieOrderingSystem() {
 
     const generateDesignEmail = (supplier, orders) => {
       const dieList = orders.map(o => `  - ${o['DIE NO']} | Order No: ${o['Order No']} (Requested: ${o['Die Requested Date']}, Plant: ${o.Plant})`).join('\n');
-      return `Subject: URGENT: Design Pending for ${orders.length} Die Order(s) - ${supplier}\n\nDear ${supplier} Team,\n\nThis is a reminder that the following die order(s) have been awaiting design for more than 48 hours:\n\n${dieList}\n\nPlease provide the design drawings at the earliest to avoid further delays in production.\n\nBest regards,\nDie Ordering Team`;
+      return `Subject: URGENT: Design Pending for ${orders.length} Die Order(s) - ${supplier}\n\nDear ${supplier} Team,\n\nThis is a reminder that the following die order(s) have been awaiting design for more than 48 hours:\n\n${dieList}\n\nPlease provide the design drawings at the earliest to avoid further delays in production.\n${dieDesignSignatureText()}`;
     };
 
     const generateOrderingEmail = (plant, orders) => {
       const dieList = orders.map(o => `  - ${o['DIE NO']} | Requested: ${o['Die Requested Date']} | Supplier: ${o.Supplier}`).join('\n');
-      return `Subject: URGENT: ${orders.length} Die Order(s) Pending Ordering - ${plant}\n\nDear Purchase Team,\n\nThe following die order(s) for ${plant} have been pending ordering for more than 24 hours:\n\n${dieList}\n\nPlease process these orders at the earliest to avoid production delays.\n\nBest regards,\nDie Ordering Team`;
+      return `Subject: URGENT: ${orders.length} Die Order(s) Pending Ordering - ${plant}\n\nDear Purchase Team,\n\nThe following die order(s) for ${plant} have been pending ordering for more than 24 hours:\n\n${dieList}\n\nPlease process these orders at the earliest to avoid production delays.\n${dieDesignSignatureText()}`;
     };
 
     const copyEmail = (type, key, orders) => {
@@ -2613,7 +2658,7 @@ export default function DieOrderingSystem() {
         <p>This is a reminder that the following die order(s) have been awaiting design for more than 48 hours:</p>
         ${buildTable()}
         <p>Please provide the design drawings at the earliest to avoid further delays in production.</p>
-        <p>Best regards,<br/>Die Ordering Team</p>`;
+        ${dieDesignSignature()}`;
       } else {
         subject = `URGENT: ${orders.length} Die Order(s) Pending Ordering - ${key}`;
         body = `
@@ -2621,7 +2666,7 @@ export default function DieOrderingSystem() {
         <p>The following die order(s) for ${escapeHtml(key)} have been pending ordering for more than 24 hours:</p>
         ${buildTable()}
         <p>Please process these orders at the earliest to avoid production delays.</p>
-        <p>Best regards,<br/>Die Ordering Team</p>`;
+        ${dieDesignSignature()}`;
       }
       setShowEmailCompose({
         to: supplierContactEmail || templateRecipients.default_to || '',
@@ -2726,7 +2771,7 @@ export default function DieOrderingSystem() {
                       }}>
                         <div style={{
                           width: '36px', height: '36px', borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #8B5CF6, #3B82F6)',
+                          background: BRAND.navy,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: '0.75rem', fontWeight: 700, color: 'white'
                         }}>{plant.substring(0, 2)}</div>
@@ -2751,6 +2796,7 @@ export default function DieOrderingSystem() {
   })();
 
   return (
+    <DialogProvider theme={theme}>
     <div style={styles.appLayout}>
       <Sidebar
         activeTab={activeTab}
@@ -2781,6 +2827,7 @@ export default function DieOrderingSystem() {
           notificationDropdown={notificationDropdown}
           onLogout={handleLogout}
           onChangePassword={() => setShowPasswordChangeModal(true)}
+          onManageSignature={() => setShowSignatureModal(true)}
         />
 
         <main style={styles.main}>
@@ -2953,6 +3000,9 @@ export default function DieOrderingSystem() {
             isForced={forcePasswordChange}
           />
         )}
+        {showSignatureModal && (
+          <SignatureModal theme={theme} onClose={() => setShowSignatureModal(false)} />
+        )}
         {revisionOrder && (
           <RevisionModal
             isOpen={!!revisionOrder}
@@ -3034,5 +3084,6 @@ export default function DieOrderingSystem() {
 
       </div>
     </div>
+    </DialogProvider>
   );
 }

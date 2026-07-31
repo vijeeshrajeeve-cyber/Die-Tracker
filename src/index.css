@@ -1,4 +1,13 @@
+/* Inter carries the UI; JetBrains Mono carries every identifier the shop floor
+   reads aloud — QD numbers, die numbers, profile numbers, dates. Six files set
+   `const mono = "'JetBrains Mono', ..."`; without this second import they were
+   all silently falling back to Consolas. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* Hover + press feedback for every button. Imported first on purpose: the
+   prefers-reduced-motion block further down must stay able to override it. */
+@import './styles/buttons.css';
 
 * {
   margin: 0;
@@ -10,6 +19,51 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   Focus visibility
+   43 call sites set inline `outline: 'none'`, which beats any
+   ordinary stylesheet rule — so the ring has to be !important
+   to exist at all. :focus-visible keeps it off during mouse
+   use, so this costs nothing visually and makes the app
+   keyboard-navigable for the first time.
+   --focus-ring is set from the active theme in DieOrderingSystem.
+   ============================================================ */
+:root {
+  --focus-ring: #a1a1aa;
+  --focus-ring-contrast: rgba(0, 0, 0, 0.55);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px !important;
+  /* Second ring in the opposite tone, so the indicator survives on top of
+     status pills and coloured buttons as well as on plain surfaces. */
+  box-shadow: 0 0 0 4px var(--focus-ring-contrast) !important;
+  border-radius: 6px;
+}
+
+/* Pointer users never see it. */
+:focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none;
+}
+
+/* Body scroll lock while a dialog owns the screen (see useDialog). */
+body[data-dialog-open='true'] {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Custom Scrollbar */
@@ -72,14 +126,32 @@ body {
   animation: drawerSlideIn 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }
 
-/* Interactive Rows/Buttons */
-.hover-subtle {
-  transition: all 0.15s ease;
+/* Confirm dialog + toasts (see components/ui/DialogProvider) */
+@keyframes confirmOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.hover-subtle:active {
-  transform: scale(0.98);
+@keyframes confirmDialogIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Date picker popover (see components/DatePickerField) */
+@keyframes dpPopIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Interactive rows/buttons — `.hover-subtle` used to live here but was never
+   applied to a single element. Hover and press feedback now comes from
+   styles/buttons.css, which targets the `button` element directly and so
+   reaches all 234 of them without a className on each. */
 
 /* ============================================================
    Data table readability system (.dt-table)

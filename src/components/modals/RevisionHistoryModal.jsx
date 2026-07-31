@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { X, RotateCcw, FileText } from 'lucide-react';
 import { ordersAPI } from '../../api';
 
+import useDialog from '../../hooks/useDialog';
 function RevisionHistoryModal({ order, onClose, theme }) {
+  const dialogRef = useDialog({ open: !!order, onClose });
     const [revisions, setRevisions] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -24,7 +26,7 @@ function RevisionHistoryModal({ order, onClose, theme }) {
     };
 
     return (
-        <div
+        <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
             style={{
                 position: 'fixed',
                 inset: 0,

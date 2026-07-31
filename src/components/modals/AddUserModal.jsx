@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Eye, EyeOff, Shield, User, Palette, Cpu, CheckSquare, Square } from 'lucide-react';
 import { CONTROLLABLE_PAGES } from '../../utils/constants';
 
+import useDialog from '../../hooks/useDialog';
 const ROLE_CONFIG = {
   user: {
     label: 'User',
@@ -34,17 +35,21 @@ const ROLE_CONFIG = {
 };
 
 const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser = null }) => {
+  const dialogRef = useDialog({ open: true, onClose });
   const isEdit = mode === 'edit';
   const [newUser, setNewUser] = useState(() => {
     if (isEdit && initialUser) {
       return {
         username: initialUser.username || '',
         password: '',
+        fullName: initialUser.full_name || '',
+        email: initialUser.email || '',
+        phone: initialUser.phone || '',
         role: initialUser.role || 'user',
         pageAccess: initialUser.page_access ?? null,
       };
     }
-    return { username: '', password: '', role: 'user', pageAccess: null };
+    return { username: '', password: '', fullName: '', email: '', phone: '', role: 'user', pageAccess: null };
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -118,7 +123,7 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
   );
 
   return (
-    <div
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
         backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center',
@@ -223,6 +228,79 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
                       onChange={e => setNewUser({ ...newUser, username: e.target.value })}
                       placeholder="Enter username"
                       required
+                      style={{
+                        width: '100%', padding: '11px 14px',
+                        background: '#0a1220', border: '1px solid #1e293b',
+                        borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
+                        outline: 'none', transition: 'border 0.2s',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={e => e.target.style.borderColor = '#334155'}
+                      onBlur={e => e.target.style.borderColor = '#1e293b'}
+                    />
+                  </div>
+
+                  {/* Full name */}
+                  <div>
+                    <label style={{
+                      display: 'block', fontSize: '0.7rem', fontWeight: 700,
+                      color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>Full name <span style={{ color: '#64748b', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>· signs their outgoing emails</span></label>
+                    <input
+                      type="text"
+                      value={newUser.fullName}
+                      onChange={e => setNewUser({ ...newUser, fullName: e.target.value })}
+                      placeholder="e.g. Jaypee Kumar"
+                      style={{
+                        width: '100%', padding: '11px 14px',
+                        background: '#0a1220', border: '1px solid #1e293b',
+                        borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
+                        outline: 'none', transition: 'border 0.2s',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={e => e.target.style.borderColor = '#334155'}
+                      onBlur={e => e.target.style.borderColor = '#1e293b'}
+                    />
+                  </div>
+
+                  {/* Email — optional, but notifications (a QD sent back to
+                      them, for instance) have nowhere to go without it. */}
+                  <div>
+                    <label style={{
+                      display: 'block', fontSize: '0.7rem', fontWeight: 700,
+                      color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>Email <span style={{ color: '#64748b', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>· for notifications</span></label>
+                    <input
+                      type="email"
+                      value={newUser.email}
+                      onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+                      placeholder="name@company.com"
+                      style={{
+                        width: '100%', padding: '11px 14px',
+                        background: '#0a1220', border: '1px solid #1e293b',
+                        borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
+                        outline: 'none', transition: 'border 0.2s',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={e => e.target.style.borderColor = '#334155'}
+                      onBlur={e => e.target.style.borderColor = '#1e293b'}
+                    />
+                  </div>
+
+                  {/* Direct line */}
+                  <div>
+                    <label style={{
+                      display: 'block', fontSize: '0.7rem', fontWeight: 700,
+                      color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>Direct line <span style={{ color: '#64748b', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>· shown in their email signature</span></label>
+                    <input
+                      type="tel"
+                      value={newUser.phone}
+                      onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
+                      placeholder="+971 4 8031227"
                       style={{
                         width: '100%', padding: '11px 14px',
                         background: '#0a1220', border: '1px solid #1e293b',

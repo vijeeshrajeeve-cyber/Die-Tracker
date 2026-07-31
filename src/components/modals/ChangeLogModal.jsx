@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { X, History } from 'lucide-react';
 import { ordersAPI } from '../../api';
 
+import useDialog from '../../hooks/useDialog';
 function ChangeLogModal({ order, onClose, theme }) {
+  const dialogRef = useDialog({ open: !!order, onClose });
     const [changes, setChanges] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -25,7 +27,7 @@ function ChangeLogModal({ order, onClose, theme }) {
     };
 
     return (
-        <div
+        <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
             style={{
                 position: 'fixed',
                 inset: 0,

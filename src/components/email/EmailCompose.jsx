@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { X, Send, Paperclip, ChevronDown } from 'lucide-react';
 import { emailAPI } from '../../api';
+import useDialog from '../../hooks/useDialog';
+import { BRAND } from '../../utils/brand';
 
 const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
+  const dialogRef = useDialog({ open: true, onClose });
     const [isHtmlBody] = useState(!!prefill.isHtml);
     const [form, setForm] = useState({
         to: prefill.to || '',
@@ -10,7 +13,9 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
         subject: prefill.subject || '',
         body: prefill.body || '',
         importance: prefill.importance || 'normal',
-        orderId: prefill.orderId || null
+        orderId: prefill.orderId || null,
+        // When set, the server renders that QD's form and attaches it.
+        qdId: prefill.qdId || null
     });
     const [sending, setSending] = useState(false);
     const [error, setError] = useState('');
@@ -47,7 +52,7 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
     };
 
     return (
-        <div style={{
+        <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{
             position: 'fixed', inset: 0, zIndex: 2000,
             background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -198,6 +203,19 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
                     gap: '12px', padding: '16px 24px',
                     borderTop: `1px solid ${theme.cardBorder}`
                 }}>
+                    {/* The QD form is rendered and attached by the server on
+                        send; show it so the sender knows it is going. */}
+                    {form.qdId && (
+                        <span style={{
+                            marginRight: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '6px 10px', borderRadius: '8px',
+                            background: theme.inputBg, border: `1px solid ${theme.cardBorder}`,
+                            color: theme.textMuted, fontSize: '0.78rem', fontWeight: 500
+                        }}>
+                            <Paperclip size={14} />
+                            {prefill.attachmentName || 'QD form'} will be attached
+                        </span>
+                    )}
                     <button onClick={onClose} style={{
                         padding: '10px 20px', borderRadius: '10px',
                         border: `1px solid ${theme.cardBorder}`,
@@ -209,7 +227,7 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
                     <button onClick={handleSend} disabled={sending} style={{
                         display: 'flex', alignItems: 'center', gap: '8px',
                         padding: '10px 24px', borderRadius: '10px', border: 'none',
-                        background: sending ? '#475569' : 'linear-gradient(135deg, #3B82F6, #6366F1)',
+                        background: sending ? '#475569' : BRAND.navy,
                         color: 'white', cursor: sending ? 'not-allowed' : 'pointer',
                         fontWeight: 600, fontSize: '0.875rem',
                         boxShadow: '0 4px 12px rgba(59,130,246,0.3)'

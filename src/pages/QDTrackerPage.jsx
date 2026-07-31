@@ -7,6 +7,8 @@ import { qualityDiscrepanciesAPI, suppliersAPI } from '../api';
 import { QD_STATUS_CONFIG, QD_STATUSES } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
+import FocPendingPanel from '../components/qd/FocPendingPanel';
+import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 const OUTCOME_ICON = {
   'Supplier rework': Truck,
@@ -16,7 +18,6 @@ const OUTCOME_ICON = {
   'Reference only': Eye,
 };
 const PLANT_COLORS = { 'GEX 1': '#32a838' };
-const GRADIENT = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
 const SUP_COLS = '1.4fr 60px 60px 60px 70px 70px 90px';
 
 // Rendered from the real trend the server derives (90-day QD rate vs the prior
@@ -33,6 +34,7 @@ const PIPELINE_STAGES = [
   ['Open', 'Open', '#FBBF24'],
   ['At supplier', 'Sent to Supplier', '#60A5FA'],
   ['FOC accepted', 'FOC Accepted', '#34D399'],
+  ['FOC received', 'FOC Received', '#F0ABFC'],
   ['Rework in-house', 'Rework In-house', '#A78BFA'],
 ];
 
@@ -55,7 +57,7 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
 
 export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const [tab, setTab] = useState('qds');
-  const [data, setData] = useState({ qds: [], kpis: null, suppliers: [], years: [], canApprove: false });
+  const [data, setData] = useState({ qds: [], kpis: null, foc: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
   // Drafts view: the caller's own unsubmitted QDs, fetched separately from the
   // normal (submitted) register rather than filtered client-side.
@@ -90,7 +92,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       const next = await qualityDiscrepanciesAPI.list(year, { drafts: showDrafts });
       setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
     } catch {
-      setData(prev => ({ qds: [], kpis: null, suppliers: [], years: prev.years, canApprove: false }));
+      setData(prev => ({ qds: [], kpis: null, foc: null, suppliers: [], years: prev.years, canApprove: false }));
     } finally {
       setLoading(false);
     }
@@ -166,17 +168,20 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
   const scope = year === 'All' ? 'all years' : `in ${year}`;
   const kpis = k ? [
-    { label: 'Total QDs', value: k.total, sub: `raised · ${scope}`, icon: ClipboardList, ic: '#fff', ibg: GRADIENT },
+    { label: 'Total QDs', value: k.total, sub: `raised · ${scope}`, icon: ClipboardList, ic: '#fff', ibg: BRAND.navy },
     { label: 'Open QDs', value: k.openCount, sub: `${k.atSupplier} awaiting supplier action`, icon: AlertTriangle, ic: '#FBBF24', ibg: 'rgba(245,158,11,0.14)' },
     { label: 'Closed QDs', value: k.closedCount, sub: 'settled and signed off', icon: CheckCircle2, ic: '#22D3EE', ibg: 'rgba(6,182,212,0.14)' },
     { label: 'At supplier', value: k.atSupplier, sub: 'sent back for rework / FOC', icon: Truck, ic: '#60A5FA', ibg: 'rgba(59,130,246,0.14)' },
-    { label: 'FOC recovered', value: k.focRecovered, sub: 'dies + mandrels this FY', icon: CheckCircle, ic: '#34D399', ibg: 'rgba(16,185,129,0.14)' },
+    // Received and proven on a trial — not merely promised, which is what this
+    // tile used to count.
+    { label: 'FOC recovered', value: k.focRecovered, sub: `received & trialled OK ${scope}`, icon: CheckCircle, ic: '#34D399', ibg: 'rgba(16,185,129,0.14)' },
     { label: 'Avg resolution', value: k.avgResolution === null ? '—' : `${k.avgResolution}d`, sub: 'raised → closed', icon: Clock, ic: '#A78BFA', ibg: 'rgba(139,92,246,0.14)' },
   ] : [];
 
   const exportCsv = () => {
     const header = ['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
-      'QD requested', 'QD raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)'];
+      'QD requested', 'QD raised', 'Sent to purchase', 'Days to purchase', 'Sent to supplier', 'Days purchase→supplier', 'ETA', 'Settled', 'Age (days)',
+      'FOC attempts', 'FOC promised', 'FOC received', 'FOC trial'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const d = (v) => (v ? String(v).slice(0, 10) : '');
     const lines = filtered.map(q => [
@@ -185,6 +190,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
       d(q.sent_to_purchase_date), q.handoff?.toPurchase ?? '',
       d(q.sent_to_supplier_date), q.handoff?.purchaseToSupplier ?? '',
       d(q.eta_date), d(q.closed_at), q.age_days,
+      q.foc?.roundCount || '', q.foc?.promisedEta || '', q.foc?.receivedDate || '', q.foc?.trialResult || '',
     ].map(esc).join(','));
     const csv = [header.map(esc).join(','), ...lines].join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -203,7 +209,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
   const td = { padding: '14px 16px', borderBottom: `1px solid ${border}` };
   const mono = "'JetBrains Mono', ui-monospace, monospace";
   const sectionLabel = { fontSize: '0.75rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' };
-  const panel = { background: bg, border: `1px solid ${border}`, borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' };
+  const panel = { background: bg, border: `1px solid ${border}`, borderRadius: 12, boxShadow: theme.shadowSm };
 
   return (
     <div style={{ padding: '32px 28px', color: text }}>
@@ -229,7 +235,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           <button onClick={exportCsv} className="qd-btn" style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Download size={16} /> Export
           </button>
-          <button onClick={() => setShowRaise(true)} className="qd-primary" style={{ padding: '10px 18px', background: GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+          <button onClick={() => setShowRaise(true)} className="qd-primary" style={{ padding: '10px 18px', background: BRAND.navy, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: `0 4px 12px ${BRAND_ALPHA.navyGlow}` }}>
             <Plus size={16} /> Raise QD
           </button>
         </div>
@@ -262,6 +268,10 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
               </div>
             ))}
           </div>
+
+          {/* What is still pending against accepted FOCs. Hidden on the drafts
+              view, where no QD has reached a supplier yet. */}
+          {!showDrafts && <FocPendingPanel foc={data.foc} theme={theme} onOpen={setSelectedId} />}
 
           {/* Filter bar */}
           <div style={{ ...panel, padding: '14px 16px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>

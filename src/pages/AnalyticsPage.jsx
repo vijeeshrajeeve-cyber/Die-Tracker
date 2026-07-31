@@ -37,7 +37,7 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
   const [analyticsFilter, setAnalyticsFilter] = useState({ period: 'all', quarter: 'all' });
 
   const styles = {
-    chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+    chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
     filterSelect: { padding: '10px 16px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer', minWidth: '130px', transition: 'all 0.15s', outline: 'none' },
     table: { width: '100%', borderCollapse: 'collapse' },
     th: { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` },

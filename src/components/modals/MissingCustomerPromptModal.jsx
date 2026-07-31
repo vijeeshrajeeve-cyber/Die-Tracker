@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useCallback } from 'react';
+import useDialog from '../../hooks/useDialog';
+import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 
 export default function MissingCustomerPromptModal({ prompt, setPrompt, theme }) {
+  const onClose = useCallback(() => setPrompt(null), [setPrompt]);
+  const dialogRef = useDialog({ open: !!prompt, onClose });
+
   if (!prompt) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Customer names required" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
       <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', width: '560px', maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', border: `1px solid ${theme.cardBorder}` }}>
         <div style={{ marginBottom: '1rem' }}>
           <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: theme.text, margin: 0 }}>Customer Names Required</h3>
@@ -49,7 +54,7 @@ export default function MissingCustomerPromptModal({ prompt, setPrompt, theme })
           </button>
           <button
             onClick={() => prompt.onResolve?.(prompt.values)}
-            style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
+            style={{ padding: '8px 18px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
           >
             Save &amp; Continue
           </button>

@@ -113,7 +113,7 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
         const { username, password } = req.body;
 
         const result = await pool.query(
-            'SELECT id, username, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access FROM users WHERE username = $1',
+            'SELECT id, username, full_name, email, phone, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access FROM users WHERE username = $1',
             [username]
         );
         const user = result.rows[0];
@@ -167,6 +167,10 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
             user: {
                 id: user.id,
                 username: user.username,
+                // Used to sign outgoing emails — see utils/emailSignature.js
+                fullName: user.full_name || '',
+                email: user.email || '',
+                phone: user.phone || '',
                 role: user.role,
                 passwordMustChange: user.password_must_change,
                 pageAccess
@@ -265,7 +269,7 @@ router.get('/me', async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         const result = await pool.query(
-            'SELECT id, username, role, password_must_change, page_access, created_at FROM users WHERE id = $1',
+            'SELECT id, username, full_name, email, phone, role, password_must_change, page_access, created_at FROM users WHERE id = $1',
             [decoded.id]
         );
         const user = result.rows[0];
@@ -278,6 +282,9 @@ router.get('/me', async (req, res) => {
             user: {
                 id: user.id,
                 username: user.username,
+                fullName: user.full_name || '',
+                email: user.email || '',
+                phone: user.phone || '',
                 role: user.role,
                 passwordMustChange: user.password_must_change,
                 pageAccess: parsePageAccess(user.page_access),

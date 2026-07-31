@@ -5,6 +5,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 import { parseDateDMY, formatDate } from '../../utils/helpers';
 
+import useDialog from '../../hooks/useDialog';
 // Configure PDF.js worker (Vite-compatible approach)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -34,6 +35,7 @@ const parseSimulationFlag = (value) => {
 
 // PDF Import Modal Component
 const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [] }) => {
+  const dialogRef = useDialog({ open: true, onClose });
   const [dragActive, setDragActive] = useState(false);
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -830,7 +832,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
   };
 
   return (
-    <div
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Eye, EyeOff, Shield, KeyRound, AlertTriangle, CheckCircle } from 'lucide-react';
 
+import useDialog from '../../hooks/useDialog';
 const PASSWORD_RULES = [
   { label: 'At least 8 characters', test: (p) => p.length >= 8 },
   { label: 'Contains uppercase letter', test: (p) => /[A-Z]/.test(p) },
@@ -20,6 +21,7 @@ const generateTempPassword = () => {
 };
 
 const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
+  const dialogRef = useDialog({ open: true, onClose });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -53,7 +55,7 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
   };
 
   return (
-    <div
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
         backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center',

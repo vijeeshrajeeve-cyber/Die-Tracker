@@ -3,15 +3,21 @@ import { X, Upload, FileText, Image as ImageIcon } from 'lucide-react';
 import { qualityDiscrepanciesAPI } from '../../api';
 import { QD_STATUS_CONFIG } from '../../utils/constants';
 import DatePickerField from '../DatePickerField';
+import useDialog from '../../hooks/useDialog';
+import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 
-const GRADIENT = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
 const isPdf = (name) => /\.pdf$/i.test(String(name || ''));
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 // Every status change needs a recorded reason; moving to FOC Accepted also
-// needs the ETA the supplier committed to.
+// needs the ETA the supplier committed to, and moving to FOC Received the date
+// the replacement actually turned up.
 export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose, onDone }) {
+  const dialogRef = useDialog({ open: true, onClose });
   const [reason, setReason] = useState('');
   const [etaDate, setEtaDate] = useState(qd.eta_date ? String(qd.eta_date).slice(0, 10) : '');
+  const [receivedDate, setReceivedDate] = useState(today());
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -25,6 +31,7 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
   const inputBg = theme.inputBg || '#09090b';
 
   const needsEta = nextStatus === 'FOC Accepted';
+  const needsReceived = nextStatus === 'FOC Received';
   const from = QD_STATUS_CONFIG[qd.status] || QD_STATUS_CONFIG.Open;
   const to = QD_STATUS_CONFIG[nextStatus] || QD_STATUS_CONFIG.Open;
 
@@ -32,14 +39,20 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
   const field = { padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box', width: '100%' };
   const pill = (c) => ({ display: 'inline-block', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: c.bg, color: c.fg, whiteSpace: 'nowrap' });
 
-  const canSubmit = !!reason.trim() && (!needsEta || !!etaDate) && !submitting;
+  const canSubmit = !!reason.trim() && (!needsEta || !!etaDate)
+    && (!needsReceived || !!receivedDate) && !submitting;
 
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     setError('');
     try {
-      await qualityDiscrepanciesAPI.setStatus(qd.id, nextStatus, reason.trim(), etaDate || undefined);
+      // Only send the date the chosen status actually asks for, so a stray
+      // default can never be written against an unrelated change.
+      await qualityDiscrepanciesAPI.setStatus(
+        qd.id, nextStatus, reason.trim(),
+        needsEta ? etaDate : undefined,
+        needsReceived ? receivedDate : undefined);
       // Attachments are supporting evidence for the change — upload after the
       // status lands so a failed upload cannot leave the status unchanged.
       if (files.length) {
@@ -59,7 +72,7 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
       onClick={onClose}>
       <style>{`@keyframes qdStatusIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-status-cta:hover { filter: brightness(1.06); }`}</style>
@@ -98,6 +111,16 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
             </div>
           )}
 
+          {needsReceived && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={label}>Date received <span style={{ color: '#FCA5A5' }}>*</span></label>
+              <DatePickerField value={receivedDate} theme={theme} onChange={setReceivedDate} placeholder="Select date received" />
+              <span style={{ fontSize: '0.72rem', color: dim }}>
+                When the replacement physically reached the plant. It is stamped on the open FOC round — record the trial result next.
+              </span>
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={label}>Supporting documents</label>
             <input ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }}
@@ -125,7 +148,7 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${border}` }}>
           <button onClick={onClose} style={{ padding: '9px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: muted, fontWeight: 500, fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
           <button onClick={submit} disabled={!canSubmit} className="qd-status-cta"
-            style={{ padding: '9px 18px', background: GRADIENT, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.55, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+            style={{ padding: '9px 18px', background: BRAND.navy, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.55, boxShadow: `0 4px 12px ${BRAND_ALPHA.navyGlow}` }}>
             {submitting ? 'Saving…' : 'Confirm change'}
           </button>
         </div>

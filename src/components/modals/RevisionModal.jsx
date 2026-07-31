@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { X, RotateCcw, Upload, FileText, AlertTriangle } from 'lucide-react';
+import { dialogs } from '../ui/DialogProvider';
+import useDialog from '../../hooks/useDialog';
 
 function RevisionModal({
     isOpen,
@@ -9,6 +11,7 @@ function RevisionModal({
     sourceStatus,
     theme
 }) {
+  const dialogRef = useDialog({ open: !!isOpen && !!order, onClose });
     const allOptions = [
         { value: 'AWAITING FOR DESIGN', label: 'Design' },
         { value: 'UNDER SIMULATION', label: 'Simulation' }
@@ -26,13 +29,13 @@ function RevisionModal({
         if (file && file.type === 'application/pdf') {
             setPdfFile(file);
         } else if (file) {
-            alert('Please select a PDF file');
+            dialogs.notify('That file is not a PDF. Choose a PDF to attach.', 'error');
         }
     };
 
     const handleSubmit = async () => {
         if (!notes.trim()) {
-            alert('Please provide revision notes');
+            dialogs.notify('Revision notes are required.', 'error');
             return;
         }
 
@@ -51,7 +54,7 @@ function RevisionModal({
             setTargetStatus(options[0]?.value || 'AWAITING FOR DESIGN');
         } catch (error) {
             console.error('Revision error:', error);
-            alert('Failed to submit revision: ' + error.message);
+            dialogs.notify('Failed to submit revision: ' + error.message, 'error');
         } finally {
             setIsSubmitting(false);
         }
@@ -89,7 +92,7 @@ function RevisionModal({
     };
 
     return (
-        <div style={modalStyle} onClick={onClose}>
+        <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={modalStyle} onClick={onClose}>
             <div style={contentStyle} onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div style={{

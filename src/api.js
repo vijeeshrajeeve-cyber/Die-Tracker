@@ -49,6 +49,13 @@ const nonApiErrorMessage = (status) => {
     return `Request failed (HTTP ${status})`;
 };
 
+// Endpoints where a 401 means "the credentials in this request body were wrong",
+// not "your session died". Logging out and reloading on these would throw the
+// user back to a blank login screen and destroy the message they need to read —
+// e.g. "Invalid credentials. 3 attempt(s) remaining" before the account locks,
+// or "Current password is incorrect" inside the change-password modal.
+const CREDENTIAL_ENDPOINTS = ['/auth/login', '/auth/change-password'];
+
 // API request helper
 const apiRequest = async (endpoint, options = {}) => {
     const token = getToken();
@@ -75,7 +82,7 @@ const apiRequest = async (endpoint, options = {}) => {
     }
 
     if (!response.ok) {
-        if (response.status === 401) {
+        if (response.status === 401 && !CREDENTIAL_ENDPOINTS.includes(endpoint)) {
             logout();
             window.location.reload();
         }
@@ -123,10 +130,12 @@ export const usersAPI = {
         return apiRequest('/users');
     },
 
-    create: async (username, password, role = 'user', pageAccess = null) => {
+    // email is optional but is where QD notifications (e.g. a QD sent back to
+    // this user) are delivered — without it they get none.
+    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null) => {
         return apiRequest('/users', {
             method: 'POST',
-            body: JSON.stringify({ username, password, role, page_access: pageAccess }),
+            body: JSON.stringify({ username, password, role, page_access: pageAccess, email, full_name: fullName, phone }),
         });
     },
 
@@ -143,11 +152,14 @@ export const usersAPI = {
         });
     },
 
-    update: async (id, { username, role, pageAccess } = {}) => {
+    update: async (id, { username, role, pageAccess, email, fullName, phone } = {}) => {
         const body = {};
         if (username !== undefined) body.username = username;
         if (role !== undefined) body.role = role;
         if (pageAccess !== undefined) body.page_access = pageAccess;
+        if (email !== undefined) body.email = email; // '' clears the address
+        if (fullName !== undefined) body.full_name = fullName;
+        if (phone !== undefined) body.phone = phone;
         return apiRequest(`/users/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(body),
@@ -445,10 +457,12 @@ export const apiKeysAPI = {
 
 // Email API
 export const emailAPI = {
-    sendEmail: async ({ to, cc, subject, body, importance, orderId }) => {
+    // qdId (optional): the server renders that QD's form and attaches it. The
+    // client never names a file — it names the record.
+    sendEmail: async ({ to, cc, subject, body, importance, orderId, qdId }) => {
         return apiRequest('/email/send', {
             method: 'POST',
-            body: JSON.stringify({ to, cc, subject, body, importance, orderId }),
+            body: JSON.stringify({ to, cc, subject, body, importance, orderId, qdId }),
         });
     },
 
@@ -522,6 +536,26 @@ export const emailAPI = {
 
     runDesignRemindersNow: async () => {
         return apiRequest('/email/reminder-settings/run-now', { method: 'POST' });
+    },
+
+    // The two FOC chasers: 'supplier' (replacements they promised and have not
+    // delivered) and 'internal' (replacements that arrived and sit untrialled).
+    getFocReminderSettings: async () => {
+        return apiRequest('/email/foc-reminder-settings');
+    },
+
+    updateFocReminderSettings: async (settings) => {
+        return apiRequest('/email/foc-reminder-settings', {
+            method: 'PUT',
+            body: JSON.stringify(settings),
+        });
+    },
+
+    runFocRemindersNow: async (which) => {
+        return apiRequest('/email/foc-reminder-settings/run-now', {
+            method: 'POST',
+            body: JSON.stringify({ which }),
+        });
     },
 };
 
@@ -639,8 +673,17 @@ export const qualityDiscrepanciesAPI = {
 
     // Approval workflow: Draft/SentBack --submit--> Pending --approve--> Approved
     // (emails Purchase), or --sendBack--> SentBack (reason required).
-    submit: async (id) =>
-        apiRequest(`/quality-discrepancies/${id}/submit`, { method: 'POST' }),
+    // approverUserId is required — the server answers 400 without it. The QD is
+    // routed to that person and only they (or an admin) can then act on it.
+    submit: async (id, approverUserId) =>
+        apiRequest(`/quality-discrepancies/${id}/submit`, {
+            method: 'POST',
+            body: JSON.stringify({ approverUserId }),
+        }),
+
+    // Users eligible to approve — the admin-ticked approvers plus admins.
+    // Readable by any QD user, since the raiser has to pick one when submitting.
+    listApprovers: async () => apiRequest('/quality-discrepancies/approvers'),
 
     approve: async (id) =>
         apiRequest(`/quality-discrepancies/${id}/approve`, { method: 'POST' }),
@@ -669,9 +712,23 @@ export const qualityDiscrepanciesAPI = {
     updateDetails: async (id, payload) =>
         apiRequest(`/quality-discrepancies/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
 
-    // reason is mandatory; etaDate is mandatory when status is 'FOC Accepted'
-    setStatus: async (id, status, reason, etaDate) =>
-        apiRequest(`/quality-discrepancies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason, etaDate }) }),
+    // reason is mandatory; etaDate is mandatory when status is 'FOC Accepted',
+    // receivedDate when it is 'FOC Received'.
+    setStatus: async (id, status, reason, etaDate, receivedDate) =>
+        apiRequest(`/quality-discrepancies/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status, reason, etaDate, receivedDate }),
+        }),
+
+    // Verdict on the open FOC round. A 'Fail' must carry nextStatus + reason —
+    // the server refuses it otherwise, so a failed replacement can never leave
+    // the QD parked with nothing left to receive. etaDate applies only when the
+    // chosen nextStatus is 'FOC Accepted' (the supplier promised another one).
+    recordFocTrial: async (id, { trialDate, result, notes, nextStatus, reason, etaDate }) =>
+        apiRequest(`/quality-discrepancies/${id}/foc-trial`, {
+            method: 'POST',
+            body: JSON.stringify({ trialDate, result, notes, nextStatus, reason, etaDate }),
+        }),
 
     // kind: 'note' (default) | 'email' | 'reminder' — the server decides the
     // timeline icon/tone from the kind.
@@ -744,3 +801,18 @@ export const plantBudgetsAPI = {
     },
 };
 
+
+// Your own scanned signature, printed in the Signature column of the QD form.
+// Self-service only — the API has no path to set someone else's.
+export const signaturesAPI = {
+    // { dataUrl, updatedAt } — both null when nothing has been uploaded.
+    getMine: async () => apiRequest('/signatures/me'),
+
+    upload: async (file) => {
+        const form = new FormData();
+        form.append('signature', file);
+        return apiRequest('/signatures/me', { method: 'PUT', body: form, isMultipart: true });
+    },
+
+    remove: async () => apiRequest('/signatures/me', { method: 'DELETE' }),
+};

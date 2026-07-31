@@ -4,6 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 
+import useDialog from '../../hooks/useDialog';
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -33,6 +34,7 @@ const PRESS_TO_PLANT = {
  * Each row is parsed as a unit, keeping die number, spec, plant, and customer ref together.
  */
 function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
+  const dialogRef = useDialog({ open: true, onClose });
     const [dragActive, setDragActive] = useState(false);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -601,7 +603,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
     };
 
     return (
-        <div
+        <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
             style={{
                 position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',

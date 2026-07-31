@@ -1,0 +1,110 @@
+/* ============================================================
+   Interactive feedback for buttons
+
+   The app styles its 234 buttons with inline `style={{...}}` objects,
+   which cannot express :hover or :active at all. The result was that
+   no button in the app reacted to being hovered or pressed — you
+   clicked, and nothing acknowledged the click until the server
+   answered. On a LAN app that gap is where people click twice.
+
+   This file fixes that for every button at once, without touching
+   any of the 234 call sites, by exploiting two facts:
+
+   1. No button in the codebase sets `transform` inline (verified —
+      every `transform:` in src/ is on a div, an icon, or a keyframe).
+      So `transform: scale(...)` here always wins and never collides.
+
+   2. The hover tint is drawn as an overlay pseudo-element filled with
+      `currentColor`, not as a `background` override. Backgrounds ARE
+      set inline everywhere (navy primary, transparent, red danger, …)
+      and a stylesheet can never beat them. An overlay layers on top of
+      whatever inline background is already there, so one rule covers
+      every variant — and because it uses `currentColor`, it resolves
+      to a light tint in dark mode and a dark tint in light mode with
+      no JS and no theme plumbing.
+
+   Anything a button sets inline still wins, so the password-reveal
+   buttons that position themselves absolutely are unaffected.
+   ============================================================ */
+
+button:not(:disabled):not([aria-disabled='true']) {
+  /* Anchors the overlay below. Buttons that set `position` inline
+     (the absolutely-positioned password-reveal toggles) override this. */
+  position: relative;
+
+  /* !important because 30 call sites set `transition: all 0.15s` inline,
+     which would otherwise dictate the press timing. Naming the properties
+     explicitly is also what `all` should have been: `all` on a button
+     inside a sticky topbar animates layout properties nobody intended.
+     `padding` is listed because the sidebar animates it during collapse. */
+  transition:
+    transform 110ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease,
+    padding 200ms ease !important;
+}
+
+/* The state layer. Absolutely positioned, so it is not a flex item and
+   cannot disturb the icon+label layouts the buttons are built from. */
+button:not(:disabled):not([aria-disabled='true'])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit; /* picks up the inline borderRadius, 8px–20px here */
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+/* Touch devices fire :hover on tap and then keep it stuck, so hover
+   feedback is gated to real pointers. Press feedback below is not —
+   that one matters most on touch. */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):not([aria-disabled='true']):hover::after {
+    opacity: 0.08;
+  }
+
+  /* Sidebar nav sits on the app background rather than on a card, and its
+     idle text colour is already dim — 8% of that is nearly invisible. */
+  .nav-item:not(:disabled):hover::after {
+    opacity: 0.13;
+  }
+}
+
+/* Press. 110ms and 3% — enough to feel, too small to read as motion. */
+button:not(:disabled):not([aria-disabled='true']):active {
+  transform: scale(0.97);
+}
+
+button:not(:disabled):not([aria-disabled='true']):active::after {
+  opacity: 0.13;
+}
+
+/* ---- Opt-outs, for the cases where the default is wrong ---- */
+
+/* Wide or full-width buttons: 3% of 600px is 18px of travel, which reads
+   as the element moving rather than being pressed. */
+button.press-soft:not(:disabled):active {
+  transform: scale(0.995);
+}
+
+/* Escape hatches if a specific button needs to stay inert. */
+button.no-press:not(:disabled):active {
+  transform: none;
+}
+
+button.no-tint::after {
+  content: none;
+}
+
+/* Reduced motion means gentler, not none: the tint stays (it is the part
+   that actually confirms the press), the movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):not([aria-disabled='true']):active {
+    transform: none;
+  }
+}

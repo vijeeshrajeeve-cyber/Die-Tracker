@@ -5,17 +5,24 @@ const q = require('./qualityDiscrepancies.cjs');
 
 const NOW = new Date('2026-07-17T00:00:00Z');
 
-test('exposes exactly the 7 agreed statuses', () => {
+test('exposes exactly the 8 agreed statuses', () => {
   assert.deepEqual(q.STATUSES, [
-    'Open', 'Sent to Supplier', 'FOC Accepted', 'Rejected', 'Reference', 'Rework In-house', 'Closed',
+    'Open', 'Sent to Supplier', 'FOC Accepted', 'FOC Received',
+    'Rejected', 'Reference', 'Rework In-house', 'Closed',
   ]);
 });
 
 test('a QD counts as open unless it is Closed, Rejected or Reference', () => {
   assert.deepEqual(q.NOT_OPEN_STATUSES, ['Closed', 'Rejected', 'Reference']);
-  assert.deepEqual(q.OPEN_STATUSES, ['Open', 'Sent to Supplier', 'FOC Accepted', 'Rework In-house']);
+  assert.deepEqual(q.OPEN_STATUSES, ['Open', 'Sent to Supplier', 'FOC Accepted', 'FOC Received', 'Rework In-house']);
   // derived from STATUSES, so a status added later counts as open by default
   assert.equal(q.OPEN_STATUSES.length + q.NOT_OPEN_STATUSES.length, q.STATUSES.length);
+});
+
+test('a received FOC is still open — it has yet to prove itself on a trial', () => {
+  const rows = [{ status: 'FOC Received', raised_date: '2026-07-01', closed_at: null }];
+  assert.equal(q.computeKpis(rows, NOW).openCount, 1);
+  assert.equal(q.computeKpis(rows, NOW).closedCount, 0);
 });
 
 test('an accepted FOC still awaiting delivery counts as open', () => {
@@ -101,9 +108,108 @@ test('computeKpis derives every tile from real rows, with no invented numbers', 
   // Open + Sent to Supplier + both FOC Accepted rows; only Closed is excluded here
   assert.equal(k.openCount, 4);
   assert.equal(k.atSupplier, 1);
-  assert.equal(k.focRecovered, 1);     // only the current-calendar-year one
   // resolutions are 31 (May 1 -> Jun 1) and 30 (Jan 1 -> Jan 31); mean 30.5 rounds to 31
   assert.equal(k.avgResolution, 31);
+});
+
+// ── FOC recovery and the two pending buckets ───────────────────────────────
+
+// Rows arrive from listQDs with a `foc` summary already attached.
+const withFoc = (row, foc) => ({ raised_date: '2026-05-01', closed_at: null, ...row, foc });
+const noFoc = { state: 'none', roundCount: 0, rounds: [], promisedEta: null, receivedDate: null, daysOverdue: null, daysIdle: null };
+
+test('focRecovered counts replacements that arrived and passed, not promises', () => {
+  const rows = [
+    // promised only — the supplier has committed to nothing that has landed
+    withFoc({ status: 'FOC Accepted' }, {
+      ...noFoc, state: 'awaiting-receipt', roundCount: 1, promisedEta: '2026-08-01', daysOverdue: -15,
+    }),
+    // arrived but untrialled — in the plant, still unproven
+    withFoc({ status: 'FOC Received' }, {
+      ...noFoc, state: 'awaiting-trial', roundCount: 1, receivedDate: '2026-07-10', daysIdle: 7,
+    }),
+    // arrived and passed this year — the only real recovery
+    withFoc({ status: 'Closed', closed_at: '2026-06-05' }, {
+      ...noFoc, state: 'trial-passed', roundCount: 1, receivedDate: '2026-06-01', trialResult: 'Pass',
+    }),
+    // passed, but received in a prior calendar year
+    withFoc({ status: 'Closed', closed_at: '2025-06-05' }, {
+      ...noFoc, state: 'trial-passed', roundCount: 1, receivedDate: '2025-06-01', trialResult: 'Pass',
+    }),
+  ];
+  const k = q.computeKpis(rows, NOW);
+  assert.equal(k.focRecovered, 1);
+  assert.equal(k.focAwaitingReceipt, 1);
+  assert.equal(k.focAwaitingTrial, 1);
+  assert.equal(k.focOverdue, 0, 'the one outstanding promise is not yet due');
+});
+
+test('a QD with no FOC rounds contributes nothing to the FOC tiles', () => {
+  const rows = [
+    { status: 'Open', raised_date: '2026-07-01', closed_at: null },
+    withFoc({ status: 'Open' }, noFoc),
+  ];
+  const k = q.computeKpis(rows, NOW);
+  assert.equal(k.focRecovered, 0);
+  assert.equal(k.focAwaitingReceipt, 0);
+  assert.equal(k.focAwaitingTrial, 0);
+});
+
+test('pendingFoc sorts the most overdue promise first and counts only real overruns', () => {
+  const rows = [
+    withFoc({ id: 1, qd_no: '2026PD-01', status: 'FOC Accepted' }, {
+      ...noFoc, state: 'awaiting-receipt', roundCount: 1, promisedEta: '2026-07-14', daysOverdue: 3,
+    }),
+    withFoc({ id: 2, qd_no: '2026PD-02', status: 'FOC Accepted' }, {
+      ...noFoc, state: 'awaiting-receipt', roundCount: 2, promisedEta: '2026-06-17', daysOverdue: 30,
+    }),
+    withFoc({ id: 3, qd_no: '2026PD-03', status: 'FOC Accepted' }, {
+      ...noFoc, state: 'awaiting-receipt', roundCount: 1, promisedEta: '2026-08-17', daysOverdue: -31,
+    }),
+  ];
+  const { awaitingReceipt, overdueCount } = q.pendingFoc(rows, NOW);
+  assert.deepEqual(awaitingReceipt.map((r) => r.qd_no), ['2026PD-02', '2026PD-01', '2026PD-03']);
+  assert.equal(overdueCount, 2, 'the one still in time is pending but not overdue');
+  assert.equal(awaitingReceipt[0].round_count, 2);
+});
+
+test('pendingFoc sorts the longest-idle received die first', () => {
+  const rows = [
+    withFoc({ id: 1, qd_no: '2026PD-01', status: 'FOC Received' }, {
+      ...noFoc, state: 'awaiting-trial', roundCount: 1, receivedDate: '2026-07-14', daysIdle: 3,
+    }),
+    withFoc({ id: 2, qd_no: '2026PD-02', status: 'FOC Received' }, {
+      ...noFoc, state: 'awaiting-trial', roundCount: 1, receivedDate: '2026-06-01', daysIdle: 46,
+    }),
+  ];
+  const { awaitingTrial } = q.pendingFoc(rows, NOW);
+  assert.deepEqual(awaitingTrial.map((r) => r.qd_no), ['2026PD-02', '2026PD-01']);
+});
+
+test('a settled QD is nobody\'s to chase, whatever its last round says', () => {
+  const stuck = { ...noFoc, state: 'awaiting-receipt', roundCount: 1, promisedEta: '2026-01-01', daysOverdue: 197 };
+  const rows = [
+    withFoc({ id: 1, qd_no: '2026PD-01', status: 'Rejected', closed_at: '2026-02-01' }, stuck),
+    withFoc({ id: 2, qd_no: '2026PD-02', status: 'Closed', closed_at: '2026-02-01' }, stuck),
+    withFoc({ id: 3, qd_no: '2026PD-03', status: 'Reference' }, stuck),
+    withFoc({ id: 4, qd_no: '2026PD-04', status: 'FOC Accepted' }, stuck),
+  ];
+  const { awaitingReceipt } = q.pendingFoc(rows, NOW);
+  assert.deepEqual(awaitingReceipt.map((r) => r.qd_no), ['2026PD-04']);
+});
+
+test('a promise with no ETA is still pending, and sorts last', () => {
+  const rows = [
+    withFoc({ id: 1, qd_no: '2026PD-01', status: 'FOC Accepted' }, {
+      ...noFoc, state: 'awaiting-receipt', roundCount: 1, promisedEta: null, daysOverdue: null,
+    }),
+    withFoc({ id: 2, qd_no: '2026PD-02', status: 'FOC Accepted' }, {
+      ...noFoc, state: 'awaiting-receipt', roundCount: 1, promisedEta: '2026-07-10', daysOverdue: 7,
+    }),
+  ];
+  const { awaitingReceipt, overdueCount } = q.pendingFoc(rows, NOW);
+  assert.deepEqual(awaitingReceipt.map((r) => r.qd_no), ['2026PD-02', '2026PD-01']);
+  assert.equal(overdueCount, 1, 'an unknown ETA is not evidence of an overrun');
 });
 
 test('a rejected QD is settled, so it counts towards avg resolution', () => {
@@ -266,14 +372,13 @@ test('addActivityOfKind rejects an unknown kind', async () => {
 });
 
 test('updateFields writes only whitelisted columns', async () => {
-  const calls = [];
-  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  const { client, calls } = editMock('Draft');
   await q.updateFields(client, {
     id: 4,
     fields: { outcome: 'FOC replacement', input_at_failure: '3,417 kg', status: 'Closed', qd_no: 'HACK' },
     actor: 'Sijith',
   });
-  const sql = calls[0].sql;
+  const sql = calls.find((c) => /UPDATE quality_discrepancies SET/.test(c.sql)).sql;
   assert.match(sql, /outcome = /);
   assert.match(sql, /input_at_failure = /);
   // status and qd_no are not editable through this path
@@ -282,7 +387,7 @@ test('updateFields writes only whitelisted columns', async () => {
 });
 
 test('updateFields validates the outcome against the agreed list', async () => {
-  const client = { query: async () => ({ rowCount: 1 }) };
+  const { client } = editMock('Draft');
   await assert.rejects(
     () => q.updateFields(client, { id: 1, fields: { outcome: 'Free money' }, actor: 'x' }),
     /Invalid outcome: Free money/
@@ -371,14 +476,74 @@ test('updateStatus records the reason on the timeline', async () => {
   assert.equal(act.params[2], 'changed status to Closed — corrected in-house, ran 50 mT');
 });
 
-test('updateStatus saves the ETA and notes it on the timeline for a FOC', async () => {
+// Mock client that also answers the round lookups updateStatus now makes.
+function statusMock(rounds = []) {
   const calls = [];
-  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  const client = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (/FROM qd_foc_rounds/.test(sql)) return { rows: rounds, rowCount: rounds.length };
+      return { rowCount: 1 };
+    },
+  };
+  const activity = () => calls.find(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql));
+  return { calls, client, activity };
+}
+
+test('updateStatus saves the ETA, opens a FOC round and notes it on the timeline', async () => {
+  const { calls, client, activity } = statusMock();
   await q.updateStatus(client, { id: 7, status: 'FOC Accepted', reason: 'supplier agreed to replace', etaDate: '2026-09-02', actor: 'Kailash' });
   assert.match(calls[0].sql, /eta_date = /);
   assert.ok(calls[0].params.includes('2026-09-02'));
-  const act = calls.find(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql));
-  assert.equal(act.params[2], 'changed status to FOC Accepted — supplier agreed to replace · ETA 2026-09-02');
+  const opened = calls.find(c => /INSERT INTO qd_foc_rounds/.test(c.sql));
+  assert.ok(opened, 'accepting a FOC must start a round');
+  assert.deepEqual(opened.params.slice(0, 3), [7, 1, '2026-09-02']);
+  assert.equal(activity().params[2],
+    'changed status to FOC Accepted — supplier agreed to replace · FOC round 1, ETA 2026-09-02');
+});
+
+test('updateStatus refuses FOC Received without the arrival date', async () => {
+  const { client } = statusMock([{ id: 11, qd_id: 7, round_no: 1, promised_eta: '2026-09-02' }]);
+  await assert.rejects(
+    () => q.updateStatus(client, { id: 7, status: 'FOC Received', reason: 'die arrived', actor: 'Kailash' }),
+    /Received date is required/);
+});
+
+test('updateStatus stamps the receipt on the open round', async () => {
+  const { calls, client, activity } = statusMock([{ id: 11, qd_id: 7, round_no: 1, promised_eta: '2026-09-02' }]);
+  const ok = await q.updateStatus(client, {
+    id: 7, status: 'FOC Received', reason: 'landed at GEX 01',
+    receivedDate: '2026-09-05', actor: 'Kailash', userId: 3,
+  });
+  assert.equal(ok, true);
+  const receipt = calls.find(c => /SET received_date/.test(c.sql));
+  assert.deepEqual(receipt.params, ['2026-09-05', 3, 11]);
+  assert.equal(activity().params[2],
+    'changed status to FOC Received — landed at GEX 01 · FOC round 1 received 2026-09-05');
+});
+
+test('updateStatus refuses a receipt when no FOC was ever promised', async () => {
+  const { client } = statusMock([]);
+  await assert.rejects(
+    () => q.updateStatus(client, {
+      id: 7, status: 'FOC Received', reason: 'die arrived', receivedDate: '2026-09-05', actor: 'X',
+    }),
+    /No FOC round is awaiting receipt/);
+});
+
+test('recordFocTrial closes the round and logs the verdict, leaving the status alone', async () => {
+  const { calls, client, activity } = statusMock([
+    { id: 11, qd_id: 7, round_no: 1, promised_eta: '2026-09-02', received_date: '2026-09-05' },
+  ]);
+  const ok = await q.recordFocTrial(client, {
+    id: 7, trialDate: '2026-09-09', result: 'Fail', notes: 'same weld line', actor: 'Sijith', userId: 3,
+  });
+  assert.equal(ok, true);
+  const trial = calls.find(c => /SET trial_date/.test(c.sql));
+  assert.deepEqual(trial.params, ['2026-09-09', 'Fail', 'same weld line', 11]);
+  assert.equal(activity().params[2], 'FOC round 1 trialled 2026-09-09 — Fail — same weld line');
+  assert.equal(calls.some(c => /UPDATE quality_discrepancies\s+SET status/.test(c.sql)), false,
+    'the next status is the user\'s decision, taken separately with its own reason');
 });
 
 test('updateStatus returns false when the QD does not exist', async () => {
@@ -455,6 +620,64 @@ test('APPROVAL_STATES and the editable subset are the agreed values', () => {
   assert.deepEqual(q.EDITABLE_APPROVAL_STATES, ['Draft', 'SentBack']);
 });
 
+// ── The fact-card path honours the same approval lock ───────────────────────
+// The QD form is printed and mailed to Purchase on approval, so the Part-A
+// fields it prints must stop moving at that point — exactly as editQdDetails
+// already enforces. The Part-B/progress fields are the opposite case: they are
+// only ever filled in after the QD has gone out, so the lock must not reach them.
+
+test('updateFields refuses a Part-A field once the QD is past editing', async () => {
+  for (const state of ['Pending', 'Approved']) {
+    const { client } = editMock(state);
+    await assert.rejects(
+      () => q.updateFields(client, { id: 1, fields: { press: 'P2' }, actor: 'x' }),
+      /Cannot edit a QD/,
+      `state ${state} must be rejected`
+    );
+  }
+});
+
+test('updateFields still records the supplier response on an approved QD', async () => {
+  const { client, calls } = editMock('Approved');
+  const ok = await q.updateFields(client, {
+    id: 1, actor: 'Veera',
+    fields: { supplier_acceptance: 'Yes', action_taken: 'Die reworked', eta_date: '2026-09-01' },
+  });
+  assert.equal(ok, true);
+  const upd = calls.find((c) => /UPDATE quality_discrepancies SET/.test(c.sql));
+  assert.match(upd.sql, /supplier_acceptance = /);
+  assert.match(upd.sql, /action_taken = /);
+  assert.match(upd.sql, /eta_date = /);
+});
+
+test('updateFields allows Part-A fields while the QD is still editable', async () => {
+  const { client, calls } = editMock('Draft');
+  assert.equal(await q.updateFields(client, { id: 1, fields: { press: 'P2' }, actor: 'x' }), true);
+  assert.match(calls.find((c) => /UPDATE quality_discrepancies SET/.test(c.sql)).sql, /press = /);
+});
+
+test('a mixed payload is refused whole, so no Part-A field slips through', async () => {
+  const { client, calls } = editMock('Approved');
+  await assert.rejects(
+    () => q.updateFields(client, { id: 1, fields: { supplier_acceptance: 'Yes', press: 'P2' }, actor: 'x' }),
+    /Cannot edit a QD/
+  );
+  assert.equal(calls.some((c) => /UPDATE quality_discrepancies SET/.test(c.sql)), false,
+    'nothing may be written when part of the payload is locked');
+});
+
+test('a progress-only payload needs no approval lookup', async () => {
+  const { client, calls } = editMock('Approved');
+  await q.updateFields(client, { id: 1, fields: { supplier_comments: 'Awaiting reply' }, actor: 'x' });
+  assert.equal(calls.some((c) => /SELECT id, qd_no, approval_state/.test(c.sql)), false);
+});
+
+test('every editable field is classified, and new ones lock by default', () => {
+  for (const [col, spec] of Object.entries(q.EDITABLE_FIELDS)) {
+    assert.equal(typeof spec.progress, 'boolean', `${col} must declare whether it is a progress field`);
+  }
+});
+
 test('nextApprovalState allows only legal transitions', () => {
   assert.equal(q.nextApprovalState('Draft', 'submit'), 'Pending');
   assert.equal(q.nextApprovalState('SentBack', 'submit'), 'Pending');
@@ -488,6 +711,74 @@ test('submitForApproval keeps an existing number when resubmitting a SentBack QD
   } };
   const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-99', actor: 'Veera', userId: 2 });
   assert.equal(out.qdNo, '2026PH-04'); // not the freshly-computed candidate
+});
+
+test('submitForApproval records the approver the raiser sent it to, and names them in the timeline', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
+    return { rowCount: 1, rows: [] };
+  } };
+  await q.submitForApproval(client, {
+    id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2, approverUserId: 9, approverName: 'Imran',
+  });
+  const upd = calls.find(c => /assigned_approver = \$4/.test(c.sql));
+  assert.equal(upd.params[3], 9);
+  const activity = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
+  assert.ok(activity.params.some(p => typeof p === 'string' && p.includes('to Imran')), 'the timeline does not say who it went to');
+});
+
+// Resubmitting a sent-back QD may go to a different approver, so the new choice
+// has to replace the old one rather than being coalesced away.
+test('resubmitting can redirect the QD to a different approver', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) {
+      return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix', assigned_approver: 9 }] };
+    }
+    return { rowCount: 1, rows: [] };
+  } };
+  await q.submitForApproval(client, { id: 5, actor: 'Veera', userId: 2, approverUserId: 12, approverName: 'Sara' });
+  assert.equal(calls.find(c => /assigned_approver = \$4/.test(c.sql)).params[3], 12);
+});
+
+test('only the named approver — or an admin — can act on an assigned QD', () => {
+  const assigned = { assigned_approver: 9 };
+  assert.equal(q.canActOnApproval({ id: 9, role: 'user' }, assigned), true);
+  assert.equal(q.canActOnApproval({ id: 4, role: 'user' }, assigned), false);
+  // An admin has to be able to unblock a QD whose approver is away.
+  assert.equal(q.canActOnApproval({ id: 4, role: 'admin' }, assigned), true);
+  assert.equal(q.canActOnApproval(null, assigned), false);
+});
+
+// QDs submitted before per-QD assignment existed name nobody; they must stay
+// approvable by any approver rather than becoming permanently stuck.
+test('a QD that names no approver stays open to any approver', () => {
+  assert.equal(q.canActOnApproval({ id: 4, role: 'user' }, { assigned_approver: null }), true);
+  assert.equal(q.canActOnApproval({ id: 4, role: 'user' }, {}), true);
+});
+
+test('the send-back email names the QD and quotes the reason verbatim', () => {
+  const qdRow = { qd_no: '2026PH-04', die_no: '30601-201', supplier: 'Phoenix' };
+  assert.equal(q.sendBackEmailSubject(qdRow), 'QD 2026PH-04 sent back — changes needed');
+  const html = q.buildSendBackEmailHtml(qdRow, { reason: 'billet temps missing', by: 'Imran' });
+  assert.ok(html.includes('2026PH-04'));
+  assert.ok(html.includes('billet temps missing'), 'the raiser cannot act without the reason');
+  assert.ok(html.includes('Imran'));
+  // It must not read as an approval — this QD did not go to Purchase.
+  assert.ok(/has not gone to Purchase/.test(html));
+});
+
+test('a reason containing HTML is escaped, not rendered', () => {
+  const html = q.buildSendBackEmailHtml(
+    { qd_no: '2026PH-04' },
+    { reason: '<script>alert(1)</script> & "quotes"', by: '<b>Imran</b>' },
+  );
+  assert.ok(!html.includes('<script>'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(!html.includes('<b>Imran</b>'));
 });
 
 test('approveQD stamps approver + purchase date and requires Pending', async () => {
@@ -562,7 +853,7 @@ test('EDITABLE_FIELDS now covers the Part-A/Part-B format fields', () => {
 });
 
 test('manufacturing_defect only accepts Yes/No', async () => {
-  const client = { query: async () => ({ rowCount: 1 }) };
+  const { client } = editMock('Draft');
   await assert.rejects(
     () => q.updateFields(client, { id: 1, fields: { manufacturing_defect: 'maybe' }, actor: 'x' }),
     /Invalid Manufacturing defect/);
@@ -583,11 +874,11 @@ test('saveBilletParameters upserts given billets and deletes empty ones', async 
 
 test('the QD requested date is an editable, validated date field', async () => {
   assert.equal(q.EDITABLE_FIELDS.qd_requested_date.label, 'QD requested date');
-  const calls = [];
-  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1 }; } };
+  const { client, calls } = editMock('Draft');
   await q.updateFields(client, { id: 1, fields: { qd_requested_date: '2026-07-20' }, actor: 'x' });
-  assert.match(calls[0].sql, /qd_requested_date = /);
-  assert.equal(calls[0].params[0], '2026-07-20');
+  const upd = calls.find((c) => /UPDATE quality_discrepancies SET/.test(c.sql));
+  assert.match(upd.sql, /qd_requested_date = /);
+  assert.equal(upd.params[0], '2026-07-20');
   await assert.rejects(
     () => q.updateFields(client, { id: 1, fields: { qd_requested_date: '20-07-2026' }, actor: 'x' }),
     /Invalid QD requested date/
@@ -595,7 +886,7 @@ test('the QD requested date is an editable, validated date field', async () => {
 });
 
 test('a required field cannot be cleared, while other fields still clear', async () => {
-  const client = { query: async () => ({ rowCount: 1 }) };
+  const { client } = editMock('Draft');
   await assert.rejects(
     () => q.updateFields(client, { id: 1, fields: { qd_requested_date: '' }, actor: 'x' }),
     /Invalid QD requested date: a value is required/

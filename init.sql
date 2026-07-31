@@ -6,6 +6,13 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    -- Where the app writes to this person (e.g. their QD was sent back).
+    -- Optional: an account with no address simply gets no email.
+    email TEXT,
+    -- How this person signs an outgoing email. A login name is not something to
+    -- sign a supplier email with, so full_name wins where it is set.
+    full_name TEXT,
+    phone TEXT,
     role TEXT DEFAULT 'user',
     password_must_change BOOLEAN DEFAULT false,
     failed_login_attempts INTEGER DEFAULT 0,
@@ -360,6 +367,8 @@ CREATE TABLE IF NOT EXISTS quality_discrepancies (
     submitted_at     TIMESTAMP,
     approved_by      INTEGER REFERENCES users(id),
     approved_at      TIMESTAMP,
+    -- Who this QD was sent to for approval, chosen by the raiser at submit time.
+    assigned_approver INTEGER REFERENCES users(id),
     sent_back_reason TEXT,
     sent_back_at     TIMESTAMP,
     prepared_by      TEXT,
@@ -436,5 +445,38 @@ CREATE TABLE IF NOT EXISTS qd_billet_parameters (
     UNIQUE (qd_id, billet)
 );
 CREATE INDEX IF NOT EXISTS idx_qd_billet_qd ON qd_billet_parameters(qd_id);
+
+-- One row per attempt at a free-of-charge replacement: what the supplier
+-- promised, when it actually arrived, and how it did on trial. A QD loops when
+-- a replacement fails its trial, so this cannot be columns on the QD itself —
+-- round 2 would overwrite round 1 and destroy the evidence of a supplier who
+-- has sent two bad dies against the same claim.
+CREATE TABLE IF NOT EXISTS qd_foc_rounds (
+    id            SERIAL PRIMARY KEY,
+    qd_id         INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
+    round_no      INTEGER NOT NULL,
+    promised_eta  DATE,
+    accepted_at   DATE,
+    received_date DATE,
+    received_by   INTEGER REFERENCES users(id),
+    trial_date    DATE,
+    trial_result  TEXT CHECK (trial_result IN ('Pass', 'Fail')),
+    trial_notes   TEXT,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (qd_id, round_no)
+);
+CREATE INDEX IF NOT EXISTS idx_qd_foc_rounds_qd ON qd_foc_rounds(qd_id);
+
+-- One scanned signature per user, drawn into the Signature column of the QD
+-- form. Held in the database rather than on disk: the images are small, there
+-- is exactly one per user, and this way they ride along in the existing pg_dump
+-- backup instead of needing their own volume. Separate table so the blob never
+-- loads with an ordinary SELECT * FROM users.
+CREATE TABLE IF NOT EXISTS user_signatures (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    mime_type  TEXT NOT NULL,
+    image      BYTEA NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing

@@ -3,8 +3,11 @@
  */
 
 const express = require('express');
+const { pool } = require('../db.cjs');
 const emailService = require('../services/email.cjs');
+const qdDocument = require('../services/qdDocument.cjs');
 const designReminderService = require('../services/designReminder.cjs');
+const focReminderService = require('../services/focReminder.cjs');
 const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -14,15 +17,29 @@ const emailPageAccess = pageAccessMiddleware('email-inbox');
 
 router.post('/send', authMiddleware, emailPageAccess, async (req, res) => {
     try {
-        const { to, cc, subject, body: emailBody, importance, orderId } = req.body;
+        const { to, cc, subject, body: emailBody, importance, orderId, qdId } = req.body;
         if (!to || !subject || !emailBody) {
             return res.status(400).json({ error: 'To, subject, and body are required' });
+        }
+
+        // The caller asks for "the QD form for QD 42", never for a file path —
+        // the document is rendered here from the record, so a client cannot use
+        // this to attach an arbitrary file from the server.
+        let attachments = null;
+        if (qdId) {
+            const { row, bytes } = await qdDocument.buildQdPdfBytes(pool, qdId);
+            attachments = [{
+                filename: qdDocument.qdPdfFilename(row),
+                content: Buffer.from(bytes),
+                contentType: 'application/pdf',
+            }];
         }
 
         const result = await emailService.sendEmail({
             to, cc, subject, body: emailBody,
             importance: importance || 'normal',
             orderId: orderId || null,
+            attachments,
             sentBy: req.user.id
         });
 
@@ -235,6 +252,87 @@ router.post('/reminder-settings/run-now', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Manual reminder run error:', error);
         res.status(500).json({ error: error.message || 'Failed to run design reminders' });
+    }
+});
+
+// ── FOC reminder settings (admin only) ────────────────────────────────────────
+// Two chasers: one out to suppliers about overdue replacements, one in to our
+// own owner about replacements that arrived and have not been trialled.
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+router.get('/foc-reminder-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const settings = await focReminderService.getFocSettings();
+        res.json({ settings, state: focReminderService.getFocReminderState() });
+    } catch (error) {
+        console.error('Get FOC reminder settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch FOC reminder settings' });
+    }
+});
+
+router.put('/foc-reminder-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const { supplierEnabled, supplierTime, internalEnabled, internalTime, internalTo, idleDays } = req.body;
+
+        for (const [name, value] of [['supplierEnabled', supplierEnabled], ['internalEnabled', internalEnabled]]) {
+            if (value !== undefined && typeof value !== 'boolean') {
+                return res.status(400).json({ error: `${name} must be a boolean` });
+            }
+        }
+        for (const [name, value] of [['supplierTime', supplierTime], ['internalTime', internalTime]]) {
+            if (value !== undefined && !HHMM.test(value)) {
+                return res.status(400).json({ error: `${name} must be in HH:MM (24-hour) format` });
+            }
+        }
+        let idleValue;
+        if (idleDays !== undefined) {
+            idleValue = parseInt(idleDays, 10);
+            if (isNaN(idleValue) || idleValue < 0 || idleValue > 60) {
+                return res.status(400).json({ error: 'idleDays must be a number between 0 and 60' });
+            }
+        }
+        // Turning the internal chaser on with nobody to send to would fail
+        // silently every morning, so it is refused up front.
+        const recipient = internalTo === undefined ? undefined : String(internalTo).trim();
+        if (internalEnabled === true && recipient !== undefined && !recipient) {
+            return res.status(400).json({ error: 'internalTo is required to enable the internal FOC reminder' });
+        }
+
+        const settings = await focReminderService.updateFocSettings({
+            supplierEnabled, supplierTime, internalEnabled, internalTime,
+            internalTo: recipient, idleDays: idleValue,
+        });
+        res.json({ message: 'FOC reminder settings updated', settings });
+    } catch (error) {
+        console.error('Update FOC reminder settings error:', error);
+        res.status(500).json({ error: 'Failed to update FOC reminder settings' });
+    }
+});
+
+// Manually trigger either chaser (for testing the configuration)
+router.post('/foc-reminder-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const which = String(req.body?.which || 'supplier');
+        if (!['supplier', 'internal'].includes(which)) {
+            return res.status(400).json({ error: 'which must be "supplier" or "internal"' });
+        }
+        const summary = which === 'supplier'
+            ? await focReminderService.sendSupplierFocReminders()
+            : await focReminderService.sendInternalFocReminder();
+        res.json({ message: `FOC ${which} reminder run completed`, summary });
+    } catch (error) {
+        console.error('Manual FOC reminder run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to run FOC reminders' });
     }
 });
 

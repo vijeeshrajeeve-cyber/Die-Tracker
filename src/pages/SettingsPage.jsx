@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Factory, Truck, Download, FileText, History, TrendingUp, Copy, CheckCircle, ClipboardList, Upload, HardDrive, RefreshCw, ShieldCheck } from 'lucide-react';
 import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profilesAPI, ordersAPI, autoBackupsAPI, usersAPI, qualityDiscrepanciesAPI, getUser } from '../api';
 import Papa from 'papaparse';
+import { dialogs } from '../components/ui/DialogProvider';
 import ExistingDataPage from './ExistingDataPage';
+import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 export default function SettingsPage({
   theme, setToast,
@@ -183,7 +185,7 @@ export default function SettingsPage({
                 <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}><Factory size={20} /> Plants</h3>
-                    <button onClick={() => setShowAddPlant(true)} style={{ padding: '8px 16px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem' }}>+ Add Plant</button>
+                    <button onClick={() => setShowAddPlant(true)} style={{ padding: '8px 16px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem' }}>+ Add Plant</button>
                   </div>
                   <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -198,7 +200,7 @@ export default function SettingsPage({
                           <tr key={plant.id}>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, fontWeight: 500, color: theme.text }}>{plant.name}</td>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
-                              <button onClick={async () => { if (window.confirm(`Delete plant "${plant.name}"?`)) { try { await plantsAPI.delete(plant.id); fetchPlants(); } catch (error) { alert('Failed to delete: ' + error.message); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
+                              <button onClick={async () => { if (await dialogs.confirm({ title: 'Delete plant', message: `Plant "${plant.name}" will be removed from the master list.`, confirmLabel: 'Delete plant' })) { try { await plantsAPI.delete(plant.id); fetchPlants(); } catch (error) { dialogs.notify('Failed to delete: ' + error.message, 'error'); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
                             </td>
                           </tr>
                         ))}
@@ -212,7 +214,7 @@ export default function SettingsPage({
                 <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}><Truck size={20} /> Suppliers</h3>
-                    <button onClick={() => setShowAddSupplier(true)} style={{ padding: '8px 16px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem' }}>+ Add Supplier</button>
+                    <button onClick={() => setShowAddSupplier(true)} style={{ padding: '8px 16px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem' }}>+ Add Supplier</button>
                   </div>
                   <div style={{ background: theme.inputBg, borderRadius: '12px', overflow: 'hidden', maxHeight: '400px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -241,7 +243,7 @@ export default function SettingsPage({
                                   const value = e.target.value.trim().toUpperCase();
                                   if (value === (supplier.qd_code || '')) return;
                                   try { await suppliersAPI.update(supplier.id, { qd_code: value }); fetchSuppliers(); }
-                                  catch (error) { alert('Failed to update: ' + error.message); e.target.value = supplier.qd_code || ''; }
+                                  catch (error) { dialogs.notify('Failed to update: ' + error.message, 'error'); e.target.value = supplier.qd_code || ''; }
                                 }}
                                 style={{ width: '52px', padding: '6px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', textTransform: 'uppercase', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}
                               />
@@ -249,7 +251,7 @@ export default function SettingsPage({
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
                               <select
                                 value={supplier.region || ''}
-                                onChange={async (e) => { try { await suppliersAPI.update(supplier.id, { region: e.target.value }); fetchSuppliers(); } catch (error) { alert('Failed to update: ' + error.message); } }}
+                                onChange={async (e) => { try { await suppliersAPI.update(supplier.id, { region: e.target.value }); fetchSuppliers(); } catch (error) { dialogs.notify('Failed to update: ' + error.message, 'error'); } }}
                                 style={{ padding: '4px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
                               >
                                 <option value="">—</option>
@@ -264,7 +266,7 @@ export default function SettingsPage({
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
                               <select
                                 value={supplier.shipment_mode || 'LAND'}
-                                onChange={async (e) => { try { await suppliersAPI.update(supplier.id, { shipment_mode: e.target.value }); fetchSuppliers(); } catch (error) { alert('Failed to update: ' + error.message); } }}
+                                onChange={async (e) => { try { await suppliersAPI.update(supplier.id, { shipment_mode: e.target.value }); fetchSuppliers(); } catch (error) { dialogs.notify('Failed to update: ' + error.message, 'error'); } }}
                                 style={{ padding: '4px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', cursor: 'pointer' }}
                               >
                                 <option value="AIR">AIR</option>
@@ -280,13 +282,13 @@ export default function SettingsPage({
                                 onBlur={async (e) => {
                                   const value = e.target.value.trim();
                                   if (value === (supplier.contact_email || '')) return;
-                                  try { await suppliersAPI.update(supplier.id, { contact_email: value }); fetchSuppliers(); } catch (error) { alert('Failed to update: ' + error.message); }
+                                  try { await suppliersAPI.update(supplier.id, { contact_email: value }); fetchSuppliers(); } catch (error) { dialogs.notify('Failed to update: ' + error.message, 'error'); }
                                 }}
                                 style={{ width: '100%', minWidth: '180px', padding: '6px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                               />
                             </td>
                             <td style={{ padding: '12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
-                              <button onClick={async () => { if (window.confirm(`Delete supplier "${supplier.name}"?`)) { try { await suppliersAPI.delete(supplier.id); fetchSuppliers(); } catch (error) { alert('Failed to delete: ' + error.message); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
+                              <button onClick={async () => { if (await dialogs.confirm({ title: 'Delete supplier', message: `Supplier "${supplier.name}" will be removed from the master list.`, confirmLabel: 'Delete supplier' })) { try { await suppliersAPI.delete(supplier.id); fetchSuppliers(); } catch (error) { dialogs.notify('Failed to delete: ' + error.message, 'error'); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
                             </td>
                           </tr>
                         ))}
@@ -411,9 +413,9 @@ export default function SettingsPage({
                     {profileMeta.count > 0 && (
                       <button
                         onClick={async () => {
-                          if (!window.confirm(`Clear all ${profileMeta.count} profiles? This cannot be undone.`)) return;
+                          if (!await dialogs.confirm({ title: 'Clear profile master', message: `All ${profileMeta.count} profiles will be deleted. This cannot be undone.`, confirmLabel: 'Clear profiles' })) return;
                           try { await profilesAPI.clearAll(); fetchProfileMeta(); setProfileImportStatus({ type: 'success', message: 'All profiles cleared' }); }
-                          catch (error) { alert('Failed to clear: ' + error.message); }
+                          catch (error) { dialogs.notify('Failed to clear: ' + error.message, 'error'); }
                         }}
                         style={{ padding: '8px 14px', background: 'transparent', color: '#EF4444', border: '1px solid #EF4444', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
                       >
@@ -479,7 +481,7 @@ export default function SettingsPage({
                             type: (row.Type || row.type || '').toLowerCase().trim(),
                             values: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m => parseInt(row[m] || row[m.toLowerCase()]) || 0),
                           })).filter(r => r.plant_name && r.year && ['backup','new'].includes(r.type));
-                          if (rows.length === 0) { alert('No valid rows found. Check CSV format.'); e.target.value = ''; return; }
+                          if (rows.length === 0) { dialogs.notify('No valid rows found. Check the CSV format.', 'error'); e.target.value = ''; return; }
                           try {
                             await plantBudgetsAPI.import(rows);
                             await fetchPlantBudgets();
@@ -524,7 +526,7 @@ export default function SettingsPage({
                         style={{
                           padding: '8px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
                           fontWeight: 600, fontSize: '0.875rem', transition: 'all 0.15s',
-                          background: budgetActivePlant === plant ? 'linear-gradient(135deg, #3B82F6, #8B5CF6)' : theme.inputBg,
+                          background: budgetActivePlant === plant ? BRAND.navy : theme.inputBg,
                           color: budgetActivePlant === plant ? 'white' : theme.textMuted,
                           outline: hasData ? '2px solid #10B981' : 'none',
                           outlineOffset: '2px',
@@ -668,7 +670,7 @@ export default function SettingsPage({
                             setApiKeyLoading(false);
                           }
                         }}
-                        style={{ padding: '10px 16px', background: !newApiKeyName.trim() ? theme.cardBorder : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: !newApiKeyName.trim() ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600, opacity: !newApiKeyName.trim() ? 0.5 : 1 }}
+                        style={{ padding: '10px 16px', background: !newApiKeyName.trim() ? theme.cardBorder : BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: !newApiKeyName.trim() ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600, opacity: !newApiKeyName.trim() ? 0.5 : 1 }}
                       >
                         + Generate
                       </button>
@@ -710,7 +712,7 @@ export default function SettingsPage({
                               <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textDim, fontSize: '0.8rem' }}>{k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}</td>
                               <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, color: theme.textDim, fontSize: '0.8rem' }}>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
                               <td style={{ padding: '10px 12px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
-                                <button onClick={async () => { if (window.confirm(`Revoke API key "${k.name}"?`)) { try { await apiKeysAPI.delete(k.id); fetchApiKeys(); setToast({ message: 'API key revoked', type: 'success' }); setTimeout(() => setToast(null), 3000); } catch (error) { alert('Failed to revoke: ' + error.message); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Revoke</button>
+                                <button onClick={async () => { if (await dialogs.confirm({ title: 'Revoke API key', message: `"${k.name}" stops working immediately. Any integration using it will start failing.`, confirmLabel: 'Revoke key' })) { try { await apiKeysAPI.delete(k.id); fetchApiKeys(); setToast({ message: 'API key revoked', type: 'success' }); setTimeout(() => setToast(null), 3000); } catch (error) { dialogs.notify('Failed to revoke: ' + error.message, 'error'); } } }} style={{ padding: '4px 10px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}>Revoke</button>
                               </td>
                             </tr>
                           ))}
@@ -837,7 +839,7 @@ export default function SettingsPage({
                         }
                       }}
                       disabled={backupRunning}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: backupRunning ? theme.inputBg : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: backupRunning ? theme.textDim : 'white', border: 'none', borderRadius: '8px', cursor: backupRunning ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: backupRunning ? theme.inputBg : BRAND.navy, color: backupRunning ? theme.textDim : 'white', border: 'none', borderRadius: '8px', cursor: backupRunning ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
                     >
                       <RefreshCw size={14} style={{ animation: backupRunning ? 'spin 1s linear infinite' : 'none' }} />
                       {backupRunning ? 'Running…' : 'Backup Now'}
@@ -980,7 +982,7 @@ export default function SettingsPage({
                               <button
                                 disabled={qdSettingsSaving}
                                 onClick={saveQdSettings}
-                                style={{ padding: '9px 20px', background: qdSettingsSaving ? theme.cardBorder : 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: qdSettingsSaving ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                                style={{ padding: '9px 20px', background: qdSettingsSaving ? theme.cardBorder : BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: qdSettingsSaving ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                               >
                                 {qdSettingsSaving ? 'Saving…' : 'Save QD Settings'}
                               </button>
@@ -1004,7 +1006,7 @@ export default function SettingsPage({
                     </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                       <button onClick={() => { setShowAddPlant(false); setNewPlantName(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={async () => { if (!newPlantName.trim()) { alert('Plant name is required'); return; } try { await plantsAPI.create(newPlantName); fetchPlants(); setShowAddPlant(false); setNewPlantName(''); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Plant</button>
+                      <button onClick={async () => { if (!newPlantName.trim()) { dialogs.notify('Plant name is required.', 'error'); return; } try { await plantsAPI.create(newPlantName); fetchPlants(); setShowAddPlant(false); setNewPlantName(''); } catch (error) { dialogs.notify('Failed to create: ' + error.message, 'error'); } }} style={{ padding: '10px 20px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Plant</button>
                     </div>
                   </div>
                 </div>
@@ -1044,7 +1046,7 @@ export default function SettingsPage({
                     </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                       <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); setNewSupplierEmail(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={async () => { if (!newSupplierName.trim()) { alert('Supplier name is required'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment, newSupplierRegion || null, newSupplierEmail || null); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); setNewSupplierEmail(''); } catch (error) { alert('Failed to create: ' + error.message); } }} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
+                      <button onClick={async () => { if (!newSupplierName.trim()) { dialogs.notify('Supplier name is required.', 'error'); return; } try { await suppliersAPI.create(newSupplierName, newSupplierShipment, newSupplierRegion || null, newSupplierEmail || null); fetchSuppliers(); setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); setNewSupplierEmail(''); } catch (error) { dialogs.notify('Failed to create: ' + error.message, 'error'); } }} style={{ padding: '10px 20px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add Supplier</button>
                     </div>
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Mail, Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, Send, Inbox, RefreshCw, Bell } from 'lucide-react';
+import { Settings, Mail, Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, Send, Inbox, RefreshCw, Bell, Truck } from 'lucide-react';
 import { emailAPI } from '../../api';
+import { BRAND } from '../../utils/brand';
 
 const EmailSettings = ({ theme }) => {
     const [config, setConfig] = useState({
@@ -25,11 +26,19 @@ const EmailSettings = ({ theme }) => {
     const [reminderState, setReminderState] = useState(null);
     const [savingReminder, setSavingReminder] = useState(false);
     const [runningReminder, setRunningReminder] = useState(false);
+    const [foc, setFoc] = useState({
+        supplierEnabled: false, supplierTime: '08:00',
+        internalEnabled: false, internalTime: '08:00', internalTo: '', idleDays: 3,
+    });
+    const [focState, setFocState] = useState(null);
+    const [savingFoc, setSavingFoc] = useState(false);
+    const [runningFoc, setRunningFoc] = useState('');
 
     useEffect(() => {
         fetchConfig();
         fetchImapStatus();
         fetchReminderSettings();
+        fetchFocSettings();
     }, []);
 
     const fetchConfig = async () => {
@@ -110,6 +119,65 @@ const EmailSettings = ({ theme }) => {
         }
     };
 
+    const fetchFocSettings = async () => {
+        try {
+            const result = await emailAPI.getFocReminderSettings();
+            const s = result.settings;
+            if (s) {
+                setFoc({
+                    supplierEnabled: s.foc_supplier_enabled || false,
+                    supplierTime: s.foc_supplier_time || '08:00',
+                    internalEnabled: s.foc_internal_enabled || false,
+                    internalTime: s.foc_internal_time || '08:00',
+                    internalTo: s.foc_internal_to || '',
+                    idleDays: s.foc_idle_days ?? 3,
+                });
+            }
+            setFocState({
+                ...result.state,
+                supplierLastRun: s?.foc_supplier_last_run,
+                internalLastRun: s?.foc_internal_last_run,
+            });
+        } catch (err) {
+            console.error('Failed to fetch FOC reminder settings:', err);
+        }
+    };
+
+    const handleSaveFoc = async () => {
+        setSavingFoc(true);
+        try {
+            await emailAPI.updateFocReminderSettings(foc);
+            showToast('FOC reminder settings saved', 'success');
+            fetchFocSettings();
+        } catch (err) {
+            showToast(err.message || 'Failed to save FOC reminder settings', 'error');
+        } finally {
+            setSavingFoc(false);
+        }
+    };
+
+    const handleRunFocNow = async (which) => {
+        setRunningFoc(which);
+        try {
+            const result = await emailAPI.runFocRemindersNow(which);
+            const s = result.summary || {};
+            showToast(
+                which === 'supplier'
+                    ? `${s.sent || 0} supplier email(s) sent for ${s.totalOverdue || 0} overdue FOC(s)` +
+                      (s.skippedNoEmail?.length ? ` — no email set for: ${s.skippedNoEmail.join(', ')}` : '')
+                    : s.quiet
+                        ? 'Nothing outstanding — no email sent'
+                        : `Sent: ${s.overdue || 0} overdue, ${s.idle || 0} awaiting trial`,
+                'success'
+            );
+            fetchFocSettings();
+        } catch (err) {
+            showToast(err.message || 'Failed to run FOC reminders', 'error');
+        } finally {
+            setRunningFoc('');
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -172,7 +240,7 @@ const EmailSettings = ({ theme }) => {
     const cardStyle = {
         background: theme.cardBg, borderRadius: '20px',
         padding: '24px', border: `1px solid ${theme.cardBorder}`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        boxShadow: theme.shadowMd,
         marginBottom: '1.5rem'
     };
 
@@ -371,6 +439,138 @@ const EmailSettings = ({ theme }) => {
                 </div>
             </div>
 
+            {/* FOC replacement chasers — one out to the supplier, one in to us */}
+            <div style={cardStyle}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Truck size={18} color="#34D399" /> FOC Replacement Reminders
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: theme.textDim, margin: '0 0 18px' }}>
+                    Chases what is still outstanding against QDs where a free-of-charge replacement was accepted.
+                </p>
+
+                <ToggleButton
+                    enabled={foc.supplierEnabled}
+                    onToggle={() => setFoc({ ...foc, supplierEnabled: !foc.supplierEnabled })}
+                    label="Chase the supplier"
+                    sublabel={foc.supplierEnabled
+                        ? `Active — daily at ${foc.supplierTime}, one email per supplier listing replacements past the ETA they gave`
+                        : 'Disabled — suppliers are not chased about overdue replacements'}
+                    icon={Bell}
+                    color="#60A5FA"
+                />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Supplier Send Time
+                        </label>
+                        <input type="time" value={foc.supplierTime}
+                            onChange={(e) => setFoc({ ...foc, supplierTime: e.target.value || '08:00' })}
+                            style={inputStyle} />
+                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
+                            Emails go to each supplier's contact email (Settings → Suppliers). A supplier with no email is skipped.
+                        </p>
+                    </div>
+                </div>
+
+                <div style={{ height: 1, background: theme.cardBorder, margin: '22px 0' }} />
+
+                <ToggleButton
+                    enabled={foc.internalEnabled}
+                    onToggle={() => setFoc({ ...foc, internalEnabled: !foc.internalEnabled })}
+                    label="Chase our own team"
+                    sublabel={foc.internalEnabled
+                        ? `Active — daily at ${foc.internalTime}, listing overdue FOCs and dies received but untrialled for over ${foc.idleDays} day(s)`
+                        : 'Disabled — nobody is told about replacements sitting untrialled'}
+                    icon={Bell}
+                    color="#F0ABFC"
+                />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginTop: '18px' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Send To
+                        </label>
+                        <input type="text" value={foc.internalTo} placeholder="quality@example.com, hod@example.com"
+                            onChange={(e) => setFoc({ ...foc, internalTo: e.target.value })}
+                            style={inputStyle} />
+                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
+                            Whoever owns FOC follow-up. Required to enable this reminder.
+                        </p>
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Internal Send Time
+                        </label>
+                        <input type="time" value={foc.internalTime}
+                            onChange={(e) => setFoc({ ...foc, internalTime: e.target.value || '08:00' })}
+                            style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Idle Days
+                        </label>
+                        <input type="number" min={0} max={60} value={foc.idleDays}
+                            onChange={(e) => setFoc({ ...foc, idleDays: Math.max(0, Math.min(60, parseInt(e.target.value) || 0)) })}
+                            style={inputStyle} />
+                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
+                            How long a received die may sit untrialled before it is flagged
+                        </p>
+                    </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, margin: '14px 0 0' }}>
+                    Both require outgoing email (SMTP) to be enabled. Settled QDs — closed, rejected or reference —
+                    are never chased, and a day with nothing outstanding sends no internal email.
+                </p>
+
+                {(focState?.supplier?.error || focState?.internal?.error || focState?.supplierLastRun || focState?.internalLastRun) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>
+                        {[
+                            { key: 'supplier', label: 'Supplier chaser', lastRun: focState.supplierLastRun, st: focState.supplier },
+                            { key: 'internal', label: 'Internal chaser', lastRun: focState.internalLastRun, st: focState.internal },
+                        ].filter((r) => r.lastRun || r.st?.error).map((r) => (
+                            <div key={r.key} style={{
+                                padding: '10px 14px', borderRadius: '10px',
+                                background: r.st?.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                                fontSize: '0.8rem', color: r.st?.error ? '#EF4444' : '#10B981',
+                                display: 'flex', alignItems: 'center', gap: '8px'
+                            }}>
+                                {r.st?.error
+                                    ? <><XCircle size={14} /> {r.label} — last run error: {r.st.error}</>
+                                    : <><CheckCircle size={14} /> {r.label} — last run: {r.lastRun}</>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
+                    <button onClick={handleSaveFoc} disabled={savingFoc} style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 20px', borderRadius: '12px', border: 'none',
+                        background: savingFoc ? '#475569' : 'linear-gradient(135deg, #10B981, #34D399)',
+                        color: 'white', cursor: savingFoc ? 'not-allowed' : 'pointer',
+                        fontWeight: 600, fontSize: '0.85rem'
+                    }}>
+                        <Save size={16} />
+                        {savingFoc ? 'Saving...' : 'Save FOC Settings'}
+                    </button>
+                    {['supplier', 'internal'].map((which) => (
+                        <button key={which} onClick={() => handleRunFocNow(which)} disabled={!!runningFoc} style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 20px', borderRadius: '12px',
+                            border: `1px solid ${theme.cardBorder}`,
+                            background: theme.cardBg, color: theme.text,
+                            cursor: runningFoc ? 'not-allowed' : 'pointer',
+                            fontWeight: 500, fontSize: '0.85rem'
+                        }}>
+                            <Send size={16} />
+                            {runningFoc === which ? 'Sending...' : `Run ${which} chaser now`}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             {/* SMTP/IMAP Configuration */}
             <div style={cardStyle}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -511,7 +711,7 @@ const EmailSettings = ({ theme }) => {
                 <button onClick={handleSave} disabled={saving} style={{
                     display: 'flex', alignItems: 'center', gap: '8px',
                     padding: '12px 24px', borderRadius: '12px', border: 'none',
-                    background: saving ? '#475569' : 'linear-gradient(135deg, #3B82F6, #6366F1)',
+                    background: saving ? '#475569' : BRAND.navy,
                     color: 'white', cursor: saving ? 'not-allowed' : 'pointer',
                     fontWeight: 600, fontSize: '0.9rem',
                     boxShadow: '0 4px 12px rgba(59,130,246,0.3)'

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Mail, Send, Inbox, ArrowLeft, ExternalLink, Link2, RefreshCw, ChevronLeft, ChevronRight, Filter, Bell } from 'lucide-react';
 import { emailAPI } from '../../api';
+import { BRAND } from '../../utils/brand';
 
 const EmailInbox = ({ theme, onCompose }) => {
     const [emails, setEmails] = useState([]);
@@ -110,7 +111,7 @@ const EmailInbox = ({ theme, onCompose }) => {
     const cardStyle = {
         background: theme.cardBg, borderRadius: '20px',
         border: `1px solid ${theme.cardBorder}`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+        boxShadow: theme.shadowMd
     };
 
     const filterBtnStyle = (active) => ({
@@ -238,7 +239,7 @@ const EmailInbox = ({ theme, onCompose }) => {
                         <button onClick={() => onCompose()} style={{
                             display: 'flex', alignItems: 'center', gap: '8px',
                             padding: '10px 20px', borderRadius: '10px', border: 'none',
-                            background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
+                            background: BRAND.navy,
                             color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
                             boxShadow: '0 4px 12px rgba(59,130,246,0.3)'
                         }}>

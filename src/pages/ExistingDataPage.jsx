@@ -3,6 +3,7 @@ import { Upload, Database } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { existingDataAPI } from '../api';
+import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 export default function ExistingDataPage({ plants, theme, setToast }) {
   const [activeTab, setActiveTab] = useState('die-details');
@@ -213,7 +214,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
             disabled={importing}
             style={{
               padding: '7px 18px', borderRadius: '8px', border: 'none',
-              background: importing ? theme.cardBorder : 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
+              background: importing ? theme.cardBorder : BRAND.navy,
               color: 'white', cursor: importing ? 'not-allowed' : 'pointer',
               fontWeight: 600, fontSize: '0.875rem', whiteSpace: 'nowrap',
             }}

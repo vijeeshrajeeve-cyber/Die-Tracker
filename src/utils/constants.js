@@ -151,6 +151,9 @@ export const QD_STATUS_CONFIG = {
   'Open':             { fg: '#FBBF24', bg: 'rgba(245,158,11,0.15)' },
   'Sent to Supplier': { fg: '#60A5FA', bg: 'rgba(59,130,246,0.15)' },
   'FOC Accepted':     { fg: '#34D399', bg: 'rgba(16,185,129,0.15)' },
+  // In the plant but not yet trialled — the replacement has arrived and still
+  // has to prove itself, so it is neither outstanding nor settled.
+  'FOC Received':     { fg: '#F0ABFC', bg: 'rgba(232,121,249,0.15)' },
   'Rejected':         { fg: '#FCA5A5', bg: 'rgba(239,68,68,0.15)' },
   'Reference':        { fg: '#A1A1AA', bg: 'rgba(161,161,170,0.14)' },
   'Rework In-house':  { fg: '#A78BFA', bg: 'rgba(139,92,246,0.15)' },
@@ -160,6 +163,16 @@ export const QD_STATUS_CONFIG = {
 export const QD_STATUSES = Object.keys(QD_STATUS_CONFIG);
 
 export const QD_OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
+
+// Fact-card fields that stay editable for the QD's whole life, because they
+// only become knowable after it has been approved and sent out. Everything else
+// on the card is Part-A and locks once the QD leaves Draft/SentBack — the server
+// enforces this in EDITABLE_FIELDS (`progress`) in services/qualityDiscrepancies.cjs;
+// this list only decides whether the drawer offers the pencil. Keep them in step.
+export const QD_PROGRESS_FIELDS = new Set([
+  'eta_date', 'sent_to_purchase_date', 'sent_to_supplier_date',
+  'supplier_acceptance', 'action_taken', 'supplier_comments', 'received_by_supplier',
+]);
 
 // Activity timeline dot tones — copied from the QD Tracker design's `tones` map.
 export const QD_ACTIVITY_TONES = {

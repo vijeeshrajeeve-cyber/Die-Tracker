@@ -4,3 +4,4 @@ export { default as MissingCustomerPromptModal } from './MissingCustomerPromptMo
 export { default as RevisionModal } from './RevisionModal';
 export { default as RevisionHistoryModal } from './RevisionHistoryModal';
 export { default as ChangeLogModal } from './ChangeLogModal';
+export { default as SignatureModal } from './SignatureModal';

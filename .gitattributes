@@ -1,0 +1,11 @@
+# This repo is developed on Windows (core.autocrlf=true) and deployed to Linux.
+# Git normally detects binary files on its own, but these are load-bearing and a
+# corrupted one fails quietly rather than loudly -- a mangled QD form template
+# just drops the letterhead off a certification document. Pin them explicitly.
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.xlsx binary
+*.gz   binary
