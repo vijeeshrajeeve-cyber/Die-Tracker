@@ -1870,6 +1870,9 @@ export default function DieOrderingSystem() {
   // is gated on that page, so anyone else would just collect 403s.
   const pendingApprovals = usePendingApprovals(isLoggedIn && hasPageAccess('qd-tracker'));
 
+  // Which QD a notification asked us to open, handed to the QD Tracker once.
+  const [focusQdId, setFocusQdId] = useState(null);
+
   // Redirect if user lands on a restricted tab
   useEffect(() => {
     if (!user || !isLoggedIn) return;
@@ -2729,7 +2732,7 @@ export default function DieOrderingSystem() {
                   </div>
                   {pendingApprovals.qds.map((q) => (
                     <div key={`qd-approval-${q.id}`} style={{ margin: '4px 8px' }}>
-                      <div onClick={() => { setActiveTab('qd-tracker'); setShowNotifications(false); }}
+                      <div onClick={() => { setFocusQdId(q.id); setActiveTab('qd-tracker'); setShowNotifications(false); }}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '12px',
                           padding: '10px 16px', borderRadius: '10px',
@@ -2975,6 +2978,9 @@ export default function DieOrderingSystem() {
               user={user}
               theme={theme}
               onCompose={(prefill) => setShowEmailCompose(prefill || {})}
+              pendingApprovals={pendingApprovals}
+              focusQdId={focusQdId}
+              onFocusHandled={() => setFocusQdId(null)}
             />
           )}
 

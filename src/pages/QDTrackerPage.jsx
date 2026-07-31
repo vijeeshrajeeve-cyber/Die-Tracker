@@ -8,6 +8,7 @@ import { QD_STATUS_CONFIG, QD_STATUSES } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
 import FocPendingPanel from '../components/qd/FocPendingPanel';
+import ApprovalQueueBanner from '../components/qd/ApprovalQueueBanner';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 const OUTCOME_ICON = {
@@ -55,7 +56,7 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
   );
 };
 
-export default function QDTrackerPage({ user, theme = {}, onCompose }) {
+export default function QDTrackerPage({ user, theme = {}, onCompose, pendingApprovals = null, focusQdId = null, onFocusHandled }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, foc: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
@@ -156,7 +157,12 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
     setPickedSuppliers(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
   };
 
-  const selected = data.qds.find(q => q.id === selectedId) || null;
+  // The deep link from the Alerts bell is *derived*, not copied into state by an
+  // effect: setting state in an effect is an extra render and a lint error here
+  // (react-hooks/set-state-in-effect). Closing the drawer clears both, or the
+  // fallback would immediately reopen it.
+  const openId = selectedId ?? focusQdId ?? null;
+  const selected = data.qds.find(q => q.id === openId) || null;
   const hasFilters = !!(search || plant !== 'All' || supplier !== 'All' || status !== 'All' || year !== 'All');
   const k = data.kpis;
 
@@ -271,6 +277,12 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
 
           {/* What is still pending against accepted FOCs. Hidden on the drafts
               view, where no QD has reached a supplier yet. */}
+          {/* What is waiting on this user personally. Hidden on the drafts
+              view, which is their own unsubmitted work, not anyone's queue. */}
+          {!showDrafts && pendingApprovals && (
+            <ApprovalQueueBanner qds={pendingApprovals.qds} theme={theme} onOpen={setSelectedId} />
+          )}
+
           {!showDrafts && <FocPendingPanel foc={data.foc} theme={theme} onOpen={setSelectedId} />}
 
           {/* Filter bar */}
@@ -485,9 +497,11 @@ export default function QDTrackerPage({ user, theme = {}, onCompose }) {
           canApprove={!!data.canApprove}
           supplier={supplierMaster.find(s => (s.name || '').toLowerCase() === (selected.supplier || '').toLowerCase()) || null}
           onCompose={onCompose}
-          onClose={() => setSelectedId(null)}
+          onClose={() => { setSelectedId(null); onFocusHandled?.(); }}
           onEdit={() => setEditQd(selected)}
-          onChanged={load}
+          // Approving or sending back empties this QD from the approval queue —
+          // refresh it now rather than leaving it on screen for up to 60s.
+          onChanged={async () => { await load(); pendingApprovals?.refresh?.(); }}
         />
       )}
       {(showRaise || editQd) && (
