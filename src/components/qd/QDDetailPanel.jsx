@@ -644,6 +644,14 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
         <QDFormPreviewModal
           qd={qd}
           theme={theme}
+          mayApprove={mayApprove}
+          busy={busy}
+          // Both close the preview first, deliberately: handleApprove reports a
+          // failed Purchase email into the drawer's error line, and the
+          // send-back reason box lives in the drawer — either one left
+          // underneath an open preview would be invisible.
+          onApprove={async () => { setPreviewOpen(false); await handleApprove(); }}
+          onSendBack={() => { setPreviewOpen(false); setSendBackOpen(true); }}
           onClose={() => setPreviewOpen(false)}
         />
       )}
