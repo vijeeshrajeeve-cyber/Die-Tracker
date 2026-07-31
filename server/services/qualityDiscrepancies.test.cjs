@@ -966,23 +966,6 @@ test('only Pending QDs are queued', () => {
   }
 });
 
-test('listPendingApprovals asks only for Pending rows and filters the rest in JS', async () => {
-  const calls = [];
-  const client = {
-    query: async (sql, params) => {
-      calls.push({ sql, params });
-      return { rows: [
-        { id: 1, qd_no: '2026AD-01', approval_state: 'Pending', assigned_approver: 7 },
-        { id: 2, qd_no: '2026AD-02', approval_state: 'Pending', assigned_approver: null },
-        { id: 3, qd_no: '2026AD-03', approval_state: 'Pending', assigned_approver: 9 },
-      ] };
-    },
-  };
-  const rows = await q.listPendingApprovals(client, 7);
-  assert.match(calls[0].sql, /approval_state = 'Pending'/);
-  assert.deepEqual(rows.map((r) => r.id), [1, 2]);
-});
-
 // "Is this mine to fix?" — the counterpart of isInApprovalQueue's "is this mine
 // to approve". Being an approver or an admin has nothing to do with it.
 test('a QD I raised and had sent back is mine to fix', () => {

@@ -8,7 +8,7 @@ import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES 
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
 import FocPendingPanel from '../components/qd/FocPendingPanel';
-import ApprovalQueueBanner from '../components/qd/ApprovalQueueBanner';
+import QdQueueBanner from '../components/qd/QdQueueBanner';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 const OUTCOME_ICON = {
@@ -56,7 +56,7 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
   );
 };
 
-export default function QDTrackerPage({ user, theme = {}, onCompose, pendingApprovals = null, focusQdId = null, onFocusHandled }) {
+export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = null, focusQdId = null, onFocusHandled }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, foc: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
@@ -305,8 +305,13 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, pendingAppr
               view, where no QD has reached a supplier yet. */}
           {/* What is waiting on this user personally. Hidden on the drafts
               view, which is their own unsubmitted work, not anyone's queue. */}
-          {!showDrafts && pendingApprovals && (
-            <ApprovalQueueBanner qds={pendingApprovals.qds} theme={theme} onOpen={setSelectedId} />
+          {!showDrafts && qdQueue && (
+            <>
+              <QdQueueBanner title="Awaiting your approval" tone="amber"
+                qds={qdQueue.awaitingApproval.qds} theme={theme} onOpen={setSelectedId} />
+              <QdQueueBanner title="Sent back to you — needs rework" tone="red"
+                qds={qdQueue.sentBack.qds} theme={theme} onOpen={setSelectedId} />
+            </>
           )}
 
           {!showDrafts && <FocPendingPanel foc={data.foc} theme={theme} onOpen={setSelectedId} />}
@@ -535,7 +540,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, pendingAppr
           onEdit={() => setEditQd(selected)}
           // Approving or sending back empties this QD from the approval queue —
           // refresh it now rather than leaving it on screen for up to 60s.
-          onChanged={async () => { await load(); pendingApprovals?.refresh?.(); }}
+          onChanged={async () => { await load(); qdQueue?.refresh?.(); }}
         />
       )}
       {(showRaise || editQd) && (

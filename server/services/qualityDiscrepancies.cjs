@@ -695,20 +695,6 @@ function isInApprovalQueue(row, userId) {
   return row.assigned_approver === userId;
 }
 
-// Pending rows are fetched and then filtered in JS rather than in SQL so the
-// rule above is one testable function instead of a WHERE clause nobody can
-// unit-test. There are only ever a handful of Pending QDs.
-async function listPendingApprovals(client, userId) {
-  const { rows } = await client.query(
-    `SELECT id, qd_no, die_no, supplier, plant, submitted_at, prepared_by,
-            approval_state, assigned_approver
-       FROM quality_discrepancies
-      WHERE approval_state = 'Pending'
-      ORDER BY submitted_at DESC NULLS LAST, id DESC`
-  );
-  return rows.filter((r) => isInApprovalQueue(r, userId));
-}
-
 // "Is this mine to fix?" — the counterpart of isInApprovalQueue's "is this mine
 // to approve". Strictly the raiser: an approver or an admin looking at someone
 // else's returned QD has nothing to do about it.
@@ -832,7 +818,7 @@ module.exports = {
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
-  isInApprovalQueue, listPendingApprovals, isSentBackToMe, listMyQueue,
+  isInApprovalQueue, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,
   sendBackEmailSubject, buildSendBackEmailHtml,
   BILLETS, saveBilletParameters, listBilletParameters,

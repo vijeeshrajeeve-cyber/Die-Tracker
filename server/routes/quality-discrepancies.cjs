@@ -454,19 +454,24 @@ router.post('/:id/send-back', requireApprover, async (req, res) => {
   } finally { client.release(); }
 });
 
-// GET /api/quality-discrepancies/pending-approvals
-// The signed-in approver's queue, for the Alerts bell and the QD Tracker banner.
+// GET /api/quality-discrepancies/my-queue
+// What this user personally owes: QDs awaiting their approval, and QDs of
+// theirs an approver sent back. One route so the Alerts bell polls once.
 // Must stay ahead of the :id routes so it isn't swallowed by that param route.
-router.get('/pending-approvals', async (req, res) => {
+router.get('/my-queue', async (req, res) => {
   try {
     // Not being an approver is a normal state, not an error: an ordinary user's
     // browser polls this every minute and must get a quiet zero, not a 403.
+    // Their rework bucket is still computed — anyone can raise a QD.
     const eligible = await listEligibleApprovers();
-    if (!eligible.some((a) => a.id === req.user?.id)) return res.json({ count: 0, qds: [] });
-    const qds = await qd.listPendingApprovals(pool, req.user.id);
-    res.json({ count: qds.length, qds });
+    const isApprover = eligible.some((a) => a.id === req.user?.id);
+    const { awaitingApproval, sentBack } = await qd.listMyQueue(pool, req.user?.id, { isApprover });
+    res.json({
+      awaitingApproval: { count: awaitingApproval.length, qds: awaitingApproval },
+      sentBack: { count: sentBack.length, qds: sentBack },
+    });
   } catch (e) {
-    console.error('Pending approvals error:', e);
+    console.error('My queue error:', e);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

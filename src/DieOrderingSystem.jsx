@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake, ClipboardCheck } from 'lucide-react';
+import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake, ClipboardCheck, CornerUpLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
@@ -28,7 +28,7 @@ import OrdersPage from './pages/OrdersPage';
 import FrozenDesignsPage from './pages/FrozenDesignsPage';
 import QDTrackerPage from './pages/QDTrackerPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
-import usePendingApprovals from './hooks/usePendingApprovals';
+import useQdQueue from './hooks/useQdQueue';
 import FreezeDesignModal from './components/FreezeDesignModal';
 import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
 import { BRAND, BRAND_ALPHA } from './utils/brand';
@@ -1868,7 +1868,7 @@ export default function DieOrderingSystem() {
 
   // Polled only for users who can actually reach the QD Tracker — the endpoint
   // is gated on that page, so anyone else would just collect 403s.
-  const pendingApprovals = usePendingApprovals(isLoggedIn && hasPageAccess('qd-tracker'));
+  const qdQueue = useQdQueue(isLoggedIn && hasPageAccess('qd-tracker'));
 
   // Which QD a notification asked us to open, handed to the QD Tracker once.
   const [focusQdId, setFocusQdId] = useState(null);
@@ -2584,7 +2584,7 @@ export default function DieOrderingSystem() {
       return hoursDiff > 24;
     });
 
-    const totalNotifications = designOverdueOrders.length + pendingOrderingOrders.length + pendingApprovals.count;
+    const totalNotifications = designOverdueOrders.length + pendingOrderingOrders.length + qdQueue.total;
 
     // Group design overdue by supplier
     const designSupplierGroups = {};
@@ -2716,7 +2716,7 @@ export default function DieOrderingSystem() {
               {/* QDs this user is the approver for. Unlike the two sections
                   below, these are fetched from the server rather than derived
                   from loaded order data — approval is per-user. */}
-              {pendingApprovals.count > 0 && (
+              {qdQueue.awaitingApproval.count > 0 && (
                 <>
                   <div style={{
                     background: 'rgba(234,179,8,0.1)', borderRadius: '12px',
@@ -2725,12 +2725,12 @@ export default function DieOrderingSystem() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                       <ClipboardCheck size={16} color="#EAB308" />
                       <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#EAB308' }}>
-                        QDs awaiting your approval - {pendingApprovals.count}
+                        QDs awaiting your approval - {qdQueue.awaitingApproval.count}
                       </span>
                     </div>
                     <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: 0 }}>Click one to open it</p>
                   </div>
-                  {pendingApprovals.qds.map((q) => (
+                  {qdQueue.awaitingApproval.qds.map((q) => (
                     <div key={`qd-approval-${q.id}`} style={{ margin: '4px 8px' }}>
                       <div onClick={() => { setFocusQdId(q.id); setActiveTab('qd-tracker'); setShowNotifications(false); }}
                         style={{
@@ -2748,6 +2748,49 @@ export default function DieOrderingSystem() {
                           <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{q.qd_no || 'Draft'}</div>
                           <div style={{ fontSize: '0.7rem', color: theme.textDim }}>
                             Die {q.die_no} · {q.supplier}{q.prepared_by ? ` · from ${q.prepared_by}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* QDs of this user's own that an approver handed back. Separate
+                  from the bucket above because it is the opposite obligation:
+                  those are waiting on your judgement, these on your rework. */}
+              {qdQueue.sentBack.count > 0 && (
+                <>
+                  <div style={{
+                    background: 'rgba(239,68,68,0.1)', borderRadius: '12px',
+                    padding: '12px 16px', margin: '8px', marginBottom: '8px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                      <CornerUpLeft size={16} color="#EF4444" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#EF4444' }}>
+                        Sent back to you - {qdQueue.sentBack.count}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: 0 }}>Needs rework before it can go again</p>
+                  </div>
+                  {qdQueue.sentBack.qds.map((q) => (
+                    <div key={`qd-sentback-${q.id}`} style={{ margin: '4px 8px' }}>
+                      <div onClick={() => { setFocusQdId(q.id); setActiveTab('qd-tracker'); setShowNotifications(false); }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '12px',
+                          padding: '10px 16px', borderRadius: '10px',
+                          background: 'transparent', cursor: 'pointer'
+                        }}>
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #EF4444, #F97316)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.75rem', fontWeight: 700, color: 'white'
+                        }}>{(q.supplier || '??').substring(0, 2)}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{q.qd_no || 'Draft'}</div>
+                          <div style={{ fontSize: '0.7rem', color: theme.textDim }}>
+                            Die {q.die_no}{q.sent_back_reason ? ` · ${q.sent_back_reason}` : ''}
                           </div>
                         </div>
                       </div>
@@ -2876,7 +2919,7 @@ export default function DieOrderingSystem() {
           showNotifications={showNotifications}
           setShowNotifications={setShowNotifications}
           notificationDropdown={notificationDropdown}
-          qdApprovalCount={pendingApprovals.count}
+          qdQueueCount={qdQueue.total}
           onLogout={handleLogout}
           onChangePassword={() => setShowPasswordChangeModal(true)}
           onManageSignature={() => setShowSignatureModal(true)}
@@ -2978,7 +3021,7 @@ export default function DieOrderingSystem() {
               user={user}
               theme={theme}
               onCompose={(prefill) => setShowEmailCompose(prefill || {})}
-              pendingApprovals={pendingApprovals}
+              qdQueue={qdQueue}
               focusQdId={focusQdId}
               onFocusHandled={() => setFocusQdId(null)}
             />
