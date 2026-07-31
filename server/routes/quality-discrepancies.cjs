@@ -454,6 +454,23 @@ router.post('/:id/send-back', requireApprover, async (req, res) => {
   } finally { client.release(); }
 });
 
+// GET /api/quality-discrepancies/pending-approvals
+// The signed-in approver's queue, for the Alerts bell and the QD Tracker banner.
+// Must stay ahead of the :id routes so it isn't swallowed by that param route.
+router.get('/pending-approvals', async (req, res) => {
+  try {
+    // Not being an approver is a normal state, not an error: an ordinary user's
+    // browser polls this every minute and must get a quiet zero, not a 403.
+    const eligible = await listEligibleApprovers();
+    if (!eligible.some((a) => a.id === req.user?.id)) return res.json({ count: 0, qds: [] });
+    const qds = await qd.listPendingApprovals(pool, req.user.id);
+    res.json({ count: qds.length, qds });
+  } catch (e) {
+    console.error('Pending approvals error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/quality-discrepancies/:id/document  (rendered QD form as a PDF, inline)
 // Must stay ahead of PATCH /:id so it isn't shadowed by that param route.
 router.get('/:id/document', async (req, res) => {

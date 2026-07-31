@@ -938,3 +938,47 @@ test('a billet carrying only delay details is kept, not deleted as empty', async
   assert.equal(del, undefined, 'a details-only billet must not be deleted as empty');
   assert.ok(up, 'a details-only billet should be upserted so it can be corrected');
 });
+
+// The approval queue is a personal work list, not a permission check. These
+// tests exist because the obvious "simplification" — reusing canActOnApproval —
+// silently fills every admin's bell with other approvers' work.
+test('a Pending QD assigned to me is in my queue', () => {
+  assert.equal(q.isInApprovalQueue({ approval_state: 'Pending', assigned_approver: 7 }, 7), true);
+});
+
+test('a Pending QD assigned to nobody is in any approver\'s queue', () => {
+  // Submitted before assignment existed, so it is open to whoever picks it up.
+  assert.equal(q.isInApprovalQueue({ approval_state: 'Pending', assigned_approver: null }, 7), true);
+});
+
+test('a QD assigned to someone else is NOT in my queue, admin or not', () => {
+  // canActOnApproval() would say true for an admin here. The queue must not.
+  const row = { approval_state: 'Pending', assigned_approver: 9 };
+  assert.equal(q.isInApprovalQueue(row, 7), false);
+  const admin = { id: 7, role: 'admin' };
+  assert.equal(q.canActOnApproval(admin, row), true); // permission: yes
+  assert.equal(q.isInApprovalQueue(row, admin.id), false); // queue: no
+});
+
+test('only Pending QDs are queued', () => {
+  for (const state of ['Draft', 'Approved', 'SentBack']) {
+    assert.equal(q.isInApprovalQueue({ approval_state: state, assigned_approver: null }, 7), false, state);
+  }
+});
+
+test('listPendingApprovals asks only for Pending rows and filters the rest in JS', async () => {
+  const calls = [];
+  const client = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      return { rows: [
+        { id: 1, qd_no: '2026AD-01', approval_state: 'Pending', assigned_approver: 7 },
+        { id: 2, qd_no: '2026AD-02', approval_state: 'Pending', assigned_approver: null },
+        { id: 3, qd_no: '2026AD-03', approval_state: 'Pending', assigned_approver: 9 },
+      ] };
+    },
+  };
+  const rows = await q.listPendingApprovals(client, 7);
+  assert.match(calls[0].sql, /approval_state = 'Pending'/);
+  assert.deepEqual(rows.map((r) => r.id), [1, 2]);
+});

@@ -682,6 +682,33 @@ function canActOnApproval(user, row) {
   return row.assigned_approver === user.id;
 }
 
+// The approver's personal queue: Pending QDs that are theirs to pick up.
+//
+// Deliberately NOT canActOnApproval(). That returns true for any admin on any
+// QD — right for permissions, wrong for a work list. An admin's power to act on
+// someone else's QD is an escape hatch for an absent approver, not a daily
+// inbox. A QD with no assigned approver predates assignment and is open to any
+// approver, so it sits in everyone's queue until someone acts on it.
+function isInApprovalQueue(row, userId) {
+  if (!row || row.approval_state !== 'Pending') return false;
+  if (row.assigned_approver == null) return true;
+  return row.assigned_approver === userId;
+}
+
+// Pending rows are fetched and then filtered in JS rather than in SQL so the
+// rule above is one testable function instead of a WHERE clause nobody can
+// unit-test. There are only ever a handful of Pending QDs.
+async function listPendingApprovals(client, userId) {
+  const { rows } = await client.query(
+    `SELECT id, qd_no, die_no, supplier, plant, submitted_at, prepared_by,
+            approval_state, assigned_approver
+       FROM quality_discrepancies
+      WHERE approval_state = 'Pending'
+      ORDER BY submitted_at DESC NULLS LAST, id DESC`
+  );
+  return rows.filter((r) => isInApprovalQueue(r, userId));
+}
+
 async function approveQD(client, { id, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
@@ -778,6 +805,7 @@ module.exports = {
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
+  isInApprovalQueue, listPendingApprovals,
   purchaseEmailSubject, buildPurchaseEmailHtml,
   sendBackEmailSubject, buildSendBackEmailHtml,
   BILLETS, saveBilletParameters, listBilletParameters,
