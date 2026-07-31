@@ -163,6 +163,19 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, pendingAppr
   // fallback would immediately reopen it.
   const openId = selectedId ?? focusQdId ?? null;
   const selected = data.qds.find(q => q.id === openId) || null;
+
+  // The approval queue is polled independently of this register, so a
+  // notification can name a QD submitted since the page last loaded. Without
+  // this refetch the drawer finds nothing in data.qds and the click silently
+  // does nothing. Deferred a tick because load() reaches setState, which this
+  // repo's lint refuses directly in an effect body; `missing` stays true until
+  // the fetch lands, so the effect runs once rather than looping.
+  const missingFromRegister = openId != null && !selected;
+  useEffect(() => {
+    if (!missingFromRegister) return undefined;
+    const kick = setTimeout(load, 0);
+    return () => clearTimeout(kick);
+  }, [missingFromRegister, load]);
   const hasFilters = !!(search || plant !== 'All' || supplier !== 'All' || status !== 'All' || year !== 'All');
   const k = data.kpis;
 
