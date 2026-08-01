@@ -31,10 +31,10 @@ function FocBucket({ title, icon, rows, headers, emptyText, render, onOpen, s })
             ))}
           </div>
           {rows.map((r) => (
-            <div key={r.id} className="qd-foc-row" onClick={() => onOpen && onOpen(r.id)}
+            <button type="button" key={r.id} className="qd-foc-row row-open press-soft" onClick={() => onOpen && onOpen(r.id)}
               style={{ display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${s.border}`, cursor: onOpen ? 'pointer' : 'default' }}>
               {render(r)}
-            </div>
+            </button>
           ))}
         </>
       )}

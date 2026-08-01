@@ -200,6 +200,7 @@ const PDFViewer = ({ file, onClose, onSave, initialNotes = '', initialSignature 
                             <>
                                 <h4 style={{ color: 'white', marginTop: 0 }}>Comments & Notes</h4>
                                 <textarea
+                                    aria-label="Comments and notes"
                                     value={notes}
                                     onChange={(e) => setNotes(e.target.value)}
                                     placeholder="Add your comments here..."

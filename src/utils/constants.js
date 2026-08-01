@@ -1,17 +1,55 @@
 import { ShoppingCart, Pencil, Cpu, CheckSquare, FileText, Database, Send, Factory, Eye, Clock, AlertTriangle, Package, TrendingUp, Truck, XCircle, Layers } from 'lucide-react';
 
-// Status configuration with colors, icons, and labels
+// Status configuration with colors, icons, and labels.
+//
+// This is the ONLY copy. DieOrderingSystem used to carry a second one that had
+// drifted — it knew 'DIE RECEIVED' while this one did not, so orders in that
+// status rendered as a cyan pill in the detail modal and as raw grey
+// "DIE RECEIVED" text in the register. Anything needing a status colour imports
+// from here.
+//
+// Each status carries two pairs. `color`/`bgColor` are the light-theme pill:
+// dark ink on a pale tint. `darkColor`/`darkBgColor` are the dark-theme pill:
+// a light tint of the same hue over an alpha wash, so the pill sits *in* the
+// dark surface instead of punching a near-white chip through it — the old
+// single pair was theme-independent, and a register of 50 rows was 50 glare
+// points in the dark theme the app defaults to.
+//
+// Every pair is measured at >= 4.5:1 against its own background (and the dark
+// pairs against both `cardBg` #131316 and page `bg` #09090b, since pills appear
+// on each). The pill text is 12px/600, which is not WCAG "large", so 4.5 is the
+// bar — the previous values ran 2.07-4.41 and failed it in eight of eleven
+// cases. All eleven foregrounds are distinct, so no two statuses collide.
 export const STATUS_CONFIG = {
-  'AWAITING FOR DESIGN': { color: '#DC2626', bgColor: '#FEF2F2', icon: Clock, label: 'Awaiting Design' },
-  'PENDING FOR DESIGN APPROVAL': { color: '#EA580C', bgColor: '#FFF7ED', icon: AlertTriangle, label: 'Design Approval' },
-  'UNDER SIMULATION': { color: '#7C3AED', bgColor: '#F5F3FF', icon: Layers, label: 'Simulation' },
-  'PENDING FOR DESIGN TO EMS': { color: '#2563EB', bgColor: '#EFF6FF', icon: Package, label: 'Design to EMS' },
-  'PENDING FOR PR': { color: '#D97706', bgColor: '#FFFBEB', icon: TrendingUp, label: 'Pending PR' },
-  'PENDING FOR ORACLE ENTRY': { color: '#C2410C', bgColor: '#FFF7ED', icon: Factory, label: 'Oracle Entry' },
-  'PENDING FOR ORDERING': { color: '#0D9488', bgColor: '#F0FDFA', icon: Truck, label: 'Pending Order' },
-  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', icon: CheckSquare, label: 'In Manufacturing' },
-  'CANCELLED': { color: '#6B7280', bgColor: '#F3F4F6', icon: XCircle, label: 'Cancelled' },
-  'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', icon: AlertTriangle, label: 'On Hold' },
+  'AWAITING FOR DESIGN': { color: '#B91C1C', bgColor: '#FEF2F2', darkColor: '#F87171', darkBgColor: 'rgba(239,68,68,0.18)', icon: Clock, label: 'Awaiting Design' },
+  'PENDING FOR DESIGN APPROVAL': { color: '#C2410C', bgColor: '#FFF7ED', darkColor: '#FB923C', darkBgColor: 'rgba(249,115,22,0.18)', icon: AlertTriangle, label: 'Design Approval' },
+  'UNDER SIMULATION': { color: '#7C3AED', bgColor: '#F5F3FF', darkColor: '#A78BFA', darkBgColor: 'rgba(139,92,246,0.18)', icon: Layers, label: 'Simulation' },
+  'PENDING FOR DESIGN TO EMS': { color: '#2563EB', bgColor: '#EFF6FF', darkColor: '#60A5FA', darkBgColor: 'rgba(59,130,246,0.18)', icon: Package, label: 'Design to EMS' },
+  'PENDING FOR PR': { color: '#B45309', bgColor: '#FFFBEB', darkColor: '#F59E0B', darkBgColor: 'rgba(245,158,11,0.18)', icon: TrendingUp, label: 'Pending PR' },
+  // Deliberately a burnt orange one step off Design Approval's, in both themes:
+  // the two sit next to each other in the flow and must not read as one status.
+  'PENDING FOR ORACLE ENTRY': { color: '#9A3412', bgColor: '#FFF7ED', darkColor: '#F97316', darkBgColor: 'rgba(194,65,12,0.20)', icon: Factory, label: 'Oracle Entry' },
+  'PENDING FOR ORDERING': { color: '#0F766E', bgColor: '#F0FDFA', darkColor: '#14B8A6', darkBgColor: 'rgba(20,184,166,0.18)', icon: Truck, label: 'Pending Order' },
+  'DONE': { color: '#15803D', bgColor: '#F0FDF4', darkColor: '#22C55E', darkBgColor: 'rgba(34,197,94,0.18)', icon: CheckSquare, label: 'In Manufacturing' },
+  // Set by hasDieReceivedDate() when a spreadsheet import marks STATUS=DONE but
+  // a Die Received Date is present — those completes belong in Sample Followup,
+  // not the In Manufacturing flow.
+  'DIE RECEIVED': { color: '#0E7490', bgColor: '#ECFEFF', darkColor: '#06B6D4', darkBgColor: 'rgba(6,182,212,0.18)', icon: Package, label: 'Die Received' },
+  'CANCELLED': { color: '#4B5563', bgColor: '#F3F4F6', darkColor: '#9CA3AF', darkBgColor: 'rgba(156,163,175,0.16)', icon: XCircle, label: 'Cancelled' },
+  'HOLD': { color: '#374151', bgColor: '#F9FAFB', darkColor: '#D1D5DB', darkBgColor: 'rgba(156,163,175,0.10)', icon: AlertTriangle, label: 'On Hold' },
+};
+
+// Unknown statuses land here rather than on an ad-hoc literal at each call site.
+export const STATUS_FALLBACK = { color: '#4B5563', bgColor: '#F3F4F6', darkColor: '#9CA3AF', darkBgColor: 'rgba(156,163,175,0.16)' };
+
+/** Resolve a status to the pill colours for the active theme. */
+export const statusColors = (status, isDark, config = STATUS_CONFIG) => {
+  const c = config[status] || STATUS_FALLBACK;
+  return {
+    fg: (isDark ? c.darkColor : c.color) || STATUS_FALLBACK.color,
+    bg: (isDark ? c.darkBgColor : c.bgColor) || STATUS_FALLBACK.bgColor,
+    label: c.label || status,
+  };
 };
 
 export const CHART_COLORS = [
@@ -35,18 +73,14 @@ export const PIPELINE_STATUSES = [
   'PENDING FOR ORDERING'
 ];
 
-export const VALID_STATUSES = [
-  'AWAITING FOR DESIGN',
-  'PENDING FOR DESIGN APPROVAL',
-  'UNDER SIMULATION',
-  'PENDING FOR DESIGN TO EMS',
-  'PENDING FOR PR',
-  'PENDING FOR ORACLE ENTRY',
-  'PENDING FOR ORDERING',
-  'DONE',
-  'CANCELLED',
-  'HOLD'
-];
+// Derived from STATUS_CONFIG so the two cannot drift again. This now includes
+// 'DIE RECEIVED', which is a real persisted status — FlowPage's die-receivance
+// action and hasDieReceivedDate both write it — but was missing from the list
+// while the other STATUS_CONFIG copy knew about it. The server keeps its own
+// whitelist in routes/orders.cjs for the revision and received-field endpoints;
+// the PATCH route that writes 'DIE RECEIVED' only sanitises, so the two lists
+// differing there is intentional rather than a gap.
+export const VALID_STATUSES = Object.keys(STATUS_CONFIG);
 
 export const VALID_TYPES = ['N', 'B', 'T', 'C', 'H'];
 
@@ -71,12 +105,14 @@ export const PROCESS_FLOW_TABS = [
   { id: 'flow-sample-followup', status: null, label: 'Sample Followup', icon: Eye },
 ];
 
-// Backup request status configuration
+// Backup request status configuration. Same two-pair scheme and same measured
+// floor as STATUS_CONFIG above — 'Pending' was the worst pill in the app at
+// 2.07:1 (amber #F59E0B on a near-white #FFFBEB), well under half the AA bar.
 export const BACKUP_REQUEST_STATUS_CONFIG = {
-  'Pending': { color: '#F59E0B', bgColor: '#FFFBEB', label: 'Pending' },
-  'Completed': { color: '#16A34A', bgColor: '#F0FDF4', label: 'Completed' },
-  'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', label: 'HOLD' },
-  'Not required': { color: '#6B7280', bgColor: '#F3F4F6', label: 'Not required' },
+  'Pending': { color: '#B45309', bgColor: '#FFFBEB', darkColor: '#F59E0B', darkBgColor: 'rgba(245,158,11,0.18)', label: 'Pending' },
+  'Completed': { color: '#15803D', bgColor: '#F0FDF4', darkColor: '#22C55E', darkBgColor: 'rgba(34,197,94,0.18)', label: 'Completed' },
+  'HOLD': { color: '#374151', bgColor: '#F9FAFB', darkColor: '#D1D5DB', darkBgColor: 'rgba(156,163,175,0.10)', label: 'HOLD' },
+  'Not required': { color: '#4B5563', bgColor: '#F3F4F6', darkColor: '#9CA3AF', darkBgColor: 'rgba(156,163,175,0.16)', label: 'Not required' },
 };
 
 // Workflow steps configuration: defines which date to set and which status to move to
@@ -142,6 +178,25 @@ export const CONTROLLABLE_PAGES = [
   { id: 'email-inbox', label: 'Email Inbox' },
   { id: 'analytics', label: 'Analytics' },
 ];
+
+export const APP_NAME = 'Die Ordering System';
+
+// Browser-tab titles. Built from CONTROLLABLE_PAGES so the navigable pages
+// cannot fall out of step, plus the admin-only pages that are not access
+// controlled and so never appear in that list.
+export const PAGE_TITLES = {
+  ...Object.fromEntries(CONTROLLABLE_PAGES.map(p => [p.id, p.label])),
+  'settings': 'Settings',
+  'email-settings': 'Email Settings',
+  'users': 'Users',
+  'existing-data': 'Existing Data',
+};
+
+/** "Orders · Die Ordering System" — page first, so it survives tab truncation. */
+export const pageTitle = (tabId) => {
+  const label = PAGE_TITLES[tabId];
+  return label ? `${label} · ${APP_NAME}` : APP_NAME;
+};
 
 // Preset reasons for bypassing a frozen design and following the normal flow.
 export const BYPASS_REASONS = ['Profile revised', 'Customer change', 'Quality issue', 'Other'];

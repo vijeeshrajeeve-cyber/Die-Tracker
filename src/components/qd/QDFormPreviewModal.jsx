@@ -72,7 +72,7 @@ export default function QDFormPreviewModal({
 
   return (
     <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
         aria-label={`QD form preview ${qd.qd_no || 'draft'}`}
         onClick={(e) => e.stopPropagation()}

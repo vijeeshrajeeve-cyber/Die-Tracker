@@ -9,7 +9,7 @@ export default function MissingCustomerPromptModal({ prompt, setPrompt, theme })
   if (!prompt) return null;
 
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Customer names required" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Customer names required" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
       <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', width: '560px', maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', border: `1px solid ${theme.cardBorder}` }}>
         <div style={{ marginBottom: '1rem' }}>
           <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: theme.text, margin: 0 }}>Customer Names Required</h3>
@@ -21,9 +21,9 @@ export default function MissingCustomerPromptModal({ prompt, setPrompt, theme })
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
             <thead>
               <tr>
-                <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Profile</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>From Die</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Customer Name</th>
+                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Profile</th>
+                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>From Die</th>
+                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', background: theme.tableBg, position: 'sticky', top: 0 }}>Customer Name</th>
               </tr>
             </thead>
             <tbody>

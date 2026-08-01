@@ -102,7 +102,9 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
     };
 
     return (
-        <div style={{
+        // A landmark, not a plain div: without it a keyboard user tabbed through
+        // every nav item on every page load with no way to jump past them.
+        <nav aria-label="Main" style={{
             width: sidebarWidth,
             background: theme.sidebarBg,
             borderRight: `1px solid ${theme.cardBorder}`,
@@ -195,7 +197,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
                     </span>
                 </button>
             </div>
-        </div>
+        </nav>
     );
 };
 

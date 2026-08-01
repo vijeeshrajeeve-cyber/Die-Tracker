@@ -224,7 +224,7 @@ export default function FlowPage({
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '280px' }}>
             <Search size={18} color={theme.textMuted} />
-            <input type="text" placeholder="Search orders..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }} />
+            <input aria-label="Search orders in this stage" type="text" placeholder="Search orders..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }} />
           </div>
         </div>
       </div>
@@ -236,25 +236,25 @@ export default function FlowPage({
               <thead>
                 <tr>
                   {columns.map(col => (
-                    <th key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
+                    <th scope="col" key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         {col.label}
                         {sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color={config.color} /> : <ChevronDown size={14} color={config.color} />) : <ChevronDown size={14} color="#64748B" style={{ opacity: 0.3 }} />}
                       </div>
                     </th>
                   ))}
-                  <th style={{ ...styles.th, textAlign: 'center' }}>Days</th>
-                  <th style={{ ...styles.th, textAlign: 'center' }}>View</th>
-                  {!isOracleEntry && <th style={{ ...styles.th, textAlign: 'center' }}>Rev</th>}
+                  <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Days</th>
+                  <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>View</th>
+                  {!isOracleEntry && <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Rev</th>}
                   {isPR && (
                     <>
-                      <th style={{ ...styles.th, textAlign: 'center' }}>Copy ERP</th>
-                      <th style={{ ...styles.th, textAlign: 'center' }}>PR Number</th>
-                      <th style={{ ...styles.th, textAlign: 'center' }}>Change Log</th>
+                      <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Copy ERP</th>
+                      <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>PR Number</th>
+                      <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Change Log</th>
                     </>
                   )}
-                  {workflow && workflow.nextStatus && <th style={{ ...styles.th, textAlign: 'center' }}>Complete</th>}
-                  {isDone && <th style={{ ...styles.th, textAlign: 'center' }}>Confirm Receivance</th>}
+                  {workflow && workflow.nextStatus && <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Complete</th>}
+                  {isDone && <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Confirm Receivance</th>}
                 </tr>
               </thead>
               <tbody>
@@ -263,7 +263,15 @@ export default function FlowPage({
                     <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
                         <DieAttentionLabels order={order} dense />
-                        <span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
+                        <button
+                          type="button"
+                          className="row-open"
+                          onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
+                          style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}
+                        >
+                          {order['DIE NO']}
+                          <span className="sr-only"> — open details</span>
+                        </button>
                         {frozenMap[order.id] && (
                           <span
                             title={`Frozen design available — ${frozenMap[order.id].files_count} file(s). Release together with the die order to skip the design stages.`}
@@ -433,12 +441,12 @@ export default function FlowPage({
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Die Received Date *</label>
-                <input type="date" value={dieReceivanceForm.die_received_date} onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, die_received_date: e.target.value })} style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }} htmlFor="flowpage-die-received-date">Die Received Date *</label>
+                <input id="flowpage-die-received-date" type="date" value={dieReceivanceForm.die_received_date} onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, die_received_date: e.target.value })} style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assign Corrector *</label>
-                <input type="text" value={dieReceivanceForm.corrector} onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, corrector: e.target.value })} placeholder="Enter corrector name" style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }} htmlFor="flowpage-assign-corrector">Assign Corrector *</label>
+                <input id="flowpage-assign-corrector" type="text" value={dieReceivanceForm.corrector} onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, corrector: e.target.value })} placeholder="Enter corrector name" style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>

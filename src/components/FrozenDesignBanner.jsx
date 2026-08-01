@@ -73,11 +73,11 @@ export default function FrozenDesignBanner({ profile, plant, press, cavity, onRe
       )}
       {!infoOnly && mode === 'bypass' && (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: '0.8rem', color: '#78350F' }}>Reason (required)</label>
-          <select value={reason} onChange={e => setReason(e.target.value)}>
+          <label style={{ fontSize: '0.8rem', color: '#78350F' }} htmlFor="frozendesignbanner-reason-required">Reason (required)</label>
+          <select id="frozendesignbanner-reason-required" value={reason} onChange={e => setReason(e.target.value)}>
             {BYPASS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
-          <textarea placeholder={noteRequired ? 'Note required for "Other"' : 'Optional note'}
+          <textarea aria-label="Note explaining the bypass" placeholder={noteRequired ? 'Note required for "Other"' : 'Optional note'}
             value={note} onChange={e => setNote(e.target.value)} rows={2} />
           <button type="button" disabled={!canBypass}
             onClick={() => onBypass && onBypass({ reason, note: note.trim(), match })}

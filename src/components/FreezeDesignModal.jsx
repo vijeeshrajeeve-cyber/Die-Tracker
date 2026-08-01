@@ -74,28 +74,28 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label style={labelStyle}>Profile *</label>
-              <input style={inputStyle} value={profile} onChange={(e) => setProfile(e.target.value)} placeholder="e.g. 29663" />
+              <label style={labelStyle} htmlFor="freezedesignmodal-profile">Profile *</label>
+              <input id="freezedesignmodal-profile" style={inputStyle} value={profile} onChange={(e) => setProfile(e.target.value)} placeholder="e.g. 29663" />
             </div>
             <div>
-              <label style={labelStyle}>Plant *</label>
-              <input style={inputStyle} value={plant} onChange={(e) => setPlant(e.target.value)} placeholder="e.g. GEX 1" />
+              <label style={labelStyle} htmlFor="freezedesignmodal-plant">Plant *</label>
+              <input id="freezedesignmodal-plant" style={inputStyle} value={plant} onChange={(e) => setPlant(e.target.value)} placeholder="e.g. GEX 1" />
             </div>
             <div>
-              <label style={labelStyle}>Press *</label>
-              <input style={inputStyle} value={press} onChange={(e) => setPress(e.target.value)} placeholder="e.g. PRESS 4 / P5" />
+              <label style={labelStyle} htmlFor="freezedesignmodal-press">Press *</label>
+              <input id="freezedesignmodal-press" style={inputStyle} value={press} onChange={(e) => setPress(e.target.value)} placeholder="e.g. PRESS 4 / P5" />
             </div>
             <div>
-              <label style={labelStyle}>Cavity *</label>
-              <input style={inputStyle} type="number" min="1" value={cavity} onChange={(e) => setCavity(e.target.value)} placeholder="e.g. 2" />
+              <label style={labelStyle} htmlFor="freezedesignmodal-cavity">Cavity *</label>
+              <input id="freezedesignmodal-cavity" style={inputStyle} type="number" min="1" value={cavity} onChange={(e) => setCavity(e.target.value)} placeholder="e.g. 2" />
             </div>
             <div>
-              <label style={labelStyle}>Supplier</label>
-              <input style={inputStyle} value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. PDTMC" />
+              <label style={labelStyle} htmlFor="freezedesignmodal-supplier">Supplier</label>
+              <input id="freezedesignmodal-supplier" style={inputStyle} value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. PDTMC" />
             </div>
             <div>
-              <label style={labelStyle}>Die Size</label>
-              <input style={inputStyle} value={dieSize} onChange={(e) => setDieSize(e.target.value)} placeholder="e.g. DIA 250 X 60" />
+              <label style={labelStyle} htmlFor="freezedesignmodal-die-size">Die Size</label>
+              <input id="freezedesignmodal-die-size" style={inputStyle} value={dieSize} onChange={(e) => setDieSize(e.target.value)} placeholder="e.g. DIA 250 X 60" />
             </div>
           </div>
           <div style={{ fontSize: '0.72rem', color: muted, marginTop: '-6px' }}>
@@ -103,13 +103,13 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
           </div>
 
           <div>
-            <label style={labelStyle}>Notes</label>
-            <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '54px', fontFamily: 'inherit' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes about this final design" />
+            <label style={labelStyle} htmlFor="freezedesignmodal-notes">Notes</label>
+            <textarea id="freezedesignmodal-notes" style={{ ...inputStyle, resize: 'vertical', minHeight: '54px', fontFamily: 'inherit' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes about this final design" />
           </div>
 
           <div>
-            <label style={labelStyle}>Final Design Files</label>
-            <input type="file" multiple onChange={(e) => setFiles(e.target.files)} style={{ color: text, fontSize: '0.82rem' }} />
+            <label style={labelStyle} htmlFor="freezedesignmodal-final-design-files">Final Design Files</label>
+            <input id="freezedesignmodal-final-design-files" type="file" multiple onChange={(e) => setFiles(e.target.files)} style={{ color: text, fontSize: '0.82rem' }} />
             <div style={{ fontSize: '0.72rem', color: muted, marginTop: '4px' }}>PDF, images, DWG, DXF, STEP/STP — up to 100 MB each.</div>
           </div>
 

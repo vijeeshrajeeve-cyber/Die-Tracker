@@ -180,7 +180,7 @@ export default function SettingsPage({
               </div>
 
               {/* Plants & Suppliers tab */}
-              <div style={{ display: activeTab === 'general' ? 'grid' : 'none', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+              <div style={{ display: activeTab === 'general' ? 'grid' : 'none', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
                 {/* Plants Section */}
                 <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -191,8 +191,8 @@ export default function SettingsPage({
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Name</th>
-                          <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Name</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -220,12 +220,12 @@ export default function SettingsPage({
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Name</th>
-                          <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }} title="Two letters used to build QD numbers, e.g. 2026PD-01">QD Code</th>
-                          <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Region</th>
-                          <th style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Shipment</th>
-                          <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Contact Email</th>
-                          <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Actions</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Name</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }} title="Two letters used to build QD numbers, e.g. 2026PD-01">QD Code</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Region</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Shipment</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Contact Email</th>
+                          <th scope="col" style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -313,10 +313,10 @@ export default function SettingsPage({
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
-                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Template</th>
-                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Default To</th>
-                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Default CC</th>
-                        <th style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
+                        <th scope="col" style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Template</th>
+                        <th scope="col" style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Default To</th>
+                        <th scope="col" style={{ padding: '12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Default CC</th>
+                        <th scope="col" style={{ padding: '12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -550,9 +550,9 @@ export default function SettingsPage({
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                           <thead>
                             <tr>
-                              <th style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, background: theme.tableBg, borderRadius: '8px 0 0 0', minWidth: '110px', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase' }}>Type</th>
+                              <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, background: theme.tableBg, borderRadius: '8px 0 0 0', minWidth: '110px', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase' }}>Type</th>
                               {months.map(m => (
-                                <th key={m} style={{ padding: '10px 6px', textAlign: 'center', color: theme.textDim, background: theme.tableBg, fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', minWidth: '54px' }}>{m}</th>
+                                <th scope="col" key={m} style={{ padding: '10px 6px', textAlign: 'center', color: theme.textDim, background: theme.tableBg, fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', minWidth: '54px' }}>{m}</th>
                               ))}
                             </tr>
                           </thead>
@@ -699,10 +699,10 @@ export default function SettingsPage({
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Name</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Created</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Last Used</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
+                            <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Name</th>
+                            <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Created</th>
+                            <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Last Used</th>
+                            <th scope="col" style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -782,7 +782,7 @@ export default function SettingsPage({
                     <thead>
                       <tr>
                         {['Date', 'Time', 'Die No', 'Order No', 'Changed By', 'Field', 'Change', 'Reason'].map(h => (
-                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0, whiteSpace: 'nowrap' }}>{h}</th>
+                          <th scope="col" key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0, whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -841,7 +841,7 @@ export default function SettingsPage({
                       disabled={backupRunning}
                       style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: backupRunning ? theme.inputBg : BRAND.navy, color: backupRunning ? theme.textDim : 'white', border: 'none', borderRadius: '8px', cursor: backupRunning ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
                     >
-                      <RefreshCw size={14} style={{ animation: backupRunning ? 'spin 1s linear infinite' : 'none' }} />
+                      <RefreshCw size={14} data-spinner={backupRunning ? '' : undefined} style={{ animation: backupRunning ? 'spin 1s linear infinite' : 'none' }} />
                       {backupRunning ? 'Running…' : 'Backup Now'}
                     </button>
                   </div>
@@ -858,7 +858,7 @@ export default function SettingsPage({
                         <thead>
                           <tr>
                             {['File', 'Date & Time', 'Size', ''].map(h => (
-                              <th key={h} style={{ padding: '10px 14px', textAlign: h === '' ? 'right' : 'left', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, whiteSpace: 'nowrap' }}>{h}</th>
+                              <th scope="col" key={h} style={{ padding: '10px 14px', textAlign: h === '' ? 'right' : 'left', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -913,9 +913,9 @@ export default function SettingsPage({
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead>
                                 <tr>
-                                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>User</th>
-                                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Role</th>
-                                  <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Approver</th>
+                                  <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>User</th>
+                                  <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Role</th>
+                                  <th scope="col" style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, background: theme.tableBg, position: 'sticky', top: 0 }}>Approver</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -927,7 +927,7 @@ export default function SettingsPage({
                                       {u.role === 'admin' ? (
                                         <span title="Admins can always approve" style={{ fontSize: '0.7rem', color: theme.textDim }}>Always</span>
                                       ) : (
-                                        <input type="checkbox" checked={qdApproverIds.includes(u.id)} onChange={() => toggleQdApprover(u.id)}
+                                        <input type="checkbox" aria-label={`Allow ${u.username} to approve QDs`} checked={qdApproverIds.includes(u.id)} onChange={() => toggleQdApprover(u.id)}
                                           style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
                                       )}
                                     </td>
@@ -947,14 +947,14 @@ export default function SettingsPage({
                           <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted, marginBottom: '0.75rem' }}>Purchase Notification Email</h4>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
                             <div>
-                              <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }}>To</label>
-                              <input type="text" value={qdPurchaseTo} onChange={(e) => setQdPurchaseTo(e.target.value)}
+                              <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }} htmlFor="settingspage-to">To</label>
+                              <input id="settingspage-to" type="text" value={qdPurchaseTo} onChange={(e) => setQdPurchaseTo(e.target.value)}
                                 placeholder="purchase.team@company.com"
                                 style={{ width: '100%', padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }} />
                             </div>
                             <div>
-                              <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }}>CC</label>
-                              <input type="text" value={qdPurchaseCc} onChange={(e) => setQdPurchaseCc(e.target.value)}
+                              <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }} htmlFor="settingspage-cc">CC</label>
+                              <input id="settingspage-cc" type="text" value={qdPurchaseCc} onChange={(e) => setQdPurchaseCc(e.target.value)}
                                 placeholder="optional cc recipients, comma-separated"
                                 style={{ width: '100%', padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }} />
                             </div>
@@ -972,8 +972,8 @@ export default function SettingsPage({
                               { label: 'Alloy', value: qdAlloyOptions, set: setQdAlloyOptions, ph: 'e.g. 6060, 6063, 6061, 6082' },
                             ].map((f) => (
                               <div key={f.label}>
-                                <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }}>{f.label}</label>
-                                <input type="text" value={f.value} onChange={(e) => f.set(e.target.value)} placeholder={f.ph}
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textMuted, marginBottom: '0.4rem' }} htmlFor="settingspage-f-label">{f.label}</label>
+                                <input id="settingspage-f-label" type="text" value={f.value} onChange={(e) => f.set(e.target.value)} placeholder={f.ph}
                                   style={{ width: '100%', padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, fontSize: '0.85rem', boxSizing: 'border-box' }} />
                               </div>
                             ))}
@@ -1001,8 +1001,8 @@ export default function SettingsPage({
                   <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '400px', border: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New Plant</h3>
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Plant Name</label>
-                      <input type="text" value={newPlantName} onChange={(e) => setNewPlantName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter plant name (e.g., EXT 3)" />
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-plant-name">Plant Name</label>
+                      <input id="settingspage-plant-name" type="text" value={newPlantName} onChange={(e) => setNewPlantName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter plant name (e.g., EXT 3)" />
                     </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                       <button onClick={() => { setShowAddPlant(false); setNewPlantName(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>
@@ -1018,12 +1018,12 @@ export default function SettingsPage({
                   <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '400px', border: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New Supplier</h3>
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Supplier Name</label>
-                      <input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter supplier name" />
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-supplier-name">Supplier Name</label>
+                      <input id="settingspage-supplier-name" type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter supplier name" />
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Region</label>
-                      <select value={newSupplierRegion} onChange={(e) => setNewSupplierRegion(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-region">Region</label>
+                      <select id="settingspage-region" value={newSupplierRegion} onChange={(e) => setNewSupplierRegion(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
                         <option value="">— Select Region —</option>
                         <option value="Europe">Europe</option>
                         <option value="Turkiye">Turkiye</option>
@@ -1034,15 +1034,15 @@ export default function SettingsPage({
                       </select>
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Mode of Shipment</label>
-                      <select value={newSupplierShipment} onChange={(e) => setNewSupplierShipment(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-mode-of-shipment">Mode of Shipment</label>
+                      <select id="settingspage-mode-of-shipment" value={newSupplierShipment} onChange={(e) => setNewSupplierShipment(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>
                         <option value="LAND">LAND</option>
                         <option value="AIR">AIR</option>
                       </select>
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }}>Contact Email</label>
-                      <input type="text" value={newSupplierEmail} onChange={(e) => setNewSupplierEmail(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="email@example.com (used for Design reminders)" />
+                      <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-contact-email">Contact Email</label>
+                      <input id="settingspage-contact-email" type="text" value={newSupplierEmail} onChange={(e) => setNewSupplierEmail(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="email@example.com (used for Design reminders)" />
                     </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                       <button onClick={() => { setShowAddSupplier(false); setNewSupplierName(''); setNewSupplierShipment('LAND'); setNewSupplierRegion(''); setNewSupplierEmail(''); }} style={{ padding: '10px 20px', background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text, cursor: 'pointer' }}>Cancel</button>

@@ -185,10 +185,10 @@ function RevisionModal({
                             fontWeight: 600,
                             color: theme?.textMuted || '#94A3B8',
                             marginBottom: '8px'
-                        }}>
+                        }} htmlFor="revisionmodal-revision-notes">
                             Revision Notes <span style={{ color: '#EF4444' }}>*</span>
                         </label>
-                        <textarea
+                        <textarea id="revisionmodal-revision-notes"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             placeholder="Describe what needs to be revised..."

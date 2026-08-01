@@ -124,7 +124,42 @@
       "PowerShell(npx -y @agent-native/core@latest skills add visual-plan 2>&1 | Select-Object -First 80)",
       "PowerShell($out = npx -y @agent-native/core@latest skills add visual-plan --client claude-code 2>&1 | Where-Object { $_ -notmatch '^npm warn' }; $out | Select-Object -Last 50)",
       "PowerShell(npm cache *)",
-      "PowerShell($p = \"C:\\\\Users\\\\vijee\\\\AppData\\\\Local\\\\npm-cache\\\\_npx\"; foreach \\($d in @\\('70c9d65422c7baee','218f5d799962bf90'\\)\\) { $full = Join-Path $p $d; if \\(Test-Path $full\\) { Remove-Item $full -Recurse -Force -Confirm:$false; \"removed $d\" } })"
+      "PowerShell($p = \"C:\\\\Users\\\\vijee\\\\AppData\\\\Local\\\\npm-cache\\\\_npx\"; foreach \\($d in @\\('70c9d65422c7baee','218f5d799962bf90'\\)\\) { $full = Join-Path $p $d; if \\(Test-Path $full\\) { Remove-Item $full -Recurse -Force -Confirm:$false; \"removed $d\" } })",
+      "Bash(sort -t: -k2 -rn)",
+      "Bash(grep -n \"background: '#\\\\|background: \\\\`#\\\\|backgroundColor: '#\" src/components/modals/AddUserModal.jsx)",
+      "Bash(grep -rno \"fontSize: [0-9]\\\\{1,2\\\\}\\\\b\" src --include=\"*.jsx\")",
+      "Bash(awk -F': ' '{print $2}')",
+      "Bash(grep -rno \"animation: '[a-zA-Z]*\\\\|animation: \\\\`[a-zA-Z]*\\\\|animation: [a-zA-Z]*\" src --include=\"*.jsx\" --include=\"*.css\")",
+      "Bash(sed \"s/.*animation: ['\\\\`]*//\")",
+      "Bash(python -)"
     ]
-  }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"C:\\\\Users\\\\vijee\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" ] || node \"C:\\\\Users\\\\vijee\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"C:\\\\Users\\\\vijee\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" ] || node \"C:\\\\Users\\\\vijee\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop."
 }

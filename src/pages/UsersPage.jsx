@@ -38,13 +38,13 @@ export default function UsersPage({
                 <table className="dt-table" style={tableStyle}>
                   <thead>
                     <tr>
-                      <th style={th} className="dt-num">ID</th>
-                      <th style={th}>Username</th>
-                      <th style={th}>Email</th>
-                      <th style={th}>Role</th>
-                      <th style={th}>Page Access</th>
-                      <th style={th}>Created At</th>
-                      <th style={th}>Actions</th>
+                      <th scope="col" style={th} className="dt-num">ID</th>
+                      <th scope="col" style={th}>Username</th>
+                      <th scope="col" style={th}>Email</th>
+                      <th scope="col" style={th}>Role</th>
+                      <th scope="col" style={th}>Page Access</th>
+                      <th scope="col" style={th}>Created At</th>
+                      <th scope="col" style={th}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -150,6 +150,7 @@ export default function UsersPage({
               {resettingUser && (
                 <ResetPasswordModal
                   user={resettingUser}
+                  theme={theme}
                   onClose={() => setResettingUser(null)}
                   onSubmit={async (password) => {
                     await usersAPI.resetPassword(resettingUser.id, password);

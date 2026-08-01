@@ -65,7 +65,7 @@ const SignatureModal = ({ theme, onClose }) => {
   return (
     <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)',
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem',
       }}
       onClick={onClose}
@@ -107,7 +107,7 @@ const SignatureModal = ({ theme, onClose }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                 <label style={{ padding: '9px 18px', background: busy ? theme.cardBorder : BRAND.navy, color: 'white', borderRadius: '8px', cursor: busy ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                   <Upload size={16} /> {dataUrl ? 'Replace' : 'Upload signature'}
-                  <input type="file" accept="image/png,image/jpeg" disabled={busy} onChange={handleFile} style={{ display: 'none' }} />
+                  <input aria-label="Choose a signature image" type="file" accept="image/png,image/jpeg" disabled={busy} onChange={handleFile} style={{ display: 'none' }} />
                 </label>
                 {dataUrl && (
                   <button disabled={busy} onClick={remove}

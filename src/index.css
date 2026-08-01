@@ -50,11 +50,86 @@ body {
   box-shadow: none;
 }
 
+/* ============================================================
+   Skip link
+
+   Visually hidden until it takes focus, so it costs nothing on
+   screen but gives keyboard users a way past the nav rail. It is
+   the first focusable element in the app (see DieOrderingSystem).
+   `top` is animated rather than `display` toggled, because a
+   display:none element cannot receive focus at all.
+   ============================================================ */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 12px;
+  z-index: 2000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--focus-ring, #18181b);
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: top 140ms ease;
+}
+
+.skip-link:focus-visible {
+  top: 12px;
+}
+
+/* `main` takes focus programmatically when the skip link is used; it is not an
+   interactive control, so it should not paint a ring for that. */
+#main-content:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* Body scroll lock while a dialog owns the screen (see useDialog). */
 body[data-dialog-open='true'] {
   overflow: hidden;
 }
 
+/* ============================================================
+   Nested dialog scrims
+
+   Every modal overlay paints a full-viewport `backdrop-filter`,
+   and the QD chain genuinely stacks three of them — drawer, then
+   status modal, then trial modal. Each one rasterises the whole
+   viewport, and the lower two are completely covered by the one
+   above, so their blur is pure cost with nothing visible to show
+   for it.
+
+   `useDialog` already counts open dialogs on the body, so once a
+   second one opens the blur is dropped and the scrims fall back
+   to their own (already opaque) background colour. The topmost
+   dialog loses its blur too; at that depth the page behind is
+   two scrims down and no longer legible as anything but a tint.
+
+   Matching on the inline style is what buttons.css does for the
+   same reason: these overlays set `backdrop-filter` inline at 18
+   call sites and no stylesheet rule can reach them otherwise.
+   ============================================================ */
+body[data-dialog-depth='2'] [style*='backdrop-filter'],
+body[data-dialog-depth='3'] [style*='backdrop-filter'],
+body[data-dialog-depth='4'] [style*='backdrop-filter'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ============================================================
+   Reduced motion
+
+   The blanket rule below used to catch the loading spinners too,
+   which turned each of them into a perfectly static ring — the
+   pref removed the only signal that a PDF import or a database
+   backup was still running. Reduced motion means gentler, not
+   none (styles/buttons.css takes the same line with press
+   feedback), so spinners are exempted and slowed instead: still
+   clearly turning, at a third of the speed and without the
+   fast rotational cue that causes the trouble.
+   ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -63,6 +138,40 @@ body[data-dialog-open='true'] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  [data-spinner] {
+    animation-duration: 3s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* ============================================================
+   Busy indicator
+
+   `spin` was previously declared inline inside three components
+   (both import modals and the main shell) and was therefore only
+   present in the document while one of those happened to be
+   mounted. SettingsPage's backup button used the same animation
+   name with no declaration reachable from it, so its refresh icon
+   sat perfectly still for the whole backup — the one moment the
+   user most needs to know something is happening. Declared once,
+   globally, so every spinner in the app resolves.
+   ============================================================ */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Top-bar identity block: the username and role beside the avatar.
+   Hidden on narrow viewports where the top bar has no room for it —
+   the avatar and chevron still carry the menu affordance. */
+.topbar-identity {
+  display: none;
+}
+
+@media (min-width: 1200px) {
+  .topbar-identity {
+    display: block;
   }
 }
 
@@ -222,6 +331,56 @@ body[data-dialog-open='true'] {
   padding: 7px 12px;
   font-size: 0.8125rem; /* 13px floor in compact mode */
   line-height: 1.35;
+}
+
+/* ============================================================
+   Row-opening control
+
+   Register rows open a detail drawer on click, which left the
+   whole feature unreachable by keyboard: a <tr onClick> is not
+   focusable and answers no key. Rather than put role="button" on
+   the row — which would tell a screen reader this is a button
+   and not a table row, losing the column semantics — the row's
+   identifier becomes a real <button> that looks exactly like the
+   text it replaces. It is the cell a user would aim at anyway.
+
+   The row keeps its own onClick for pointer users.
+   ============================================================ */
+.row-open {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+/* buttons.css paints a currentColor tint on every button; on a bare
+   identifier inside a row that already has its own hover, that reads as a
+   smudge rather than as feedback. The row highlight is the feedback. */
+.row-open::after {
+  content: none;
+}
+
+.row-open:active {
+  transform: none;
+}
+
+/* Available to screen readers, invisible on screen. Used to say what a control
+   does when the visible text alone is only an identifier ("029780-2502"). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---- Alignment & truncation utilities ---- */

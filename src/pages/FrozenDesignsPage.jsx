@@ -149,7 +149,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
         .fd-primary:hover { filter: brightness(1.06); }
       `}</style>
 
-      <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesChosen} />
+      <input aria-label="Choose frozen design files to upload" ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesChosen} />
 
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -170,7 +170,7 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
       </div>
 
       {/* KPI cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 20 }}>
         {kpis.map(k => (
           <div key={k.label} style={card}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -192,11 +192,11 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by profile, supplier, press, or file…"
             style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
         </div>
-        <select value={plant} onChange={(e) => setPlant(e.target.value)} style={selectStyle}>
+        <select aria-label="Filter by plant" value={plant} onChange={(e) => setPlant(e.target.value)} style={selectStyle}>
           <option value="All">All plants</option>
           {plantOptions.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selectStyle, minWidth: 150 }}>
+        <select aria-label="Filter by design status" value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selectStyle, minWidth: 150 }}>
           <option value="All">All statuses</option>
           <option value="Active">Active</option>
           <option value="Released">Released</option>
@@ -209,10 +209,10 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${border}` }}>
-              <th style={th}>Profile</th><th style={th}>Supplier</th><th style={th}>Plant</th><th style={th}>Press</th><th style={th}>Cavity</th>
-              <th style={th}>Status</th><th style={th}>Frozen At</th><th style={th}>Updated By</th><th style={th}>Files</th>
-              <th style={th}>Released</th><th style={th}>Bypassed</th>
-              <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+              <th scope="col" style={th}>Profile</th><th scope="col" style={th}>Supplier</th><th scope="col" style={th}>Plant</th><th scope="col" style={th}>Press</th><th scope="col" style={th}>Cavity</th>
+              <th scope="col" style={th}>Status</th><th scope="col" style={th}>Frozen At</th><th scope="col" style={th}>Updated By</th><th scope="col" style={th}>Files</th>
+              <th scope="col" style={th}>Released</th><th scope="col" style={th}>Bypassed</th>
+              <th scope="col" style={{ ...th, textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>

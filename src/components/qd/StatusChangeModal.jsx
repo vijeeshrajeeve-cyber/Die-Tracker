@@ -72,7 +72,7 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
   };
 
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
       onClick={onClose}>
       <style>{`@keyframes qdStatusIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-status-cta:hover { filter: brightness(1.06); }`}</style>
@@ -97,24 +97,24 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
 
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={label}>Reason <span style={{ color: '#FCA5A5' }}>*</span></label>
-            <textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+            <label style={label} htmlFor="statuschangemodal-reason">Reason <span style={{ color: '#FCA5A5' }}>*</span></label>
+            <textarea id="statuschangemodal-reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
               placeholder="Why is the status changing? e.g. supplier confirmed rework, HOD rejected the claim"
               style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
           </div>
 
           {needsEta && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={label}>ETA from supplier <span style={{ color: '#FCA5A5' }}>*</span></label>
-              <DatePickerField value={etaDate} theme={theme} onChange={setEtaDate} placeholder="Select ETA" />
+              <label style={label} htmlFor="statuschangemodal-eta-from-supplier">ETA from supplier <span style={{ color: '#FCA5A5' }}>*</span></label>
+              <DatePickerField id="statuschangemodal-eta-from-supplier" value={etaDate} theme={theme} onChange={setEtaDate} placeholder="Select ETA" />
               <span style={{ fontSize: '0.72rem', color: dim }}>When the free-of-charge replacement is expected.</span>
             </div>
           )}
 
           {needsReceived && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={label}>Date received <span style={{ color: '#FCA5A5' }}>*</span></label>
-              <DatePickerField value={receivedDate} theme={theme} onChange={setReceivedDate} placeholder="Select date received" />
+              <label style={label} htmlFor="statuschangemodal-date-received">Date received <span style={{ color: '#FCA5A5' }}>*</span></label>
+              <DatePickerField id="statuschangemodal-date-received" value={receivedDate} theme={theme} onChange={setReceivedDate} placeholder="Select date received" />
               <span style={{ fontSize: '0.72rem', color: dim }}>
                 When the replacement physically reached the plant. It is stamped on the open FOC round — record the trial result next.
               </span>
@@ -122,14 +122,14 @@ export default function StatusChangeModal({ qd, nextStatus, theme = {}, onClose,
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={label}>Supporting documents</label>
-            <input ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }}
+            <label style={label} htmlFor="statuschangemodal-supporting-documents">Supporting documents</label>
+            <input id="statuschangemodal-supporting-documents" ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }}
               onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-            <div onClick={() => fileRef.current && fileRef.current.click()}
+            <button type="button" className="row-open press-soft" onClick={() => fileRef.current && fileRef.current.click()}
               style={{ border: `2px dashed ${border}`, borderRadius: 8, padding: 16, textAlign: 'center', color: dim, fontSize: '0.8rem', cursor: 'pointer' }}>
               <Upload size={16} style={{ marginBottom: 6 }} />
               <div>Attach evidence, or <span style={{ color: '#60A5FA', fontWeight: 600 }}>Browse Files</span> <span style={{ color: dim }}>· optional</span></div>
-            </div>
+            </button>
             {files.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
                 {files.map((f) => (

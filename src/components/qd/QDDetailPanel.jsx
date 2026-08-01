@@ -364,7 +364,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
         .qd-fact:hover .qd-fact-pen { opacity: 1 !important; }
         .qd-sendback-cta:hover { filter: brightness(1.06); }`}</style>
 
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 200 }} />
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 200 }} />
 
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Quality discrepancy ${qd.qd_no || ''}`} tabIndex={-1} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 840, maxWidth: '92vw', background: bg, borderLeft: `1px solid ${border}`, zIndex: 201, overflowY: 'auto', padding: '28px 32px', animation: 'qdSlideIn 0.2s ease-out', color: text, boxSizing: 'border-box' }}>
 
@@ -407,7 +407,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Eye size={15} /> Preview QD form
           </button>
-          <select value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
+          <select aria-label="Change QD status" value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
             style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
             {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
@@ -505,7 +505,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                 )}
 
                 {isEditing && f.type === 'select' && (
-                  <select autoFocus value={draft} disabled={busy} style={{ ...fieldStyle, cursor: 'pointer' }}
+                  <select aria-label={f.label} autoFocus value={draft} disabled={busy} style={{ ...fieldStyle, cursor: 'pointer' }}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setDraft(e.target.value)}
                     onBlur={() => commitEdit(f.field)}
@@ -520,6 +520,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                     {/* The shared picker commits the date it produces directly —
                         it also provides Today and Clear. */}
                     <DatePickerField
+                      aria-label={f.label}
                       value={draft}
                       theme={theme}
                       disabled={busy}
@@ -529,7 +530,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                 )}
 
                 {isEditing && f.type === 'text' && (
-                  <input autoFocus type="text" value={draft} disabled={busy}
+                  <input aria-label={f.label} autoFocus type="text" value={draft} disabled={busy}
                     placeholder={f.placeholder} style={fieldStyle}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setDraft(e.target.value)}
@@ -564,7 +565,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                 </button>
               );
             })}
-            <input ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }} onChange={onFilesChosen} />
+            <input aria-label="Attach evidence to this QD" ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }} onChange={onFilesChosen} />
             <button type="button" onClick={() => { if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click(); } }} disabled={busy}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: `2px dashed ${border}`, borderRadius: 8, fontSize: 12, color: dim, cursor: busy ? 'wait' : 'pointer', background: 'transparent' }}>
               <Upload size={15} /> {busy ? 'Working…' : 'Add file'}
@@ -649,7 +650,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
       )}
 
       {sendBackOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
           onClick={() => { setSendBackOpen(false); setSendBackReason(''); }}>
           <div onClick={(e) => e.stopPropagation()}
             style={{ background: bg, border: `1px solid ${border}`, borderRadius: 16, width: 460, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', animation: 'qdSlideIn 0.2s ease-out', color: text }}>
@@ -667,10 +668,10 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
 
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' }} htmlFor="qddetailpanel-reason">
                   Reason <span style={{ color: '#FCA5A5' }}>*</span>
                 </label>
-                <textarea autoFocus value={sendBackReason} onChange={(e) => setSendBackReason(e.target.value)} rows={3}
+                <textarea id="qddetailpanel-reason" autoFocus value={sendBackReason} onChange={(e) => setSendBackReason(e.target.value)} rows={3}
                   placeholder="Why is this being sent back? e.g. missing input-at-failure figure"
                   style={{ padding: '9px 12px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box', width: '100%', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
               </div>

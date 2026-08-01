@@ -33,7 +33,7 @@ const PRESS_TO_PLANT = {
  * reconstruct table rows from the Die Order Justification Form (page 1).
  * Each row is parsed as a unit, keeping die number, spec, plant, and customer ref together.
  */
-function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
+function PIImportModal({ onClose, onImportRecords, existingOrders = [], theme = {} }) {
   const dialogRef = useDialog({ open: true, onClose });
     const [dragActive, setDragActive] = useState(false);
     const [error, setError] = useState(null);
@@ -605,30 +605,30 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
     return (
         <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
             style={{
-                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
             }}
             onClick={onClose}
         >
             <div
                 style={{
-                    background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '1000px',
-                    maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155',
+                    background: theme.inputBg, borderRadius: '20px', width: '100%', maxWidth: '1000px',
+                    maxHeight: '90vh', overflow: 'hidden', border: `1px solid ${theme.cardBorder}`,
                 }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid #334155' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: `1px solid ${theme.cardBorder}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #10B981, #3B82F6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <FileText size={24} color="white" />
                         </div>
                         <div>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import from PI Document</h2>
-                            <p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload Die Order PI PDF from purchase team</p>
+                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>Import from PI Document</h2>
+                            <p style={{ fontSize: '0.875rem', color: theme.textDim }}>Upload Die Order PI PDF from purchase team</p>
                         </div>
                     </div>
-                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
+                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: theme.textDim, cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
                         <X size={24} />
                     </button>
                 </div>
@@ -638,7 +638,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                     {!preview && (
                         <div
                             style={{
-                                border: `2px dashed ${dragActive ? '#10B981' : '#334155'}`,
+                                border: `2px dashed ${dragActive ? '#10B981' : theme.cardBorder}`,
                                 borderRadius: '16px', padding: '2.5rem', textAlign: 'center',
                                 background: dragActive ? 'rgba(16,185,129,0.1)' : 'transparent', marginBottom: '1rem',
                             }}
@@ -647,21 +647,20 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                             onDrop={handleDrop}
                         >
                             <FileText size={48} color="#64748B" />
-                            <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop one or more PI PDF files here</p>
-                            <p style={{ color: '#64748B', margin: '0.5rem 0' }}>or</p>
+                            <p style={{ fontSize: '1rem', color: theme.text, marginTop: '1rem' }}>Drag & drop one or more PI PDF files here</p>
+                            <p style={{ color: theme.textDim, margin: '0.5rem 0' }}>or</p>
                             <label style={{ display: 'inline-block', padding: '0.75rem 1.5rem', background: 'linear-gradient(135deg, #10B981, #3B82F6)', color: 'white', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>
                                 Browse PI PDF Files
-                                <input type="file" accept=".pdf" multiple onChange={(e) => processFilesCb(e.target.files)} hidden />
+                                <input aria-label="Choose a PI document to import" type="file" accept=".pdf" multiple onChange={(e) => processFilesCb(e.target.files)} hidden />
                             </label>
-                            <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>PI import only updates existing dies — new die numbers are skipped</p>
+                            <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '1rem' }}>PI import only updates existing dies — new die numbers are skipped</p>
                         </div>
                     )}
 
                     {loading && (
                         <div style={{ textAlign: 'center', padding: '2rem' }}>
-                            <div style={{ width: '40px', height: '40px', border: '3px solid #334155', borderTopColor: '#10B981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
-                            <p style={{ color: '#94A3B8', marginTop: '1rem' }}>Extracting die orders from PI document...</p>
-                            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                            <div data-spinner role="status" aria-label="Reading PI document" style={{ width: '40px', height: '40px', border: `3px solid ${theme.cardBorder}`, borderTopColor: '#10B981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+                            <p style={{ color: theme.textMuted, marginTop: '1rem' }}>Extracting die orders from PI document...</p>
                         </div>
                     )}
 
@@ -681,14 +680,14 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                     <p style={{ fontWeight: 600, color: '#10B981' }}>
                                         {preview.files.length} PI Document{preview.files.length !== 1 ? 's' : ''} Parsed
                                     </p>
-                                    <p style={{ fontSize: '0.8rem', color: '#94A3B8', marginTop: '4px' }}>
+                                    <p style={{ fontSize: '0.8rem', color: theme.textMuted, marginTop: '4px' }}>
                                         {preview.orders.length} existing order{preview.orders.length !== 1 ? 's' : ''} will be updated
                                         {preview.unmatched.length > 0 && ` · ${preview.unmatched.length} unmatched order${preview.unmatched.length !== 1 ? 's' : ''} skipped`}
                                     </p>
-                                    <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                                    <div style={{ fontSize: '0.72rem', color: theme.textDim, marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
                                         {preview.files.map((f, i) => (
                                             <span key={i}>
-                                                <span style={{ color: '#94A3B8' }}>{f.name}</span>
+                                                <span style={{ color: theme.textMuted }}>{f.name}</span>
                                                 {' — '}{f.count} die{f.count !== 1 ? 's' : ''}
                                                 {f.prNumber && ` · Order No ${f.prNumber}`}
                                                 {f.supplier && f.supplier !== 'UNKNOWN' && ` · ${f.supplier}`}
@@ -706,10 +705,10 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                         <p style={{ fontWeight: 600, color: '#EF4444' }}>
                                             {preview.unmatched.length} die{preview.unmatched.length !== 1 ? 's' : ''} not found in system — will be skipped
                                         </p>
-                                        <p style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '4px' }}>
+                                        <p style={{ fontSize: '0.75rem', color: theme.textMuted, marginTop: '4px' }}>
                                             PI import only updates existing die orders. Create these dies first if you want to include them:
                                         </p>
-                                        <div style={{ fontSize: '0.8rem', color: '#F1F5F9', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        <div style={{ fontSize: '0.8rem', color: theme.text, marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                             {preview.unmatched.map((o, i) => (
                                                 <span key={i} style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.15)', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.75rem' }}>
                                                     {o['DIE NO']}
@@ -728,7 +727,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                         <p style={{ fontWeight: 600, color: '#F59E0B' }}>
                                             {preview.parseErrors.length} file{preview.parseErrors.length !== 1 ? 's' : ''} could not be parsed
                                         </p>
-                                        <ul style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '6px', paddingLeft: '18px' }}>
+                                        <ul style={{ fontSize: '0.75rem', color: theme.textMuted, marginTop: '6px', paddingLeft: '18px' }}>
                                             {preview.parseErrors.map((m, i) => <li key={i}>{m}</li>)}
                                         </ul>
                                     </div>
@@ -737,29 +736,29 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
 
                             {/* Orders Table */}
                             {preview.orders.length > 0 && (
-                            <div style={{ background: '#0F172A', borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
-                                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', padding: '1rem', borderBottom: '1px solid #334155' }}>
+                            <div style={{ background: theme.cardBg, borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
+                                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}` }}>
                                     Orders to Update ({preview.orders.length})
                                 </h4>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                                         <thead>
-                                            <tr style={{ background: '#1E293B' }}>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Die No</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Size</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Type</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Cavity</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Plant</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Supplier</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Customer</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Shipment</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Actions</th>
+                                            <tr style={{ background: theme.inputBg }}>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Die No</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Size</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Type</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Cavity</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Plant</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Supplier</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Customer</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Shipment</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'center', color: theme.textDim, fontWeight: 600 }}>Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {preview.orders.map((order, index) => (
-                                                <tr key={index} style={{ borderBottom: '1px solid #334155', background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>
+                                                <tr key={index} style={{ borderBottom: `1px solid ${theme.cardBorder}`, background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
+                                                    <td style={{ padding: '10px 12px', color: theme.text, fontFamily: 'monospace' }}>
                                                         {order['DIE NO']}
                                                         {order.isExisting && <span style={{ marginLeft: '6px', fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', borderRadius: '4px' }}>UPDATE</span>}
                                                         {order._urgency && (
@@ -772,12 +771,12 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.TYPE || '-'}</td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order._cavity || order['Mandrels per Cavity'] || '-'}</td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Plant || '-'}</td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
-                                                    <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Customer Name'] || '-'}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order['Die Size']}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order.TYPE || '-'}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order._cavity || order['Mandrels per Cavity'] || '-'}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order.Plant || '-'}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order.Supplier}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order['Customer Name'] || '-'}</td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <span style={{
                                                             padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
@@ -807,7 +806,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
 
                             <button
                                 onClick={() => setPreview(null)}
-                                style={{ width: '100%', padding: '0.5rem', background: 'transparent', border: '1px solid #334155', borderRadius: '8px', color: '#94A3B8', cursor: 'pointer' }}
+                                style={{ width: '100%', padding: '0.5rem', background: 'transparent', border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.textMuted, cursor: 'pointer' }}
                             >
                                 Upload Different PI Document(s)
                             </button>
@@ -816,8 +815,8 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                 </div>
 
                 {/* Footer */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: '1px solid #334155' }}>
-                    <button onClick={onClose} disabled={importing} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.5 : 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: `1px solid ${theme.cardBorder}` }}>
+                    <button onClick={onClose} disabled={importing} style={{ padding: '0.75rem 1.5rem', background: theme.inputBg, color: theme.text, border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.5 : 1 }}>
                         Cancel
                     </button>
                     <button
@@ -832,7 +831,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [] }) {
                             display: 'flex', alignItems: 'center', gap: '8px',
                         }}
                     >
-                        {importing && <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
+                        {importing && <div data-spinner style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
                         {importing ? 'Importing...' : `Update ${preview?.orders?.length || 0} Existing Die Order${(preview?.orders?.length || 0) !== 1 ? 's' : ''}`}
                     </button>
                 </div>

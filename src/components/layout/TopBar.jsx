@@ -88,7 +88,7 @@ const TopBar = ({
     });
 
     return (
-        <div style={{
+        <header style={{
             background: theme.headerBg,
             borderBottom: `1px solid ${theme.cardBorder}`,
             padding: '1rem 2rem',
@@ -114,7 +114,7 @@ const TopBar = ({
                 {/* Search Bar - Moved from filter area to TopBar */}
                 <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
                     <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: theme.textDim }} />
-                    <input
+                    <input aria-label="Search dies, orders and profiles"
                         type="text"
                         placeholder="Start searching here..."
                         value={searchTerm || ''}
@@ -256,8 +256,12 @@ const TopBar = ({
                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: BRAND.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 600 }}>
                             {user?.username?.[0]?.toUpperCase() || 'U'}
                         </div>
-                        <div style={{ textAlign: 'left', display: 'none', '@media (min-width: 1200px)': { display: 'block' } }}>
-                            {/* Hidden on small screens if needed, but flex handling should be fine */}
+                        {/* React inline styles cannot express @media — the key here was
+                            silently dropped and only `display: 'none'` survived, so the
+                            username and role had never rendered on any viewport. The
+                            narrow-screen hiding the original comment wanted now lives in
+                            index.css as .topbar-identity, where a media query works. */}
+                        <div className="topbar-identity" style={{ textAlign: 'left' }}>
                             <p style={{ fontSize: '0.9rem', fontWeight: 600, color: theme.text, margin: 0 }}>{user?.username || 'Admin'}</p>
                             <p style={{ fontSize: '0.75rem', color: theme.textMuted, margin: 0, textTransform: 'capitalize' }}>{user?.role || 'User'}</p>
                         </div>
@@ -284,7 +288,7 @@ const TopBar = ({
                     )}
                 </div>
             </div>
-        </div>
+        </header>
     );
 };
 

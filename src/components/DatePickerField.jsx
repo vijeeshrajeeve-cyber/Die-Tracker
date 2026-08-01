@@ -80,6 +80,14 @@ const DatePickerField = ({
   disabled = false,
   title,
   label,
+  // Most call sites render their own <label> above this field, styled to match
+  // the form around them rather than the one below. Those pass `id` so their
+  // label's htmlFor has something to point at; the generated id is only used
+  // when nobody supplies one.
+  id,
+  // Forwarded to the text input. Used where the visible name is rendered by the
+  // surrounding card rather than by a <label> this field could be paired with.
+  'aria-label': ariaLabel,
   placeholder = 'June 01, 2025',
 }) => {
   const [open, setOpen] = useState(false);
@@ -95,7 +103,8 @@ const DatePickerField = ({
   const containerRef = useRef(null);
   const calendarRef = useRef(null);
   const inputRef = useRef(null);
-  const inputId = useId();
+  const generatedId = useId();
+  const inputId = id || generatedId;
 
   const selected = parseISODate(value);
   const today = useMemo(() => {
@@ -234,6 +243,7 @@ const DatePickerField = ({
       >
         <input
           id={inputId}
+          aria-label={ariaLabel}
           ref={inputRef}
           type="text"
           inputMode="numeric"

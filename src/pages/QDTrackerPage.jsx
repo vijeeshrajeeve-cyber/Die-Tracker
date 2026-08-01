@@ -320,23 +320,23 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
           <div style={{ ...panel, padding: '14px 16px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 240, position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={16} style={{ position: 'absolute', left: 13, color: dim, pointerEvents: 'none' }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, corrector, or issue…"
+              <input aria-label="Search quality discrepancies" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, corrector, or issue…"
                 style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
             </div>
             {/* Year scopes the whole page (KPIs + supplier tab), unlike the
                 row filters beside it, so it is fetched rather than filtered. */}
-            <select value={year} onChange={(e) => setYear(e.target.value)} style={{ ...selectStyle, minWidth: 120 }}>
+            <select aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)} style={{ ...selectStyle, minWidth: 120 }}>
               <option value="All">All years</option>
               {(data.years || []).map(y => <option key={y} value={y}>{y}</option>)}
             </select>
-            <select value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>
+            <select aria-label="Filter by plant" value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>
               <option value="All">All plants</option><option value="GEX 1">GEX 1</option><option value="GEX 2">GEX 2</option>
             </select>
-            <select value={supplier} onChange={(e) => setSupplier(e.target.value)} style={{ ...selectStyle, minWidth: 150 }}>
+            <select aria-label="Filter by supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} style={{ ...selectStyle, minWidth: 150 }}>
               <option value="All">All suppliers</option>
               {supplierOptions.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selectStyle, minWidth: 160 }}>
+            <select aria-label="Filter by QD status" value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selectStyle, minWidth: 160 }}>
               <option value="All">All statuses</option>
               {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
@@ -358,7 +358,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
               <thead>
                 <tr>
                   {['QD No', 'Die No', 'Plant', 'Supplier', 'Corrector', 'Quality issue', 'Status', 'Outcome',
-                    'QD requested', 'QD raised', 'Sent to purchase', 'Sent to supplier', 'Age'].map(h => <th key={h} style={th}>{h}</th>)}
+                    'QD requested', 'QD raised', 'Sent to purchase', 'Sent to supplier', 'Age'].map(h => <th scope="col" key={h} style={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -369,7 +369,15 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                     <tr key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)}>
                       <td style={td}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600 }}>{q.qd_no}</span>
+                          <button
+                            type="button"
+                            className="row-open"
+                            onClick={(e) => { e.stopPropagation(); setSelectedId(q.id); }}
+                            style={{ fontFamily: mono, fontSize: 13, fontWeight: 600 }}
+                          >
+                            {q.qd_no}
+                            <span className="sr-only"> — open details</span>
+                          </button>
                           {approvalPill(q.approval_state)}
                         </span>
                       </td>
@@ -473,8 +481,10 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                   const openDot = s.open > 1 ? '#FBBF24' : s.open === 1 ? '#60A5FA' : '#34D399';
                   const openCol = s.open > 1 ? '#FBBF24' : s.open === 1 ? text : dim;
                   const num = { fontFamily: mono, fontSize: 12.5, fontWeight: 600, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+                  // A filter toggle, not a disclosure — aria-pressed, so a screen
+                  // reader announces whether this supplier is currently selected.
                   return (
-                    <div key={s.name} className="qd-row" onClick={() => toggleSupplier(s.name)}
+                    <button type="button" key={s.name} className="qd-row row-open press-soft" aria-pressed={pickedSuppliers.includes(s.name)} onClick={() => toggleSupplier(s.name)}
                       style={{ display: 'grid', gridTemplateColumns: SUP_COLS, gap: 8, alignItems: 'center', padding: '8px 20px', borderBottom: `1px solid ${border}`, background: pickedSuppliers.includes(s.name) ? surfaceHover : bg }}>
                       <span style={{ fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: openDot, flexShrink: 0 }} />{s.name}
@@ -487,7 +497,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                       <span style={{ textAlign: 'right' }}>
                         <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: tr.bg, color: tr.fg, whiteSpace: 'nowrap' }}>{tr.label}</span>
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
                 {visibleSuppliers.length === 0 && (
@@ -505,7 +515,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
             {supplierTabQds.map(q => {
               const sc = QD_STATUS_CONFIG[q.status] || QD_STATUS_CONFIG.Open;
               return (
-                <div key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)}
+                <button type="button" key={q.id} className="qd-row row-open press-soft" onClick={() => setSelectedId(q.id)}
                   style={{ display: 'grid', gridTemplateColumns: '100px 130px 100px 1fr 160px 70px', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: `1px solid ${border}` }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no}</span>
@@ -518,7 +528,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                     <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: sc.bg, color: sc.fg }}>{q.status}</span>
                   </span>
                   <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: ageColor(q.age_days, muted), textAlign: 'right' }}>{q.age_days}d</span>
-                </div>
+                </button>
               );
             })}
             {supplierTabQds.length === 0 && (

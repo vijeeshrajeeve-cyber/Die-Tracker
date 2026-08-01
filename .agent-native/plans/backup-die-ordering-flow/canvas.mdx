@@ -1,0 +1,404 @@
+<DesignBoard>
+
+<Section id="sec-intake" label="Intake — raise a backup die request">
+
+<Artboard id="a1" label="1 · Backup Die Requests" x={0} y={0}>
+  <Screen surface="desktop" html={`
+<div style="display:flex;height:100%;box-sizing:border-box">
+  <div style="width:150px;flex-shrink:0;border-right:1.4px solid var(--wf-line);padding:14px 10px;display:flex;flex-direction:column;gap:14px;box-sizing:border-box">
+    <div>
+      <strong style="white-space:nowrap">Die Ordering</strong><br /><small class="wf-muted">System v2.0</small>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;flex:1">
+      <small class="wf-muted" style="white-space:nowrap">MAIN MENU</small>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> Dashboard</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> Orders</div>
+      <div class="wf-pill accent" style="padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Backup Die Requests</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> Frozen Designs</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> QD Tracker</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="mail"></span> Email Inbox</div>
+      <small class="wf-muted" style="white-space:nowrap;margin-top:6px">PROCESS FLOW</small>
+      <div style="padding:5px 8px;white-space:nowrap" class="wf-muted">Pending for Ordering</div>
+      <div style="padding:5px 8px;white-space:nowrap" class="wf-muted">Awaiting for Design</div>
+    </div>
+    <div class="wf-muted" style="white-space:nowrap;padding:5px 8px"><span data-icon="chevronLeft"></span> Collapse</div>
+  </div>
+
+  <div style="flex:1;min-width:0;padding:16px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box">
+    <div style="display:flex;align-items:center;width:100%;gap:10px">
+      <div style="min-width:0">
+        <h1 style="white-space:nowrap">Backup Die Requests</h1>
+        <small class="wf-muted">Track backup die requirements before formal ordering</small>
+      </div>
+      <div style="flex:1"></div>
+      <span class="wf-pill wf-muted" style="white-space:nowrap"><span data-icon="mail"></span> Request PDF Drawings</span>
+      <button class="primary" style="white-space:nowrap"><span data-icon="plus"></span> New Request</button>
+    </div>
+
+    <div class="wf-card" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:6px;border:1.4px solid var(--wf-line);border-radius:var(--wf-radius);padding:7px 10px">
+          <span data-icon="search"></span><span class="wf-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Search by DIE NO or CUSTOMER...</span>
+        </div>
+        <span class="wf-pill" style="white-space:nowrap">All Plants <span data-icon="chevronDown"></span></span>
+        <span class="wf-pill accent" style="white-space:nowrap">Pending <span data-icon="chevronDown"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;border-top:1.4px solid var(--wf-line);padding-top:8px">
+        <small class="wf-muted">Showing <strong>24</strong> requests</small>
+        <div style="flex:1"></div>
+        <small>Clear filters</small>
+      </div>
+    </div>
+
+    <div class="wf-card" style="padding:0;flex:1;display:flex;flex-direction:column">
+      <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1.4px solid var(--wf-line);white-space:nowrap">
+        <small style="width:16px"><input type="checkbox" /></small>
+        <small style="width:44px">PLANT</small>
+        <small style="width:62px">DIE NO</small>
+        <small style="flex:1;min-width:0">CUSTOMER</small>
+        <small style="width:60px">REQUESTED</small>
+        <small style="width:62px">DRAWING REQ</small>
+        <small style="width:52px">STATUS</small>
+        <small style="width:40px">ACTIONS</small>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1.4px solid var(--wf-line);white-space:nowrap;align-items:center">
+        <span style="width:16px"><input type="checkbox" /></span>
+        <span style="width:44px"><span class="wf-pill">EXT 1</span></span>
+        <span style="width:62px"><strong>24518-1</strong></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Alupro Systems</span>
+        <span style="width:60px">12 Jul 2026</span>
+        <span style="width:62px" class="wf-muted">—</span>
+        <span style="width:52px"><span class="wf-pill">Pending</span></span>
+        <span style="width:40px"><span data-icon="edit"></span></span>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1.4px solid var(--wf-line);white-space:nowrap;align-items:center">
+        <span style="width:16px"><input type="checkbox" /></span>
+        <span style="width:44px"><span class="wf-pill">EXT 2</span></span>
+        <span style="width:62px"><strong>31207-2</strong></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Nova Extrusions</span>
+        <span style="width:60px">14 Jul 2026</span>
+        <span style="width:62px" class="wf-muted">—</span>
+        <span style="width:52px"><span class="wf-pill">Pending</span></span>
+        <span style="width:40px"><span data-icon="edit"></span></span>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 10px;white-space:nowrap;align-items:center">
+        <span style="width:16px" class="wf-muted"><input type="checkbox" /></span>
+        <span style="width:44px"><span class="wf-pill">EXT 1</span></span>
+        <span style="width:62px"><strong>19842-1</strong></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Alupro Systems</span>
+        <span style="width:60px">02 Jul 2026</span>
+        <span style="width:62px">09 Jul 2026</span>
+        <span style="width:52px"><span class="wf-pill">Pending</span></span>
+        <span style="width:40px"><span data-icon="edit"></span></span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;padding:8px 10px;border-top:1.4px solid var(--wf-line)">
+        <small class="wf-muted">Page 1 of 3</small>
+        <div style="flex:1"></div>
+        <span data-icon="chevronLeft"></span><span data-icon="chevronRight"></span>
+      </div>
+    </div>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Artboard id="a2" label="2 · New Request" x={1500} y={0}>
+  <Screen surface="panel" html={`
+<div style="display:flex;flex-direction:column;gap:12px;padding:16px;height:100%;box-sizing:border-box">
+  <div style="display:flex;align-items:center;width:100%">
+    <h2 style="white-space:nowrap">New Backup Request</h2>
+    <div style="flex:1"></div>
+    <span data-icon="close"></span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px">
+    <label>Plant<select><option>EXT 1</option></select></label>
+    <label>DIE NO<input value="24518-1" /></label>
+    <label>Customer<input value="Alupro Systems" /></label>
+    <label>Press<select><option>Select Press</option></select></label>
+    <label>Cavity<input value="2" /></label>
+    <label>Requested Date<input value="30 Jul 2026" /></label>
+  </div>
+
+  <div class="wf-card" style="display:flex;flex-direction:column;gap:4px">
+    <small class="wf-muted">Auto-filled after the DIE NO field loses focus</small>
+    <small>Profile <strong>24518</strong> → Customer <strong>Alupro Systems</strong></small>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px">
+    <label>Die Available<input value="No" /></label>
+    <label>Ordered Date<input value="" /></label>
+  </div>
+  <small class="wf-muted">Ordered Date is disabled on create — it is filled when a matching die order exists.</small>
+
+  <div style="flex:1"></div>
+  <div style="display:flex;gap:8px;border-top:1.4px solid var(--wf-line);padding-top:12px">
+    <div style="flex:1"></div>
+    <button>Cancel</button>
+    <button class="primary">Create</button>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Artboard id="a3" label="3 · Duplicate die guard" x={2500} y={0}>
+  <Screen surface="popover" html={`
+<div style="display:flex;flex-direction:column;gap:10px;padding:16px;height:100%;box-sizing:border-box">
+  <label>DIE NO<input value="19842-1" style="border:1.4px solid var(--wf-warn)" /></label>
+  <div class="wf-card" style="display:flex;gap:8px;border-color:var(--wf-warn)">
+    <span data-icon="x" style="color:var(--wf-warn)"></span>
+    <small style="color:var(--wf-warn);line-height:1.4">Die "19842-1" already has 1 existing backup die request and 1 die order. Duplicate die numbers are not allowed — please review the die number.</small>
+  </div>
+  <div style="flex:1"></div>
+  <div style="display:flex;gap:8px">
+    <div style="flex:1"></div>
+    <button>Cancel</button>
+    <button class="primary">Create</button>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Annotation id="n1" targetId="a1" placement="bottom">
+Entry point. Status filter defaults to Pending, so the list opens on live work. Rows are click-to-edit; the green PDF action on each row jumps straight to step 7.
+</Annotation>
+
+<Annotation id="n2" targetId="a2" placement="bottom">
+Press is disabled until a Plant is chosen, then filtered to that plant. Leaving DIE NO looks the profile up and fills Customer. If no profile match exists, the user is asked for a customer name and it is written to Profile Master.
+</Annotation>
+
+<Annotation id="n3" targetId="a3" placement="bottom">
+Hard stop, not a warning. The same check runs on blur and again on save, and it scans both existing backup requests and die orders.
+</Annotation>
+
+<Connector id="c1" from="a1" to="a2" />
+<Connector id="c2" from="a2" to="a3" />
+
+</Section>
+
+<Section id="sec-drawings" label="Chase the drawings">
+
+<Artboard id="a4" label="4 · Select rows" x={0} y={1600}>
+  <Screen surface="desktop" html={`
+<div style="display:flex;height:100%;box-sizing:border-box">
+  <div style="width:150px;flex-shrink:0;border-right:1.4px solid var(--wf-line);padding:14px 10px;display:flex;flex-direction:column;gap:14px;box-sizing:border-box">
+    <div><strong style="white-space:nowrap">Die Ordering</strong><br /><small class="wf-muted">System v2.0</small></div>
+    <div style="display:flex;flex-direction:column;gap:5px;flex:1">
+      <small class="wf-muted" style="white-space:nowrap">MAIN MENU</small>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> Dashboard</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> Orders</div>
+      <div class="wf-pill accent" style="padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Backup Die Requests</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> Frozen Designs</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="chevronRight"></span> QD Tracker</div>
+      <div style="padding:5px 8px;white-space:nowrap"><span data-icon="mail"></span> Email Inbox</div>
+    </div>
+    <div class="wf-muted" style="white-space:nowrap;padding:5px 8px"><span data-icon="chevronLeft"></span> Collapse</div>
+  </div>
+
+  <div style="flex:1;min-width:0;padding:16px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box">
+    <div style="display:flex;align-items:center;width:100%;gap:10px">
+      <div style="min-width:0">
+        <h1 style="white-space:nowrap">Backup Die Requests</h1>
+        <small class="wf-muted">Track backup die requirements before formal ordering</small>
+      </div>
+      <div style="flex:1"></div>
+      <button class="primary" style="white-space:nowrap"><span data-icon="mail"></span> Request PDF Drawings (2)</button>
+      <span class="wf-pill" style="white-space:nowrap"><span data-icon="plus"></span> New Request</span>
+    </div>
+
+    <div class="wf-card" style="padding:0;flex:1;display:flex;flex-direction:column">
+      <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1.4px solid var(--wf-line);white-space:nowrap">
+        <small style="width:16px"><input type="checkbox" checked /></small>
+        <small style="width:44px">PLANT</small>
+        <small style="width:62px">DIE NO</small>
+        <small style="flex:1;min-width:0">CUSTOMER</small>
+        <small style="width:62px">DRAWING REQ</small>
+        <small style="width:52px">STATUS</small>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1.4px solid var(--wf-line);white-space:nowrap;align-items:center;background:var(--wf-accent-soft)">
+        <span style="width:16px"><input type="checkbox" checked /></span>
+        <span style="width:44px"><span class="wf-pill">EXT 1</span></span>
+        <span style="width:62px"><strong>24518-1</strong></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Alupro Systems</span>
+        <span style="width:62px" class="wf-muted">—</span>
+        <span style="width:52px"><span class="wf-pill">Pending</span></span>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1.4px solid var(--wf-line);white-space:nowrap;align-items:center;background:var(--wf-accent-soft)">
+        <span style="width:16px"><input type="checkbox" checked /></span>
+        <span style="width:44px"><span class="wf-pill">EXT 2</span></span>
+        <span style="width:62px"><strong>31207-2</strong></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Nova Extrusions</span>
+        <span style="width:62px" class="wf-muted">—</span>
+        <span style="width:52px"><span class="wf-pill">Pending</span></span>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 10px;white-space:nowrap;align-items:center">
+        <span style="width:16px"><input type="checkbox" disabled /></span>
+        <span style="width:44px"><span class="wf-pill">EXT 1</span></span>
+        <span style="width:62px" class="wf-muted"><strong>19842-1</strong></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis" class="wf-muted">Alupro Systems</span>
+        <span style="width:62px">09 Jul 2026</span>
+        <span style="width:52px"><span class="wf-pill">Pending</span></span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="padding:8px 10px;border-top:1.4px solid var(--wf-line)">
+        <small class="wf-muted">Row 3 is locked — a drawing was already requested on 09 Jul 2026.</small>
+      </div>
+    </div>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Artboard id="a5" label="5 · PDF Drawing Request" x={1500} y={1600}>
+  <Screen surface="panel" html={`
+<div style="display:flex;flex-direction:column;gap:10px;padding:16px;height:100%;box-sizing:border-box">
+  <div style="display:flex;align-items:center;width:100%">
+    <h2 style="white-space:nowrap">Compose</h2>
+    <div style="flex:1"></div>
+    <span class="wf-pill" style="color:var(--wf-warn);white-space:nowrap">High</span>
+    <span data-icon="close" style="margin-left:8px"></span>
+  </div>
+
+  <label>To<input value="design@plant.local" /></label>
+  <label>Cc<input value="production@plant.local" /></label>
+  <label>Subject<input value="URGENT: PDF Drawing Request for 2 Backup Die Request(s)" /></label>
+
+  <div class="wf-card" style="flex:1;display:flex;flex-direction:column;gap:6px">
+    <small>Dear Design Team,</small>
+    <small class="wf-muted">Please provide PDF drawings for the following backup die request(s):</small>
+    <div style="display:flex;gap:6px;border-bottom:1.4px solid var(--wf-line);padding-bottom:4px;white-space:nowrap">
+      <small style="width:20px">SL</small><small style="width:56px">Die No</small><small style="width:40px">Plant</small><small style="flex:1;min-width:0">Customer</small>
+    </div>
+    <div style="display:flex;gap:6px;white-space:nowrap">
+      <small style="width:20px">1</small><small style="width:56px"><strong>24518-1</strong></small><small style="width:40px">EXT 1</small><small style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Alupro Systems</small>
+    </div>
+    <div style="display:flex;gap:6px;white-space:nowrap">
+      <small style="width:20px">2</small><small style="width:56px"><strong>31207-2</strong></small><small style="width:40px">EXT 2</small><small style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Nova Extrusions</small>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;border-top:1.4px solid var(--wf-line);padding-top:10px">
+    <div style="flex:1"></div>
+    <button>Discard</button>
+    <button class="primary"><span data-icon="send"></span> Send</button>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Artboard id="a6" label="6 · Stamped on send" x={2500} y={1600}>
+  <Screen surface="popover" html={`
+<div style="display:flex;flex-direction:column;gap:10px;padding:16px;height:100%;box-sizing:border-box">
+  <div class="wf-card" style="display:flex;gap:8px;border-color:var(--wf-ok)">
+    <span data-icon="check" style="color:var(--wf-ok)"></span>
+    <small style="line-height:1.4">Message sent. <strong>Drawing Requested</strong> set to 30 Jul 2026 on 2 requests.</small>
+  </div>
+  <small class="wf-muted" style="line-height:1.4">Both rows now fail the selectable test, so they drop out of the checkbox pool and cannot be chased twice.</small>
+  <div style="flex:1"></div>
+  <div class="wf-card" style="display:flex;gap:8px;border-color:var(--wf-warn)">
+    <span data-icon="x" style="color:var(--wf-warn)"></span>
+    <small style="line-height:1.4;color:var(--wf-warn)">Partial path: if the mail sends but the date write fails, the user is told — the mail is not rolled back.</small>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Annotation id="n4" targetId="a4" placement="bottom">
+Only rows without a Drawing Requested date can be selected. The header checkbox selects the visible page, and the button label carries the live count.
+</Annotation>
+
+<Annotation id="n5" targetId="a5" placement="bottom">
+To and Cc are pulled from the "PDF Drawing Request" email template. The body is a generated HTML table of the selected dies plus the sender signature.
+</Annotation>
+
+<Annotation id="n6" targetId="a6" placement="bottom">
+The date stamp is a send-side effect, not a save — nothing is written until the mail actually goes out.
+</Annotation>
+
+<Connector id="c3" from="a4" to="a5" />
+<Connector id="c4" from="a5" to="a6" />
+
+</Section>
+
+<Section id="sec-order" label="Convert to a die order">
+
+<Artboard id="a7" label="7 · Generate Die Order PDF" x={0} y={3200}>
+  <Screen surface="panel" html={`
+<div style="display:flex;flex-direction:column;gap:10px;padding:16px;height:100%;box-sizing:border-box">
+  <div style="display:flex;align-items:center;width:100%">
+    <div style="min-width:0">
+      <h2 style="white-space:nowrap">Generate Die Order PDF</h2>
+      <small class="wf-muted">Die 24518-1 · Alupro Systems · EXT 1</small>
+    </div>
+    <div style="flex:1"></div>
+    <span data-icon="close"></span>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;border:1.4px dashed var(--wf-line);border-radius:var(--wf-radius);padding:10px">
+    <button class="primary" style="white-space:nowrap">Select Profile Drawing PDF</button>
+    <small class="wf-muted" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">No file selected</small>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px">
+    <label>Supplier<select><option>Deccan Die Works</option></select></label>
+    <label>Requested Date<input value="30 Jul 2026" /></label>
+    <label>Die Size<input value="Ø 220 x 180" /></label>
+    <label>No of Cav<input value="2" /></label>
+    <label>Press<select><option>Press 3 (P3)</option></select></label>
+    <label>Mode of Shipment<input value="Air" /></label>
+  </div>
+
+  <div class="wf-card" style="display:flex;flex-direction:column;gap:4px">
+    <small class="wf-muted">Prefilled from the matching active frozen design</small>
+    <small>Supplier, die size and shipment arrived with the profile — shipment is read-only.</small>
+  </div>
+
+  <label>Reason for Die Ordering<select><option>Back up die for Other Press</option></select></label>
+
+  <div style="display:flex;gap:14px;border:1.4px solid var(--wf-line);border-radius:var(--wf-radius);padding:8px 10px;white-space:nowrap">
+    <small><input type="checkbox" checked /> Mill</small>
+    <small><input type="checkbox" /> Anodizing</small>
+    <small><input type="checkbox" /> Powder coating</small>
+  </div>
+
+  <div style="flex:1"></div>
+  <div style="display:flex;gap:8px;border-top:1.4px solid var(--wf-line);padding-top:10px">
+    <div style="flex:1"></div>
+    <button>Cancel</button>
+    <button class="primary">Generate &amp; Save</button>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Artboard id="a8" label="8 · Two files out" x={1200} y={3200}>
+  <Screen surface="popover" html={`
+<div style="display:flex;flex-direction:column;gap:10px;padding:16px;height:100%;box-sizing:border-box">
+  <div class="wf-card" style="display:flex;gap:8px;border-color:var(--wf-ok)">
+    <span data-icon="check" style="color:var(--wf-ok)"></span>
+    <small style="line-height:1.4">Die order saved to "24518-profile.pdf" and J-file downloaded as "BACKUP-DIE-24518-1.pdf". Frozen design merged: 1 PDF page-set appended.</small>
+  </div>
+  <small class="wf-muted" style="line-height:1.4">The order stamp overwrites the chosen drawing in place. The J-file is always a separate download.</small>
+  <div style="flex:1"></div>
+  <div class="wf-card" style="display:flex;gap:8px;border-color:var(--wf-warn)">
+    <span data-icon="x" style="color:var(--wf-warn)"></span>
+    <small style="line-height:1.4;color:var(--wf-warn)">Fallback: browsers without in-place save download the stamped order instead of overwriting.</small>
+  </div>
+</div>
+`} />
+</Artboard>
+
+<Annotation id="n7" targetId="a7" placement="bottom">
+Reachable from the green row action at any point — it does not require a drawing to have been requested first. Supplier, die size, cavity and shipment prefill from an active frozen design when the profile, plant, press and cavity all match.
+</Annotation>
+
+<Annotation id="n8" targetId="a8" placement="bottom">
+Two artefacts leave the system per order: the stamped profile drawing and the J-file ordering form. A J-file failure still counts as a save, reported as "saved, with a warning".
+</Annotation>
+
+<Connector id="c5" from="a7" to="a8" />
+
+</Section>
+
+</DesignBoard>

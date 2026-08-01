@@ -31,7 +31,7 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
     chartsGrid: { display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2.5rem' },
     chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
     pipelineSection: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
-    pipelineColumns: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' },
+    pipelineColumns: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' },
     pipelineColumn: (color) => ({ borderRadius: '8px', padding: '1rem', background: isDarkMode ? `${color}10` : `${color}1A`, border: `1px solid ${color}33` }),
     pipelineItem: { background: theme.cardBg, borderRadius: '6px', padding: '12px', marginBottom: '8px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm, width: 'calc(100% - 2px)', overflow: 'hidden', transition: 'all 0.15s ease' },
   };
@@ -212,9 +212,9 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Status</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Count</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>%</th>
+                    <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Status</th>
+                    <th scope="col" style={{ padding: '10px 12px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>Count</th>
+                    <th scope="col" style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -289,9 +289,9 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <th style={{ ...thStyle, textAlign: 'left' }}>Status</th>
-                        {plantList.map(p => <th key={p} style={thStyle}>{p}</th>)}
-                        <th style={thStyle}>Total</th>
+                        <th scope="col" style={{ ...thStyle, textAlign: 'left' }}>Status</th>
+                        {plantList.map(p => <th scope="col" key={p} style={thStyle}>{p}</th>)}
+                        <th scope="col" style={thStyle}>Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -343,11 +343,17 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
                   <span style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 700, color: config.color }}>{count}</span>
                 </div>
                 {orders.map(order => (
-                  <div key={order['DIE NO']} style={styles.pipelineItem} onClick={() => setSelectedOrder(order)}>
+                  <button
+                    type="button"
+                    key={order['DIE NO']}
+                    className="row-open press-soft"
+                    style={{ ...styles.pipelineItem, display: 'block', textAlign: 'left' }}
+                    onClick={() => setSelectedOrder(order)}
+                  >
                     <DieAttentionLabels order={order} dense />
                     <div style={{ fontWeight: 600, fontSize: '0.875rem', color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</div>
                     <div style={{ fontSize: '0.75rem', color: theme.textDim, marginTop: '4px' }}>{order.Supplier}</div>
-                  </div>
+                  </button>
                 ))}
                 {count === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: '#64748B', fontSize: '0.8rem' }}>No orders</div>}
               </div>

@@ -83,7 +83,7 @@ export default function FocTrialModal({ qd, theme = {}, onClose, onDone }) {
   };
 
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
       onClick={onClose}>
       <style>{`@keyframes qdTrialIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-trial-cta:hover { filter: brightness(1.06); }`}</style>
@@ -106,8 +106,8 @@ export default function FocTrialModal({ qd, theme = {}, onClose, onDone }) {
 
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={label}>Trial date <span style={{ color: '#FCA5A5' }}>*</span></label>
-            <DatePickerField value={trialDate} theme={theme} onChange={setTrialDate} placeholder="Select trial date" />
+            <label style={label} htmlFor="foctrialmodal-trial-date">Trial date <span style={{ color: '#FCA5A5' }}>*</span></label>
+            <DatePickerField id="foctrialmodal-trial-date" value={trialDate} theme={theme} onChange={setTrialDate} placeholder="Select trial date" />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -119,8 +119,8 @@ export default function FocTrialModal({ qd, theme = {}, onClose, onDone }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={label}>Trial notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+            <label style={label} htmlFor="foctrialmodal-trial-notes">Trial notes</label>
+            <textarea id="foctrialmodal-trial-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
               placeholder="e.g. same weld line at cavity 2 · optional"
               style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
           </div>
@@ -132,23 +132,23 @@ export default function FocTrialModal({ qd, theme = {}, onClose, onDone }) {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={label}>Next status <span style={{ color: '#FCA5A5' }}>*</span></label>
-                <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)} style={field}>
+                <label style={label} htmlFor="foctrialmodal-next-status">Next status <span style={{ color: '#FCA5A5' }}>*</span></label>
+                <select id="foctrialmodal-next-status" value={nextStatus} onChange={(e) => setNextStatus(e.target.value)} style={field}>
                   {QD_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
 
               {needsEta && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label style={label}>ETA for the next replacement <span style={{ color: '#FCA5A5' }}>*</span></label>
-                  <DatePickerField value={etaDate} theme={theme} onChange={setEtaDate} placeholder="Select ETA" />
+                  <label style={label} htmlFor="foctrialmodal-eta-for-the-next-replacement">ETA for the next replacement <span style={{ color: '#FCA5A5' }}>*</span></label>
+                  <DatePickerField id="foctrialmodal-eta-for-the-next-replacement" value={etaDate} theme={theme} onChange={setEtaDate} placeholder="Select ETA" />
                   <span style={{ fontSize: '0.72rem', color: dim }}>Opens the next FOC round against this QD.</span>
                 </div>
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={label}>Reason <span style={{ color: '#FCA5A5' }}>*</span></label>
-                <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+                <label style={label} htmlFor="foctrialmodal-reason">Reason <span style={{ color: '#FCA5A5' }}>*</span></label>
+                <textarea id="foctrialmodal-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
                   placeholder="Why this status? e.g. supplier agreed to send a third die"
                   style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
               </div>

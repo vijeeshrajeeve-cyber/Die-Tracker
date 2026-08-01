@@ -20,7 +20,7 @@ const generateTempPassword = () => {
   return pwd.split('').sort(() => Math.random() - 0.5).join('');
 };
 
-const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
+const ResetPasswordModal = ({ user, onClose, onSubmit, theme = {} }) => {
   const dialogRef = useDialog({ open: true, onClose });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -58,21 +58,21 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
     <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
-        backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center',
+        backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
         justifyContent: 'center', zIndex: 1000, padding: '20px',
       }}
       onClick={onClose}
     >
       <div
         style={{
-          background: '#0c1425', borderRadius: '20px', width: '100%', maxWidth: '480px',
-          border: '1px solid #1e293b', boxShadow: '0 25px 80px rgba(0,0,0,0.5)', overflow: 'hidden',
+          background: theme.cardBg, borderRadius: '20px', width: '100%', maxWidth: '480px',
+          border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 80px rgba(0,0,0,0.5)', overflow: 'hidden',
         }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '16px 24px', borderBottom: '1px solid #1e293b',
+          padding: '16px 24px', borderBottom: `1px solid ${theme.cardBorder}`,
         }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -89,8 +89,8 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '6px 14px', borderRadius: '8px',
-              background: 'transparent', border: '1px solid #334155',
-              color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500,
+              background: 'transparent', border: `1px solid ${theme.cardBorder}`,
+              color: theme.textMuted, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500,
             }}
           >
             Close <X size={14} />
@@ -107,10 +107,10 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
               <KeyRound size={20} color="white" />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f1f5f9', margin: 0 }}>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: theme.text, margin: 0 }}>
                 Reset password for {user?.username}
               </h2>
-              <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '2px 0 0' }}>
+              <p style={{ fontSize: '0.78rem', color: theme.textDim, margin: '2px 0 0' }}>
                 The user will be forced to change this password on next login.
               </p>
             </div>
@@ -130,15 +130,15 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
           <div style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <label style={{
-                fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8',
+                fontSize: '0.7rem', fontWeight: 700, color: theme.textMuted,
                 textTransform: 'uppercase', letterSpacing: '0.5px',
               }}>New Password</label>
               <button
                 type="button"
                 onClick={handleGenerate}
                 style={{
-                  background: 'transparent', border: '1px solid #334155',
-                  color: '#94a3b8', padding: '3px 10px', borderRadius: '6px',
+                  background: 'transparent', border: `1px solid ${theme.cardBorder}`,
+                  color: theme.textMuted, padding: '3px 10px', borderRadius: '6px',
                   fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -147,6 +147,7 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
             </div>
             <div style={{ position: 'relative' }}>
               <input
+                aria-label="New password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -154,8 +155,8 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
                 required
                 style={{
                   width: '100%', padding: '11px 44px 11px 14px',
-                  background: '#0a1220', border: '1px solid #1e293b',
-                  borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
+                  background: theme.inputBg, border: `1px solid ${theme.cardBorder}`,
+                  borderRadius: '10px', color: theme.text, fontSize: '0.875rem',
                   outline: 'none', boxSizing: 'border-box',
                 }}
               />
@@ -165,7 +166,7 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
                 style={{
                   position: 'absolute', right: '10px', top: '50%',
                   transform: 'translateY(-50%)', background: 'none',
-                  border: 'none', cursor: 'pointer', color: '#64748b',
+                  border: 'none', cursor: 'pointer', color: theme.textDim,
                   display: 'flex', alignItems: 'center', padding: '4px',
                 }}
               >
@@ -177,10 +178,10 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
           <div style={{ marginBottom: '14px' }}>
             <label style={{
               display: 'block', fontSize: '0.7rem', fontWeight: 700,
-              color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase',
+              color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase',
               letterSpacing: '0.5px',
-            }}>Confirm Password</label>
-            <input
+            }} htmlFor="resetpasswordmodal-confirm-password">Confirm Password</label>
+            <input id="resetpasswordmodal-confirm-password"
               type={showPassword ? 'text' : 'password'}
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
@@ -188,9 +189,9 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
               required
               style={{
                 width: '100%', padding: '11px 14px',
-                background: '#0a1220',
-                border: `1px solid ${mismatch ? '#F43F5E' : '#1e293b'}`,
-                borderRadius: '10px', color: '#f1f5f9', fontSize: '0.875rem',
+                background: theme.inputBg,
+                border: `1px solid ${mismatch ? '#F43F5E' : theme.cardBorder}`,
+                borderRadius: '10px', color: theme.text, fontSize: '0.875rem',
                 outline: 'none', boxSizing: 'border-box',
               }}
             />
@@ -201,8 +202,8 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
             )}
           </div>
 
-          <div style={{ background: '#0F172A', borderRadius: '10px', padding: '12px 14px', marginBottom: '18px' }}>
-            <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', margin: '0 0 8px', textTransform: 'uppercase' }}>
+          <div style={{ background: theme.cardBg, borderRadius: '10px', padding: '12px 14px', marginBottom: '18px' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: 700, color: theme.textDim, margin: '0 0 8px', textTransform: 'uppercase' }}>
               Password Requirements
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
@@ -210,12 +211,12 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
                 <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{
                     width: '14px', height: '14px', borderRadius: '50%',
-                    background: r.met ? '#10B981' : '#334155',
+                    background: r.met ? '#10B981' : theme.cardBorder,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
                     {r.met && <CheckCircle size={10} color="white" />}
                   </div>
-                  <span style={{ fontSize: '0.72rem', color: r.met ? '#10B981' : '#64748b' }}>
+                  <span style={{ fontSize: '0.72rem', color: r.met ? '#10B981' : theme.textDim }}>
                     {r.label}
                   </span>
                 </div>
@@ -229,8 +230,8 @@ const ResetPasswordModal = ({ user, onClose, onSubmit }) => {
               onClick={onClose}
               style={{
                 padding: '10px 20px', borderRadius: '10px',
-                background: 'transparent', border: '1px solid #334155',
-                color: '#94a3b8', cursor: 'pointer', fontWeight: 500, fontSize: '0.85rem',
+                background: 'transparent', border: `1px solid ${theme.cardBorder}`,
+                color: theme.textMuted, cursor: 'pointer', fontWeight: 500, fontSize: '0.85rem',
               }}
             >
               Cancel

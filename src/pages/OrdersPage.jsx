@@ -7,11 +7,7 @@ import DieAttentionLabels from '../components/DieAttentionLabels';
 import DatePickerField from '../components/DatePickerField';
 import { parseDateDMY, formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
-
-const StatusBadge = ({ status }) => {
-  const config = STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
-  return <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, backgroundColor: config.bgColor, color: config.color }}>{config.label}</span>;
-};
+import StatusPill from '../components/ui/StatusPill';
 
 const parseDieSize = (dieSize) => {
   if (!dieSize) return { diameter: null, thickness: null };
@@ -87,13 +83,13 @@ export default function OrdersPage({
     );
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const leadTime = (startKey) => (_, order) => {
       const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
       const days = calcLeadDays(order[startKey], receivedDate);
       return days !== null ? days : '';
     };
-    exportToExcel({
+    await exportToExcel({
       rows: filteredData,
       filename: 'die_orders',
       sheetName: 'Die Orders',
@@ -144,20 +140,20 @@ export default function OrdersPage({
     <>
       <div style={filterBar}>
         <div style={filterRow}>
-          <select style={filterSelect} value={filters.plant} onChange={(e) => setFilters({ ...filters, plant: e.target.value })}><option value="all">All Plants</option>{uniquePlants.map(p => <option key={p} value={p}>{p}</option>)}</select>
-          <select style={filterSelect} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="all">All Status</option><option value="pre-approval">Pre–design approval (not cancelled)</option>{uniqueStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}</select>
-          <select style={filterSelect} value={filters.supplier} onChange={(e) => setFilters({ ...filters, supplier: e.target.value })}><option value="all">All Suppliers</option>{uniqueSuppliers.map(s => <option key={s} value={s}>{s}</option>)}</select>
-          <select style={filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}</select>
-          <select style={filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
-          <select style={filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
-          <select style={filterSelect} value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })}><option value="all">All Customers</option>{uniqueCustomers.map(c => <option key={c} value={c}>{c}</option>)}</select>
-          <select style={filterSelect} value={filters.urgency || 'all'} onChange={(e) => setFilters({ ...filters, urgency: e.target.value })} title="Filter by urgency level">
+          <select aria-label="Filter by plant" style={filterSelect} value={filters.plant} onChange={(e) => setFilters({ ...filters, plant: e.target.value })}><option value="all">All Plants</option>{uniquePlants.map(p => <option key={p} value={p}>{p}</option>)}</select>
+          <select aria-label="Filter by status" style={filterSelect} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="all">All Status</option><option value="pre-approval">Pre–design approval (not cancelled)</option>{uniqueStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}</select>
+          <select aria-label="Filter by supplier" style={filterSelect} value={filters.supplier} onChange={(e) => setFilters({ ...filters, supplier: e.target.value })}><option value="all">All Suppliers</option>{uniqueSuppliers.map(s => <option key={s} value={s}>{s}</option>)}</select>
+          <select aria-label="Filter by die type" style={filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <select aria-label="Filter by month" style={filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+          <select aria-label="Filter by year" style={filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
+          <select aria-label="Filter by customer" style={filterSelect} value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })}><option value="all">All Customers</option>{uniqueCustomers.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <select aria-label="Filter by urgency" style={filterSelect} value={filters.urgency || 'all'} onChange={(e) => setFilters({ ...filters, urgency: e.target.value })} title="Filter by urgency level">
             <option value="all">All Urgencies</option>
             <option value="NORMAL">Normal</option>
             <option value="URGENT">Urgent</option>
             <option value="TOP_URGENT">Top urgent</option>
           </select>
-          <select style={filterSelect} value={filters.specialFollowUp || 'all'} onChange={(e) => setFilters({ ...filters, specialFollowUp: e.target.value })} title="Filter by special follow-up flag">
+          <select aria-label="Filter by special follow-up" style={filterSelect} value={filters.specialFollowUp || 'all'} onChange={(e) => setFilters({ ...filters, specialFollowUp: e.target.value })} title="Filter by special follow-up flag">
             <option value="all">All (Special follow-up)</option>
             <option value="yes">Flagged</option>
             <option value="no">Not flagged</option>
@@ -167,7 +163,7 @@ export default function OrdersPage({
           <div style={dateFieldLabel}>
             <span style={dateLabelText}>Requested from</span>
             <div style={{ minWidth: '180px' }}>
-              <DatePickerField
+              <DatePickerField aria-label="Requested from date"
                 theme={theme}
                 value={filters.dateFrom}
                 placeholder="Start date"
@@ -179,7 +175,7 @@ export default function OrdersPage({
           <div style={dateFieldLabel}>
             <span style={dateLabelText}>Requested to</span>
             <div style={{ minWidth: '180px' }}>
-              <DatePickerField
+              <DatePickerField aria-label="Requested to date"
                 theme={theme}
                 value={filters.dateTo}
                 placeholder="End date"
@@ -227,17 +223,17 @@ export default function OrdersPage({
                   { key: 'Type of shipment', label: 'Ship' }, { key: 'STATUS', label: 'Status' },
                   { key: 'Delivery Lead Time', label: 'Delivery LT', align: 'right' }, { key: 'Mfg Lead Time', label: 'Mfg LT', align: 'right' },
                 ].map(col => (
-                  <th key={col.key} style={th} className={col.align === 'right' ? 'dt-num' : undefined} onClick={() => handleSort(col.key)}>
+                  <th scope="col" key={col.key} style={th} className={col.align === 'right' ? 'dt-num' : undefined} onClick={() => handleSort(col.key)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start' }}>
                       {col.label}
                       {sortConfig.key === col.key ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} color="#3B82F6" /> : <ChevronDown size={14} color="#3B82F6" />) : <ChevronDown size={14} color="#64748B" />}
                     </div>
                   </th>
                 ))}
-                <th style={th} className="dt-center">Log</th>
-                <th style={th} className="dt-center">Days</th>
-                <th style={th} className="dt-center">View</th>
-                {user?.role === 'admin' && <th style={th} className="dt-center">Actions</th>}
+                <th scope="col" style={th} className="dt-center">Log</th>
+                <th scope="col" style={th} className="dt-center">Days</th>
+                <th scope="col" style={th} className="dt-center">View</th>
+                {user?.role === 'admin' && <th scope="col" style={th} className="dt-center">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -246,7 +242,15 @@ export default function OrdersPage({
                   <td style={{ ...td, whiteSpace: 'nowrap', minWidth: '120px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
                       <DieAttentionLabels order={order} dense />
-                      <span style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</span>
+                      <button
+                        type="button"
+                        className="row-open"
+                        onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
+                        style={{ fontWeight: 600, color: theme.text, fontFamily: 'monospace' }}
+                      >
+                        {order['DIE NO']}
+                        <span className="sr-only"> — open details</span>
+                      </button>
                     </div>
                   </td>
                   <td style={td}>{order['Order No']}</td>
@@ -269,7 +273,7 @@ export default function OrdersPage({
                       {order['Type of shipment']}
                     </div>
                   </td>
-                  <td style={td}><StatusBadge status={order.STATUS} /></td>
+                  <td style={td}><StatusPill status={order.STATUS} theme={theme} /></td>
                   {/* Delivery Lead Time */}
                   <td style={td} className="dt-num">
                     {(() => {

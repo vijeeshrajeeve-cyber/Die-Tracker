@@ -80,13 +80,13 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
   const tooltipStyle = { background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.25rem' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
       <div style={{ ...styles.chartCard, gridColumn: 'span 2', padding: '1rem 1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted }}>Filter Analytics:</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.8rem', color: theme.textDim }}>Quarter:</label>
-            <select value={analyticsFilter.quarter} onChange={(e) => setAnalyticsFilter({ ...analyticsFilter, quarter: e.target.value, period: 'all' })} style={styles.filterSelect}>
+            <label style={{ fontSize: '0.8rem', color: theme.textDim }} htmlFor="analyticspage-quarter">Quarter:</label>
+            <select id="analyticspage-quarter" value={analyticsFilter.quarter} onChange={(e) => setAnalyticsFilter({ ...analyticsFilter, quarter: e.target.value, period: 'all' })} style={styles.filterSelect}>
               <option value="all">All Quarters</option>
               <option value="Q1">Q1 (Jan-Mar)</option>
               <option value="Q2">Q2 (Apr-Jun)</option>
@@ -95,8 +95,8 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
             </select>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.8rem', color: theme.textDim }}>Month:</label>
-            <select value={analyticsFilter.period} onChange={(e) => setAnalyticsFilter({ ...analyticsFilter, period: e.target.value, quarter: 'all' })} style={styles.filterSelect}>
+            <label style={{ fontSize: '0.8rem', color: theme.textDim }} htmlFor="analyticspage-month">Month:</label>
+            <select id="analyticspage-month" value={analyticsFilter.period} onChange={(e) => setAnalyticsFilter({ ...analyticsFilter, period: e.target.value, quarter: 'all' })} style={styles.filterSelect}>
               <option value="all">All Months</option>
               {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
@@ -113,7 +113,7 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Supplier Performance</h3>
         <div style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
-            <thead><tr><th style={styles.th}>Supplier</th><th style={{ ...styles.th, textAlign: 'center' }}>Total</th><th style={{ ...styles.th, textAlign: 'center' }} title="Die received date recorded">Completed</th><th style={{ ...styles.th, textAlign: 'center' }} title="Awaiting die receivance (no die received date)">In Progress</th><th style={styles.th}>Completion Rate</th></tr></thead>
+            <thead><tr><th scope="col" style={styles.th}>Supplier</th><th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Total</th><th scope="col" style={{ ...styles.th, textAlign: 'center' }} title="Die received date recorded">Completed</th><th scope="col" style={{ ...styles.th, textAlign: 'center' }} title="Awaiting die receivance (no die received date)">In Progress</th><th scope="col" style={styles.th}>Completion Rate</th></tr></thead>
             <tbody>
               {[...new Set(analyticsData.map(o => o.Supplier))].filter(Boolean).sort().map(supplier => {
                 const supplierOrders = analyticsData.filter(o => o.Supplier === supplier && o.STATUS !== 'CANCELLED');

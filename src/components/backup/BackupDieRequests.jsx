@@ -7,23 +7,7 @@ import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
 import FrozenDesignBanner from '../FrozenDesignBanner';
 import { dialogs } from '../ui/DialogProvider';
-
-const StatusBadge = ({ status }) => {
-  const config = BACKUP_REQUEST_STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
-  return (
-    <span style={{
-      padding: '4px 12px',
-      borderRadius: '20px',
-      fontSize: '0.75rem',
-      fontWeight: 600,
-      color: config.color,
-      background: config.bgColor,
-      whiteSpace: 'nowrap',
-    }}>
-      {config.label}
-    </span>
-  );
-};
+import { BackupStatusPill } from '../ui/StatusPill';
 
 const COLUMNS = [
   { key: 'slNo', label: 'SL NO', sortable: false },
@@ -323,12 +307,12 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
         <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;color:#0F172A;">
           <thead>
             <tr style="background:#E2E8F0;color:#0F172A;">
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:center;">SL No</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Die No</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Plant</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Press</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Customer</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Requested Date</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:center;">SL No</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Die No</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Plant</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Press</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Customer</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Requested Date</th>
             </tr>
           </thead>
           <tbody>${requestRows}</tbody>
@@ -773,7 +757,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
           <table className="dt-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th className="dt-center" style={{ width: '48px' }}>
+                <th scope="col" className="dt-center" style={{ width: '48px' }}>
                   <input
                     type="checkbox"
                     checked={allPageRequestsSelected}
@@ -784,7 +768,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                   />
                 </th>
                 {COLUMNS.map(col => (
-                  <th
+                  <th scope="col"
                     key={col.key}
                     onClick={() => col.sortable !== false && handleSort(col.key)}
                     style={{ cursor: col.sortable !== false ? 'pointer' : 'default' }}
@@ -799,7 +783,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                     </div>
                   </th>
                 ))}
-                <th className="dt-center">
+                <th scope="col" className="dt-center">
                   Actions
                 </th>
               </tr>
@@ -863,7 +847,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                       {formatDate(request['Ordered Date'])}
                     </td>
                     <td>
-                      <StatusBadge status={request['Status']} />
+                      <BackupStatusPill status={request['Status']} theme={theme} />
                     </td>
                     <td>
                       {request['Reason'] || '—'}
@@ -977,8 +961,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               {/* Plant */}
               <div>
-                <label style={labelStyle}>Plant</label>
-                <select
+                <label style={labelStyle} htmlFor="backupdierequests-plant">Plant</label>
+                <select id="backupdierequests-plant"
                   value={formData['Plant']}
                   onChange={(e) => handlePlantChange(e.target.value)}
                   style={inputStyle}
@@ -992,8 +976,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* DIE NO */}
               <div>
-                <label style={labelStyle}>DIE NO</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-die-no">DIE NO</label>
+                <input id="backupdierequests-die-no"
                   type="text"
                   value={formData['DIE NO']}
                   onChange={(e) => { setFormData({ ...formData, 'DIE NO': e.target.value }); if (dieWarning) setDieWarning(''); }}
@@ -1019,8 +1003,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Customer */}
               <div>
-                <label style={labelStyle}>Customer</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-customer">Customer</label>
+                <input id="backupdierequests-customer"
                   type="text"
                   value={formData['Customer']}
                   onChange={(e) => setFormData({ ...formData, 'Customer': e.target.value })}
@@ -1031,8 +1015,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Press */}
               <div>
-                <label style={labelStyle}>Press</label>
-                <select
+                <label style={labelStyle} htmlFor="backupdierequests-press">Press</label>
+                <select id="backupdierequests-press"
                   value={formData['Press']}
                   onChange={(e) => setFormData({ ...formData, 'Press': e.target.value })}
                   disabled={!formData['Plant']}
@@ -1053,8 +1037,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Cavity */}
               <div>
-                <label style={labelStyle}>Cavity</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-cavity">Cavity</label>
+                <input id="backupdierequests-cavity"
                   type="number"
                   min="0"
                   value={formData['Cavity']}
@@ -1066,8 +1050,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Requested Date */}
               <div>
-                <label style={labelStyle}>Requested Date</label>
-                <DatePickerField
+                <label style={labelStyle} htmlFor="backupdierequests-requested-date">Requested Date</label>
+                <DatePickerField id="backupdierequests-requested-date"
                   value={formData['Requested Date']}
                   onChange={(v) => setFormData({ ...formData, 'Requested Date': v })}
                   theme={theme}
@@ -1077,8 +1061,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Die Available */}
               <div>
-                <label style={labelStyle}>Die Available</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-die-available">Die Available</label>
+                <input id="backupdierequests-die-available"
                   type="text"
                   value={formData['Die Available']}
                   onChange={(e) => setFormData({ ...formData, 'Die Available': e.target.value })}
@@ -1089,8 +1073,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Drawing Requested */}
               <div>
-                <label style={labelStyle}>Drawing Requested</label>
-                <DatePickerField
+                <label style={labelStyle} htmlFor="backupdierequests-drawing-requested">Drawing Requested</label>
+                <DatePickerField id="backupdierequests-drawing-requested"
                   value={formData['Drawing Requested']}
                   onChange={(v) => setFormData({ ...formData, 'Drawing Requested': v })}
                   theme={theme}
@@ -1100,8 +1084,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Ordered Date */}
               <div>
-                <label style={labelStyle}>Ordered Date</label>
-                <DatePickerField
+                <label style={labelStyle} htmlFor="backupdierequests-ordered-date">Ordered Date</label>
+                <DatePickerField id="backupdierequests-ordered-date"
                   value={formData['Ordered Date']}
                   onChange={(v) => setFormData({ ...formData, 'Ordered Date': v })}
                   theme={theme}
@@ -1114,8 +1098,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               {/* Status */}
               {editingRequest && (
                 <div>
-                  <label style={labelStyle}>Status</label>
-                  <select
+                  <label style={labelStyle} htmlFor="backupdierequests-status">Status</label>
+                  <select id="backupdierequests-status"
                     value={formData['Status']}
                     onChange={(e) => setFormData({ ...formData, 'Status': e.target.value })}
                     style={inputStyle}
@@ -1133,8 +1117,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Reason */}
               <div>
-                <label style={labelStyle}>Reason</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-reason">Reason</label>
+                <input id="backupdierequests-reason"
                   type="text"
                   value={formData['Reason']}
                   onChange={(e) => setFormData({ ...formData, 'Reason': e.target.value })}
@@ -1145,8 +1129,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Order Received Last Year */}
               <div>
-                <label style={labelStyle}>Order Received Last Year</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-order-received-last-year">Order Received Last Year</label>
+                <input id="backupdierequests-order-received-last-year"
                   type="text"
                   value={formData['Order Received Last Year']}
                   onChange={(e) => setFormData({ ...formData, 'Order Received Last Year': e.target.value })}
@@ -1157,8 +1141,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Remarks */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Remarks</label>
-                <input
+                <label style={labelStyle} htmlFor="backupdierequests-remarks">Remarks</label>
+                <input id="backupdierequests-remarks"
                   type="text"
                   value={formData['Remarks']}
                   onChange={(e) => setFormData({ ...formData, 'Remarks': e.target.value })}
@@ -1253,7 +1237,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               >
                 <FolderOpen size={16} /> {(orderFileHandle || orderFile) ? 'Choose different PDF' : 'Select Profile Drawing PDF'}
               </button>
-              <input
+              <input aria-label="Attach a file to this backup request"
                 ref={orderFileInputRef}
                 type="file"
                 accept="application/pdf,.pdf"
@@ -1271,8 +1255,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
               <div>
-                <label style={labelStyle}>SUPPLIER</label>
-                <select
+                <label style={labelStyle} htmlFor="backupdierequests-supplier">SUPPLIER</label>
+                <select id="backupdierequests-supplier"
                   value={orderValues.SUPPLIER}
                   onChange={(e) => {
                     const supplierName = e.target.value;
@@ -1295,22 +1279,22 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>REQUESTED DATE</label>
-                <input type="date" value={orderValues.DATE} onChange={(e) => setOrderValues({ ...orderValues, DATE: e.target.value })} style={inputStyle} />
+                <label style={labelStyle} htmlFor="backupdierequests-requested-date-2">REQUESTED DATE</label>
+                <input id="backupdierequests-requested-date-2" type="date" value={orderValues.DATE} onChange={(e) => setOrderValues({ ...orderValues, DATE: e.target.value })} style={inputStyle} />
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>DIE SIZE</label>
-                <input type="text" value={orderValues.DIE_SIZE} onChange={(e) => setOrderValues({ ...orderValues, DIE_SIZE: e.target.value })} style={inputStyle} />
+                <label style={labelStyle} htmlFor="backupdierequests-die-size">DIE SIZE</label>
+                <input id="backupdierequests-die-size" type="text" value={orderValues.DIE_SIZE} onChange={(e) => setOrderValues({ ...orderValues, DIE_SIZE: e.target.value })} style={inputStyle} />
               </div>
 
               <div>
-                <label style={labelStyle}>No OF CAV</label>
-                <input type="text" value={orderValues.NO_OF_CAV} onChange={(e) => setOrderValues({ ...orderValues, NO_OF_CAV: e.target.value })} style={inputStyle} />
+                <label style={labelStyle} htmlFor="backupdierequests-no-of-cav">No OF CAV</label>
+                <input id="backupdierequests-no-of-cav" type="text" value={orderValues.NO_OF_CAV} onChange={(e) => setOrderValues({ ...orderValues, NO_OF_CAV: e.target.value })} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>PRESS</label>
-                <select
+                <label style={labelStyle} htmlFor="backupdierequests-press-2">PRESS</label>
+                <select id="backupdierequests-press-2"
                   value={orderValues.PRESS}
                   onChange={(e) => setOrderValues({ ...orderValues, PRESS: e.target.value })}
                   style={{ ...inputStyle, cursor: 'pointer' }}
@@ -1343,26 +1327,26 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
 
               <div>
-                <label style={labelStyle}>BOLSTER No</label>
-                <input type="text" value={orderValues.BOLSTER_NO} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_NO: e.target.value })} style={inputStyle} />
+                <label style={labelStyle} htmlFor="backupdierequests-bolster-no">BOLSTER No</label>
+                <input id="backupdierequests-bolster-no" type="text" value={orderValues.BOLSTER_NO} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_NO: e.target.value })} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>INSERT No</label>
-                <input type="text" value={orderValues.INSERT_NO} onChange={(e) => setOrderValues({ ...orderValues, INSERT_NO: e.target.value })} style={inputStyle} />
-              </div>
-
-              <div>
-                <label style={labelStyle}>BOLSTER SIZE</label>
-                <input type="text" value={orderValues.BOLSTER_SIZE} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_SIZE: e.target.value })} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>INSERT SIZE</label>
-                <input type="text" value={orderValues.INSERT_SIZE} onChange={(e) => setOrderValues({ ...orderValues, INSERT_SIZE: e.target.value })} style={inputStyle} />
+                <label style={labelStyle} htmlFor="backupdierequests-insert-no">INSERT No</label>
+                <input id="backupdierequests-insert-no" type="text" value={orderValues.INSERT_NO} onChange={(e) => setOrderValues({ ...orderValues, INSERT_NO: e.target.value })} style={inputStyle} />
               </div>
 
               <div>
-                <label style={labelStyle}>REQUESTED DELIVERY DATE</label>
-                <input type="text" value={orderValues.DELIVERY_DATE} onChange={(e) => setOrderValues({ ...orderValues, DELIVERY_DATE: e.target.value })} style={inputStyle} />
+                <label style={labelStyle} htmlFor="backupdierequests-bolster-size">BOLSTER SIZE</label>
+                <input id="backupdierequests-bolster-size" type="text" value={orderValues.BOLSTER_SIZE} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_SIZE: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle} htmlFor="backupdierequests-insert-size">INSERT SIZE</label>
+                <input id="backupdierequests-insert-size" type="text" value={orderValues.INSERT_SIZE} onChange={(e) => setOrderValues({ ...orderValues, INSERT_SIZE: e.target.value })} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle} htmlFor="backupdierequests-requested-delivery-date">REQUESTED DELIVERY DATE</label>
+                <input id="backupdierequests-requested-delivery-date" type="text" value={orderValues.DELIVERY_DATE} onChange={(e) => setOrderValues({ ...orderValues, DELIVERY_DATE: e.target.value })} style={inputStyle} />
               </div>
               <div>
                 <label style={labelStyle}>3D MODULE FOR SIMULATION</label>
@@ -1373,21 +1357,21 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
 
               <div>
-                <label style={labelStyle}>MODE OF SHIPMENT</label>
-                <input type="text" value={orderValues.SHIPMENT} readOnly style={{ ...inputStyle, opacity: 0.8, cursor: 'not-allowed' }} placeholder="Auto-filled from supplier" />
+                <label style={labelStyle} htmlFor="backupdierequests-mode-of-shipment">MODE OF SHIPMENT</label>
+                <input id="backupdierequests-mode-of-shipment" type="text" value={orderValues.SHIPMENT} readOnly style={{ ...inputStyle, opacity: 0.8, cursor: 'not-allowed' }} placeholder="Auto-filled from supplier" />
               </div>
               <div>
-                <label style={labelStyle}>PROFILE WEIGHT START %</label>
-                <input type="text" value={orderValues.PROFILE_WEIGHT_PCT} onChange={(e) => setOrderValues({ ...orderValues, PROFILE_WEIGHT_PCT: e.target.value })} style={inputStyle} placeholder="e.g. 85" />
+                <label style={labelStyle} htmlFor="backupdierequests-profile-weight-start">PROFILE WEIGHT START %</label>
+                <input id="backupdierequests-profile-weight-start" type="text" value={orderValues.PROFILE_WEIGHT_PCT} onChange={(e) => setOrderValues({ ...orderValues, PROFILE_WEIGHT_PCT: e.target.value })} style={inputStyle} placeholder="e.g. 85" />
               </div>
               <div>
-                <label style={labelStyle}>PENDING ORDER (KG)</label>
-                <input type="text" value={orderValues.PENDING_ORDER_KG} onChange={(e) => setOrderValues({ ...orderValues, PENDING_ORDER_KG: e.target.value })} style={inputStyle} placeholder="e.g. 16280" />
+                <label style={labelStyle} htmlFor="backupdierequests-pending-order-kg">PENDING ORDER (KG)</label>
+                <input id="backupdierequests-pending-order-kg" type="text" value={orderValues.PENDING_ORDER_KG} onChange={(e) => setOrderValues({ ...orderValues, PENDING_ORDER_KG: e.target.value })} style={inputStyle} placeholder="e.g. 16280" />
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>REASON FOR DIE ORDERING</label>
-                <select
+                <label style={labelStyle} htmlFor="backupdierequests-reason-for-die-ordering">REASON FOR DIE ORDERING</label>
+                <select id="backupdierequests-reason-for-die-ordering"
                   value={orderValues.REASON}
                   onChange={(e) => setOrderValues({ ...orderValues, REASON: e.target.value })}
                   style={{ ...inputStyle, cursor: 'pointer' }}

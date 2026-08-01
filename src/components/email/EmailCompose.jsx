@@ -87,8 +87,8 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
                 }}>
                     {/* To */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>To</label>
-                        <input
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailcompose-to">To</label>
+                        <input id="emailcompose-to"
                             type="text"
                             value={form.to}
                             onChange={(e) => setForm({ ...form, to: e.target.value })}
@@ -100,8 +100,8 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
 
                     {/* CC */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>CC</label>
-                        <input
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailcompose-cc">CC</label>
+                        <input id="emailcompose-cc"
                             type="text"
                             value={form.cc}
                             onChange={(e) => setForm({ ...form, cc: e.target.value })}
@@ -112,8 +112,8 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
 
                     {/* Subject */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>Subject</label>
-                        <input
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailcompose-subject">Subject</label>
+                        <input id="emailcompose-subject"
                             type="text"
                             value={form.subject}
                             onChange={(e) => setForm({ ...form, subject: e.target.value })}
@@ -125,8 +125,8 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
 
                     {/* Importance */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>Importance</label>
-                        <select
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailcompose-importance">Importance</label>
+                        <select id="emailcompose-importance"
                             value={form.importance}
                             onChange={(e) => setForm({ ...form, importance: e.target.value })}
                             style={{ ...inputStyle, cursor: 'pointer' }}
@@ -159,6 +159,7 @@ const EmailCompose = ({ onClose, onSent, theme, prefill = {} }) => {
                             />
                         ) : (
                             <textarea
+                                aria-label="Email body"
                                 value={form.body}
                                 onChange={(e) => setForm({ ...form, body: e.target.value })}
                                 placeholder="Email content..."

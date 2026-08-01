@@ -35,6 +35,15 @@ export default defineConfig({
             if (id.includes('recharts')) {
               return 'charts';
             }
+            // Only the two import modals reach these, and both are lazy — but
+            // without naming them here they were still hoisted into the entry
+            // chunk and downloaded before the login screen could paint.
+            if (id.includes('pdfjs-dist')) {
+              return 'pdfjs';
+            }
+            if (id.includes('xlsx')) {
+              return 'xlsx';
+            }
           }
         },
       },

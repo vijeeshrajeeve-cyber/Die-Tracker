@@ -290,8 +290,11 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
 
   // A strict dropdown that still surfaces a pre-existing value not in the list,
   // so editing an older QD never silently drops its Press / Die Type / Alloy.
-  const optionSelect = (list, value, onChange) => (
-    <select value={value || ''} onChange={onChange} style={{ ...field, cursor: 'pointer' }}>
+  // `name` is the visible field label from the call site; the <label> above
+  // these is a sibling of the helper's output rather than of the <select>
+  // itself, so the name is carried in rather than paired by htmlFor.
+  const optionSelect = (list, value, onChange, name) => (
+    <select aria-label={name} value={value || ''} onChange={onChange} style={{ ...field, cursor: 'pointer' }}>
       <option value="">—</option>
       {value && !list.includes(value) && <option value={value}>{value}</option>}
       {list.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -301,7 +304,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
   const sectionColors = { border, text, dim, muted };
 
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <style>{`@keyframes qdModalIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
         .qd-cta:hover { filter: brightness(1.06); }`}</style>
 
@@ -333,19 +336,19 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
           <Section id="die" title="Die selection" open={open.die} onToggle={toggle} colors={sectionColors}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div style={group}>
-                <label style={label}>Die No</label>
-                <input value={dieNo} onChange={(e) => setDieNo(e.target.value)} onBlur={lookupDie}
+                <label style={label} htmlFor="raiseqdmodal-die-no">Die No</label>
+                <input id="raiseqdmodal-die-no" value={dieNo} onChange={(e) => setDieNo(e.target.value)} onBlur={lookupDie}
                   placeholder="e.g. 029780-2502" style={{ ...field, fontFamily: mono }} />
                 {partA.profileNumber && <span style={{ fontSize: 11.5, color: dim }}>Profile {partA.profileNumber}</span>}
               </div>
               <div style={group}>
-                <label style={label}>QD Requested Date</label>
-                <DatePickerField value={qdRequestedDate} onChange={setQdRequestedDate} theme={theme} />
+                <label style={label} htmlFor="raiseqdmodal-qd-requested-date">QD Requested Date</label>
+                <DatePickerField id="raiseqdmodal-qd-requested-date" value={qdRequestedDate} onChange={setQdRequestedDate} theme={theme} />
                 {!qdRequestedDate && <span style={{ fontSize: 11.5, color: dim }}>Required</span>}
               </div>
               <div style={group}>
-                <label style={label}>Plant</label>
-                <select value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+                <label style={label} htmlFor="raiseqdmodal-plant">Plant</label>
+                <select id="raiseqdmodal-plant" value={plant} onChange={(e) => setPlant(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
                   <option>GEX 2</option><option>GEX 1</option>
                 </select>
               </div>
@@ -353,16 +356,16 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
                 <label style={label}>Supplier</label>
                 {/* Fall back to free text so the very first QD can still be raised. */}
                 {suppliers.length ? (
-                  <select value={supplier} onChange={(e) => setSupplier(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+                  <select aria-label="Supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
                     {suppliers.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 ) : (
-                  <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. PDTMC" style={field} />
+                  <input aria-label="Supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. PDTMC" style={field} />
                 )}
               </div>
               <div style={group}>
-                <label style={label}>Corrector</label>
-                <input value={corrector} onChange={(e) => setCorrector(e.target.value)} placeholder="e.g. Sijith" style={field} />
+                <label style={label} htmlFor="raiseqdmodal-corrector">Corrector</label>
+                <input id="raiseqdmodal-corrector" value={corrector} onChange={(e) => setCorrector(e.target.value)} placeholder="e.g. Sijith" style={field} />
               </div>
             </div>
             {lookupNote && <div style={{ fontSize: 11.5, color: '#60A5FA' }}>{lookupNote}</div>}
@@ -372,40 +375,40 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
           <Section id="partA" title="Part A — Die details" hint="auto-filled when the die matches an order" open={open.partA} onToggle={toggle} colors={sectionColors}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div style={group}>
-                <label style={label}>Die Received Date</label>
-                <DatePickerField value={partA.dieReceivedDate} onChange={setPADate('dieReceivedDate')} theme={theme} />
+                <label style={label} htmlFor="raiseqdmodal-die-received-date">Die Received Date</label>
+                <DatePickerField id="raiseqdmodal-die-received-date" value={partA.dieReceivedDate} onChange={setPADate('dieReceivedDate')} theme={theme} />
               </div>
               <div style={group}>
                 <label style={label}>Press</label>
-                {optionSelect(pressOptions, partA.press, setPA('press'))}
+                {optionSelect(pressOptions, partA.press, setPA('press'), 'Press')}
               </div>
               <div style={group}>
                 <label style={label}>Die Type</label>
-                {optionSelect(dieTypeOptions, partA.dieType, setPA('dieType'))}
+                {optionSelect(dieTypeOptions, partA.dieType, setPA('dieType'), 'Die Type')}
               </div>
               <div style={group}>
-                <label style={label}>Die Size</label>
-                <input value={partA.dieSize} onChange={setPA('dieSize')} style={field} />
+                <label style={label} htmlFor="raiseqdmodal-die-size">Die Size</label>
+                <input id="raiseqdmodal-die-size" value={partA.dieSize} onChange={setPA('dieSize')} style={field} />
               </div>
               <div style={group}>
-                <label style={label}>No of Cavity</label>
-                <input value={partA.noOfCavity} onChange={setPA('noOfCavity')} style={field} />
+                <label style={label} htmlFor="raiseqdmodal-no-of-cavity">No of Cavity</label>
+                <input id="raiseqdmodal-no-of-cavity" value={partA.noOfCavity} onChange={setPA('noOfCavity')} style={field} />
               </div>
               <div style={group}>
-                <label style={label}>Tooling</label>
-                <input value={partA.tooling} onChange={setPA('tooling')} style={field} />
+                <label style={label} htmlFor="raiseqdmodal-tooling">Tooling</label>
+                <input id="raiseqdmodal-tooling" value={partA.tooling} onChange={setPA('tooling')} style={field} />
               </div>
               <div style={group}>
-                <label style={label}>No of Trials</label>
-                <input value={partA.noOfTrials} onChange={setPA('noOfTrials')} style={field} />
+                <label style={label} htmlFor="raiseqdmodal-no-of-trials">No of Trials</label>
+                <input id="raiseqdmodal-no-of-trials" value={partA.noOfTrials} onChange={setPA('noOfTrials')} style={field} />
               </div>
               <div style={group}>
-                <label style={label}>No of Corrections</label>
-                <input value={partA.noOfCorrections} onChange={setPA('noOfCorrections')} style={field} />
+                <label style={label} htmlFor="raiseqdmodal-no-of-corrections">No of Corrections</label>
+                <input id="raiseqdmodal-no-of-corrections" value={partA.noOfCorrections} onChange={setPA('noOfCorrections')} style={field} />
               </div>
               <div style={group}>
-                <label style={label}>Production Date</label>
-                <DatePickerField value={partA.productionDate} onChange={setPADate('productionDate')} theme={theme} />
+                <label style={label} htmlFor="raiseqdmodal-production-date">Production Date</label>
+                <DatePickerField id="raiseqdmodal-production-date" value={partA.productionDate} onChange={setPADate('productionDate')} theme={theme} />
               </div>
             </div>
           </Section>
@@ -427,16 +430,16 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
                           <>
                             {yesNo(answer, setBilletYesNo(which, bf))}
                             {answer === 'Yes' && (
-                              <textarea value={billets[which]?.[bf.detailsKey] || ''}
+                              <textarea aria-label={`${bf.label} — details`} value={billets[which]?.[bf.detailsKey] || ''}
                                 onChange={setBilletField(which, bf.detailsKey)} rows={2}
                                 placeholder="What was the delay?"
                                 style={{ ...field, marginTop: 8, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
                             )}
                           </>
                         ) : bf.key === 'alloy' ? (
-                          optionSelect(alloyOptions, billets[which]?.alloy, setBilletField(which, 'alloy'))
+                          optionSelect(alloyOptions, billets[which]?.alloy, setBilletField(which, 'alloy'), bf.label)
                         ) : (
-                          <input value={billets[which]?.[bf.key] || ''} onChange={setBilletField(which, bf.key)} style={field} />
+                          <input aria-label={bf.label} value={billets[which]?.[bf.key] || ''} onChange={setBilletField(which, bf.key)} style={field} />
                         )}
                       </div>
                     );
@@ -449,8 +452,8 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
           {/* 4. Discrepancy */}
           <Section id="discrepancy" title="Discrepancy" open={open.discrepancy} onToggle={toggle} colors={sectionColors}>
             <div style={group}>
-              <label style={label}>Quality issue</label>
-              <textarea value={issue} onChange={(e) => setIssue(e.target.value)} rows={4}
+              <label style={label} htmlFor="raiseqdmodal-quality-issue">Quality issue</label>
+              <textarea id="raiseqdmodal-quality-issue" value={issue} onChange={(e) => setIssue(e.target.value)} rows={4}
                 placeholder="Describe the discrepancy — what differs from the approved design or expected performance"
                 style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
             </div>
@@ -467,8 +470,8 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
             </div>
 
             <div style={group}>
-              <label style={label}>Recommended Action</label>
-              <textarea value={partA.recommendedAction} onChange={setPA('recommendedAction')} rows={2}
+              <label style={label} htmlFor="raiseqdmodal-recommended-action">Recommended Action</label>
+              <textarea id="raiseqdmodal-recommended-action" value={partA.recommendedAction} onChange={setPA('recommendedAction')} rows={2}
                 placeholder="e.g. Rework die profile, re-check heat treatment"
                 style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
             </div>
@@ -489,8 +492,8 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
             </div>
 
             <div style={group}>
-              <label style={label}>Input at failure</label>
-              <input value={inputAtFailure} onChange={(e) => setInputAtFailure(e.target.value)} placeholder="e.g. 3,417 kg — optional, can be added later" style={field} />
+              <label style={label} htmlFor="raiseqdmodal-input-at-failure">Input at failure</label>
+              <input id="raiseqdmodal-input-at-failure" value={inputAtFailure} onChange={(e) => setInputAtFailure(e.target.value)} placeholder="e.g. 3,417 kg — optional, can be added later" style={field} />
             </div>
           </Section>
 
@@ -513,8 +516,8 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
               </div>
             )}
             <div style={group}>
-              <label style={label}>Category for files added next</label>
-              <select value={fileCategory} onChange={(e) => setFileCategory(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+              <label style={label} htmlFor="raiseqdmodal-category-for-files-added-next">Category for files added next</label>
+              <select id="raiseqdmodal-category-for-files-added-next" value={fileCategory} onChange={(e) => setFileCategory(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
                 {FILE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
@@ -525,18 +528,18 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
                 if (picked.length) setStaged((prev) => [...prev, ...picked.map((file) => ({ file, category: fileCategory }))]);
                 e.target.value = ''; // reset so the same file can be re-added (e.g. under a different category)
               }} />
-            <div onClick={() => fileRef.current && fileRef.current.click()}
+            <button type="button" className="row-open press-soft" onClick={() => fileRef.current && fileRef.current.click()}
               style={{ border: `2px dashed ${border}`, borderRadius: 8, padding: 20, textAlign: 'center', color: dim, fontSize: 13, cursor: 'pointer' }}>
               <Upload size={18} style={{ marginBottom: 6 }} />
               <div>Add images or PDF reports — pick a category above, then <span style={{ color: '#60A5FA', fontWeight: 600 }}>Browse Files</span>. Repeat to add more under other categories.</div>
-            </div>
+            </button>
 
             {staged.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {staged.map((s, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8 }}>
                     <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.file.name}>{s.file.name}</span>
-                    <select value={s.category}
+                    <select aria-label={`Category for ${s.file?.name || 'attachment'}`} value={s.category}
                       onChange={(e) => setStaged((prev) => prev.map((it, j) => (j === i ? { ...it, category: e.target.value } : it)))}
                       style={{ ...field, padding: '5px 8px', fontSize: '0.78rem', cursor: 'pointer', flex: 'none' }}>
                       {FILE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}

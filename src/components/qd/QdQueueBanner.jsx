@@ -33,7 +33,7 @@ export default function QdQueueBanner({ title, tone = 'amber', qds = [], theme =
         </span>
       </div>
       {qds.map((q) => (
-        <div key={q.id} className={rowClass} onClick={() => onOpen && onOpen(q.id)}
+        <button type="button" key={q.id} className={`${rowClass} row-open press-soft`} onClick={() => onOpen && onOpen(q.id)}
           style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 6px', borderRadius: 8, cursor: onOpen ? 'pointer' : 'default' }}>
           <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: text, minWidth: 96 }}>{q.qd_no || '—'}</span>
           <span style={{ fontSize: 12.5, color: muted }}>Die {q.die_no}</span>
@@ -42,7 +42,7 @@ export default function QdQueueBanner({ title, tone = 'amber', qds = [], theme =
           <span style={{ fontSize: 11.5, color: dim, marginLeft: 'auto', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {q.sent_back_reason ? q.sent_back_reason : (q.prepared_by ? `from ${q.prepared_by}` : '')}
           </span>
-        </div>
+        </button>
       ))}
     </div>
   );

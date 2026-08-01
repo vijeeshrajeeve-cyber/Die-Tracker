@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, Database } from 'lucide-react';
-import * as XLSX from 'xlsx';
+// See the note in utils/exportExcel: xlsx is loaded on demand, not shipped in
+// the main bundle. The enclosing reader is already async.
+let xlsxPromise = null;
+const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 import Papa from 'papaparse';
 import { existingDataAPI } from '../api';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
@@ -51,6 +54,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
       });
     } else if (['xlsx', 'xls'].includes(ext)) {
       const buffer = await file.arrayBuffer();
+      const XLSX = await loadXLSX();
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       return XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -164,8 +168,8 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
     <div style={{ padding: '1.25rem 0 0.5rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         <div>
-          <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textDim, marginBottom: '6px' }}>Plant</label>
-          <select value={plant} onChange={(e) => setPlant(e.target.value)} style={inputStyle}>
+          <label style={{ display: 'block', fontSize: '0.8rem', color: theme.textDim, marginBottom: '6px' }} htmlFor="existingdatapage-plant">Plant</label>
+          <select id="existingdatapage-plant" value={plant} onChange={(e) => setPlant(e.target.value)} style={inputStyle}>
             <option value="">— Select plant —</option>
             {(plants || []).map(p => (
               <option key={p.id || p.name} value={p.name}>{p.name}</option>
@@ -183,7 +187,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
             }}>
               <Upload size={14} />
               Choose CSV / Excel
-              <input
+              <input aria-label="Choose a spreadsheet to import"
                 type="file"
                 accept=".csv,.tsv,.txt,.xlsx,.xls"
                 style={{ display: 'none' }}
@@ -280,7 +284,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
               <thead>
                 <tr>
                   {['Plant', 'Die Details', 'Last Imported', 'Production Data', 'Last Imported'].map((h, i) => (
-                    <th key={i} className={i === 1 || i === 3 ? 'dt-num' : undefined}>{h}</th>
+                    <th scope="col" key={i} className={i === 1 || i === 3 ? 'dt-num' : undefined}>{h}</th>
                   ))}
                 </tr>
               </thead>

@@ -34,7 +34,7 @@ const parseSimulationFlag = (value) => {
 };
 
 // PDF Import Modal Component
-const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [] }) => {
+const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [], theme = {} }) => {
   const dialogRef = useDialog({ open: true, onClose });
   const [dragActive, setDragActive] = useState(false);
   const [errors, setErrors] = useState([]);
@@ -834,30 +834,30 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
   return (
     <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
       }}
       onClick={onClose}
     >
       <div
         style={{
-          background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '1100px',
-          maxHeight: '90vh', overflow: 'hidden', border: '1px solid #334155',
+          background: theme.inputBg, borderRadius: '20px', width: '100%', maxWidth: '1100px',
+          maxHeight: '90vh', overflow: 'hidden', border: `1px solid ${theme.cardBorder}`,
         }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid #334155' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: `1px solid ${theme.cardBorder}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FileText size={24} color="white" />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import Die Order PDFs</h2>
-              <p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload die ordering request PDFs</p>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>Import Die Order PDFs</h2>
+              <p style={{ fontSize: '0.875rem', color: theme.textDim }}>Upload die ordering request PDFs</p>
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: theme.textDim, cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
             <X size={24} />
           </button>
         </div>
@@ -868,7 +868,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           {!preview && !loading && (
             <div
               style={{
-                border: `2px dashed ${dragActive ? '#F59E0B' : '#334155'}`,
+                border: `2px dashed ${dragActive ? '#F59E0B' : theme.cardBorder}`,
                 borderRadius: '16px', padding: '2.5rem', textAlign: 'center',
                 background: dragActive ? 'rgba(245,158,11,0.1)' : 'transparent', marginBottom: '1rem',
               }}
@@ -877,22 +877,21 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
               onDrop={handleDrop}
             >
               <FileText size={48} color="#64748B" />
-              <p style={{ fontSize: '1rem', color: '#F1F5F9', marginTop: '1rem' }}>Drag & drop your PDF files here</p>
-              <p style={{ color: '#64748B', margin: '0.5rem 0' }}>or</p>
+              <p style={{ fontSize: '1rem', color: theme.text, marginTop: '1rem' }}>Drag & drop your PDF files here</p>
+              <p style={{ color: theme.textDim, margin: '0.5rem 0' }}>or</p>
               <label style={{ display: 'inline-block', padding: '0.75rem 1.5rem', background: 'linear-gradient(135deg, #F59E0B, #EF4444)', color: 'white', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}>
                 Browse PDF Files
                 <input type="file" accept=".pdf" multiple onChange={(e) => processFiles(e.target.files)} hidden />
               </label>
-              <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '1rem' }}>Select multiple PDF files at once. Fields extracted from PDF info box.</p>
+              <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '1rem' }}>Select multiple PDF files at once. Fields extracted from PDF info box.</p>
             </div>
           )}
 
           {/* Loading state */}
           {loading && (
             <div style={{ textAlign: 'center', padding: '2rem' }}>
-              <div style={{ width: '40px', height: '40px', border: '3px solid #334155', borderTopColor: '#F59E0B', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
-              <p style={{ color: '#94A3B8', marginTop: '1rem' }}>Parsing {loadingProgress.current} of {loadingProgress.total} PDFs...</p>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <div data-spinner role="status" aria-label="Reading PDF" style={{ width: '40px', height: '40px', border: `3px solid ${theme.cardBorder}`, borderTopColor: '#F59E0B', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+              <p style={{ color: theme.textMuted, marginTop: '1rem' }}>Parsing {loadingProgress.current} of {loadingProgress.total} PDFs...</p>
             </div>
           )}
 
@@ -916,7 +915,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                 <CheckCircle size={20} color="#F59E0B" />
                 <div style={{ flex: 1 }}>
                   <p style={{ fontWeight: 600, color: '#F59E0B' }}>PDFs Parsed Successfully</p>
-                  <p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+                  <p style={{ fontSize: '0.8rem', color: theme.textMuted }}>
                     Found {preview.orders.length} die order{preview.orders.length !== 1 ? 's' : ''}
                   </p>
                   {preview.orders.some(o => o.isExisting) && (
@@ -933,31 +932,31 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
               </div>
 
               {/* Orders Table */}
-              <div style={{ background: '#0F172A', borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
-                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', padding: '1rem', borderBottom: '1px solid #334155' }}>
+              <div style={{ background: theme.cardBg, borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem' }}>
+                <h4 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme.textDim, padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}` }}>
                   Extracted Die Orders ({preview.orders.length})
                 </h4>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                     <thead>
-                      <tr style={{ background: '#1E293B' }}>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Die No</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Size</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Supplier</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Plant</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Type</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Cavity</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Mandrels/Cav</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Total Mandrels</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Shipment</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748B', fontWeight: 600 }}>Req Date</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Actions</th>
+                      <tr style={{ background: theme.inputBg }}>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Die No</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Size</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Supplier</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Plant</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Type</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Cavity</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Mandrels/Cav</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Total Mandrels</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Shipment</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Req Date</th>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'center', color: theme.textDim, fontWeight: 600 }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {preview.orders.map((order, index) => (
-                        <tr key={index} style={{ borderBottom: '1px solid #334155', background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>
+                        <tr key={index} style={{ borderBottom: `1px solid ${theme.cardBorder}`, background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
+                          <td style={{ padding: '10px 12px', color: theme.text, fontFamily: 'monospace' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <span>{order['DIE NO']}</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -966,7 +965,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                                 {order._componentType === 'DIE PLATE ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(59,130,246,0.2)', color: '#3B82F6', borderRadius: '4px' }}>DIE PLATE ONLY</span>}
                                 {order._componentType === 'INSERT MANDREL ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(139,92,246,0.2)', color: '#8B5CF6', borderRadius: '4px' }}>INSERT MANDREL ONLY</span>}
                                 {order._componentType === 'BOLSTER/INSERT' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(20,184,166,0.2)', color: '#14B8A6', borderRadius: '4px' }}>BOLSTER/INSERT</span>}
-                                {order._isRevision && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(148,163,184,0.2)', color: '#94A3B8', borderRadius: '4px' }}>REVISION</span>}
+                                {order._isRevision && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(148,163,184,0.2)', color: theme.textMuted, borderRadius: '4px' }}>REVISION</span>}
                                 {order._reorderNote && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(251,146,60,0.2)', color: '#FB923C', borderRadius: '4px' }}>RE-ORDER (SUPPLIER CHANGED)</span>}
                               </div>
                               {order._reorderNote && (
@@ -974,13 +973,14 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               )}
                             </div>
                           </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order['Die Size']}</td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9' }}>{order.Supplier}</td>
+                          <td style={{ padding: '10px 12px', color: theme.text }}>{order['Die Size']}</td>
+                          <td style={{ padding: '10px 12px', color: theme.text }}>{order.Supplier}</td>
                           <td style={{ padding: '10px 12px' }}>
                             <select
+                              aria-label={`Plant for die ${order['DIE NO'] || index + 1}`}
                               value={order.Plant || ''}
                               onChange={(e) => handleEditOrder(index, 'Plant', e.target.value || null)}
-                              style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
+                              style={{ background: theme.inputBg, border: 'none', borderRadius: '4px', padding: '4px 8px', color: theme.text, fontSize: '0.8rem' }}
                             >
                               <option value="">--</option>
                               <option value="GEX 1">GEX 1</option>
@@ -989,9 +989,10 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                           </td>
                           <td style={{ padding: '10px 12px' }}>
                             <select
+                              aria-label={`Type for die ${order['DIE NO'] || index + 1}`}
                               value={order.TYPE || ''}
                               onChange={(e) => handleEditOrder(index, 'TYPE', e.target.value || null)}
-                              style={{ background: '#334155', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#F1F5F9', fontSize: '0.8rem' }}
+                              style={{ background: theme.inputBg, border: 'none', borderRadius: '4px', padding: '4px 8px', color: theme.text, fontSize: '0.8rem' }}
                             >
                               <option value="">--</option>
                               <option value="N">N - New</option>
@@ -1015,7 +1016,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                                   'Total Mandrels': mpc * (cav || 1),
                                 });
                               }}
-                              style={{ width: '50px', padding: '4px 6px', background: '#334155', border: 'none', borderRadius: '4px', color: '#F1F5F9', fontSize: '0.8rem', textAlign: 'center' }}
+                              style={{ width: '50px', padding: '4px 6px', background: theme.inputBg, border: 'none', borderRadius: '4px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
                             />
                           </td>
                           <td style={{ padding: '10px 12px' }}>
@@ -1031,10 +1032,10 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                                   'Total Mandrels': mpc * cavities,
                                 });
                               }}
-                              style={{ width: '50px', padding: '4px 6px', background: '#334155', border: 'none', borderRadius: '4px', color: '#F1F5F9', fontSize: '0.8rem', textAlign: 'center' }}
+                              style={{ width: '50px', padding: '4px 6px', background: theme.inputBg, border: 'none', borderRadius: '4px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
                             />
                           </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</td>
+                          <td style={{ padding: '10px 12px', color: theme.text, fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</td>
                           <td style={{ padding: '10px 12px' }}>
                             <span style={{
                               padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
@@ -1044,7 +1045,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               {order['Type of shipment']}
                             </span>
                           </td>
-                          <td style={{ padding: '10px 12px', color: '#F1F5F9', fontSize: '0.8rem' }}>{formatDate(order['Die Requested Date'])}</td>
+                          <td style={{ padding: '10px 12px', color: theme.text, fontSize: '0.8rem' }}>{formatDate(order['Die Requested Date'])}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                             <button
                               onClick={() => handleRemoveOrder(index)}
@@ -1064,7 +1065,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
               {/* Upload More button */}
               <label style={{
                 display: 'block', width: '100%', padding: '0.5rem', background: 'transparent',
-                border: '1px solid #334155', borderRadius: '8px', color: '#94A3B8', cursor: 'pointer',
+                border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.textMuted, cursor: 'pointer',
                 textAlign: 'center', fontSize: '0.875rem',
               }}>
                 Upload More PDFs
@@ -1075,8 +1076,8 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
         </div>
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: '1px solid #334155' }}>
-          <button onClick={onClose} disabled={importing} style={{ padding: '0.75rem 1.5rem', background: '#334155', color: '#F1F5F9', border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.5 : 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '1.25rem 1.5rem', borderTop: `1px solid ${theme.cardBorder}` }}>
+          <button onClick={onClose} disabled={importing} style={{ padding: '0.75rem 1.5rem', background: theme.inputBg, color: theme.text, border: '1px solid #475569', borderRadius: '10px', fontWeight: 600, cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.5 : 1 }}>
             Cancel
           </button>
           <button
@@ -1091,7 +1092,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
               display: 'flex', alignItems: 'center', gap: '8px',
             }}
           >
-            {importing && <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
+            {importing && <div data-spinner style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
             {importing ? 'Importing...' : `Import ${preview?.orders?.length || 0} Die Orders`}
           </button>
         </div>

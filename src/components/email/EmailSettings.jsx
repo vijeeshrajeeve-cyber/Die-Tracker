@@ -362,10 +362,10 @@ const EmailSettings = ({ theme }) => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-days-awaiting-design">
                             Days Awaiting Design
                         </label>
-                        <input
+                        <input id="emailsettings-days-awaiting-design"
                             type="number"
                             min={1}
                             max={60}
@@ -378,10 +378,10 @@ const EmailSettings = ({ theme }) => {
                         </p>
                     </div>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-send-time">
                             Send Time
                         </label>
-                        <input
+                        <input id="emailsettings-send-time"
                             type="time"
                             value={reminder.time}
                             onChange={(e) => setReminder({ ...reminder, time: e.target.value || '08:00' })}
@@ -461,10 +461,10 @@ const EmailSettings = ({ theme }) => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-supplier-send-time">
                             Supplier Send Time
                         </label>
-                        <input type="time" value={foc.supplierTime}
+                        <input id="emailsettings-supplier-send-time" type="time" value={foc.supplierTime}
                             onChange={(e) => setFoc({ ...foc, supplierTime: e.target.value || '08:00' })}
                             style={inputStyle} />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
@@ -488,10 +488,10 @@ const EmailSettings = ({ theme }) => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginTop: '18px' }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-send-to">
                             Send To
                         </label>
-                        <input type="text" value={foc.internalTo} placeholder="quality@example.com, hod@example.com"
+                        <input id="emailsettings-send-to" type="text" value={foc.internalTo} placeholder="quality@example.com, hod@example.com"
                             onChange={(e) => setFoc({ ...foc, internalTo: e.target.value })}
                             style={inputStyle} />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
@@ -499,18 +499,18 @@ const EmailSettings = ({ theme }) => {
                         </p>
                     </div>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-internal-send-time">
                             Internal Send Time
                         </label>
-                        <input type="time" value={foc.internalTime}
+                        <input id="emailsettings-internal-send-time" type="time" value={foc.internalTime}
                             onChange={(e) => setFoc({ ...foc, internalTime: e.target.value || '08:00' })}
                             style={inputStyle} />
                     </div>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-idle-days">
                             Idle Days
                         </label>
-                        <input type="number" min={0} max={60} value={foc.idleDays}
+                        <input id="emailsettings-idle-days" type="number" min={0} max={60} value={foc.idleDays}
                             onChange={(e) => setFoc({ ...foc, idleDays: Math.max(0, Math.min(60, parseInt(e.target.value) || 0)) })}
                             style={inputStyle} />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
@@ -581,10 +581,10 @@ const EmailSettings = ({ theme }) => {
                     {/* SMTP Host & Port */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-smtp-host">
                                 SMTP Host
                             </label>
-                            <input
+                            <input id="emailsettings-smtp-host"
                                 type="text"
                                 value={config.smtp_host}
                                 onChange={(e) => setConfig({ ...config, smtp_host: e.target.value })}
@@ -593,10 +593,10 @@ const EmailSettings = ({ theme }) => {
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-port">
                                 Port
                             </label>
-                            <input
+                            <input id="emailsettings-port"
                                 type="number"
                                 value={config.smtp_port}
                                 onChange={(e) => setConfig({ ...config, smtp_port: parseInt(e.target.value) || 587 })}
@@ -608,10 +608,10 @@ const EmailSettings = ({ theme }) => {
                     {/* IMAP Host & Port */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-imap-host">
                                 IMAP Host
                             </label>
-                            <input
+                            <input id="emailsettings-imap-host"
                                 type="text"
                                 value={config.imap_host}
                                 onChange={(e) => setConfig({ ...config, imap_host: e.target.value })}
@@ -620,10 +620,10 @@ const EmailSettings = ({ theme }) => {
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-port-2">
                                 Port
                             </label>
-                            <input
+                            <input id="emailsettings-port-2"
                                 type="number"
                                 value={config.imap_port}
                                 onChange={(e) => setConfig({ ...config, imap_port: parseInt(e.target.value) || 993 })}
@@ -634,10 +634,10 @@ const EmailSettings = ({ theme }) => {
 
                     {/* Email Credentials */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-email-username">
                             Email / Username
                         </label>
-                        <input
+                        <input id="emailsettings-email-username"
                             type="text"
                             value={config.email_user}
                             onChange={(e) => setConfig({ ...config, email_user: e.target.value })}
@@ -650,11 +650,11 @@ const EmailSettings = ({ theme }) => {
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-password-app-password">
                             Password / App Password
                         </label>
                         <div style={{ position: 'relative' }}>
-                            <input
+                            <input id="emailsettings-password-app-password"
                                 type={showPassword ? 'text' : 'password'}
                                 value={config.email_password}
                                 onChange={(e) => setConfig({ ...config, email_password: e.target.value })}
@@ -675,10 +675,10 @@ const EmailSettings = ({ theme }) => {
 
                     {/* From / Mailbox Email */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-from-mailbox-email">
                             From / Mailbox Email
                         </label>
-                        <input
+                        <input id="emailsettings-from-mailbox-email"
                             type="email"
                             value={config.mailbox_email}
                             onChange={(e) => setConfig({ ...config, mailbox_email: e.target.value })}

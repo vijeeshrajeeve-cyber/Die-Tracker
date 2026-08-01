@@ -1,5 +1,11 @@
-import * as XLSX from 'xlsx';
 import { parseDateDMY } from './helpers';
+
+// `xlsx` is ~800 KB and is only needed the moment someone clicks Export. A
+// static import put the whole spreadsheet writer in the main bundle, so it was
+// downloaded and parsed before the login screen could paint, for every user
+// including the ones who only ever read the register.
+let xlsxPromise = null;
+const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
 const EXCEL_DATE_FMT = 'dd mmm yyyy';
 
@@ -65,7 +71,7 @@ const computeColWidths = (rows, columns) => {
 
 // Apply a date number format to every date cell in the date-typed columns so
 // Excel renders them as real, sortable dates rather than serial numbers.
-const applyDateFormats = (ws, columns, rowCount) => {
+const applyDateFormats = (XLSX, ws, columns, rowCount) => {
   columns.forEach((col, ci) => {
     if (col.format !== 'date') return;
     for (let ri = 1; ri <= rowCount; ri++) {
@@ -77,7 +83,8 @@ const applyDateFormats = (ws, columns, rowCount) => {
 };
 
 // Export an array of source rows to an .xlsx file using a curated column map.
-export const exportToExcel = ({ rows, columns, filename, sheetName = 'Export' }) => {
+export const exportToExcel = async ({ rows, columns, filename, sheetName = 'Export' }) => {
+  const XLSX = await loadXLSX();
   const safeRows = Array.isArray(rows) ? rows : [];
   const exportRows = safeRows.map((r) => buildRow(r, columns));
 
@@ -85,7 +92,7 @@ export const exportToExcel = ({ rows, columns, filename, sheetName = 'Export' })
     header: columns.map((c) => c.label),
   });
   ws['!cols'] = computeColWidths(exportRows, columns);
-  applyDateFormats(ws, columns, exportRows.length);
+  applyDateFormats(XLSX, ws, columns, exportRows.length);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));

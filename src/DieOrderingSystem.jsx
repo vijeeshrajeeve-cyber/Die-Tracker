@@ -1,7 +1,12 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useId, lazy, Suspense } from 'react';
 import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake, ClipboardCheck, CornerUpLeft } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+
+// `xlsx` is ~800 KB and is only reachable from the spreadsheet import and the
+// Excel export — both of them user-initiated. Statically imported it sat in the
+// main bundle, downloaded before the login screen could paint.
+let xlsxPromise = null;
+const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
 import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
@@ -9,17 +14,16 @@ import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
 import DialogProvider, { dialogs } from './components/ui/DialogProvider';
-import { PDFImportModal, PIImportModal, MissingCustomerPromptModal, RevisionModal, RevisionHistoryModal, ChangeLogModal, SignatureModal } from './components/modals';
+import { MissingCustomerPromptModal, RevisionModal, RevisionHistoryModal, ChangeLogModal, SignatureModal } from './components/modals';
 import BackupDieRequests from './components/backup/BackupDieRequests';
 import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
-import { CONTROLLABLE_PAGES } from './utils/constants';
+import { CONTROLLABLE_PAGES, STATUS_CONFIG, APP_NAME, pageTitle } from './utils/constants';
 import { parseDateDMY, formatDate } from './utils/helpers';
 import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
-import DashboardPage from './pages/DashboardPage';
-import AnalyticsPage from './pages/AnalyticsPage';
+
 import FlowPage from './pages/FlowPage';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
@@ -30,25 +34,35 @@ import QDTrackerPage from './pages/QDTrackerPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
 import useQdQueue from './hooks/useQdQueue';
 import FreezeDesignModal from './components/FreezeDesignModal';
+
+// Split out of the main bundle. Between them these three pull in pdfjs-dist,
+// the PDF text extractor and recharts — roughly a quarter of the download —
+// and none of it is needed to show the login screen or the register. They load
+// the first time someone actually opens them.
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+// Dashboard is the landing tab, but it is still behind the login screen — and
+// it is the only other thing pulling in recharts.
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const PDFImportModal = lazy(() => import('./components/modals/PDFImportModal'));
+const PIImportModal = lazy(() => import('./components/modals/PIImportModal'));
+
+// Shown while a split chunk is in flight. Deliberately quiet: on a LAN these
+// arrive in well under a second, and a spinner that flashes for 200ms reads as
+// a glitch rather than as progress.
+const ChunkFallback = ({ theme }) => (
+  <div role="status" aria-live="polite" style={{ padding: '2rem', color: theme?.textMuted, fontSize: '0.875rem' }}>
+    Loading…
+  </div>
+);
 import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
 import { BRAND, BRAND_ALPHA } from './utils/brand';
 
 
 
-// Status configuration
-const STATUS_CONFIG = {
-  'AWAITING FOR DESIGN': { color: '#DC2626', bgColor: '#FEF2F2', icon: Clock, label: 'Awaiting Design' },
-  'PENDING FOR DESIGN APPROVAL': { color: '#EA580C', bgColor: '#FFF7ED', icon: AlertTriangle, label: 'Design Approval' },
-  'UNDER SIMULATION': { color: '#7C3AED', bgColor: '#F5F3FF', icon: Layers, label: 'Simulation' },
-  'PENDING FOR DESIGN TO EMS': { color: '#2563EB', bgColor: '#EFF6FF', icon: Package, label: 'Design to EMS' },
-  'PENDING FOR PR': { color: '#D97706', bgColor: '#FFFBEB', icon: TrendingUp, label: 'Pending PR' },
-  'PENDING FOR ORACLE ENTRY': { color: '#C2410C', bgColor: '#FFF7ED', icon: Factory, label: 'Oracle Entry' },
-  'PENDING FOR ORDERING': { color: '#0D9488', bgColor: '#F0FDFA', icon: Truck, label: 'Pending Order' },
-  'DONE': { color: '#16A34A', bgColor: '#F0FDF4', icon: CheckCircle, label: 'In Manufacturing' },
-  'DIE RECEIVED': { color: '#0891B2', bgColor: '#ECFEFF', icon: Package, label: 'Die Received' },
-  'CANCELLED': { color: '#6B7280', bgColor: '#F3F4F6', icon: XCircle, label: 'Cancelled' },
-  'HOLD': { color: '#4B5563', bgColor: '#F9FAFB', icon: AlertTriangle, label: 'On Hold' },
-};
+// STATUS_CONFIG now lives in utils/constants (imported above). The copy that
+// used to sit here had drifted from it — this one knew 'DIE RECEIVED' and the
+// shared one did not, so the same order rendered as a cyan pill in the detail
+// modal and as raw grey text in the register.
 
 
 const ERP_PRESS_CODE_MAP = {
@@ -233,10 +247,8 @@ const normalizeColumnName = (col) => {
 };
 
 // Components
-const StatusBadge = ({ status }) => {
-  const config = STATUS_CONFIG[status] || { color: '#6B7280', bgColor: '#F3F4F6', label: status };
-  return <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, backgroundColor: config.bgColor, color: config.color }}>{config.label}</span>;
-};
+// (StatusBadge used to be defined here. It was never rendered in this file —
+// the live pill is components/ui/StatusPill, which OrdersPage uses.)
 
 const ProgressPipeline = ({ order }) => {
   // Include 3D Model stage only if simulation is enabled for this order
@@ -318,8 +330,9 @@ const ImportModal = ({ onClose, onImport }) => {
       };
       reader.readAsText(file);
     } else if (file.name.match(/\.xlsx?$/)) {
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
+          const XLSX = await loadXLSX();
           const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
           const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('die') || n.toLowerCase().includes('order')) || wb.SheetNames[0];
           const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
@@ -332,7 +345,7 @@ const ImportModal = ({ onClose, onImport }) => {
   }, []);
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
       <div style={{ background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '520px', border: '1px solid #334155' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid #334155' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -485,9 +498,12 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
 
   const renderField = ({ label, field, type = 'text', options, required, span, disabled, placeholder }) => (
     <div key={field} style={span ? { gridColumn: `span ${span}` } : {}}>
-      <label style={labelStyle}>{label}{required && <span style={{ color: '#EF4444' }}> *</span>}</label>
+      {/* `field` is the form's own unique key, so it doubles as a stable id and
+          ties this generated label to whichever control the branch below renders. */}
+      <label htmlFor={`addorder-${field}`} style={labelStyle}>{label}{required && <span style={{ color: '#EF4444' }}> *</span>}</label>
       {type === 'select' ? (
         <select
+          id={`addorder-${field}`}
           value={form[field]}
           onChange={e => set(field, e.target.value)}
           disabled={disabled}
@@ -501,14 +517,14 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
           )}
         </select>
       ) : (
-        <input type={type} value={form[field]} onChange={e => set(field, e.target.value)} style={inputStyle(!!errors[field])} />
+        <input id={`addorder-${field}`} type={type} value={form[field]} onChange={e => set(field, e.target.value)} style={inputStyle(!!errors[field])} />
       )}
       {errors[field] && <span style={{ fontSize: '0.68rem', color: '#EF4444', marginTop: '3px', display: 'block' }}>{errors[field]}</span>}
     </div>
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
       <div style={{ background: bg, borderRadius: '20px', width: '100%', maxWidth: '720px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', border: `1px solid ${border}`, boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -599,8 +615,8 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
               {renderField({ label: 'Ascona Reference', field: 'Ascona Reference' })}
               {renderField({ label: 'Sample Status', field: 'Sample Status' })}
             </div>
-            <label style={labelStyle}>Remark</label>
-            <textarea
+            <label style={labelStyle} htmlFor="addordermodal-remark">Remark</label>
+            <textarea id="addordermodal-remark"
               value={form.Remark}
               onChange={e => set('Remark', e.target.value)}
               rows={3}
@@ -663,13 +679,19 @@ const passwordInputStyle = {
 };
 
 // Password Input Component (defined outside to prevent re-render on each keystroke)
-const PasswordInput = ({ name, label, value, show, onToggle, onChange }) => (
+// The change-password form renders three of these at once, so the label/input
+// pairing has to come from useId rather than a literal — three inputs sharing
+// one id would leave two of them nameless to a screen reader.
+const PasswordInput = ({ name, label, value, show, onToggle, onChange }) => {
+  const fieldId = useId();
+  return (
   <div style={{ marginBottom: '1rem' }}>
-    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: '#94A3B8', marginBottom: '6px' }}>
+    <label htmlFor={fieldId} style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: '#94A3B8', marginBottom: '6px' }}>
       {label}
     </label>
     <div style={{ position: 'relative' }}>
       <input
+        id={fieldId}
         type={show ? 'text' : 'password'}
         value={value}
         onChange={onChange}
@@ -688,7 +710,8 @@ const PasswordInput = ({ name, label, value, show, onToggle, onChange }) => (
       </button>
     </div>
   </div>
-);
+  );
+};
 
 // Password Change Modal Component
 const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
@@ -747,7 +770,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
   return (
     <div
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)',
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem'
       }}
       onClick={isForced ? undefined : onClose}
@@ -880,7 +903,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
           >
             {loading ? (
               <>
-                <div style={{
+                <div data-spinner style={{
                   width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.3)',
                   borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite'
                 }} />
@@ -893,7 +916,6 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
               </>
             )}
           </button>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </form>
       </div>
     </div>
@@ -1111,6 +1133,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
       {isEditing ? (
         type === 'select' && options ? (
           <select
+            aria-label={label}
             style={{ ...selectStyle, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.65 : 1 }}
             value={editedOrder[field] || ''}
             onChange={(e) => handleFieldChange(field, e.target.value)}
@@ -1125,6 +1148,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           </select>
         ) : type === 'date' ? (
           <input
+            aria-label={label}
             type="date"
             style={dateInputStyle}
             value={editedOrder[field] ? String(editedOrder[field]).split('T')[0] : ''}
@@ -1132,7 +1156,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
             onClick={(e) => e.target.showPicker && e.target.showPicker()}
           />
         ) : (
-          <input type="text" style={inputStyle} value={editedOrder[field] || ''} onChange={(e) => handleFieldChange(field, e.target.value)} />
+          <input aria-label={label} type="text" style={inputStyle} value={editedOrder[field] || ''} onChange={(e) => handleFieldChange(field, e.target.value)} />
         )
       ) : (
         <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{type === 'date' ? formatDate(value) : (value || '—')}</span>
@@ -1212,7 +1236,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
             <ProgressPipeline order={currentOrder} />
             {isEditing && <p style={{ fontSize: '0.7rem', color: theme?.textDim || '#64748B', marginTop: '8px', fontStyle: 'italic' }}>Fill in date fields below to update progress</p>}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
             <div style={{ background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
               <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Order Details</h3>
               {InfoRow({ label: 'Plant', field: 'Plant', value: currentOrder.Plant, type: 'select', options: plants.map(p => p.name) })}
@@ -1246,6 +1270,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                 <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '96px' }}>Urgency</span>
                 {isEditing ? (
                   <select
+                    aria-label="Urgency"
                     style={selectStyle}
                     value={normalizeOrderUrgency(editedOrder.Urgency)}
                     onChange={(e) => handleFieldChange('Urgency', e.target.value)}
@@ -1313,7 +1338,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           {/* Attachments Section */}
           <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
             <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Attachments</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
               {FileRow({ label: 'Die Order Form', field: 'dieOrderFile', value: editedOrder.dieOrderFile, notesField: 'dieOrderFileNotes', signatureField: 'dieOrderFileSignature' })}
               {FileRow({ label: 'Die Design PDF', field: 'designFile', value: editedOrder.designFile, notesField: 'designFileNotes', signatureField: 'designFileSignature' })}
             </div>
@@ -1371,7 +1396,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
 
       {/* Status Change Reason Modal */}
       {statusReasonModal.show && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }} onClick={e => e.stopPropagation()}>
           <div style={{ background: theme?.cardBg || '#1E293B', borderRadius: '16px', width: '100%', maxWidth: '440px', border: `1px solid ${theme?.cardBorder || '#334155'}`, overflow: 'hidden' }}>
             {/* Header */}
             <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}`, background: statusReasonModal.newStatus === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(75,85,99,0.15)' }}>
@@ -1439,13 +1464,29 @@ export default function DieOrderingSystem() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showCompletedInChart, setShowCompletedInChart] = useState(false);
   const [showCancelledInChart, setShowCancelledInChart] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+  // What the user chose. Persisted; never overwritten by the viewport.
+  const [sidebarCollapsedPref, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('sidebarCollapsed') === 'true';
     } catch {
       return false;
     }
   });
+  // Below 900px the 260px rail leaves roughly 115px of content on a phone and
+  // about half a table on a tablet, so the rail collapses to icons whatever the
+  // stored preference says. Expanding again on a wide screen restores the
+  // preference rather than whatever the narrow layout forced.
+  const [viewportNarrow, setViewportNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = (e) => setViewportNarrow(e.matches);
+    mq.addEventListener('change', onChange);
+    setViewportNarrow(mq.matches);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const sidebarCollapsed = sidebarCollapsedPref || viewportNarrow;
   // Get dark mode preference from localStorage, default to true (dark mode)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
@@ -1486,11 +1527,13 @@ export default function DieOrderingSystem() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? 'true' : 'false');
+      // The preference, not the derived value — otherwise opening the app on a
+      // phone would persist "collapsed" and the desktop would inherit it.
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsedPref ? 'true' : 'false');
     } catch {
       console.warn('Unable to save sidebar preference');
     }
-  }, [sidebarCollapsed]);
+  }, [sidebarCollapsedPref]);
 
   const itemsPerPage = 10;
 
@@ -1504,6 +1547,15 @@ export default function DieOrderingSystem() {
 
   // Auth state
   const [isLoggedIn, setIsLoggedIn] = useState(checkLoggedIn());
+
+  // Name the browser tab after the page. Users keep several of these open at
+  // once and every one of them read "die-ordering-app" before this. Declared
+  // here rather than beside the sidebar state because the dependency array is
+  // evaluated during render, and `isLoggedIn` is not initialised until above.
+  useEffect(() => {
+    document.title = isLoggedIn ? pageTitle(activeTab) : APP_NAME;
+  }, [activeTab, isLoggedIn]);
+
   const [user, setUser] = useState(getUser());
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginPasswordVisible, setLoginPasswordVisible] = useState(false);
@@ -2304,7 +2356,7 @@ export default function DieOrderingSystem() {
 
   const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
 
-  const exportData = () => {
+  const exportData = async () => {
     const exportRows = data.map(order => {
       const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
       const deliveryDays = calcLeadDays(order['Ordered date'], receivedDate);
@@ -2322,6 +2374,7 @@ export default function DieOrderingSystem() {
         'Manufacturing Lead Time (days)': mfgDays !== null ? mfgDays : '',
       };
     });
+    const XLSX = await loadXLSX();
     const ws = XLSX.utils.json_to_sheet(exportRows, { cellDates: true });
     // Render every date cell with a readable, sortable date format.
     Object.keys(ws).forEach(addr => {
@@ -2345,10 +2398,18 @@ export default function DieOrderingSystem() {
   // Shadows are tuned per theme rather than shared: the old
   // `rgba(0,0,0,0.02)` was mathematically invisible on a #09090b page.
   const theme = isDarkMode ? {
+    // Carried on the theme so components that already receive it can resolve
+    // theme-dependent values (status pills) without a second prop threaded
+    // through every call site.
+    isDark: true,
     bg: '#09090b',
     text: '#fafafa',
     textMuted: '#a1a1aa',
-    textDim: '#71717a',
+    // Was #71717a — 4.12:1 on the page and 3.84:1 on cardBg, under the AA bar
+    // at all 175 call sites this token feeds (timestamps, secondary IDs,
+    // helper text). Lifted to clear 4.5:1 while staying a step below textMuted,
+    // so the three-tier hierarchy survives.
+    textDim: '#8b8b94',
     cardBg: '#131316',
     cardBorder: '#27272a',
     inputBg: '#18181b',
@@ -2375,10 +2436,20 @@ export default function DieOrderingSystem() {
     focusRingContrast: 'rgba(255,255,255,0.55)',
     overlayBg: 'rgba(0,0,0,0.62)'
   } : {
+    isDark: false,
     bg: '#fafafa',
     text: '#09090b',
-    textMuted: '#71717a',
-    textDim: '#a1a1aa',
+    // Both secondary tiers moved. textDim was #a1a1aa — 2.46:1 on the page and
+    // 2.56:1 on white cards, barely half the AA bar and the worst contrast in
+    // the app after the status pills. It could not simply be darkened: the old
+    // textMuted (#71717a, 4.83:1) sat so close to the floor that there was no
+    // room left underneath it for a legal third tier. So muted moves down to
+    // open the gap, and dim lands just above the floor. Measured on all three
+    // light surfaces (page #fafafa, card #ffffff, input #f4f4f5): muted
+    // 6.52-7.17, dim 4.53-4.98, and the tiers still read as three distinct
+    // weights rather than two.
+    textMuted: '#57575e',
+    textDim: '#6f6f77',
     cardBg: '#ffffff',
     cardBorder: '#e4e4e7',
     inputBg: '#f4f4f5',
@@ -2425,7 +2496,13 @@ export default function DieOrderingSystem() {
       marginLeft: sidebarCollapsed ? '64px' : '260px',
       background: theme.bg,
       minHeight: '100vh',
-      transition: 'margin-left 0.2s ease, background 0.15s ease'
+      minWidth: 0, // lets the table's own overflow container scroll instead of stretching this flex item
+      // `margin-left` is deliberately NOT transitioned. Animating it relaid out
+      // the entire main column — data table included — on every frame for 200ms,
+      // and the collapse toggle is most often used precisely when a long table
+      // is on screen. The sidebar still animates its own width; only the offset
+      // snaps, which reads as the content getting out of the way immediately.
+      transition: 'background 0.15s ease'
     },
     topBar: { background: theme.headerBg, borderBottom: `1px solid ${theme.cardBorder}`, padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, transition: 'background 0.15s ease' },
     
@@ -2452,7 +2529,7 @@ export default function DieOrderingSystem() {
     th: { padding: '1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, cursor: 'pointer', borderBottom: `1px solid ${theme.cardBorder}` },
     td: { padding: '1rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.875rem', color: theme.text },
     pipelineSection: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
-    pipelineColumns: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' },
+    pipelineColumns: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' },
     pipelineColumn: (color) => ({ borderRadius: '8px', padding: '1rem', background: isDarkMode ? `${color}10` : `${color}1A`, border: `1px solid ${color}33` }), 
     pipelineItem: { background: theme.cardBg, borderRadius: '6px', padding: '12px', marginBottom: '8px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm, width: 'calc(100% - 2px)', overflow: 'hidden', transition: 'all 0.15s ease' },
   };
@@ -2507,13 +2584,13 @@ export default function DieOrderingSystem() {
           </div>
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>Username</label>
-              <input type="text" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} style={{ width: '100%', padding: '12px 16px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#F1F5F9', fontSize: '0.875rem' }} placeholder="Enter username" required />
+              <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }} htmlFor="dieorderingsystem-username">Username</label>
+              <input id="dieorderingsystem-username" type="text" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} style={{ width: '100%', padding: '12px 16px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#F1F5F9', fontSize: '0.875rem' }} placeholder="Enter username" required />
             </div>
             <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>Password</label>
+              <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }} htmlFor="dieorderingsystem-password">Password</label>
               <div style={{ position: 'relative' }}>
-                <input
+                <input id="dieorderingsystem-password"
                   type={loginPasswordVisible ? 'text' : 'password'}
                   value={loginForm.password}
                   onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
@@ -2642,11 +2719,11 @@ export default function DieOrderingSystem() {
         <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;color:#0F172A;">
           <thead>
             <tr style="background:#E2E8F0;color:#0F172A;">
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:center;">SL No</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Die Number</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Order Number</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">${dateLabel}</th>
-              <th style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Plant</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:center;">SL No</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Die Number</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Order Number</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">${dateLabel}</th>
+              <th scope="col" style="padding:9px 10px;border:1px solid #CBD5E1;text-align:left;">Plant</th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
@@ -2892,6 +2969,10 @@ export default function DieOrderingSystem() {
   return (
     <DialogProvider theme={theme}>
     <div style={styles.appLayout}>
+      {/* First focusable element on the page. Off-screen until focused, then it
+          drops into view — the only way to reach the table without tabbing the
+          whole nav rail first. */}
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -2925,21 +3006,23 @@ export default function DieOrderingSystem() {
           onManageSignature={() => setShowSignatureModal(true)}
         />
 
-        <main style={styles.main}>
+        <main id="main-content" tabIndex={-1} style={styles.main}>
 
 
           {activeTab === 'dashboard' && hasPageAccess('dashboard') && (
-            <DashboardPage
-              data={data}
-              plantBudgets={plantBudgets}
-              backupRequests={backupRequests}
-              theme={theme}
-              isDarkMode={isDarkMode}
-              hasPageAccess={hasPageAccess}
-              setActiveTab={setActiveTab}
-              setSelectedOrder={setSelectedOrder}
-              setFilters={setFilters}
-            />
+            <Suspense fallback={<ChunkFallback theme={theme} />}>
+              <DashboardPage
+                data={data}
+                plantBudgets={plantBudgets}
+                backupRequests={backupRequests}
+                theme={theme}
+                isDarkMode={isDarkMode}
+                hasPageAccess={hasPageAccess}
+                setActiveTab={setActiveTab}
+                setSelectedOrder={setSelectedOrder}
+                setFilters={setFilters}
+              />
+            </Suspense>
           )}
 
           {activeTab === 'orders' && hasPageAccess('orders') && (
@@ -3039,7 +3122,9 @@ export default function DieOrderingSystem() {
           )}
 
           {activeTab === 'analytics' && hasPageAccess('analytics') && (
-            <AnalyticsPage data={data} suppliers={suppliers} theme={theme} />
+            <Suspense fallback={<ChunkFallback theme={theme} />}>
+              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} />
+            </Suspense>
           )}
           {/* Settings Tab (Admin Only) */}
           {activeTab === 'settings' && user?.role === 'admin' && (
@@ -3088,8 +3173,16 @@ export default function DieOrderingSystem() {
 
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} canEdit={activeTab === 'orders'} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
-        {showPDFImportModal && <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} />}
-        {showPIImportModal && <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} />}
+        {showPDFImportModal && (
+          <Suspense fallback={<ChunkFallback theme={theme} />}>
+            <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} theme={theme} />
+          </Suspense>
+        )}
+        {showPIImportModal && (
+          <Suspense fallback={<ChunkFallback theme={theme} />}>
+            <PIImportModal onClose={() => setShowPIImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} theme={theme} />
+          </Suspense>
+        )}
         <MissingCustomerPromptModal prompt={missingCustomerPrompt} setPrompt={setMissingCustomerPrompt} theme={theme} />
         {showPasswordChangeModal && (
           <PasswordChangeModal

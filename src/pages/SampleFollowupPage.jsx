@@ -221,8 +221,8 @@ export default function SampleFollowupPage({
     return matchesStatus && matchesPlant && matchesSearch;
   });
 
-  const handleExport = () => {
-    exportToExcel({
+  const handleExport = async () => {
+    await exportToExcel({
       rows: filteredFollowups,
       filename: 'sample_followups',
       sheetName: 'Sample Followup',
@@ -263,7 +263,7 @@ export default function SampleFollowupPage({
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '240px' }}>
             <Search size={18} color={theme.textMuted} />
-            <input
+            <input aria-label="Search sample followups"
               type="text"
               placeholder="Search followups..."
               value={searchTerm}
@@ -341,22 +341,22 @@ export default function SampleFollowupPage({
             <table className="dt-table" style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={th}>Die</th>
-                  <th style={th}>Profile</th>
-                  <th style={th}>Plant</th>
-                  <th style={th}>Press</th>
-                  <th style={th}>Supplier</th>
-                  <th style={th}>Customer</th>
-                  <th style={th}>Die Received Date</th>
-                  <th style={th}>Ascona Ref</th>
-                  <th style={th}>Submission Date</th>
-                  <th style={th}>Sample Approval Date</th>
-                  <th style={th} className="dt-center">Delay Days</th>
-                  <th style={th}>Status</th>
-                  <th style={th} className="dt-center">No. of Trial</th>
-                  <th style={th}>Remark</th>
-                  <th style={th}>Corrector</th>
-                  <th style={th} className="dt-center">Actions</th>
+                  <th scope="col" style={th}>Die</th>
+                  <th scope="col" style={th}>Profile</th>
+                  <th scope="col" style={th}>Plant</th>
+                  <th scope="col" style={th}>Press</th>
+                  <th scope="col" style={th}>Supplier</th>
+                  <th scope="col" style={th}>Customer</th>
+                  <th scope="col" style={th}>Die Received Date</th>
+                  <th scope="col" style={th}>Ascona Ref</th>
+                  <th scope="col" style={th}>Submission Date</th>
+                  <th scope="col" style={th}>Sample Approval Date</th>
+                  <th scope="col" style={th} className="dt-center">Delay Days</th>
+                  <th scope="col" style={th}>Status</th>
+                  <th scope="col" style={th} className="dt-center">No. of Trial</th>
+                  <th scope="col" style={th}>Remark</th>
+                  <th scope="col" style={th}>Corrector</th>
+                  <th scope="col" style={th} className="dt-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -535,8 +535,8 @@ export default function SampleFollowupPage({
                 </div>
               ))}
               <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Remark</label>
-                <textarea
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }} htmlFor="samplefollowuppage-remark">Remark</label>
+                <textarea id="samplefollowuppage-remark"
                   value={sampleFollowupForm.remark || ''}
                   onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, remark: e.target.value })}
                   rows={3}

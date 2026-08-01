@@ -32,7 +32,7 @@ function ChangeLogModal({ order, onClose, theme }) {
                 position: 'fixed',
                 inset: 0,
                 background: 'rgba(0,0,0,0.7)',
-                backdropFilter: 'blur(8px)',
+                backdropFilter: 'blur(4px)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

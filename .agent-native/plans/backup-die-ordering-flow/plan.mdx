@@ -1,0 +1,210 @@
+---
+title: Backup Die Ordering Request Flow
+slug: backup-die-ordering-flow
+kind: plan
+localOnly: true
+summary: Storyboard of the eight user-visible states in the Backup Die request flow, from intake through the two-file die order output.
+---
+
+## What this covers
+
+The Backup Die Requests screen is where a die requirement is captured **before** it becomes a formal die order. The storyboard above walks the eight states a user actually sees, in the order they hit them: raise a request, get past the duplicate guard, chase the design team for drawings, then convert the request into a stamped die order plus a J-file.
+
+Everything on this screen lives in a single component, `src/components/backup/BackupDieRequests.jsx`, mounted from `src/DieOrderingSystem.jsx:2909` when the `backup-requests` tab is active. It receives `backupRequests`, `plants`, `user`, `emailTemplates`, and an `onCompose` callback that opens the shared email composer.
+
+There are two distinct exits from a request, and they are independent of each other. Chasing drawings writes a `Drawing Requested` date. Generating the order produces files and is reachable from the row action at any time — including before any drawing was ever requested.
+
+## The record
+
+<Table
+  id="tbl-fields"
+  columns={["Field", "Set by", "Note"]}
+  rows={[
+    ["Plant", "User", "Drives which presses are selectable"],
+    ["DIE NO", "User", "profile = text before the first dash, leading zeros stripped"],
+    ["Customer", "Profile lookup, else user", "Written back to Profile Master when entered by hand"],
+    ["Press", "User", "Disabled until Plant is chosen, then filtered to that plant"],
+    ["Requested Date", "Defaults to today", "Prefilled on create"],
+    ["Drawing Requested", "Send side-effect", "Stamped when the drawing-request mail is sent"],
+    ["Ordered Date", "Elsewhere", "Disabled on create; filled when a matching die order exists"],
+    ["Status", "Mostly elsewhere", "User can only pick Pending / HOLD / Not required"],
+  ]}
+/>
+
+Status is worth calling out. The dropdown offers `Pending`, `HOLD`, and `Not required`; `Completed` only appears as an option if the record is *already* Completed. So completion is never something a user sets here — it arrives from the ordering side.
+
+## Mechanics worth knowing
+
+### Selection is gated by the drawing date
+
+<AnnotatedCode
+  id="ac-selectable"
+  filename="src/components/backup/BackupDieRequests.jsx"
+  language="jsx"
+  code={`const isSelectable = (request) => !request['Drawing Requested'];
+
+onSent: async () => {
+  const today = getTodayDateString();
+  try {
+    await Promise.all(selectedRequests.map(request =>
+      backupRequestsAPI.update(request.id, { ...request, 'Drawing Requested': today })
+    ));
+  } catch (error) {
+    dialogs.notify('Email sent, but the Drawing Requested date could not be updated: ' + error.message, 'error', { title: 'Partially completed' });
+  }
+  setSelectedRequestIds([]);
+  onRefresh();
+},`}
+  annotations={[
+    {
+      lines: "1",
+      label: "One-shot chase",
+      note: "A request that already has a drawing date can never be selected again — this is what locks row 3 in state 4.",
+    },
+    {
+      lines: "3-4",
+      label: "Send-side effect",
+      note: "The date is written on send, not on save. Closing the composer without sending changes nothing.",
+    },
+    {
+      lines: "9-10",
+      label: "No rollback",
+      note: "The mail is already gone. A failed write leaves the row selectable, so it can be chased a second time.",
+    },
+  ]}
+/>
+
+### The duplicate guard is a hard stop
+
+<AnnotatedCode
+  id="ac-duplicate"
+  filename="src/components/backup/BackupDieRequests.jsx"
+  language="jsx"
+  code={`const handleSave = async () => {
+  const die = (formData['DIE NO'] || '').trim();
+
+  // Block duplicates — a die number with an existing backup request or die order cannot be re-used.
+  const duplicateWarning = getDuplicateDieWarning(die);
+  if (duplicateWarning) {
+    setDieWarning(duplicateWarning);
+    dialogs.notify(duplicateWarning, 'error', { title: 'Duplicate die' });
+    return;
+  }`}
+  annotations={[
+    {
+      lines: "5-9",
+      label: "Checked twice",
+      note: "The same helper runs on DIE NO blur (advisory amber box) and again here, where it actually blocks the save.",
+    },
+    {
+      lines: "4",
+      note: "Scope is both backup requests AND die orders, compared on a normalized uppercase die number.",
+    },
+  ]}
+/>
+
+### Where each date comes from
+
+<Diagram id="dg-dates" caption="Which surface writes which date on a backup request." frame="show">
+
+```html
+<div class="diagram-panel">
+  <div class="diagram-box">
+    <div class="diagram-pill">This screen</div>
+    <div class="diagram-node">Requested Date — defaults to today on create</div>
+    <div class="diagram-node">Drawing Requested — stamped when the chase mail sends</div>
+  </div>
+  <div class="diagram-box">
+    <div class="diagram-pill">Ordering side</div>
+    <div class="diagram-node">Ordered Date — filled when a matching die order exists</div>
+    <div class="diagram-node">Status → Completed — never set by the user here</div>
+  </div>
+</div>
+```
+
+```css
+.diagram-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.diagram-box { display: flex; flex-direction: column; gap: 8px; padding: 14px; }
+.diagram-node { line-height: 1.4; }
+```
+
+</Diagram>
+
+## Things I noticed while mapping this
+
+<Callout id="co-admin" tone="risk">
+
+**The order action is not permission-gated.** Edit and Delete are wrapped in `user?.role === 'admin'`, but the green Generate Die Order PDF button is rendered for every user. Any user who can see the page can produce a stamped die order and a J-file.
+
+</Callout>
+
+<Callout id="co-prompt" tone="warning">
+
+**One raw `window.prompt` survives in the save path.** When a die has a profile but no customer and the lookup misses, `handleSave` calls `window.prompt(...)` to collect the customer name, while the rest of the component uses the shared `dialogs` provider. It is the only unstyled, unthemed dialog in the flow.
+
+</Callout>
+
+<Callout id="co-frozen" tone="info">
+
+**Frozen-design prefill is best-effort.** The lookup is wrapped in a bare `catch` that proceeds without prefill, so a lookup failure and a genuine no-match are indistinguishable to the user — the order form simply opens emptier than expected.
+
+</Callout>
+
+### Open Questions
+
+<QuestionForm
+  id="qf-open"
+  questions={[
+    {
+      id: "order-permission",
+      title: "Should Generate Die Order PDF be admin-only?",
+      subtitle: "It currently sits beside admin-gated Edit/Delete but has no role check of its own.",
+      mode: "single",
+      options: [
+        {
+          id: "gate-admin",
+          label: "Gate it to admin",
+          detail: "Matches Edit/Delete, but blocks whoever raises requests day to day.",
+        },
+        {
+          id: "leave-open",
+          label: "Leave it open to all users",
+          detail: "Ordering is the point of the screen; the gate would mostly get in the way.",
+          recommended: true,
+        },
+        {
+          id: "new-permission",
+          label: "Add a separate page permission",
+          detail: "Finer control, but adds a permission concept the app does not have yet.",
+        },
+      ],
+      required: true,
+    },
+    {
+      id: "stamp-failure",
+      title: "What should happen when the mail sends but the date stamp fails?",
+      subtitle: "Today the user is told, the row stays selectable, and the design team can be chased twice.",
+      mode: "single",
+      options: [
+        {
+          id: "retry",
+          label: "Retry the write in the background",
+          detail: "Keeps the chase one-shot without asking the user to do anything.",
+          recommended: true,
+        },
+        {
+          id: "keep",
+          label: "Keep the current notify-only behaviour",
+          detail: "Honest about what happened; a duplicate chase is a mild annoyance, not a defect.",
+        },
+      ],
+    },
+    {
+      id: "prompt-replace",
+      title: "Anything else about this flow you want captured before it gets changed?",
+      mode: "freeform",
+      placeholder: "Constraints, plant-specific behaviour, or steps the storyboard missed...",
+    },
+  ]}
+  submitLabel="Send answers"
+/>
