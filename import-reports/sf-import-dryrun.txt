@@ -1,0 +1,1295 @@
+Sample Followup import (DRY RUN — nothing written)
+Sheet: /app/Sample.xlsx
+Run:   2026-08-03T08:55:13.780Z
+
+== 1. Matched and changing (192) ==
+  row 2  027048-2502  (order 488)
+      die_received_date: (empty) → 2025-10-24
+      submission_date: (empty) → 2025-10-24
+      sample_approval_date: (empty) → 2025-10-24
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 3  014861-3506  (order 638)
+      die_received_date: (empty) → 2026-01-14
+      submission_date: (empty) → 2026-01-15
+      sample_approval_date: (empty) → 2026-01-15
+      no_of_trial: 0 → 2
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 4  007097-2506  (order 598)
+      die_received_date: (empty) → 2026-01-23
+      submission_date: (empty) → 2026-01-23
+      sample_approval_date: (empty) → 2026-01-23
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 5  030425-2502  (order 596)
+      die_received_date: (empty) → 2026-01-29
+      submission_date: (empty) → 2026-02-03
+      sample_approval_date: (empty) → 2026-02-03
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 6  007209-3501  (order 476)
+      die_received_date: (empty) → 2026-01-30
+      submission_date: (empty) → 2026-02-03
+      sample_approval_date: (empty) → 2026-02-03
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 7  014752-2507  (order 632)
+      die_received_date: (empty) → 2026-02-02
+      submission_date: (empty) → 2026-02-02
+      sample_approval_date: (empty) → 2026-02-02
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 8  013940-2506  (order 634)
+      die_received_date: (empty) → 2026-02-02
+      submission_date: (empty) → 2026-02-02
+      sample_approval_date: (empty) → 2026-02-02
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 9  030560-3501  (order 520)
+      die_received_date: (empty) → 2026-02-07
+      submission_date: (empty) → 2026-02-17
+      sample_approval_date: (empty) → 2026-02-19
+      no_of_trial: 0 → 4
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 10  019662-2501  (order 615)
+      die_received_date: (empty) → 2026-02-07
+      submission_date: (empty) → 2026-03-05
+      sample_approval_date: (empty) → 2026-03-05
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 11  005501-3515  (order 500)
+      die_received_date: (empty) → 2026-02-09
+      submission_date: (empty) → 2026-02-11
+      sample_approval_date: (empty) → 2026-02-11
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 12  007098-3506  (order 510)
+      die_received_date: (empty) → 2026-02-09
+      submission_date: (empty) → 2026-02-11
+      sample_approval_date: (empty) → 2026-02-11
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 13  015616-2502  (order 610)
+      die_received_date: (empty) → 2026-02-10
+      submission_date: (empty) → 2026-02-17
+      sample_approval_date: (empty) → 2026-02-17
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 14  014725-2503  (order 633)
+      die_received_date: (empty) → 2026-02-10
+      submission_date: (empty) → 2026-02-17
+      sample_approval_date: (empty) → 2026-02-17
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 15  027048-2503  (order 607)
+      die_received_date: (empty) → 2026-02-11
+      submission_date: (empty) → 2026-02-17
+      sample_approval_date: (empty) → 2026-02-24
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 16  028776-3501  (order 640)
+      die_received_date: (empty) → 2026-02-11
+      submission_date: (empty) → 2026-02-11
+      sample_approval_date: (empty) → 2026-02-11
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 17  051118-3537  (order 466)
+      die_received_date: (empty) → 2026-02-13
+      submission_date: (empty) → 2026-02-17
+      sample_approval_date: (empty) → 2026-02-17
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 18  051117-2506  (order 461)
+      die_received_date: (empty) → 2026-02-13
+      submission_date: (empty) → 2026-02-17
+      sample_approval_date: (empty) → 2026-02-17
+      no_of_trial: 0 → 2
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 19  051027-2512  (order 613)
+      die_received_date: (empty) → 2026-02-14
+      submission_date: (empty) → 2026-02-21
+      sample_approval_date: (empty) → 2026-02-23
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 20  013212-2506  (order 636)
+      die_received_date: (empty) → 2026-02-14
+      submission_date: (empty) → 2026-02-20
+      sample_approval_date: (empty) → 2026-02-20
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 21  051117-2508  (order 460)
+      die_received_date: (empty) → 2026-02-16
+      submission_date: (empty) → 2026-02-21
+      sample_approval_date: (empty) → 2026-02-23
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 22  007098-2510  (order 519)
+      die_received_date: (empty) → 2026-02-19
+      submission_date: (empty) → 2026-02-28
+      sample_approval_date: (empty) → 2026-02-28
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 23  051118-3538  (order 464)
+      die_received_date: (empty) → 2026-02-19
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 24  051118-3539  (order 462)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 25  026209-2502  (order 446)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 26  007098-2511  (order 518)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-03-04
+      sample_approval_date: (empty) → 2026-02-25
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 27  030422-2502  (order 524)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-24
+      sample_approval_date: (empty) → 2026-02-24
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 28  007098-3507  (order 517)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 29  030287-3504  (order 522)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      no_of_trial: 0 → 2
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 30  019480-2505  (order 616)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-20
+      sample_approval_date: (empty) → 2026-02-20
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 31  013906-2503  (order 635)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 32  005151-2508  (order 637)
+      die_received_date: (empty) → 2026-02-20
+      submission_date: (empty) → 2026-02-23
+      sample_approval_date: (empty) → 2026-02-23
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 33  027716-3502  (order 445)
+      die_received_date: (empty) → 2026-02-23
+      submission_date: (empty) → 2026-02-25
+      sample_approval_date: (empty) → 2026-02-25
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 34  055080-3501  (order 400)
+      die_received_date: (empty) → 2026-02-23
+      submission_date: (empty) → 2026-02-27
+      sample_approval_date: (empty) → 2026-03-02
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 35  055079-3501  (order 401)
+      die_received_date: (empty) → 2026-02-23
+      submission_date: (empty) → 2026-02-27
+      sample_approval_date: (empty) → 2026-03-02
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 36  013940-3510  (order 448)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-02-28
+      sample_approval_date: (empty) → 2026-02-28
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 37  007226-3501  (order 434)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-03-17
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 4
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 38  029078-2504  (order 487)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-02-25
+      sample_approval_date: (empty) → 2026-02-25
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 39  013010-2510  (order 482)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-02-25
+      sample_approval_date: (empty) → 2026-02-25
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 40  010765-2501  (order 480)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-02-28
+      sample_approval_date: (empty) → 2026-02-28
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 41  051117-3524  (order 468)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-03-03
+      sample_approval_date: (empty) → 2026-03-03
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 42  051117-3525  (order 467)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-03-03
+      sample_approval_date: (empty) → 2026-03-03
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 43  007224-3501  (order 439)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-03-04
+      sample_approval_date: (empty) → 2026-06-24
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 44  007108-2504  (order 395)
+      die_received_date: (empty) → 2026-02-25
+      submission_date: (empty) → 2026-02-25
+      sample_approval_date: (empty) → 2026-02-25
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 45  007225-3501  (order 435)
+      die_received_date: (empty) → 2026-02-26
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 46  032024-2501  (order 432)
+      die_received_date: (empty) → 2026-02-26
+      submission_date: (empty) → 2026-03-04
+      sample_approval_date: (empty) → 2026-06-24
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 47  030566-2501  (order 436)
+      die_received_date: (empty) → 2026-02-26
+      submission_date: (empty) → 2026-03-11
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Sample Submitted
+  row 48  030377-3502  (order 484)
+      die_received_date: (empty) → 2026-02-26
+      submission_date: (empty) → 2026-02-28
+      sample_approval_date: (empty) → 2026-02-28
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 49  030569-2501  (order 412)
+      die_received_date: (empty) → 2026-02-27
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-05-05
+      no_of_trial: 0 → 3
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 50  051150-3501  (order 403)
+      die_received_date: (empty) → 2026-02-27
+      submission_date: (empty) → 2026-03-11
+      sample_approval_date: (empty) → 2026-03-11
+      no_of_trial: 0 → 3
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 51  051118-3540  (order 344)
+      die_received_date: (empty) → 2026-03-02
+      submission_date: (empty) → 2026-03-07
+      sample_approval_date: (empty) → 2026-03-09
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 52  015651-2508  (order 483)
+      die_received_date: (empty) → 2026-03-03
+      submission_date: (empty) → 2026-03-05
+      sample_approval_date: (empty) → 2026-03-05
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 53  013940-3511  (order 447)
+      die_received_date: (empty) → 2026-03-03
+      submission_date: (empty) → 2026-03-05
+      sample_approval_date: (empty) → 2026-03-05
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 54  030574-2501  (order 373)
+      die_received_date: (empty) → 2026-03-03
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-26
+      no_of_trial: 0 → 2
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 55  051117-2507  (order 463)
+      die_received_date: (empty) → 2026-03-04
+      submission_date: (empty) → 2026-03-07
+      sample_approval_date: (empty) → 2026-03-09
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 56  007223-3501  (order 441)
+      die_received_date: (empty) → 2026-03-04
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 57  030571-2501  (order 410)
+      die_received_date: (empty) → 2026-03-04
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-05-05
+      no_of_trial: 0 → 2
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 58  029078-2503  (order 485)
+      die_received_date: (empty) → 2026-03-04
+      submission_date: (empty) → 2026-03-04
+      sample_approval_date: (empty) → 2026-03-04
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 59  051117-2509  (order 297)
+      die_received_date: (empty) → 2026-03-05
+      submission_date: (empty) → 2026-03-11
+      sample_approval_date: (empty) → 2026-03-12
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 60  051117-2510  (order 296)
+      die_received_date: (empty) → 2026-03-06
+      submission_date: (empty) → 2026-03-11
+      sample_approval_date: (empty) → 2026-03-12
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 61  051118-3541  (order 343)
+      die_received_date: (empty) → 2026-03-06
+      submission_date: (empty) → 2026-03-07
+      sample_approval_date: (empty) → 2026-03-09
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 62  010744-2504  (order 393)
+      die_received_date: (empty) → 2026-03-06
+      submission_date: (empty) → 2026-03-09
+      sample_approval_date: (empty) → 2026-03-09
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 63  051117-2511  (order 295)
+      die_received_date: (empty) → 2026-03-06
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-03-16
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 64  029898-3501  (order 469)
+      die_received_date: (empty) → 2026-03-07
+      submission_date: (empty) → 2026-03-09
+      sample_approval_date: (empty) → 2026-03-09
+      no_of_trial: 0 → 3
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 65  013794-3512  (order 449)
+      die_received_date: (empty) → 2026-03-07
+      submission_date: (empty) → 2026-03-09
+      sample_approval_date: (empty) → 2026-03-09
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 66  032029-2501  (order 326)
+      die_received_date: (empty) → 2026-03-07
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-26
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 67  011069-2505  (order 450)
+      die_received_date: (empty) → 2026-03-07
+      submission_date: (empty) → 2026-03-09
+      sample_approval_date: (empty) → 2026-03-09
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 68  032030-2501  (order 325)
+      die_received_date: (empty) → 2026-03-10
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-26
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 69  032032-3501  (order 322)
+      die_received_date: (empty) → 2026-03-10
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-31
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 70  032031-3501  (order 323)
+      die_received_date: (empty) → 2026-03-10
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-26
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 71  030565-2501  (order 437)
+      die_received_date: (empty) → 2026-03-10
+      submission_date: (empty) → 2026-03-16
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Sample Submitted
+  row 72  007227-3501  (order 438)
+      die_received_date: (empty) → 2026-03-10
+      submission_date: (empty) → 2026-03-10
+      sample_approval_date: (empty) → 2026-03-10
+      no_of_trial: 0 → 2
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 73  014716-3515  (order 397)
+      die_received_date: (empty) → 2026-03-12
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-03-14
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 74  051118-3542  (order 342)
+      die_received_date: (empty) → 2026-03-12
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-16
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 75  005037-2503  (order 399)
+      die_received_date: (empty) → 2026-03-12
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-03-14
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 76  013010-2511  (order 398)
+      die_received_date: (empty) → 2026-03-12
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-03-21
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 77  014716-3516  (order 396)
+      die_received_date: (empty) → 2026-03-12
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-03-14
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 78  030114-2503  (order 394)
+      die_received_date: (empty) → 2026-03-12
+      submission_date: (empty) → 2026-03-14
+      sample_approval_date: (empty) → 2026-03-14
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 79  032041-3501  (order 351)
+      die_received_date: (empty) → 2026-03-13
+      submission_date: (empty) → 2026-03-18
+      sample_approval_date: (empty) → 2026-06-19
+      no_of_trial: 0 → 2
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 80  005158-3508  (order 479)
+      die_received_date: (empty) → 2026-03-13
+      submission_date: (empty) → 2026-03-13
+      sample_approval_date: (empty) → 2026-03-13
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 81  032033-3501  (order 324)
+      die_received_date: (empty) → 2026-03-13
+      submission_date: (empty) → 2026-03-18
+      sample_approval_date: (empty) → 2026-04-06
+      no_of_trial: 0 → 2
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 82  032035-2501  (order 320)
+      die_received_date: (empty) → 2026-03-13
+      submission_date: (empty) → 2026-03-17
+      sample_approval_date: (empty) → 2026-03-26
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 83  007209-3502  (order 475)
+      die_received_date: (empty) → 2026-03-14
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-23
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 84  032034-3501  (order 321)
+      die_received_date: (empty) → 2026-03-14
+      submission_date: (empty) → 2026-03-18
+      sample_approval_date: (empty) → 2026-04-06
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 85  004037-2501  (order 298)
+      die_received_date: (empty) → 2026-03-14
+      submission_date: (empty) → 2026-03-25
+      sample_approval_date: (empty) → 2026-04-06
+      no_of_trial: 0 → 2
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 86  018277-2502  (order 617)
+      die_received_date: (empty) → 2026-03-14
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-16
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 87  030584-2501  (order 300)
+      die_received_date: (empty) → 2026-03-16
+      submission_date: (empty) → 2026-03-26
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 2
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 88  051117-3526  (order 465)
+      die_received_date: (empty) → 2026-03-16
+      submission_date: (empty) → 2026-03-25
+      sample_approval_date: (empty) → 2026-03-25
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 89  014940-2509  (order 347)
+      die_received_date: (empty) → 2026-03-16
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-16
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 90  011388-2505  (order 345)
+      die_received_date: (empty) → 2026-03-16
+      submission_date: (empty) → 2026-03-16
+      sample_approval_date: (empty) → 2026-03-16
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 91  024216-3506  (order 346)
+      die_received_date: (empty) → 2026-03-18
+      submission_date: (empty) → 2026-03-18
+      sample_approval_date: (empty) → 2026-03-18
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 92  029897-2502  (order 470)
+      die_received_date: (empty) → 2026-03-21
+      submission_date: (empty) → 2026-03-23
+      sample_approval_date: (empty) → 2026-03-23
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 93  007209-3503  (order 155)
+      die_received_date: (empty) → 2026-03-22
+      submission_date: (empty) → 2026-03-24
+      sample_approval_date: (empty) → 2026-03-24
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 94  029466-3502  (order 392)
+      die_received_date: (empty) → 2026-03-22
+      submission_date: (empty) → 2026-03-26
+      sample_approval_date: (empty) → 2026-03-26
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 95  014861-3507  (order 597)
+      die_received_date: (empty) → 2026-03-22
+      submission_date: (empty) → 2026-03-24
+      sample_approval_date: (empty) → 2026-03-24
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 96  030582-3501  (order 310)
+      die_received_date: (empty) → 2026-03-23
+      submission_date: (empty) → 2026-03-26
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 97  032042-2501  (order 306)
+      die_received_date: (empty) → 2026-03-23
+      submission_date: (empty) → 2026-03-30
+      sample_approval_date: (empty) → 2026-04-21
+      no_of_trial: 0 → 3
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 98  030585-3501  (order 308)
+      die_received_date: (empty) → 2026-03-23
+      submission_date: (empty) → 2026-03-26
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 99  005501-3516  (order 481)
+      die_received_date: (empty) → 2026-03-24
+      submission_date: (empty) → 2026-03-26
+      sample_approval_date: (empty) → 2026-03-26
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 100  005188-2506  (order 165)
+      die_received_date: (empty) → 2026-03-25
+      submission_date: (empty) → 2026-03-25
+      sample_approval_date: (empty) → 2026-03-25
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 101  051118-3543  (order 293)
+      die_received_date: (empty) → 2026-03-25
+      submission_date: (empty) → 2026-04-03
+      sample_approval_date: (empty) → 2026-04-06
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 102  055080-3502  (order 162)
+      die_received_date: (empty) → 2026-03-25
+      submission_date: (empty) → 2026-03-30
+      sample_approval_date: (empty) → 2026-04-06
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 103  055079-3502  (order 163)
+      die_received_date: (empty) → 2026-03-25
+      submission_date: (empty) → 2026-03-30
+      sample_approval_date: (empty) → 2026-04-06
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 104  051117-2512  (order 294)
+      die_received_date: (empty) → 2026-03-25
+      submission_date: (empty) → 2026-04-03
+      sample_approval_date: (empty) → 2026-04-13
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 105  055048-2504  (order 211)
+      die_received_date: (empty) → 2026-03-26
+      submission_date: (empty) → 2026-04-20
+      sample_approval_date: (empty) → 2026-04-20
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 106  027720-2504  (order 230)
+      die_received_date: (empty) → 2026-03-26
+      submission_date: (empty) → 2026-03-28
+      sample_approval_date: (empty) → 2026-03-28
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 107  051150-3502  (order 404)
+      die_received_date: (empty) → 2026-03-26
+      submission_date: (empty) → 2026-04-21
+      sample_approval_date: (empty) → 2026-04-28
+      no_of_trial: 0 → 3
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 108  051118-3544  (order 292)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-11
+      sample_approval_date: (empty) → 2026-04-14
+      no_of_trial: 0 → 2
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 109  051027-2513  (order 168)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-14
+      no_of_trial: 0 → 3
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 110  029901-3501  (order 169)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-13
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 111  051118-3545  (order 291)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-11
+      sample_approval_date: (empty) → 2026-04-14
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 112  021311-2502  (order 174)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 113  006201-2504  (order 199)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 114  011069-2506  (order 213)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 115  007122-2506  (order 209)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 116  027710-3501  (order 232)
+      die_received_date: (empty) → 2026-03-30
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 117  022153-2504  (order 195)
+      die_received_date: (empty) → 2026-04-01
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 118  013940-3512  (order 198)
+      die_received_date: (empty) → 2026-04-01
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 119  005069-2503  (order 212)
+      die_received_date: (empty) → 2026-04-01
+      submission_date: (empty) → 2026-04-01
+      sample_approval_date: (empty) → 2026-04-01
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 120  055030-2504  (order 208)
+      die_received_date: (empty) → 2026-04-01
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-14
+      no_of_trial: 0 → 3
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 121  005201-3507  (order 146)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-02
+      sample_approval_date: (empty) → 2026-04-02
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 122  030586-3501  (order 307)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-17
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 3
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 123  030583-3501  (order 309)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-09
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 124  051028-2507  (order 167)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-30
+      sample_approval_date: (empty) → 2026-05-01
+      no_of_trial: 0 → 5
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 125  026142-3501  (order 180)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-07
+      sample_approval_date: (empty) → 2026-04-07
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 126  005284-3503  (order 202)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-02
+      sample_approval_date: (empty) → 2026-04-02
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 127  029466-2502  (order 194)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-02
+      sample_approval_date: (empty) → 2026-04-02
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 128  014855-3507  (order 197)
+      die_received_date: (empty) → 2026-04-02
+      submission_date: (empty) → 2026-04-03
+      sample_approval_date: (empty) → 2026-04-03
+      no_of_trial: 0 → 1
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 129  029717-2501  (order 119)
+      die_received_date: (empty) → 2026-04-04
+      submission_date: (empty) → 2026-04-04
+      sample_approval_date: (empty) → 2026-04-04
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 130  007122-2507  (order 124)
+      die_received_date: (empty) → 2026-04-04
+      submission_date: (empty) → 2026-04-04
+      sample_approval_date: (empty) → 2026-04-04
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 131  120494-3503  (order 176)
+      die_received_date: (empty) → 2026-04-04
+      submission_date: (empty) → 2026-04-04
+      sample_approval_date: (empty) → 2026-04-04
+      no_of_trial: 0 → 2
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 132  030567-3501  (order 179)
+      die_received_date: (empty) → 2026-04-04
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-04-27
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 133  030612-3501  (order 206)
+      die_received_date: (empty) → 2026-04-04
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-14
+      no_of_trial: 0 → 2
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 134  029955-2502  (order 196)
+      die_received_date: (empty) → 2026-04-06
+      submission_date: (empty) → 2026-04-08
+      sample_approval_date: (empty) → 2026-04-08
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 135  007100-2504  (order 125)
+      die_received_date: (empty) → 2026-04-06
+      submission_date: (empty) → 2026-04-08
+      sample_approval_date: (empty) → 2026-04-08
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 136  030567-3502  (order 178)
+      die_received_date: (empty) → 2026-04-06
+      submission_date: (empty) → 2026-04-08
+      sample_approval_date: (empty) → 2026-04-08
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 137  014040-3501  (order 200)
+      die_received_date: (empty) → 2026-04-06
+      submission_date: (empty) → 2026-04-08
+      sample_approval_date: (empty) → 2026-04-08
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 138  013005-2503  (order 201)
+      die_received_date: (empty) → 2026-04-06
+      submission_date: (empty) → 2026-04-08
+      sample_approval_date: (empty) → 2026-04-08
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 139  014719-3508  (order 349)
+      die_received_date: (empty) → 2026-04-07
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-13
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 140  029780-2509  (order 231)
+      die_received_date: (empty) → 2026-04-07
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-13
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 141  014861-3508  (order 123)
+      die_received_date: (empty) → 2026-04-09
+      submission_date: (empty) → 2026-04-14
+      sample_approval_date: (empty) → 2026-04-14
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 142  051141-2505  (order 164)
+      die_received_date: (empty) → 2026-04-09
+      submission_date: (empty) → 2026-04-20
+      sample_approval_date: (empty) → 2026-04-20
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 143  051118-3546  (order 142)
+      die_received_date: (empty) → 2026-04-10
+      submission_date: (empty) → 2026-04-30
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 144  030622-2501  (order 111)
+      die_received_date: (empty) → 2026-04-11
+      submission_date: (empty) → 2026-04-30
+      sample_approval_date: (empty) → 2026-05-13
+      no_of_trial: 0 → 2
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 145  027273-3503  (order 127)
+      die_received_date: (empty) → 2026-04-11
+      submission_date: (empty) → 2026-04-11
+      sample_approval_date: (empty) → 2026-04-11
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 146  030567-3503  (order 177)
+      die_received_date: (empty) → 2026-04-11
+      submission_date: (empty) → 2026-04-30
+      sample_approval_date: (empty) → 2026-04-30
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 147  001005-2502  (order 117)
+      die_received_date: (empty) → 2026-04-13
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-13
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 148  021321-2501  (order 120)
+      die_received_date: (empty) → 2026-04-13
+      submission_date: (empty) → 2026-04-13
+      sample_approval_date: (empty) → 2026-04-13
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 149  030623-2501  (order 110)
+      die_received_date: (empty) → 2026-04-16
+      submission_date: (empty) → 2026-05-06
+      sample_approval_date: (empty) → 2026-05-27
+      no_of_trial: 0 → 6
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 150  030624-2501  (order 113)
+      die_received_date: (empty) → 2026-04-16
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-07-31
+      no_of_trial: 0 → 4
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 151  032064-2501  (order 108)
+      die_received_date: (empty) → 2026-04-16
+      submission_date: (empty) → 2026-04-27
+      no_of_trial: 0 → 2
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Sample Submitted
+  row 152  018114-3503  (order 121)
+      die_received_date: (empty) → 2026-04-16
+      submission_date: (empty) → 2026-04-18
+      sample_approval_date: (empty) → 2026-04-18
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 153  005322-2503  (order 126)
+      die_received_date: (empty) → 2026-04-16
+      submission_date: (empty) → 2026-04-16
+      sample_approval_date: (empty) → 2026-04-16
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 154  120333-2501  (order 204)
+      die_received_date: (empty) → 2026-04-16
+      submission_date: (empty) → 2026-04-16
+      sample_approval_date: (empty) → 2026-04-16
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 155  006201-2505  (order 115)
+      die_received_date: (empty) → 2026-04-18
+      submission_date: (empty) → 2026-04-21
+      sample_approval_date: (empty) → 2026-04-21
+      no_of_trial: 0 → 2
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 156  015812-2501  (order 122)
+      die_received_date: (empty) → 2026-04-18
+      submission_date: (empty) → 2026-04-21
+      sample_approval_date: (empty) → 2026-04-21
+      no_of_trial: 0 → 3
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 157  030613-3501  (order 151)
+      die_received_date: (empty) → 2026-04-21
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-05-20
+      no_of_trial: 0 → 2
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 158  030625-701  (order 64)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-05-01
+      no_of_trial: 0 → 3
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 159  010371-702  (order 68)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-28
+      sample_approval_date: (empty) → 2026-04-28
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 160  013212-702  (order 69)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-28
+      sample_approval_date: (empty) → 2026-04-28
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 161  016050-802  (order 73)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-28
+      sample_approval_date: (empty) → 2026-04-28
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 162  030615-3501  (order 139)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-05-18
+      sample_approval_date: (empty) → 2026-06-01
+      no_of_trial: 0 → 7
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 163  030552-3501  (order 305)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-05-15
+      no_of_trial: 0 → 2
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 164  014855-3508  (order 348)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-05-13
+      sample_approval_date: (empty) → 2026-05-13
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 165  051151-3501  (order 372)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-30
+      sample_approval_date: (empty) → 2026-05-01
+      no_of_trial: 0 → 3
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 166  055055-2519  (order 210)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-05-04
+      no_of_trial: 0 → 3
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Sample Submitted
+  row 167  015651-702  (order 71)
+      die_received_date: (empty) → 2026-04-22
+      submission_date: (empty) → 2026-04-22
+      sample_approval_date: (empty) → 2026-04-22
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 170  032074-701  (order 65)
+      die_received_date: (empty) → 2026-04-25
+      submission_date: (empty) → 2026-05-05
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Sample Submitted
+  row 171  029898-802  (order 74)
+      die_received_date: (empty) → 2026-04-25
+      submission_date: (empty) → 2026-04-25
+      sample_approval_date: (empty) → 2026-04-25
+      no_of_trial: 0 → 1
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 172  005327-702  (order 60)
+      die_received_date: (empty) → 2026-04-27
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-04-27
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 173  019101-702  (order 52)
+      die_received_date: 2026-06-23 → 2026-04-27
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-04-27
+      corrector: 77 → Kailash
+      sample_status: Pending → Approved
+  row 174  014940-702  (order 58)
+      die_received_date: 2026-06-23 → 2026-04-27
+      submission_date: (empty) → 2026-04-27
+      sample_approval_date: (empty) → 2026-04-27
+      corrector: 53 → Jaypee
+      sample_status: Pending → Approved
+  row 175  005208-802  (order 62)
+      die_received_date: (empty) → 2026-04-27
+      submission_date: (empty) → 2026-05-04
+      sample_approval_date: (empty) → 2026-05-04
+      no_of_trial: 0 → 1
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 176  007230-701  (order 67)
+      die_received_date: (empty) → 2026-04-27
+      submission_date: (empty) → 2026-04-30
+      sample_approval_date: (empty) → 2026-05-11
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 177  051152-701  (order 63)
+      die_received_date: (empty) → 2026-04-28
+      submission_date: (empty) → 2026-05-04
+      sample_approval_date: (empty) → 2026-05-05
+      no_of_trial: 0 → 2
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 178  007231-801  (order 66)
+      die_received_date: (empty) → 2026-04-28
+      submission_date: (empty) → 2026-05-08
+      sample_approval_date: (empty) → 2026-05-11
+      no_of_trial: 0 → 3
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 180  009029-702  (order 59)
+      die_received_date: (empty) → 2026-04-29
+      submission_date: (empty) → 2026-05-02
+      sample_approval_date: (empty) → 2026-05-02
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 183  013012-702  (order 16)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-07
+      sample_approval_date: (empty) → 2026-05-07
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 184  006201-802  (order 17)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-07
+      sample_approval_date: (empty) → 2026-05-07
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 185  030627-701  (order 25)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-18
+      no_of_trial: 0 → 3
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Sample Submitted
+  row 186  029897-702  (order 53)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-07
+      sample_approval_date: (empty) → 2026-05-07
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 187  029466-702  (order 56)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-07
+      sample_approval_date: (empty) → 2026-05-07
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 188  005241-702  (order 61)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-07
+      sample_approval_date: (empty) → 2026-05-07
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 189  013938-802  (order 70)
+      die_received_date: (empty) → 2026-05-05
+      submission_date: (empty) → 2026-05-05
+      sample_approval_date: (empty) → 2026-05-05
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 193  029466-802  (order 55)
+      die_received_date: (empty) → 2026-05-09
+      submission_date: (empty) → 2026-05-16
+      sample_approval_date: (empty) → 2026-05-16
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 201  015860-702  (order 72)
+      die_received_date: (empty) → 2026-05-15
+      submission_date: (empty) → 2026-05-18
+      sample_approval_date: (empty) → 2026-05-18
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 210  028776-802  (order 12)
+      die_received_date: (empty) → 2026-05-21
+      submission_date: (empty) → 2026-06-01
+      sample_approval_date: (empty) → 2026-06-01
+      corrector: (empty) → Raheem
+      sample_status: (empty) → Approved
+  row 211  013163-802  (order 15)
+      die_received_date: (empty) → 2026-05-21
+      submission_date: (empty) → 2026-05-25
+      sample_approval_date: (empty) → 2026-05-25
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+  row 212  018275-702  (order 13)
+      die_received_date: (empty) → 2026-05-23
+      submission_date: (empty) → 2026-05-23
+      sample_approval_date: (empty) → 2026-05-23
+      no_of_trial: 0 → 1
+      corrector: (empty) → Sujith
+      sample_status: (empty) → Approved
+  row 213  029780-702  (order 54)
+      die_received_date: (empty) → 2026-05-23
+      submission_date: (empty) → 2026-05-23
+      sample_approval_date: (empty) → 2026-05-23
+      corrector: (empty) → Kailash
+      sample_status: (empty) → Approved
+  row 218  018114-802  (order 14)
+      die_received_date: (empty) → 2026-06-09
+      submission_date: (empty) → 2026-06-10
+      sample_approval_date: (empty) → 2026-06-10
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 219  015648-702  (order 57)
+      die_received_date: (empty) → 2026-06-09
+      submission_date: (empty) → 2026-06-10
+      sample_approval_date: (empty) → 2026-06-10
+      corrector: (empty) → Dinesh
+      sample_status: (empty) → Approved
+  row 223  051150-810  (order 2)
+      die_received_date: (empty) → 2026-06-22
+      submission_date: (empty) → 2026-06-29
+      sample_approval_date: (empty) → 2026-06-29
+      no_of_trial: 0 → 1
+      corrector: (empty) → Jaypee
+      sample_status: (empty) → Approved
+
+  changes per field:
+    corrector: 192
+    die_received_date: 192
+    no_of_trial: 93
+    sample_approval_date: 186
+    sample_status: 192
+    submission_date: 191
+
+== 2. Matched, already correct (0) ==
+
+== 3. Not found in the app — SKIPPED (32) ==
+  row 168  007122-703
+  row 169  007122-702
+  row 179  022194-702
+  row 181  014716-802
+  row 182  120503-702
+  row 190  014716-803
+  row 191  013036-702
+  row 192  012164-702
+  row 194  007122-802
+  row 195  029078-702
+  row 196  030620-701
+  row 197  007122-704
+  row 198  032068-701
+  row 199  051150-802
+  row 200  032067-701
+  row 202  027273-803
+  row 203  027273-802
+  row 204  006201-803
+  row 205  007122-803
+  row 206  015651-703
+  row 207  005242-802
+  row 208  030638-701
+  row 209  026142-802
+  row 214  029720-702
+  row 215  013035-702
+  row 216  120661-802
+  row 217  029663-802
+  row 220  013940-803
+  row 221  013940-802
+  row 222  051150-805
+  row 224  009015-702
+  row 225  013940-804
+
+== 4. Ambiguous — SKIPPED (0) ==
+
+== 5. Data warnings (2) ==
+  row 56 (007223-3501): Submission Date: could not read 0 — left unchanged
+  row 218 (018114-802): supplier: sheet says COMPES, app says PDTMC — not changed
+
+Totals: 192 to update, 0 unchanged, 32 not found, 0 ambiguous, 2 warnings.

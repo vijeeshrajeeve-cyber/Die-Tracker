@@ -35,6 +35,9 @@ dist-ssr
 *.sqlite
 *.sqlite3
 
+# Database dumps (npm run db:backup writes these to the project root)
+backup-*.sql.gz
+
 # Docker volumes (if mounted locally)
 .docker-data/
 

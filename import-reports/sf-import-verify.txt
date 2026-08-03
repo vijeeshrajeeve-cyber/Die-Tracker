@@ -1,0 +1,243 @@
+Sample Followup import (DRY RUN — nothing written)
+Sheet: /app/Sample.xlsx
+Run:   2026-08-03T09:56:35.330Z
+
+== 1. Matched and changing (0) ==
+
+  changes per field:
+
+== 2. Matched, already correct (192) ==
+  row 2  027048-2502  (order 488)
+  row 3  014861-3506  (order 638)
+  row 4  007097-2506  (order 598)
+  row 5  030425-2502  (order 596)
+  row 6  007209-3501  (order 476)
+  row 7  014752-2507  (order 632)
+  row 8  013940-2506  (order 634)
+  row 9  030560-3501  (order 520)
+  row 10  019662-2501  (order 615)
+  row 11  005501-3515  (order 500)
+  row 12  007098-3506  (order 510)
+  row 13  015616-2502  (order 610)
+  row 14  014725-2503  (order 633)
+  row 15  027048-2503  (order 607)
+  row 16  028776-3501  (order 640)
+  row 17  051118-3537  (order 466)
+  row 18  051117-2506  (order 461)
+  row 19  051027-2512  (order 613)
+  row 20  013212-2506  (order 636)
+  row 21  051117-2508  (order 460)
+  row 22  007098-2510  (order 519)
+  row 23  051118-3538  (order 464)
+  row 24  051118-3539  (order 462)
+  row 25  026209-2502  (order 446)
+  row 26  007098-2511  (order 518)
+  row 27  030422-2502  (order 524)
+  row 28  007098-3507  (order 517)
+  row 29  030287-3504  (order 522)
+  row 30  019480-2505  (order 616)
+  row 31  013906-2503  (order 635)
+  row 32  005151-2508  (order 637)
+  row 33  027716-3502  (order 445)
+  row 34  055080-3501  (order 400)
+  row 35  055079-3501  (order 401)
+  row 36  013940-3510  (order 448)
+  row 37  007226-3501  (order 434)
+  row 38  029078-2504  (order 487)
+  row 39  013010-2510  (order 482)
+  row 40  010765-2501  (order 480)
+  row 41  051117-3524  (order 468)
+  row 42  051117-3525  (order 467)
+  row 43  007224-3501  (order 439)
+  row 44  007108-2504  (order 395)
+  row 45  007225-3501  (order 435)
+  row 46  032024-2501  (order 432)
+  row 47  030566-2501  (order 436)
+  row 48  030377-3502  (order 484)
+  row 49  030569-2501  (order 412)
+  row 50  051150-3501  (order 403)
+  row 51  051118-3540  (order 344)
+  row 52  015651-2508  (order 483)
+  row 53  013940-3511  (order 447)
+  row 54  030574-2501  (order 373)
+  row 55  051117-2507  (order 463)
+  row 56  007223-3501  (order 441)
+  row 57  030571-2501  (order 410)
+  row 58  029078-2503  (order 485)
+  row 59  051117-2509  (order 297)
+  row 60  051117-2510  (order 296)
+  row 61  051118-3541  (order 343)
+  row 62  010744-2504  (order 393)
+  row 63  051117-2511  (order 295)
+  row 64  029898-3501  (order 469)
+  row 65  013794-3512  (order 449)
+  row 66  032029-2501  (order 326)
+  row 67  011069-2505  (order 450)
+  row 68  032030-2501  (order 325)
+  row 69  032032-3501  (order 322)
+  row 70  032031-3501  (order 323)
+  row 71  030565-2501  (order 437)
+  row 72  007227-3501  (order 438)
+  row 73  014716-3515  (order 397)
+  row 74  051118-3542  (order 342)
+  row 75  005037-2503  (order 399)
+  row 76  013010-2511  (order 398)
+  row 77  014716-3516  (order 396)
+  row 78  030114-2503  (order 394)
+  row 79  032041-3501  (order 351)
+  row 80  005158-3508  (order 479)
+  row 81  032033-3501  (order 324)
+  row 82  032035-2501  (order 320)
+  row 83  007209-3502  (order 475)
+  row 84  032034-3501  (order 321)
+  row 85  004037-2501  (order 298)
+  row 86  018277-2502  (order 617)
+  row 87  030584-2501  (order 300)
+  row 88  051117-3526  (order 465)
+  row 89  014940-2509  (order 347)
+  row 90  011388-2505  (order 345)
+  row 91  024216-3506  (order 346)
+  row 92  029897-2502  (order 470)
+  row 93  007209-3503  (order 155)
+  row 94  029466-3502  (order 392)
+  row 95  014861-3507  (order 597)
+  row 96  030582-3501  (order 310)
+  row 97  032042-2501  (order 306)
+  row 98  030585-3501  (order 308)
+  row 99  005501-3516  (order 481)
+  row 100  005188-2506  (order 165)
+  row 101  051118-3543  (order 293)
+  row 102  055080-3502  (order 162)
+  row 103  055079-3502  (order 163)
+  row 104  051117-2512  (order 294)
+  row 105  055048-2504  (order 211)
+  row 106  027720-2504  (order 230)
+  row 107  051150-3502  (order 404)
+  row 108  051118-3544  (order 292)
+  row 109  051027-2513  (order 168)
+  row 110  029901-3501  (order 169)
+  row 111  051118-3545  (order 291)
+  row 112  021311-2502  (order 174)
+  row 113  006201-2504  (order 199)
+  row 114  011069-2506  (order 213)
+  row 115  007122-2506  (order 209)
+  row 116  027710-3501  (order 232)
+  row 117  022153-2504  (order 195)
+  row 118  013940-3512  (order 198)
+  row 119  005069-2503  (order 212)
+  row 120  055030-2504  (order 208)
+  row 121  005201-3507  (order 146)
+  row 122  030586-3501  (order 307)
+  row 123  030583-3501  (order 309)
+  row 124  051028-2507  (order 167)
+  row 125  026142-3501  (order 180)
+  row 126  005284-3503  (order 202)
+  row 127  029466-2502  (order 194)
+  row 128  014855-3507  (order 197)
+  row 129  029717-2501  (order 119)
+  row 130  007122-2507  (order 124)
+  row 131  120494-3503  (order 176)
+  row 132  030567-3501  (order 179)
+  row 133  030612-3501  (order 206)
+  row 134  029955-2502  (order 196)
+  row 135  007100-2504  (order 125)
+  row 136  030567-3502  (order 178)
+  row 137  014040-3501  (order 200)
+  row 138  013005-2503  (order 201)
+  row 139  014719-3508  (order 349)
+  row 140  029780-2509  (order 231)
+  row 141  014861-3508  (order 123)
+  row 142  051141-2505  (order 164)
+  row 143  051118-3546  (order 142)
+  row 144  030622-2501  (order 111)
+  row 145  027273-3503  (order 127)
+  row 146  030567-3503  (order 177)
+  row 147  001005-2502  (order 117)
+  row 148  021321-2501  (order 120)
+  row 149  030623-2501  (order 110)
+  row 150  030624-2501  (order 113)
+  row 151  032064-2501  (order 108)
+  row 152  018114-3503  (order 121)
+  row 153  005322-2503  (order 126)
+  row 154  120333-2501  (order 204)
+  row 155  006201-2505  (order 115)
+  row 156  015812-2501  (order 122)
+  row 157  030613-3501  (order 151)
+  row 158  030625-701  (order 64)
+  row 159  010371-702  (order 68)
+  row 160  013212-702  (order 69)
+  row 161  016050-802  (order 73)
+  row 162  030615-3501  (order 139)
+  row 163  030552-3501  (order 305)
+  row 164  014855-3508  (order 348)
+  row 165  051151-3501  (order 372)
+  row 166  055055-2519  (order 210)
+  row 167  015651-702  (order 71)
+  row 170  032074-701  (order 65)
+  row 171  029898-802  (order 74)
+  row 172  005327-702  (order 60)
+  row 173  019101-702  (order 52)
+  row 174  014940-702  (order 58)
+  row 175  005208-802  (order 62)
+  row 176  007230-701  (order 67)
+  row 177  051152-701  (order 63)
+  row 178  007231-801  (order 66)
+  row 180  009029-702  (order 59)
+  row 183  013012-702  (order 16)
+  row 184  006201-802  (order 17)
+  row 185  030627-701  (order 25)
+  row 186  029897-702  (order 53)
+  row 187  029466-702  (order 56)
+  row 188  005241-702  (order 61)
+  row 189  013938-802  (order 70)
+  row 193  029466-802  (order 55)
+  row 201  015860-702  (order 72)
+  row 210  028776-802  (order 12)
+  row 211  013163-802  (order 15)
+  row 212  018275-702  (order 13)
+  row 213  029780-702  (order 54)
+  row 218  018114-802  (order 14)
+  row 219  015648-702  (order 57)
+  row 223  051150-810  (order 2)
+
+== 3. Not found in the app — SKIPPED (32) ==
+  row 168  007122-703
+  row 169  007122-702
+  row 179  022194-702
+  row 181  014716-802
+  row 182  120503-702
+  row 190  014716-803
+  row 191  013036-702
+  row 192  012164-702
+  row 194  007122-802
+  row 195  029078-702
+  row 196  030620-701
+  row 197  007122-704
+  row 198  032068-701
+  row 199  051150-802
+  row 200  032067-701
+  row 202  027273-803
+  row 203  027273-802
+  row 204  006201-803
+  row 205  007122-803
+  row 206  015651-703
+  row 207  005242-802
+  row 208  030638-701
+  row 209  026142-802
+  row 214  029720-702
+  row 215  013035-702
+  row 216  120661-802
+  row 217  029663-802
+  row 220  013940-803
+  row 221  013940-802
+  row 222  051150-805
+  row 224  009015-702
+  row 225  013940-804
+
+== 4. Ambiguous — SKIPPED (0) ==
+
+== 5. Data warnings (2) ==
+  row 56 (007223-3501): Submission Date: could not read 0 — left unchanged
+  row 218 (018114-802): supplier: sheet says COMPES, app says PDTMC — not changed
+
+Totals: 0 to update, 192 unchanged, 32 not found, 0 ambiguous, 2 warnings.
