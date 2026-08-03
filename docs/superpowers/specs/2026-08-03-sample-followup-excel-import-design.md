@@ -43,7 +43,13 @@ application.
 | `No. of Trial` | Integer 0–7. |
 | `Corrector` | 5 distinct names; some carry trailing spaces. |
 
-### Match analysis against the live database
+### Match analysis against the test database
+
+> **These figures come from the local test server, not production.** They were
+> gathered on 2026-08-03 to design and rehearse the import. The match rate, the
+> unmatched list, and the status observations below are properties of that
+> snapshot. Re-derive them from a production dry run before drawing any
+> conclusion about production data. See `import-reports/README.md`.
 
 Run 2026-08-03 against 659 die orders (644 distinct die numbers):
 

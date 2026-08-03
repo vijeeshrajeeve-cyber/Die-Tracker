@@ -910,7 +910,13 @@ docker cp "C:/Users/vijee/Desktop/18.06.2026/Sample.xlsx" die-ordering-backend:/
 docker exec die-ordering-backend node server/scripts/import-sample-followup-sheet.cjs /app/Sample.xlsx --dry-run --report /app/sf-import-dryrun.txt
 ```
 
-Expected totals, from the analysis done against this database on 2026-08-03:
+> **The totals below are the test server's, recorded during the 2026-08-03
+> rehearsal.** On production they will differ and should not be treated as a
+> gate. What matters on production is that the not-found list is short and that
+> section 1 shows fields moving from `(empty)` rather than overwriting values
+> someone entered.
+
+Expected totals, from the analysis done against the test database on 2026-08-03:
 
 - **192** to update
 - **0** unchanged
