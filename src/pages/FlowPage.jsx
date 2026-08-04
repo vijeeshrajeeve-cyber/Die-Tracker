@@ -4,6 +4,7 @@ import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
 import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
+import CorrectorSelect from '../components/ui/CorrectorSelect';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
@@ -75,6 +76,7 @@ const DaysBadge = ({ order }) => {
 
 export default function FlowPage({
   data, activeTab, searchTerm, setSearchTerm, sortConfig, handleSort, suppliers, theme,
+  correctors, correctorsError,
   setSelectedOrder, setShowAddOrderModal, setRevisionOrder, setChangelogOrder,
   setRevisionHistoryOrder,
   setData, setToast, setActiveTab,
@@ -446,7 +448,15 @@ export default function FlowPage({
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }} htmlFor="flowpage-assign-corrector">Assign Corrector *</label>
-                <input id="flowpage-assign-corrector" type="text" value={dieReceivanceForm.corrector} onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, corrector: e.target.value })} placeholder="Enter corrector name" style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                <CorrectorSelect
+                  id="flowpage-assign-corrector"
+                  value={dieReceivanceForm.corrector}
+                  onChange={(v) => setDieReceivanceForm({ ...dieReceivanceForm, corrector: v })}
+                  correctors={correctors}
+                  loadError={correctorsError}
+                  plant={dieReceivanceOrder?.Plant}
+                  style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
