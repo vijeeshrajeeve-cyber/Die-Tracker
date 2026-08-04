@@ -45,7 +45,11 @@ export default function CorrectorsCard({ theme, plants = [], correctors = [], fe
   const cell = { padding: '8px 12px', fontSize: '0.8rem', color: theme.text };
 
   return (
-    <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, marginTop: '1.5rem' }}>
+    // No marginTop here: the parent is a CSS grid whose own gap already spaces
+    // the cards, and this one shares a row with Plants and Suppliers. A margin
+    // pushes it 24px below their top edge; the default stretch keeps all three
+    // the same height.
+    <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}` }}>
       <div style={{ marginBottom: '1rem' }}>
         <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}>
           <UserCheck size={20} /> Correctors
