@@ -33,6 +33,23 @@ const parseOrderCalendarDate = (raw) => {
 const QUARTER_MONTHS = { 'Q1': ['Jan', 'Feb', 'Mar'], 'Q2': ['Apr', 'May', 'Jun'], 'Q3': ['Jul', 'Aug', 'Sep'], 'Q4': ['Oct', 'Nov', 'Dec'] };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// Declared outside the page component so it is not recreated on every render.
+// The grid itself is a CSS class because the column cap needs media queries,
+// which inline styles cannot express — same reason .dt-table exists.
+function Section({ title, theme, children }) {
+  return (
+    <section style={{ marginBottom: '2rem' }}>
+      <h2 style={{
+        fontSize: '0.75rem', fontWeight: 700, color: theme.textDim,
+        textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.75rem',
+      }}>
+        {title}
+      </h2>
+      <div className="dt-analytics-grid">{children}</div>
+    </section>
+  );
+}
+
 export default function OverviewTab({ data, suppliers, theme }) {
   const [analyticsFilter, setAnalyticsFilter] = useState({ period: 'all', quarter: 'all' });
 
@@ -211,8 +228,8 @@ export default function OverviewTab({ data, suppliers, theme }) {
   const tooltipStyle = { background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-      <div style={{ ...styles.chartCard, gridColumn: 'span 2', padding: '1rem 1.5rem' }}>
+    <div>
+      <div style={{ ...styles.chartCard, padding: '1rem 1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: theme.textMuted }}>Filter Analytics:</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -240,7 +257,8 @@ export default function OverviewTab({ data, suppliers, theme }) {
           )}
         </div>
       </div>
-      <div style={{ ...styles.chartCard, gridColumn: 'span 2' }}>
+      <Section title="Volume & Distribution" theme={theme}>
+      <div style={styles.chartCard} className="dt-span-all">
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Supplier Performance</h3>
         <div style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
@@ -296,6 +314,20 @@ export default function OverviewTab({ data, suppliers, theme }) {
         )}
       </div>
       <div style={styles.chartCard}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Orders by Die Type</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie data={typeData} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+              {typeData.map((entry, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+            </Pie>
+            <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      </Section>
+
+      <Section title="Lead Times" theme={theme}>
+      <div style={styles.chartCard}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Avg Design Lead Time by Supplier</h3>
         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Ordered Date to Design Received Date</p>
         <ResponsiveContainer width="100%" height={280}>
@@ -309,17 +341,41 @@ export default function OverviewTab({ data, suppliers, theme }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div style={styles.chartCard}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Orders by Die Type</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie data={typeData} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-              {typeData.map((entry, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
-            </Pie>
-            <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
+      {deliveryData.length > 0 && (
+              <div style={styles.chartCard}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Avg Delivery Lead Time by Supplier</h3>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Die Order Date to Die Received Date · orders with a recorded die received date</p>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={deliveryData} layout="vertical" margin={{ right: 60 }}>
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
+                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Delivery Lead Time']} />
+                    <Bar dataKey="avgDays" fill="#0EA5E9" radius={[0, 6, 6, 0]}>
+                      <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+      )}
+      {mfgData.length > 0 && (
+              <div style={styles.chartCard}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Avg Manufacturing Lead Time by Supplier</h3>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Approval Date to Die Received Date · orders with both dates recorded</p>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={mfgData} layout="vertical" margin={{ right: 60 }}>
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
+                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Manufacturing Lead Time']} />
+                    <Bar dataKey="avgDays" fill="#F59E0B" radius={[0, 6, 6, 0]}>
+                      <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+      )}
+      </Section>
+
+      <Section title="Design Approval" theme={theme}>
       <div style={styles.chartCard}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Lead Time by Supplier</h3>
         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Design Approved · excludes simulation orders</p>
@@ -362,38 +418,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {deliveryData.length > 0 && (
-              <div style={styles.chartCard}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Avg Delivery Lead Time by Supplier</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Die Order Date to Die Received Date · orders with a recorded die received date</p>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={deliveryData} layout="vertical" margin={{ right: 60 }}>
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
-                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
-                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Delivery Lead Time']} />
-                    <Bar dataKey="avgDays" fill="#0EA5E9" radius={[0, 6, 6, 0]}>
-                      <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-      )}
-      {mfgData.length > 0 && (
-              <div style={styles.chartCard}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Avg Manufacturing Lead Time by Supplier</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Approval Date to Die Received Date · orders with both dates recorded</p>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={mfgData} layout="vertical" margin={{ right: 60 }}>
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
-                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
-                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Manufacturing Lead Time']} />
-                    <Bar dataKey="avgDays" fill="#F59E0B" radius={[0, 6, 6, 0]}>
-                      <LabelList dataKey="avgDays" position="right" fill="#64748B" fontSize={11} fontWeight={600} formatter={(v) => `${v}d`} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-      )}
+      </Section>
     </div>
   );
 }

@@ -398,3 +398,32 @@ body[data-dialog-depth='4'] [style*='backdrop-filter'] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Analytics chart grid. The page previously used an uncapped
+   repeat(auto-fit, minmax(320px, 1fr)), which resolves to five or six columns
+   on a wide screen and squeezes the pie charts until their labels clip.
+   Capped at three. */
+.dt-analytics-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+  .dt-analytics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1400px) {
+  .dt-analytics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Cards that should span the full width of the grid whatever the count.
+   minmax(0, 1fr) above rather than 1fr matters: without it a wide chart forces
+   its column past its share and the grid overflows horizontally. */
+.dt-analytics-grid > .dt-span-all {
+  grid-column: 1 / -1;
+}
