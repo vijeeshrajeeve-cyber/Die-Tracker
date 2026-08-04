@@ -3095,6 +3095,7 @@ export default function DieOrderingSystem() {
               editingSampleFollowup={editingSampleFollowup} setEditingSampleFollowup={setEditingSampleFollowup}
               sampleFollowupForm={sampleFollowupForm} setSampleFollowupForm={setSampleFollowupForm}
               sampleFollowupsStandalone={sampleFollowupsStandalone} setSampleFollowupsStandalone={setSampleFollowupsStandalone}
+              correctors={correctors} correctorsError={correctorsError}
               user={user}
               theme={theme}
               setToast={setToast}

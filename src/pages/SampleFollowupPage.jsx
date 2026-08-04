@@ -4,6 +4,7 @@ import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import { formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
+import CorrectorSelect from '../components/ui/CorrectorSelect';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
@@ -88,6 +89,7 @@ export default function SampleFollowupPage({
   editingSampleFollowup, setEditingSampleFollowup,
   sampleFollowupForm, setSampleFollowupForm,
   sampleFollowupsStandalone, setSampleFollowupsStandalone,
+  correctors, correctorsError,
   user,
   theme,
   setToast,
@@ -496,11 +498,20 @@ export default function SampleFollowupPage({
                 { key: 'delay_days', label: 'Delay Days', type: 'number' },
                 { key: 'status', label: 'Status', type: 'select', options: SF_STATUSES },
                 { key: 'no_of_trial', label: 'No. of Trial', type: 'number' },
-                { key: 'corrector', label: 'Corrector', type: 'text' },
+                { key: 'corrector', label: 'Corrector', type: 'corrector' },
               ].map(field => (
                 <div key={field.key}>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
-                  {field.type === 'select' ? (
+                  {field.type === 'corrector' ? (
+                    <CorrectorSelect
+                      value={sampleFollowupForm[field.key] || ''}
+                      onChange={(v) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: v })}
+                      correctors={correctors}
+                      loadError={correctorsError}
+                      plant={sampleFollowupForm.plant}
+                      style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  ) : field.type === 'select' ? (
                     <select
                       value={sampleFollowupForm[field.key] || ''}
                       onChange={(e) => setSampleFollowupForm({ ...sampleFollowupForm, [field.key]: e.target.value })}

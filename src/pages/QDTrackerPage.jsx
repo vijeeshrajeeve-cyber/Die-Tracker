@@ -3,7 +3,7 @@ import {
   Download, Plus, ClipboardList, Factory, Search, X,
   AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit,
 } from 'lucide-react';
-import { qualityDiscrepanciesAPI, suppliersAPI } from '../api';
+import { qualityDiscrepanciesAPI, suppliersAPI, correctorsAPI } from '../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
@@ -65,6 +65,11 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
   const [showDrafts, setShowDrafts] = useState(false);
   // Supplier master — the source for the Raise dropdown and for contact_email.
   const [supplierMaster, setSupplierMaster] = useState([]);
+  // Corrector master — the source for the Raise form's Corrector dropdown.
+  // Inactive rows are included so a QD storing a deactivated corrector still
+  // renders that name instead of silently blanking it.
+  const [correctors, setCorrectors] = useState([]);
+  const [correctorsError, setCorrectorsError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [plant, setPlant] = useState('All');
@@ -105,6 +110,14 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
     suppliersAPI.getAll()
       .then(rows => { if (!cancelled) setSupplierMaster(rows || []); })
       .catch(() => { if (!cancelled) setSupplierMaster([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    correctorsAPI.getAll({ includeInactive: true })
+      .then(rows => { if (!cancelled) { setCorrectors(rows || []); setCorrectorsError(false); } })
+      .catch(() => { if (!cancelled) { setCorrectors([]); setCorrectorsError(true); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -555,6 +568,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
       )}
       {(showRaise || editQd) && (
         <RaiseQDModal theme={theme} suppliers={raiseSupplierOptions} editQd={editQd} options={data.options}
+          correctors={correctors} correctorsError={correctorsError}
           onClose={() => { setShowRaise(false); setEditQd(null); }}
           onCreated={async (id, { submitted, isEdit, wasDraft } = {}) => {
             // A freshly-saved Draft has no number yet and is excluded from the
