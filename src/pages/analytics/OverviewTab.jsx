@@ -77,6 +77,137 @@ export default function OverviewTab({ data, suppliers, theme }) {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [analyticsData]);
 
+  // Chart data. These were IIFEs inline in the JSX; lifting them out is what
+  // lets the cards be grouped into sections independently of their arithmetic.
+  // Bodies are unchanged from the originals.
+  const designLeadData = useMemo(() => {
+    const supplierLeadTimes = {};
+    analyticsData.forEach(o => {
+      if (o.Supplier && o['Ordered date'] && o['Design Received Date']) {
+        const orderedDate = new Date(o['Ordered date']);
+        const designDate = new Date(o['Design Received Date']);
+        if (!isNaN(orderedDate) && !isNaN(designDate)) {
+          const days = Math.round((designDate - orderedDate) / (1000 * 60 * 60 * 24));
+          if (days >= 0) {
+            if (!supplierLeadTimes[o.Supplier]) supplierLeadTimes[o.Supplier] = [];
+            supplierLeadTimes[o.Supplier].push(days);
+          }
+        }
+      }
+    });
+    return Object.entries(supplierLeadTimes)
+      .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+      .sort((a, b) => a.avgDays - b.avgDays);
+  }, [analyticsData]);
+
+  const approvalLeadData = useMemo(() => {
+    const supplierTimes = {};
+    analyticsData.forEach(o => {
+      if (isSimulationEnabled(o.simulationEnabled)) return;
+      if (o.Supplier && o['Design Received Date'] && o['Design Approved Date']) {
+        const receivedDate = new Date(o['Design Received Date']);
+        const approvedDate = new Date(o['Design Approved Date']);
+        if (!isNaN(receivedDate) && !isNaN(approvedDate)) {
+          const days = Math.round((approvedDate - receivedDate) / (1000 * 60 * 60 * 24));
+          if (days >= 0) {
+            if (!supplierTimes[o.Supplier]) supplierTimes[o.Supplier] = [];
+            supplierTimes[o.Supplier].push(days);
+          }
+        }
+      }
+    });
+    return Object.entries(supplierTimes)
+      .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+      .sort((a, b) => a.avgDays - b.avgDays);
+  }, [analyticsData]);
+
+  const approvalByMonthData = useMemo(() => {
+    const monthOrder = MONTHS;
+    const monthTimes = {};
+    analyticsData.forEach(o => {
+      if (isSimulationEnabled(o.simulationEnabled)) return;
+      if (o.month && o['Design Received Date'] && o['Design Approved Date']) {
+        const receivedDate = new Date(o['Design Received Date']);
+        const approvedDate = new Date(o['Design Approved Date']);
+        if (!isNaN(receivedDate) && !isNaN(approvedDate)) {
+          const days = Math.round((approvedDate - receivedDate) / (1000 * 60 * 60 * 24));
+          if (days >= 0) {
+            if (!monthTimes[o.month]) monthTimes[o.month] = [];
+            monthTimes[o.month].push(days);
+          }
+        }
+      }
+    });
+    return monthOrder
+      .filter(m => monthTimes[m])
+      .map(month => ({ month, avgDays: Math.round(monthTimes[month].reduce((a, b) => a + b, 0) / monthTimes[month].length), count: monthTimes[month].length }));
+  }, [analyticsData]);
+
+  const approvalByPlantData = useMemo(() => {
+    const plantTimes = {};
+    analyticsData.forEach(o => {
+      if (isSimulationEnabled(o.simulationEnabled)) return;
+      if (o.Plant && o['Design Received Date'] && o['Design Approved Date']) {
+        const receivedDate = new Date(o['Design Received Date']);
+        const approvedDate = new Date(o['Design Approved Date']);
+        if (!isNaN(receivedDate) && !isNaN(approvedDate)) {
+          const days = Math.round((approvedDate - receivedDate) / (1000 * 60 * 60 * 24));
+          if (days >= 0) {
+            if (!plantTimes[o.Plant]) plantTimes[o.Plant] = [];
+            plantTimes[o.Plant].push(days);
+          }
+        }
+      }
+    });
+    return Object.entries(plantTimes)
+      .map(([plant, times]) => ({ plant, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+      .sort((a, b) => a.avgDays - b.avgDays);
+  }, [analyticsData]);
+
+  // Both series come from one pass: each keys off the die received date, so
+  // walking the orders twice would be wasted work.
+  const { deliveryData, mfgData } = useMemo(() => {
+    const supplierDelivery = {};
+    const supplierMfg = {};
+    analyticsData.forEach(o => {
+      if (!o.Supplier?.trim()) return;
+      const receivedIso = parseOrderCalendarDate(o['Die Received Date']);
+      if (!receivedIso) return;
+      const receivedDate = new Date(receivedIso);
+      if (Number.isNaN(receivedDate.getTime())) return;
+      const orderedIso = parseOrderCalendarDate(o['Ordered date']);
+      if (orderedIso) {
+        const orderedDate = new Date(orderedIso);
+        if (!Number.isNaN(orderedDate.getTime())) {
+          const days = Math.round((receivedDate - orderedDate) / (1000 * 60 * 60 * 24));
+          if (days >= 0) {
+            if (!supplierDelivery[o.Supplier]) supplierDelivery[o.Supplier] = [];
+            supplierDelivery[o.Supplier].push(days);
+          }
+        }
+      }
+      const approvedIso = parseOrderCalendarDate(o['Design Approved Date'] ?? o.design_approved_date);
+      if (approvedIso) {
+        const approvedDate = new Date(approvedIso);
+        if (!Number.isNaN(approvedDate.getTime())) {
+          const days = Math.round((receivedDate - approvedDate) / (1000 * 60 * 60 * 24));
+          if (days >= 0) {
+            if (!supplierMfg[o.Supplier]) supplierMfg[o.Supplier] = [];
+            supplierMfg[o.Supplier].push(days);
+          }
+        }
+      }
+    });
+    return {
+      deliveryData: Object.entries(supplierDelivery)
+        .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+        .sort((a, b) => a.avgDays - b.avgDays),
+      mfgData: Object.entries(supplierMfg)
+        .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
+        .sort((a, b) => a.avgDays - b.avgDays),
+    };
+  }, [analyticsData]);
+
   const tooltipStyle = { background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' };
 
   return (
@@ -168,25 +299,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Avg Design Lead Time by Supplier</h3>
         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Ordered Date to Design Received Date</p>
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={(() => {
-            const supplierLeadTimes = {};
-            analyticsData.forEach(o => {
-              if (o.Supplier && o['Ordered date'] && o['Design Received Date']) {
-                const orderedDate = new Date(o['Ordered date']);
-                const designDate = new Date(o['Design Received Date']);
-                if (!isNaN(orderedDate) && !isNaN(designDate)) {
-                  const days = Math.round((designDate - orderedDate) / (1000 * 60 * 60 * 24));
-                  if (days >= 0) {
-                    if (!supplierLeadTimes[o.Supplier]) supplierLeadTimes[o.Supplier] = [];
-                    supplierLeadTimes[o.Supplier].push(days);
-                  }
-                }
-              }
-            });
-            return Object.entries(supplierLeadTimes)
-              .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
-              .sort((a, b) => a.avgDays - b.avgDays);
-          })()} layout="vertical" margin={{ right: 60 }}>
+          <BarChart data={designLeadData} layout="vertical" margin={{ right: 60 }}>
             <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
             <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Lead Time']} />
@@ -211,26 +324,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Lead Time by Supplier</h3>
         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Design Approved · excludes simulation orders</p>
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={(() => {
-            const supplierTimes = {};
-            analyticsData.forEach(o => {
-              if (isSimulationEnabled(o.simulationEnabled)) return;
-              if (o.Supplier && o['Design Received Date'] && o['Design Approved Date']) {
-                const receivedDate = new Date(o['Design Received Date']);
-                const approvedDate = new Date(o['Design Approved Date']);
-                if (!isNaN(receivedDate) && !isNaN(approvedDate)) {
-                  const days = Math.round((approvedDate - receivedDate) / (1000 * 60 * 60 * 24));
-                  if (days >= 0) {
-                    if (!supplierTimes[o.Supplier]) supplierTimes[o.Supplier] = [];
-                    supplierTimes[o.Supplier].push(days);
-                  }
-                }
-              }
-            });
-            return Object.entries(supplierTimes)
-              .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
-              .sort((a, b) => a.avgDays - b.avgDays);
-          })()} layout="vertical" margin={{ right: 60 }}>
+          <BarChart data={approvalLeadData} layout="vertical" margin={{ right: 60 }}>
             <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
             <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Approval Time']} />
@@ -244,27 +338,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Time by Month</h3>
         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders</p>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={(() => {
-            const monthOrder = MONTHS;
-            const monthTimes = {};
-            analyticsData.forEach(o => {
-              if (isSimulationEnabled(o.simulationEnabled)) return;
-              if (o.month && o['Design Received Date'] && o['Design Approved Date']) {
-                const receivedDate = new Date(o['Design Received Date']);
-                const approvedDate = new Date(o['Design Approved Date']);
-                if (!isNaN(receivedDate) && !isNaN(approvedDate)) {
-                  const days = Math.round((approvedDate - receivedDate) / (1000 * 60 * 60 * 24));
-                  if (days >= 0) {
-                    if (!monthTimes[o.month]) monthTimes[o.month] = [];
-                    monthTimes[o.month].push(days);
-                  }
-                }
-              }
-            });
-            return monthOrder
-              .filter(m => monthTimes[m])
-              .map(month => ({ month, avgDays: Math.round(monthTimes[month].reduce((a, b) => a + b, 0) / monthTimes[month].length), count: monthTimes[month].length }));
-          })()} margin={{ top: 20 }}>
+          <BarChart data={approvalByMonthData} margin={{ top: 20 }}>
             <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
             <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
             <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Days']} />
@@ -278,26 +352,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Avg Design Approval Time by Plant</h3>
         <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders</p>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={(() => {
-            const plantTimes = {};
-            analyticsData.forEach(o => {
-              if (isSimulationEnabled(o.simulationEnabled)) return;
-              if (o.Plant && o['Design Received Date'] && o['Design Approved Date']) {
-                const receivedDate = new Date(o['Design Received Date']);
-                const approvedDate = new Date(o['Design Approved Date']);
-                if (!isNaN(receivedDate) && !isNaN(approvedDate)) {
-                  const days = Math.round((approvedDate - receivedDate) / (1000 * 60 * 60 * 24));
-                  if (days >= 0) {
-                    if (!plantTimes[o.Plant]) plantTimes[o.Plant] = [];
-                    plantTimes[o.Plant].push(days);
-                  }
-                }
-              }
-            });
-            return Object.entries(plantTimes)
-              .map(([plant, times]) => ({ plant, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
-              .sort((a, b) => a.avgDays - b.avgDays);
-          })()} margin={{ top: 20 }}>
+          <BarChart data={approvalByPlantData} margin={{ top: 20 }}>
             <XAxis dataKey="plant" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
             <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
             <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Avg Days']} />
@@ -307,47 +362,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {(() => {
-        const supplierDelivery = {};
-        const supplierMfg = {};
-        analyticsData.forEach(o => {
-          if (!o.Supplier?.trim()) return;
-          const receivedIso = parseOrderCalendarDate(o['Die Received Date']);
-          if (!receivedIso) return;
-          const receivedDate = new Date(receivedIso);
-          if (Number.isNaN(receivedDate.getTime())) return;
-          const orderedIso = parseOrderCalendarDate(o['Ordered date']);
-          if (orderedIso) {
-            const orderedDate = new Date(orderedIso);
-            if (!Number.isNaN(orderedDate.getTime())) {
-              const days = Math.round((receivedDate - orderedDate) / (1000 * 60 * 60 * 24));
-              if (days >= 0) {
-                if (!supplierDelivery[o.Supplier]) supplierDelivery[o.Supplier] = [];
-                supplierDelivery[o.Supplier].push(days);
-              }
-            }
-          }
-          const approvedIso = parseOrderCalendarDate(o['Design Approved Date'] ?? o.design_approved_date);
-          if (approvedIso) {
-            const approvedDate = new Date(approvedIso);
-            if (!Number.isNaN(approvedDate.getTime())) {
-              const days = Math.round((receivedDate - approvedDate) / (1000 * 60 * 60 * 24));
-              if (days >= 0) {
-                if (!supplierMfg[o.Supplier]) supplierMfg[o.Supplier] = [];
-                supplierMfg[o.Supplier].push(days);
-              }
-            }
-          }
-        });
-        const deliveryData = Object.entries(supplierDelivery)
-          .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
-          .sort((a, b) => a.avgDays - b.avgDays);
-        const mfgData = Object.entries(supplierMfg)
-          .map(([name, times]) => ({ name, avgDays: Math.round(times.reduce((a, b) => a + b, 0) / times.length), count: times.length }))
-          .sort((a, b) => a.avgDays - b.avgDays);
-        return (
-          <>
-            {deliveryData.length > 0 && (
+      {deliveryData.length > 0 && (
               <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Avg Delivery Lead Time by Supplier</h3>
                 <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Die Order Date to Die Received Date · orders with a recorded die received date</p>
@@ -362,8 +377,8 @@ export default function OverviewTab({ data, suppliers, theme }) {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            )}
-            {mfgData.length > 0 && (
+      )}
+      {mfgData.length > 0 && (
               <div style={styles.chartCard}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Avg Manufacturing Lead Time by Supplier</h3>
                 <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Approval Date to Die Received Date · orders with both dates recorded</p>
@@ -378,10 +393,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            )}
-          </>
-        );
-      })()}
+      )}
     </div>
   );
 }
