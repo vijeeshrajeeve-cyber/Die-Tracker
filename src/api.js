@@ -278,6 +278,37 @@ export const pressesAPI = {
     getAll: async () => apiRequest('/presses'),
 };
 
+// Correctors API — master list behind the Corrector dropdowns
+export const correctorsAPI = {
+    getAll: async ({ plant, includeInactive } = {}) => {
+        const qs = new URLSearchParams();
+        if (plant) qs.set('plant', plant);
+        if (includeInactive) qs.set('includeInactive', 'true');
+        const suffix = qs.toString() ? `?${qs}` : '';
+        return apiRequest(`/correctors${suffix}`);
+    },
+
+    create: async (name, plant = null) => {
+        return apiRequest('/correctors', {
+            method: 'POST',
+            body: JSON.stringify({ name, plant }),
+        });
+    },
+
+    update: async (id, data) => {
+        return apiRequest(`/correctors/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    },
+
+    delete: async (id) => {
+        return apiRequest(`/correctors/${id}`, {
+            method: 'DELETE',
+        });
+    },
+};
+
 // Plants API
 export const plantsAPI = {
     getAll: async () => {

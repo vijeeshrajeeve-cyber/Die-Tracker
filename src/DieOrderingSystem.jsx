@@ -8,7 +8,7 @@ import Papa from 'papaparse';
 let xlsxPromise = null;
 const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -1573,6 +1573,12 @@ export default function DieOrderingSystem() {
   const [newSupplierRegion, setNewSupplierRegion] = useState('');
   const [newSupplierEmail, setNewSupplierEmail] = useState('');
   const [plants, setPlants] = useState([]);
+  // Master list for every Corrector dropdown. Inactive rows are fetched too so
+  // a record that stores a deactivated corrector still renders its name.
+  const [correctors, setCorrectors] = useState([]);
+  // Tracked separately so a failed fetch can be shown as an error rather than
+  // as an empty dropdown, which would be indistinguishable from "nobody set up".
+  const [correctorsError, setCorrectorsError] = useState(false);
   const [showAddPlant, setShowAddPlant] = useState(false);
   const [newPlantName, setNewPlantName] = useState('');
   const [profileMeta, setProfileMeta] = useState({ count: 0, last_imported: null });
@@ -1663,6 +1669,18 @@ export default function DieOrderingSystem() {
       setPlants(response || []);
     } catch (error) {
       console.error('Failed to fetch plants:', error);
+    }
+  }, []);
+
+  // Fetch correctors (master list for the Corrector dropdowns and Settings)
+  const fetchCorrectors = useCallback(async () => {
+    try {
+      const response = await correctorsAPI.getAll({ includeInactive: true });
+      setCorrectors(response || []);
+      setCorrectorsError(false);
+    } catch (error) {
+      console.error('Failed to fetch correctors:', error);
+      setCorrectorsError(true);
     }
   }, []);
 
@@ -1817,6 +1835,7 @@ export default function DieOrderingSystem() {
       fetchUsers();
       fetchSuppliers();
       fetchPlants();
+      fetchCorrectors();
       fetchBackupRequests();
       fetchSampleFollowups();
       fetchApiKeys();
@@ -1831,7 +1850,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
 
   // Login handler
   const handleLogin = async (e) => {
