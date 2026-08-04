@@ -403,6 +403,16 @@ CREATE TABLE IF NOT EXISTS qd_settings (
     updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Supplier performance scoring targets and weights. One row; the metrics
+-- column is a JSON array of { key, ten, zero, target, weight }. Empty
+-- means "use the code defaults" (see supplierPerformanceSettings.cjs).
+-- No backticks in this block: it is mirrored into a JS template literal.
+CREATE TABLE IF NOT EXISTS supplier_performance_settings (
+    id         SERIAL PRIMARY KEY,
+    metrics    TEXT DEFAULT '[]',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
     id SERIAL PRIMARY KEY,
     qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,

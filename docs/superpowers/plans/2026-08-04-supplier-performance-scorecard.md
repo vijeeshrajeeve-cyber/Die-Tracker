@@ -48,9 +48,10 @@ Only the tunable fields (`ten`, `zero`, `target`, `weight`) are persisted. Label
 Append after the `correctors` block:
 
 ```sql
--- Supplier performance scoring targets and weights. One row; `metrics` is a
--- JSON array of { key, ten, zero, target, weight }. Empty means "use the code
--- defaults" (see server/services/supplierPerformanceSettings.cjs).
+-- Supplier performance scoring targets and weights. One row; the metrics
+-- column is a JSON array of { key, ten, zero, target, weight }. Empty
+-- means "use the code defaults" (see supplierPerformanceSettings.cjs).
+-- No backticks in this block: it is mirrored into a JS template literal.
 CREATE TABLE IF NOT EXISTS supplier_performance_settings (
     id         SERIAL PRIMARY KEY,
     metrics    TEXT DEFAULT '[]',
@@ -60,7 +61,9 @@ CREATE TABLE IF NOT EXISTS supplier_performance_settings (
 
 - [ ] **Step 2: Mirror it into `server/db.cjs`**
 
-Add the identical `CREATE TABLE IF NOT EXISTS supplier_performance_settings (...)` statement inside the migration template literal, immediately after the `qd_settings` `ALTER TABLE ... alloy_options` line (~513). The SQL contains no `$$` and no `${`, so paste it verbatim.
+Add the identical `CREATE TABLE IF NOT EXISTS supplier_performance_settings (...)` statement inside the migration template literal, immediately after the `qd_settings` `ALTER TABLE ... alloy_options` line (~513).
+
+**The block must contain no backtick, no `${` and no `$$`.** It is pasted inside a JS template literal, and a single backtick — even in a SQL comment — terminates the string and breaks `db.cjs` at parse time. That failure surfaces as an unrelated-looking `SyntaxError` in whichever test happens to `require` the module first, not as a migration error.
 
 - [ ] **Step 3: Write the failing tests**
 

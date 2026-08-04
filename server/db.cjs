@@ -512,6 +512,16 @@ const initializeDatabase = async () => {
       ALTER TABLE qd_settings ADD COLUMN IF NOT EXISTS die_type_options TEXT DEFAULT '[]';
       ALTER TABLE qd_settings ADD COLUMN IF NOT EXISTS alloy_options    TEXT DEFAULT '[]';
 
+      -- Supplier performance scoring targets and weights. One row; the metrics
+      -- column is a JSON array of { key, ten, zero, target, weight }. Empty
+      -- means "use the code defaults" (see supplierPerformanceSettings.cjs).
+      -- No backticks in this block: it lives inside a JS template literal.
+      CREATE TABLE IF NOT EXISTS supplier_performance_settings (
+        id         SERIAL PRIMARY KEY,
+        metrics    TEXT DEFAULT '[]',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
         id SERIAL PRIMARY KEY,
         qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
