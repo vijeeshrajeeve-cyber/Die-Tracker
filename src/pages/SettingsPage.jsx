@@ -4,6 +4,7 @@ import { plantsAPI, suppliersAPI, apiKeysAPI, emailAPI, plantBudgetsAPI, profile
 import Papa from 'papaparse';
 import { dialogs } from '../components/ui/DialogProvider';
 import ExistingDataPage from './ExistingDataPage';
+import SupplierTargetsCard from '../components/settings/SupplierTargetsCard';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 export default function SettingsPage({
@@ -297,6 +298,8 @@ export default function SettingsPage({
                     </table>
                   </div>
                 </div>
+
+                <SupplierTargetsCard theme={theme} isAdmin={isAdmin} />
               </div>
 
               {/* Email Templates tab */}
