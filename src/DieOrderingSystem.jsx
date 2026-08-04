@@ -8,7 +8,7 @@ import Papa from 'papaparse';
 let xlsxPromise = null;
 const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -56,6 +56,7 @@ const ChunkFallback = ({ theme }) => (
 );
 import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
 import { BRAND, BRAND_ALPHA } from './utils/brand';
+import { correctorOptions } from './utils/correctorOptions';
 
 
 
@@ -386,7 +387,7 @@ const ImportModal = ({ onClose, onImport }) => {
 };
 
 // ─── Add Order Modal ───────────────────────────────────────────────────────────
-const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {} }) => {
+const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors = [], theme = {} }) => {
   const EMPTY_FORM = {
     Plant: '', 'Order No': '', 'DIE NO': '', TYPE: 'N', 'Die Size': '',
     'Die Requested Date': '', 'Ordered date': '', ETA: '',
@@ -604,7 +605,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], theme = {}
               {renderField({ label: 'Total Mandrels', field: 'Total Mandrels', type: 'number' })}
               {renderField({ label: 'No. of Trials', field: 'No of Trial', type: 'number' })}
               {renderField({ label: 'Press', field: 'Press', type: 'select', options: pressOptions, disabled: !form.Plant, placeholder: form.Plant ? 'Select Press' : 'Select Plant first' })}
-              {renderField({ label: 'Corrector', field: 'Corrector' })}
+              {renderField({ label: 'Corrector', field: 'Corrector', type: 'select', options: correctorOptions({ correctors, plant: form.Plant, value: form.Corrector }), placeholder: '— select corrector —' })}
               {renderField({ label: 'PR Number', field: 'PR Number' })}
             </div>
           </div>
@@ -923,7 +924,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], currentUser, canEdit = true, onViewRevisions }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], currentUser, canEdit = true, onViewRevisions }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
@@ -1331,7 +1332,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               {InfoRow({ label: 'Submission', field: 'Submission Date', value: currentOrder['Submission Date'], type: 'date' })}
               {InfoRow({ label: 'Sample Approval', field: 'Sample Approval Date', value: currentOrder['Sample Approval Date'], type: 'date' })}
               {InfoRow({ label: 'No of Trial', field: 'No of Trial', value: currentOrder['No of Trial'] || 0 })}
-              {InfoRow({ label: 'Corrector', field: 'Corrector', value: currentOrder['Corrector'] })}
+              {InfoRow({ label: 'Corrector', field: 'Corrector', value: currentOrder['Corrector'], type: 'select', options: correctorOptions({ correctors, plant: currentOrder.Plant, value: editedOrder['Corrector'] }), placeholder: '— select corrector —' })}
             </div>
           </div>
 
@@ -1573,6 +1574,12 @@ export default function DieOrderingSystem() {
   const [newSupplierRegion, setNewSupplierRegion] = useState('');
   const [newSupplierEmail, setNewSupplierEmail] = useState('');
   const [plants, setPlants] = useState([]);
+  // Master list for every Corrector dropdown. Inactive rows are fetched too so
+  // a record that stores a deactivated corrector still renders its name.
+  const [correctors, setCorrectors] = useState([]);
+  // Tracked separately so a failed fetch can be shown as an error rather than
+  // as an empty dropdown, which would be indistinguishable from "nobody set up".
+  const [correctorsError, setCorrectorsError] = useState(false);
   const [showAddPlant, setShowAddPlant] = useState(false);
   const [newPlantName, setNewPlantName] = useState('');
   const [profileMeta, setProfileMeta] = useState({ count: 0, last_imported: null });
@@ -1663,6 +1670,18 @@ export default function DieOrderingSystem() {
       setPlants(response || []);
     } catch (error) {
       console.error('Failed to fetch plants:', error);
+    }
+  }, []);
+
+  // Fetch correctors (master list for the Corrector dropdowns and Settings)
+  const fetchCorrectors = useCallback(async () => {
+    try {
+      const response = await correctorsAPI.getAll({ includeInactive: true });
+      setCorrectors(response || []);
+      setCorrectorsError(false);
+    } catch (error) {
+      console.error('Failed to fetch correctors:', error);
+      setCorrectorsError(true);
     }
   }, []);
 
@@ -1817,6 +1836,7 @@ export default function DieOrderingSystem() {
       fetchUsers();
       fetchSuppliers();
       fetchPlants();
+      fetchCorrectors();
       fetchBackupRequests();
       fetchSampleFollowups();
       fetchApiKeys();
@@ -1831,7 +1851,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -3052,6 +3072,7 @@ export default function DieOrderingSystem() {
             <FlowPage
               data={data} activeTab={activeTab} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               sortConfig={sortConfig} handleSort={handleSort} suppliers={suppliers} theme={theme}
+              correctors={correctors} correctorsError={correctorsError}
               setSelectedOrder={setSelectedOrder} setShowAddOrderModal={setShowAddOrderModal}
               setRevisionOrder={setRevisionOrder} setChangelogOrder={setChangelogOrder}
               setRevisionHistoryOrder={setRevisionHistoryOrder}
@@ -3074,6 +3095,7 @@ export default function DieOrderingSystem() {
               editingSampleFollowup={editingSampleFollowup} setEditingSampleFollowup={setEditingSampleFollowup}
               sampleFollowupForm={sampleFollowupForm} setSampleFollowupForm={setSampleFollowupForm}
               sampleFollowupsStandalone={sampleFollowupsStandalone} setSampleFollowupsStandalone={setSampleFollowupsStandalone}
+              correctors={correctors} correctorsError={correctorsError}
               user={user}
               theme={theme}
               setToast={setToast}
@@ -3132,6 +3154,7 @@ export default function DieOrderingSystem() {
               theme={theme} setToast={setToast}
               plants={plants} fetchPlants={fetchPlants}
               suppliers={suppliers} fetchSuppliers={fetchSuppliers}
+              correctors={correctors} fetchCorrectors={fetchCorrectors}
               showAddPlant={showAddPlant} setShowAddPlant={setShowAddPlant}
               newPlantName={newPlantName} setNewPlantName={setNewPlantName}
               showAddSupplier={showAddSupplier} setShowAddSupplier={setShowAddSupplier}
@@ -3171,7 +3194,7 @@ export default function DieOrderingSystem() {
           )}
         </main>
 
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} currentUser={user} canEdit={activeTab === 'orders'} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} currentUser={user} canEdit={activeTab === 'orders'} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (
           <Suspense fallback={<ChunkFallback theme={theme} />}>
@@ -3237,6 +3260,7 @@ export default function DieOrderingSystem() {
             onAdd={handleAddRecord}
             plants={plants}
             suppliers={suppliers}
+            correctors={correctors}
             theme={theme}
           />
         )}

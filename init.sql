@@ -113,6 +113,32 @@ ON CONFLICT (press_name) DO UPDATE SET
     press_code = EXCLUDED.press_code,
     plant = EXCLUDED.plant;
 
+-- Corrector master list. Constrains the Corrector dropdown on Die Receiving,
+-- Sample Followup and QD. The corrector columns on die_orders,
+-- sample_followups and quality_discrepancies stay plain TEXT by design — this
+-- table governs what can be entered, not what is stored.
+CREATE TABLE IF NOT EXISTS correctors (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    plant TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (name, plant)
+);
+
+-- Seed only when the table is empty, so names an admin later removes are not
+-- silently resurrected on the next boot.
+INSERT INTO correctors (name, plant)
+SELECT * FROM (VALUES
+    ('Kailash', 'GEX 2'),
+    ('Jaypee', 'GEX 2'),
+    ('Raheem', 'GEX 2'),
+    ('Sujith', 'GEX 2'),
+    ('Dinesh', 'GEX 2')
+) AS seed(name, plant)
+WHERE NOT EXISTS (SELECT 1 FROM correctors);
+
 -- Backup Die Requests table
 CREATE TABLE IF NOT EXISTS backup_die_requests (
     id SERIAL PRIMARY KEY,

@@ -5,12 +5,14 @@ import Papa from 'papaparse';
 import { dialogs } from '../components/ui/DialogProvider';
 import ExistingDataPage from './ExistingDataPage';
 import SupplierTargetsCard from '../components/settings/SupplierTargetsCard';
+import CorrectorsCard from '../components/settings/CorrectorsCard';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 
 export default function SettingsPage({
   theme, setToast,
   plants, fetchPlants,
   suppliers, fetchSuppliers,
+  correctors, fetchCorrectors,
   showAddPlant, setShowAddPlant, newPlantName, setNewPlantName,
   showAddSupplier, setShowAddSupplier, newSupplierName, setNewSupplierName,
   newSupplierShipment, setNewSupplierShipment, newSupplierRegion, setNewSupplierRegion,
@@ -298,6 +300,14 @@ export default function SettingsPage({
                     </table>
                   </div>
                 </div>
+
+                <CorrectorsCard
+                  theme={theme}
+                  plants={plants}
+                  correctors={correctors}
+                  fetchCorrectors={fetchCorrectors}
+                  isAdmin={isAdmin}
+                />
 
                 <SupplierTargetsCard theme={theme} isAdmin={isAdmin} />
               </div>

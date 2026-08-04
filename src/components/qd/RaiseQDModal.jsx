@@ -3,6 +3,7 @@ import { X, AlertTriangle, Upload, ChevronDown, ChevronRight } from 'lucide-reac
 import { qualityDiscrepanciesAPI, ordersAPI, extractProfileFromDie } from '../../api';
 import { QD_OUTCOMES } from '../../utils/constants';
 import DatePickerField from '../DatePickerField';
+import CorrectorSelect from '../ui/CorrectorSelect';
 import useDialog from '../../hooks/useDialog';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 
@@ -46,7 +47,7 @@ function Section({ id, title, hint, open, onToggle, colors, children }) {
   );
 }
 
-export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCreated, editQd = null, options = {} }) {
+export default function RaiseQDModal({ theme = {}, suppliers = [], correctors = [], correctorsError = false, onClose, onCreated, editQd = null, options = {} }) {
   const dialogRef = useDialog({ open: true, onClose });
   // Edit mode: the same form, pre-filled from an existing QD. The server only
   // permits this while the QD is a Draft or has been sent back.
@@ -365,7 +366,15 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], onClose, onCr
               </div>
               <div style={group}>
                 <label style={label} htmlFor="raiseqdmodal-corrector">Corrector</label>
-                <input id="raiseqdmodal-corrector" value={corrector} onChange={(e) => setCorrector(e.target.value)} placeholder="e.g. Sijith" style={field} />
+                <CorrectorSelect
+                  id="raiseqdmodal-corrector"
+                  value={corrector}
+                  onChange={setCorrector}
+                  correctors={correctors}
+                  loadError={correctorsError}
+                  plant={plant}
+                  style={field}
+                />
               </div>
             </div>
             {lookupNote && <div style={{ fontSize: 11.5, color: '#60A5FA' }}>{lookupNote}</div>}
