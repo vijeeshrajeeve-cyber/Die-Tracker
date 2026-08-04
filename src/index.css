@@ -427,3 +427,29 @@ body[data-dialog-depth='4'] [style*='backdrop-filter'] {
 .dt-analytics-grid > .dt-span-all {
   grid-column: 1 / -1;
 }
+
+/* Supplier report printing. The report is the only page meant to leave the
+   app on paper, so print hides the app chrome and drops the dark surfaces
+   that would otherwise burn through a cartridge. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  #supplier-report {
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  #supplier-report * {
+    background: transparent !important;
+    color: #000 !important;
+  }
+
+  /* Keep a card from being split across a page break mid-chart. */
+  #supplier-report .dt-analytics-grid > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border-color: #999 !important;
+  }
+}
