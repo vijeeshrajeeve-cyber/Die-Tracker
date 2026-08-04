@@ -3154,6 +3154,7 @@ export default function DieOrderingSystem() {
               theme={theme} setToast={setToast}
               plants={plants} fetchPlants={fetchPlants}
               suppliers={suppliers} fetchSuppliers={fetchSuppliers}
+              correctors={correctors} fetchCorrectors={fetchCorrectors}
               showAddPlant={showAddPlant} setShowAddPlant={setShowAddPlant}
               newPlantName={newPlantName} setNewPlantName={setNewPlantName}
               showAddSupplier={showAddSupplier} setShowAddSupplier={setShowAddSupplier}
