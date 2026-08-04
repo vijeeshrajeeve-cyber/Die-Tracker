@@ -278,6 +278,23 @@ export const pressesAPI = {
     getAll: async () => apiRequest('/presses'),
 };
 
+// Supplier performance scorecard
+export const supplierPerformanceAPI = {
+    getSuppliers: async () => apiRequest('/supplier-performance/suppliers'),
+
+    getReport: async ({ supplier, year, month, frequency }) => {
+        const qs = new URLSearchParams({ supplier, year: String(year), month, frequency });
+        return apiRequest(`/supplier-performance?${qs}`);
+    },
+
+    getSettings: async () => apiRequest('/supplier-performance/settings'),
+
+    saveSettings: async (metrics) => apiRequest('/supplier-performance/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ metrics }),
+    }),
+};
+
 // Plants API
 export const plantsAPI = {
     getAll: async () => {

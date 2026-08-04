@@ -81,7 +81,6 @@ async function getMonthlyTrend(pool, { supplier, year, throughMonth }) {
     const { from, to } = periodRange({ year, month: MONTHS[i], frequency: 'Monthly' });
     // Sequential on purpose: these are cheap, and firing twelve concurrent
     // queries would just contend for the same small pool.
-    // eslint-disable-next-line no-await-in-loop
     out.push({ month: MONTHS[i], ...(await getSnapshot(pool, { supplier, from, to })) });
   }
   return out;
