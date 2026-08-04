@@ -14,6 +14,7 @@ const ordersRouter = require('./routes/orders.cjs');
 const suppliersRouter = require('./routes/suppliers.cjs');
 const plantsRouter = require('./routes/plants.cjs');
 const pressesRouter = require('./routes/presses.cjs');
+const supplierPerformanceRouter = require('./routes/supplier-performance.cjs');
 const profilesRouter = require('./routes/profiles.cjs');
 const backupRequestsRouter = require('./routes/backup-requests.cjs');
 const exportRouter = require('./routes/export.cjs');
@@ -94,6 +95,7 @@ app.use('/api/orders', authMiddleware, pageAccessMiddleware([
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/plants', plantsRouter);
 app.use('/api/presses', pressesRouter);
+app.use('/api/supplier-performance', supplierPerformanceRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/backup-requests', authMiddleware, pageAccessMiddleware('backup-requests'), backupRequestsRouter);
 app.use('/api/frozen-designs', authMiddleware, pageAccessMiddleware('frozen-designs'), frozenDesignsRouter);

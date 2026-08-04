@@ -263,3 +263,23 @@ problem is fixed without waiting for the scoring work.
 - QD Rate uses `quality_discrepancies.supplier` matched to `die_orders.supplier`
   by name. If those vocabularies diverge, the rate under-reports.
 - Weights are a business judgement; the seeds are a starting point only.
+
+## Known-flat metrics at launch
+
+Confirmed against real data on 2026-08-04, and accepted as-is by the user:
+**30% of the scoring weight cannot currently discriminate between suppliers.**
+
+| Metric | Weight | Why it is flat |
+|---|---|---|
+| QD Rate | 20% | Only 8 QDs exist, and just 4 carry a `qd_requested_date` — all within 27–29 Jul 2026. Every other supplier and period computes 0%, scoring a full 10 |
+| Design Revisions | 10% | 1 order of 659 has any revisions; the mean is 0.01, scoring a full 10 |
+
+Both will sharpen as the data accumulates, and the weights are editable in
+Settings, so no code change is needed when they do. The decision was to leave
+the weights alone rather than re-balance around a temporary data gap.
+
+There is a separate data-quality issue underneath QD Rate: **half the QDs have
+no `qd_requested_date`**, so they are invisible to any date-filtered query, not
+only this one. Backfilling those dates would make the metric meaningful sooner.
+
+Read a rating from this period with those two metrics discounted.
