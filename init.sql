@@ -439,6 +439,25 @@ CREATE TABLE IF NOT EXISTS supplier_performance_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Manual monthly die life capture, per supplier. Failure percentage is
+-- derived from the counts at read time, never stored. Every value is
+-- nullable and NULL means "not recorded" -- never zero. Rationale in db.cjs.
+CREATE TABLE IF NOT EXISTS supplier_die_life (
+    id                SERIAL PRIMARY KEY,
+    supplier          TEXT     NOT NULL,
+    year              INTEGER  NOT NULL,
+    month             SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+    avg_die_life_mt   NUMERIC,
+    dies_in_service   INTEGER,
+    dies_failed       INTEGER,
+    updated_by        INTEGER REFERENCES users(id),
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (supplier, year, month)
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_die_life_lookup
+    ON supplier_die_life (upper(btrim(supplier)), year, month);
+
 CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
     id SERIAL PRIMARY KEY,
     qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,

@@ -522,6 +522,33 @@ const initializeDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Manual monthly die life capture, per supplier. Nothing in this system
+      -- records tonnage extruded, so these three numbers are typed in once a
+      -- month by the people who know them.
+      --
+      -- Failure percentage is deliberately NOT a column. It is derived as
+      -- dies_failed / dies_in_service at read time, so the stored counts and
+      -- the reported percentage cannot drift apart, and a figure a supplier
+      -- disputes traces back to a count somebody entered.
+      --
+      -- Every value is nullable, and NULL means "not recorded" -- never zero.
+      -- See docs/superpowers/specs/2026-08-05-die-life-failure-and-report-pdf-design.md.
+      CREATE TABLE IF NOT EXISTS supplier_die_life (
+        id                SERIAL PRIMARY KEY,
+        supplier          TEXT     NOT NULL,
+        year              INTEGER  NOT NULL,
+        month             SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+        avg_die_life_mt   NUMERIC,
+        dies_in_service   INTEGER,
+        dies_failed       INTEGER,
+        updated_by        INTEGER REFERENCES users(id),
+        created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (supplier, year, month)
+      );
+      CREATE INDEX IF NOT EXISTS idx_supplier_die_life_lookup
+        ON supplier_die_life (upper(btrim(supplier)), year, month);
+
       CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
         id SERIAL PRIMARY KEY,
         qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,
