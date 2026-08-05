@@ -88,6 +88,10 @@ const DatePickerField = ({
   // Forwarded to the text input. Used where the visible name is rendered by the
   // surrounding card rather than by a <label> this field could be paired with.
   'aria-label': ariaLabel,
+  // For fields that appear in response to a click — an inline edit that replaces
+  // a value with this picker — so the caret lands where the user is already
+  // looking, as it does for the plain text and select editors beside it.
+  autoFocus = false,
   placeholder = 'June 01, 2025',
 }) => {
   const [open, setOpen] = useState(false);
@@ -214,7 +218,19 @@ const DatePickerField = ({
   };
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+    // Escape means "close the calendar" whenever it is open, and nothing more —
+    // a caller that treats Escape as "cancel this edit" must not also tear the
+    // field down on the keypress that only dismissed its popover. Handled here
+    // rather than on the input because focus may be on a day inside the calendar,
+    // which portals to the body but still bubbles through this React subtree.
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || !open) return;
+        e.stopPropagation();
+        setOpen(false);
+        setDraft(null);
+        inputRef.current?.focus();
+      }}>
       {label && (
         <label
           htmlFor={inputId}
@@ -247,6 +263,7 @@ const DatePickerField = ({
           ref={inputRef}
           type="text"
           inputMode="numeric"
+          autoFocus={autoFocus}
           disabled={disabled}
           value={text}
           placeholder={placeholder}
