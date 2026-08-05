@@ -140,3 +140,38 @@ test('a character outside WinAnsi does not crash the generator', async () => {
   const bytes = await generateSupplierReportPdf(report, { comments: 'Target ≤ 30 days · confirmed' });
   assert.ok(bytes.length > 1000);
 });
+
+test('an unrecorded month is absent from the trend line, not plotted as zero', async () => {
+  // Number(null) is 0 and 0 is finite, so a Number.isFinite-only filter turns
+  // every blank month into a point on the floor -- telling a supplier their die
+  // life was 0 MT before anyone started recording it.
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const report = {
+    metrics,
+    trend: [
+      { month: 'Jan', dieLife: null, dieFailure: null, deliveryLeadTime: 28 },
+      { month: 'Feb', dieLife: null, dieFailure: null, deliveryLeadTime: 26 },
+      { month: 'Mar', dieLife: 60, dieFailure: 12, deliveryLeadTime: 27 },
+      { month: 'Apr', dieLife: 70, dieFailure: 14, deliveryLeadTime: 25 },
+    ],
+  };
+  const charts = trendable(report);
+  const dieLife = charts.find((c) => c.metric.key === 'dieLife');
+  assert.equal(dieLife.points.length, 2, 'only the two recorded months may be plotted');
+  assert.deepEqual(dieLife.points.map((p) => p.month), ['Mar', 'Apr']);
+  assert.ok(!dieLife.points.some((p) => p.value === 0), 'no blank month became a zero');
+});
+
+test('a metric with fewer than two recorded months gets no chart at all', async () => {
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const report = {
+    metrics,
+    trend: [
+      { month: 'Jan', dieLife: null, deliveryLeadTime: 28 },
+      { month: 'Feb', dieLife: 65, deliveryLeadTime: 26 },
+    ],
+  };
+  const charts = trendable(report);
+  assert.ok(!charts.some((c) => c.metric.key === 'dieLife'), 'one point is not a trend');
+  assert.ok(charts.some((c) => c.metric.key === 'deliveryLeadTime'));
+});

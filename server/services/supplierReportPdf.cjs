@@ -286,13 +286,20 @@ const TREND_COLORS = {
 };
 
 // Returns the metrics that actually have two or more points to draw.
+//
+// The null check is load-bearing and easy to lose: Number(null) is 0, and 0 is
+// finite, so testing Number.isFinite alone silently turns every unrecorded
+// month into a plotted zero. That would draw a supplier a chart claiming their
+// die life was 0 MT for the six months before anyone started recording it.
+// A month with no figure is absent from the line, not a point on the floor.
 function trendable(report) {
   const out = [];
   for (const m of report.metrics || []) {
     if (!m.scored) continue;
     const points = (report.trend || [])
       .map((r) => ({ month: r.month, value: r[m.key] }))
-      .filter((p) => Number.isFinite(Number(p.value)))
+      .filter((p) => p.value !== null && p.value !== undefined && p.value !== ''
+        && Number.isFinite(Number(p.value)))
       .map((p) => ({ month: p.month, value: Number(p.value) }));
     if (points.length >= 2) out.push({ metric: m, points });
   }
@@ -420,4 +427,4 @@ async function generateSupplierReportPdf(report, opts = {}) {
   return doc.save();
 }
 
-module.exports = { generateSupplierReportPdf, sanitize, MONTH_NAMES };
+module.exports = { generateSupplierReportPdf, sanitize, trendable, MONTH_NAMES };

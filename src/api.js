@@ -287,6 +287,25 @@ export const supplierPerformanceAPI = {
         return apiRequest(`/supplier-performance?${qs}`);
     },
 
+    // Returns a Blob. The report is rebuilt server-side, so what downloads is
+    // what the database says, not what this page happens to be showing.
+    exportPdf: async ({ supplier, year, month, frequency, comments }) => {
+        const response = await fetch(`${API_BASE_URL}/supplier-performance/pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getToken()}`,
+            },
+            body: JSON.stringify({ supplier, year, month, frequency, comments }),
+        });
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
+
     getDieLife: async ({ year, month }) => {
         const qs = new URLSearchParams({ year: String(year), month: String(month) });
         return apiRequest(`/supplier-performance/die-life?${qs}`);

@@ -18,6 +18,8 @@ export default function SupplierReportTab({ theme }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [comments, setComments] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +43,27 @@ export default function SupplierReportTab({ theme }) {
   }, [supplier, year, month, frequency]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The typed comments stay in component state on failure, so a 500 does not
+  // cost somebody their remarks.
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      const blob = await supplierPerformanceAPI.exportPdf({ supplier, year, month, frequency, comments });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Supplier-Performance-${supplier}-${month}-${year}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message || 'Could not generate the PDF.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const select = { padding: '8px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontSize: '0.85rem', cursor: 'pointer' };
   const label = { fontSize: 9.5, fontWeight: 600, color: theme.textDim, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 3 };
@@ -68,8 +91,9 @@ export default function SupplierReportTab({ theme }) {
             {FREQUENCIES.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </div>
-        <button onClick={() => window.print()} style={{ marginLeft: 'auto', padding: '9px 16px', background: '#1F6FB0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
-          <Download size={15} /> Export PDF
+        <button onClick={exportPdf} disabled={exporting || !report}
+          style={{ marginLeft: 'auto', padding: '9px 16px', background: (exporting || !report) ? theme.cardBorder : '#1F6FB0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: (exporting || !report) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Download size={15} /> {exporting ? 'Generating…' : 'Export PDF'}
         </button>
       </div>
 
@@ -105,6 +129,18 @@ export default function SupplierReportTab({ theme }) {
             Metrics with no data for the period are excluded from the rating rather than scored zero.
             Die life and die failure come from the figures entered on the Die Life Data tab.
           </p>
+
+          <div className="no-print" style={{ marginTop: '1.5rem' }}>
+            <label htmlFor="sr-comments" style={{ fontSize: 9.5, fontWeight: 600, color: theme.textDim, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 5 }}>
+              Comments &amp; action points
+            </label>
+            <textarea id="sr-comments" value={comments} onChange={(e) => setComments(e.target.value)} rows={4}
+              placeholder="Your remarks and agreed actions. Printed in the exported PDF over your name."
+              style={{ width: '100%', maxWidth: 720, padding: '10px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontSize: '0.85rem', fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' }} />
+            <p style={{ fontSize: 11, color: theme.textDim, marginTop: 5 }}>
+              Not saved — retype if you generate the report again.
+            </p>
+          </div>
         </div>
       )}
     </div>
