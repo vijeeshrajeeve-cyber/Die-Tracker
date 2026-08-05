@@ -297,11 +297,14 @@ export const supplierPerformanceAPI = {
         body: JSON.stringify({ year, month, entries }),
     }),
 
-    getSettings: async () => apiRequest('/supplier-performance/settings'),
+    getSettings: async (year) => {
+        const qs = new URLSearchParams(year ? { year: String(year) } : {});
+        return apiRequest(`/supplier-performance/settings${qs.toString() ? `?${qs}` : ''}`);
+    },
 
-    saveSettings: async (metrics) => apiRequest('/supplier-performance/settings', {
+    saveSettings: async (year, metrics) => apiRequest('/supplier-performance/settings', {
         method: 'PUT',
-        body: JSON.stringify({ metrics }),
+        body: JSON.stringify({ year, metrics }),
     }),
 };
 

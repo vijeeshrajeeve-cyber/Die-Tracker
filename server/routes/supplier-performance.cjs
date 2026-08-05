@@ -21,14 +21,16 @@ router.get('/suppliers', authMiddleware, async (req, res) => {
 
 router.get('/settings', authMiddleware, async (req, res) => {
     try {
-        res.json(await settings.getSettings(pool));
+        const year = Number(req.query.year) || new Date().getFullYear();
+        res.json(await settings.getSettings(pool, year));
     } catch (error) { handle(res, error, 'Failed to fetch scoring settings'); }
 });
 
 router.put('/settings', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        await settings.saveSettings(pool, req.body && req.body.metrics);
-        res.json(await settings.getSettings(pool));
+        const year = Number(req.body && req.body.year) || new Date().getFullYear();
+        await settings.saveSettings(pool, year, req.body && req.body.metrics);
+        res.json(await settings.getSettings(pool, year));
     } catch (error) { handle(res, error, 'Failed to save scoring settings'); }
 });
 
@@ -59,7 +61,8 @@ router.get('/', authMiddleware, async (req, res) => {
         const frequency = ['Monthly', 'Quarterly', 'YTD'].includes(req.query.frequency)
             ? req.query.frequency : 'Monthly';
 
-        const metrics = await settings.getSettings(pool);
+        // The report's own year, so a sent report keeps the score it was given.
+        const metrics = await settings.getSettings(pool, year);
         const { from, to } = data.periodRange({ year, month, frequency });
         const snapshot = await data.getSnapshot(pool, { supplier, from, to });
         const trend = await data.getMonthlyTrend(pool, { supplier, year, throughMonth: month });
