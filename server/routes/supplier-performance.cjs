@@ -5,6 +5,7 @@ const { authMiddleware, adminMiddleware } = require('./auth.cjs');
 const settings = require('../services/supplierPerformanceSettings.cjs');
 const model = require('../services/supplierPerformance.cjs');
 const data = require('../services/supplierPerformanceData.cjs');
+const dieLife = require('../services/supplierDieLife.cjs');
 
 const handle = (res, error, fallback) => {
     if (error.status) return res.status(error.status).json({ error: error.message });
@@ -29,6 +30,24 @@ router.put('/settings', authMiddleware, adminMiddleware, async (req, res) => {
         await settings.saveSettings(pool, req.body && req.body.metrics);
         res.json(await settings.getSettings(pool));
     } catch (error) { handle(res, error, 'Failed to save scoring settings'); }
+});
+
+// Manual monthly die life capture. Readable and writable by any authenticated
+// user, not admin-only: this is a routine monthly task, and making one person
+// the bottleneck guarantees months get skipped. updated_by is the control.
+router.get('/die-life', authMiddleware, async (req, res) => {
+    try {
+        const year = Number(req.query.year) || new Date().getFullYear();
+        const month = Number(req.query.month) || (new Date().getMonth() + 1);
+        res.json(await dieLife.listDieLife(pool, { year, month }));
+    } catch (error) { handle(res, error, 'Failed to fetch die life data'); }
+});
+
+router.put('/die-life', authMiddleware, async (req, res) => {
+    try {
+        const { year, month, entries } = req.body || {};
+        res.json(await dieLife.saveDieLife(pool, { year, month, entries }, req.user && req.user.id));
+    } catch (error) { handle(res, error, 'Failed to save die life data'); }
 });
 
 router.get('/', authMiddleware, async (req, res) => {
