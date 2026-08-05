@@ -90,4 +90,74 @@ function aggregateDieLife(rows) {
   return { dieLife, dieFailure };
 }
 
-module.exports = { validateEntry, aggregateDieLife };
+// Postgres returns NUMERIC as a string; null must survive as null.
+const toRow = (r) => ({
+  supplier: r.supplier,
+  avgDieLifeMt: num(r.avg_die_life_mt),
+  diesInService: num(r.dies_in_service),
+  diesFailed: num(r.dies_failed),
+  updatedBy: r.updated_by_name || null,
+  updatedAt: r.updated_at || null,
+});
+
+async function listDieLife(pool, { year, month }) {
+  const { rows } = await pool.query(`
+    SELECT d.supplier, d.avg_die_life_mt, d.dies_in_service, d.dies_failed,
+           d.updated_at, u.username AS updated_by_name
+      FROM supplier_die_life d
+      LEFT JOIN users u ON u.id = d.updated_by
+     WHERE d.year = $1 AND d.month = $2
+     ORDER BY d.supplier`, [Number(year), Number(month)]);
+  return rows.map(toRow);
+}
+
+// Validate every entry first. A grid save is one action to the person doing it,
+// so a bad row in the middle must not leave the earlier rows written and the
+// later ones not.
+async function saveDieLife(pool, { year, month, entries }, userId) {
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12) {
+    throw fail(400, 'A valid year and month are required');
+  }
+  const clean = (entries || []).map(validateEntry);
+
+  for (const e of clean) {
+    await pool.query(`
+      INSERT INTO supplier_die_life
+             (supplier, year, month, avg_die_life_mt, dies_in_service, dies_failed, updated_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (supplier, year, month) DO UPDATE
+         SET avg_die_life_mt = EXCLUDED.avg_die_life_mt,
+             dies_in_service = EXCLUDED.dies_in_service,
+             dies_failed     = EXCLUDED.dies_failed,
+             updated_by      = EXCLUDED.updated_by,
+             updated_at      = CURRENT_TIMESTAMP`,
+      [e.supplier, y, m, e.avgDieLifeMt, e.diesInService, e.diesFailed, userId || null]);
+  }
+  return listDieLife(pool, { year: y, month: m });
+}
+
+async function getDieLifeRows(pool, { supplier, year, months }) {
+  const { rows } = await pool.query(`
+    SELECT month, avg_die_life_mt, dies_in_service, dies_failed
+      FROM supplier_die_life
+     WHERE upper(btrim(supplier)) = upper(btrim($1))
+       AND year = $2 AND month = ANY($3)
+     ORDER BY month`, [supplier, Number(year), months]);
+  return rows.map((r) => ({
+    month: Number(r.month),
+    avgDieLifeMt: num(r.avg_die_life_mt),
+    diesInService: num(r.dies_in_service),
+    diesFailed: num(r.dies_failed),
+  }));
+}
+
+async function getDieLifeForPeriod(pool, { supplier, year, months }) {
+  return aggregateDieLife(await getDieLifeRows(pool, { supplier, year, months }));
+}
+
+module.exports = {
+  validateEntry, aggregateDieLife,
+  listDieLife, saveDieLife, getDieLifeRows, getDieLifeForPeriod,
+};
