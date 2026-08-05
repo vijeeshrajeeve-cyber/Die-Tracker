@@ -28,6 +28,54 @@ function periodRange({ year, month, frequency }) {
 // Postgres returns numerics as strings; null must survive as null.
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
+// The period immediately before the reported one, used for the "better than
+// last period" line on each metric card.
+//
+// Deliberately self-referential: the supplier is compared to its own history,
+// never to another supplier. These reports leave the building, so a comparison
+// that reveals how anyone else performs cannot appear in one.
+//
+// Each frequency steps back by its own shape rather than by a fixed month:
+// a quarter compares to the whole preceding quarter, and a year-to-date window
+// compares to the same window a year earlier, so a part-year is never judged
+// against a full one.
+function previousPeriodRange({ year, month, frequency }) {
+  const y = Number(year);
+  const idx = MONTHS.indexOf(month);
+  if (idx < 0) throw Object.assign(new Error(`Unknown month "${month}"`), { status: 400 });
+
+  if (frequency === 'Quarterly') {
+    const qStart = idx - (idx % 3);
+    const prevEnd = qStart - 1;
+    const py = prevEnd < 0 ? y - 1 : y;
+    const endIdx = prevEnd < 0 ? 11 : prevEnd;
+    const startIdx = endIdx - 2;
+    return {
+      from: `${py}-${pad(startIdx + 1)}-01`,
+      to: `${py}-${pad(endIdx + 1)}-${pad(lastDay(py, endIdx))}`,
+      label: `${MONTHS[startIdx]}-${MONTHS[endIdx]} ${py}`,
+    };
+  }
+
+  if (frequency === 'YTD') {
+    const py = y - 1;
+    return {
+      from: `${py}-01-01`,
+      to: `${py}-${pad(idx + 1)}-${pad(lastDay(py, idx))}`,
+      label: `${MONTHS[0]}-${MONTHS[idx]} ${py}`,
+    };
+  }
+
+  // Monthly
+  const py = idx === 0 ? y - 1 : y;
+  const pIdx = idx === 0 ? 11 : idx - 1;
+  return {
+    from: `${py}-${pad(pIdx + 1)}-01`,
+    to: `${py}-${pad(pIdx + 1)}-${pad(lastDay(py, pIdx))}`,
+    label: `${MONTHS[pIdx]} ${py}`,
+  };
+}
+
 // The die life table is keyed by (year, month), not by date. Deriving the month
 // list from the range getSnapshot already has keeps its signature — and every
 // caller, including getMonthlyTrend — untouched.
@@ -116,4 +164,7 @@ async function listSuppliers(pool) {
   return rows.map(r => r.name);
 }
 
-module.exports = { MONTHS, periodRange, monthsOfRange, getSnapshot, getMonthlyTrend, listSuppliers };
+module.exports = {
+  MONTHS, periodRange, previousPeriodRange, monthsOfRange,
+  getSnapshot, getMonthlyTrend, listSuppliers,
+};

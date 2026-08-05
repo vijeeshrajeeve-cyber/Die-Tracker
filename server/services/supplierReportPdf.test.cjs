@@ -35,6 +35,10 @@ const baseReport = {
     { month: 'Aug', dieLife: 64.4, dieFailure: 12.5, deliveryLeadTime: 27, ordersPlaced: 3 },
   ],
   rating: { score: 8.9, contributing: 3, band: { label: 'Exceptional', color: '#16A34A', bg: '#F0FDF4' } },
+  previous: {
+    label: 'Jul 2026',
+    snapshot: { ordersPlaced: 9, dieLife: 58.2, dieFailure: 17.0, deliveryLeadTime: 31 },
+  },
   dieLifeRows: [
     { month: 6, avgDieLifeMt: 60, diesInService: 10, diesFailed: 2 },
     { month: 7, avgDieLifeMt: 70, diesInService: 20, diesFailed: 2 },
@@ -174,4 +178,57 @@ test('a metric with fewer than two recorded months gets no chart at all', async 
   const charts = trendable(report);
   assert.ok(!charts.some((c) => c.metric.key === 'dieLife'), 'one point is not a trend');
   assert.ok(charts.some((c) => c.metric.key === 'deliveryLeadTime'));
+});
+
+test('each card reports movement against the supplier own previous period', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  // Die life rose 64.4 from 58.2 -- an improvement of 6.2, and the label must
+  // name the period compared against so the figure is checkable.
+  assert.match(pages[0], /6\.2/);
+  assert.match(pages[0], /Jul 2026/);
+  assert.match(pages[0], /better/);
+});
+
+test('a worse metric is reported as worse, not hidden', async () => {
+  // Delivery went 31 -> 27 days, which is better; flip it so it worsens.
+  const report = { ...baseReport, snapshot: { ...baseReport.snapshot, deliveryLeadTime: 38 } };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.match(pages[0], /worse/);
+});
+
+test('no movement line when the previous period has no figure', async () => {
+  const report = { ...baseReport, previous: { label: 'Jul 2026', snapshot: {} } };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.ok(!/better than|worse than/.test(pages[0]), 'nothing to compare means no claim');
+});
+
+test('the document explains how the score is calculated', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  assert.match(pages[0], /HOW THE SCORE IS CALCULATED/i);
+  assert.match(pages[0], /renormalised|excluded/i);
+});
+
+test('the scorecard carries two sign-off lines', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  assert.match(pages[0], /Prepared by/i);
+  assert.match(pages[0], /Gulf Extrusion/);
+  assert.match(pages[0], /Supplier acknowledgement/i);
+});
+
+test('the footer marks the document confidential on every page', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  for (const page of pages) assert.match(page, /CONFIDENTIAL/);
+});
+
+test('an unscored metric gets no movement claim', async () => {
+  // Order volume is labelled "not scored"; saying it got better contradicts
+  // that on the same card.
+  const report = {
+    ...baseReport,
+    snapshot: { ...baseReport.snapshot, ordersPlaced: 252 },
+    previous: { label: 'Jan-Dec 2025', snapshot: { ordersPlaced: 0, dieLife: 58.2 } },
+  };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.ok(!/252 better than/.test(pages[0]), 'order volume must not be judged');
+  assert.match(pages[0], /better than Jan-Dec 2025/, 'scored metrics still compare');
 });

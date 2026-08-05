@@ -126,51 +126,173 @@ function drawRating(page, report, y, { bold, font }) {
   return y - 76;
 }
 
-function drawMetricTable(page, report, y, { bold, font }) {
-  const cols = [
-    { x: MARGIN, w: 170, align: 'left' },
-    { x: MARGIN + 175, w: 80, align: 'right' },
-    { x: MARGIN + 260, w: 80, align: 'right' },
-    { x: MARGIN + 345, w: 60, align: 'right' },
-    { x: MARGIN + 410, w: 89, align: 'right' },
-  ];
+const GREEN = '#16A34A';
+const AMBER = '#D97706';
 
-  text(page, 'PERFORMANCE AGAINST TARGET', { x: MARGIN, y, size: 8.5, font: bold, color: MUTED });
-  y -= 14;
-  tableRow(page, ['Metric', 'Actual', 'Target', 'Weight', 'Score /10'], cols, { y, font: bold, color: MUTED, size: 8.5 });
-  y -= 6;
-  rule(page, y);
-  y -= 15;
+// A status disc with a hand-drawn glyph. The icon carries meaning rather than
+// decoration: it says at a glance whether the metric passed, which is the first
+// thing anyone reads off a card.
+function drawStatusDisc(page, cx, cy, status, color) {
+  const c = hexColor(color);
+  page.drawCircle({ x: cx, y: cy, size: 7, color: c, opacity: 0.14 });
+  const white = rgb(1, 1, 1);
+  if (status === 'ok') {
+    // A tick, drawn rather than typed: WinAnsi has no check character, so a
+    // glyph would sanitize away to a blank disc.
+    page.drawLine({ start: { x: cx - 2.8, y: cy + 0.2 }, end: { x: cx - 0.8, y: cy - 2.0 }, thickness: 1.3, color: c });
+    page.drawLine({ start: { x: cx - 0.8, y: cy - 2.0 }, end: { x: cx + 2.9, y: cy + 2.6 }, thickness: 1.3, color: c });
+  } else if (status === 'warn') {
+    page.drawLine({ start: { x: cx, y: cy + 2.8 }, end: { x: cx, y: cy - 0.4 }, thickness: 1.3, color: c });
+    page.drawCircle({ x: cx, y: cy - 2.4, size: 0.75, color: c });
+  } else {
+    page.drawLine({ start: { x: cx - 2.4, y: cy }, end: { x: cx + 2.4, y: cy }, thickness: 1.3, color: c });
+  }
+  void white;
+}
 
-  for (const m of report.metrics || []) {
-    if (!m.scored) continue;
-    const value = report.snapshot ? report.snapshot[m.key] : null;
-    const score = report.scores ? report.scores[m.key] : null;
-    const unit = m.unit ? ` ${m.unit}` : '';
+// The movement line: how this metric changed against the same supplier's own
+// previous period. Never against another supplier -- this document is sent to
+// the one it names.
+function movementLine(m, value, previousValue, label) {
+  // Unscored metrics get no movement line. Order volume is labelled "scale
+  // context - not scored", so calling a change in it "better" would pass
+  // judgement on the one number the report promises not to judge.
+  if (!m.scored) return null;
+  if (value == null || previousValue == null || !label) return null;
+  const delta = Number(value) - Number(previousValue);
+  const size = Math.abs(delta);
+  if (size < 0.05) return `unchanged vs ${label}`;
+  const improved = m.lowerBetter ? delta < 0 : delta > 0;
+  const unit = m.unit ? ` ${m.unit}` : '';
+  return `${fmt(size, m.decimals)}${unit} ${improved ? 'better' : 'worse'} than ${label} (${fmt(previousValue, m.decimals)}${unit})`;
+}
 
-    const actual = value == null ? 'Not recorded' : `${fmt(value, m.decimals)}${unit}`;
-    const target = `${m.lowerBetter ? '<=' : '>='} ${fmt(m.target, m.decimals)}${unit}`;
-    const weight = `${Math.round(m.weight * 100)}%`;
-    const scoreText = score == null ? '-' : score.toFixed(1);
+function drawMetricCard(page, m, ctx, { x, y, w, h }, { bold, font }) {
+  const { value, score, previousValue, previousLabel } = ctx;
+  const top = y + h;
 
-    tableRow(page, [m.label, actual, target, weight, scoreText], cols, {
-      y, font, size: 9.5, color: value == null ? MUTED : INK,
-    });
+  page.drawRectangle({ x, y, width: w, height: h, borderColor: RULE, borderWidth: 0.6 });
 
-    // A short bar under the score, so the table reads at a glance.
-    if (score != null) {
-      const barW = 89;
-      const bx = cols[4].x;
-      page.drawRectangle({ x: bx, y: y - 6, width: barW, height: 2.5, color: RULE });
-      page.drawRectangle({ x: bx, y: y - 6, width: barW * (score / 10), height: 2.5, color: hexColor(scoreBandColor(score)) });
-    }
-    y -= 20;
+  // Status drives the disc and the target line colour.
+  let status = 'none';
+  let statusColor = '#94A3B8';
+  if (m.scored && value != null) {
+    const onTarget = m.lowerBetter ? value <= m.target : value >= m.target;
+    status = onTarget ? 'ok' : 'warn';
+    statusColor = onTarget ? GREEN : AMBER;
+  } else if (!m.scored) {
+    statusColor = '#1F6FB0';
   }
 
-  const orders = report.snapshot ? report.snapshot.ordersPlaced : null;
-  rule(page, y + 6);
-  text(page, `Orders placed in the period: ${orders == null ? '-' : orders}`, { x: MARGIN, y: y - 8, size: 9, font, color: MUTED });
-  return y - 30;
+  drawStatusDisc(page, x + 18, top - 15, status, statusColor);
+  text(page, m.label, { x: x + 31, y: top - 18, size: 7.4, font: bold });
+
+  if (score != null) {
+    const badgeW = 26;
+    const bx = x + w - badgeW - 9;
+    const bc = hexColor(scoreBandColor(score));
+    page.drawRectangle({ x: bx, y: top - 23, width: badgeW, height: 12, color: bc, opacity: 0.13 });
+    text(page, score.toFixed(1), { x: bx, y: top - 19.5, size: 7.2, font: bold, color: bc, align: 'center', width: badgeW });
+  }
+
+  // The number itself, the largest thing on the card.
+  if (value == null) {
+    text(page, 'Not recorded', { x: x + 12, y: top - 45, size: 13, font: bold, color: MUTED });
+    text(page, 'no figure for this period', { x: x + 12, y: top - 58, size: 6.4, font, color: MUTED });
+  } else {
+    const shown = fmt(value, m.decimals);
+    text(page, shown, { x: x + 12, y: top - 47, size: 19, font: bold });
+    if (m.unit) {
+      text(page, m.unit, { x: x + 14 + bold.widthOfTextAtSize(shown, 19), y: top - 47, size: 7.4, font, color: MUTED });
+    }
+    if (m.scored) {
+      const label = status === 'ok' ? 'On target' : 'Off target';
+      text(page, label, { x: x + 12, y: top - 60, size: 6.6, font: bold, color: hexColor(statusColor) });
+      text(page, `- target ${m.lowerBetter ? '<=' : '>='} ${fmt(m.target, m.decimals)}${m.unit ? ` ${m.unit}` : ''}`,
+        { x: x + 14 + bold.widthOfTextAtSize(label, 6.6), y: top - 60, size: 6.6, font, color: MUTED });
+    } else {
+      text(page, 'scale context - not scored', { x: x + 12, y: top - 60, size: 6.6, font, color: MUTED });
+    }
+  }
+
+  if (score != null) {
+    const barW = w - 24;
+    page.drawRectangle({ x: x + 12, y: top - 70, width: barW, height: 3, color: RULE });
+    page.drawRectangle({ x: x + 12, y: top - 70, width: barW * (score / 10), height: 3, color: hexColor(scoreBandColor(score)) });
+  }
+
+  const move = movementLine(m, value, previousValue, previousLabel);
+  if (move) {
+    rule(page, y + 15, { x: x + 12, w: w - 24 });
+    text(page, move, { x: x + 12, y: y + 6, size: 5.9, font, color: MUTED });
+  }
+}
+
+// Three across. Reads as a dashboard rather than a spreadsheet -- the same
+// information the old table carried, but a supplier can find their worst metric
+// without reading every row.
+function drawMetricCards(page, report, y, { bold, font }) {
+  text(page, 'METRIC BREAKDOWN', { x: MARGIN, y, size: 8.5, font: bold, color: MUTED });
+  y -= 14;
+
+  const GAP = 11;
+  const cardW = (CONTENT_W - GAP * 2) / 3;
+  const cardH = 97;
+  const prev = (report.previous && report.previous.snapshot) || {};
+  const prevLabel = report.previous && report.previous.label;
+
+  const cards = (report.metrics || []).filter((m) => m.scored || m.key === 'ordersPlaced');
+  cards.forEach((m, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    drawMetricCard(page, m, {
+      value: report.snapshot ? report.snapshot[m.key] : null,
+      score: report.scores ? report.scores[m.key] : null,
+      previousValue: prev[m.key],
+      previousLabel: prevLabel,
+    }, {
+      x: MARGIN + col * (cardW + GAP),
+      y: y - cardH - row * (cardH + GAP),
+      w: cardW, h: cardH,
+    }, { bold, font });
+  });
+
+  const rows = Math.ceil(cards.length / 3);
+  return y - rows * (cardH + GAP) - 8;
+}
+
+function drawScoreExplainer(page, report, y, { bold, font }) {
+  const weights = (report.metrics || [])
+    .filter((m) => m.scored)
+    .map((m) => `${m.label} ${Math.round(m.weight * 100)}%`)
+    .join(' - ');
+
+  const body = `Each metric is scored 0-10 against a Gulf Extrusion target band, then combined using the weights shown here: ${weights}. Lower is better for every metric except die life, where higher is better. Order volume reports scale and does not affect the score. A metric with no figure for the period is excluded and the rating is renormalised over the rest, never scored zero.`;
+  const lines = wrapText(body, font, 7.4, CONTENT_W - 24);
+  const boxH = 26 + lines.length * 10;
+
+  page.drawRectangle({ x: MARGIN, y: y - boxH, width: CONTENT_W, height: boxH, color: rgb(0.97, 0.975, 0.98) });
+  text(page, 'HOW THE SCORE IS CALCULATED', { x: MARGIN + 12, y: y - 16, size: 7.6, font: bold, color: MUTED });
+  lines.forEach((line, i) => {
+    text(page, line, { x: MARGIN + 12, y: y - 29 - i * 10, size: 7.4, font, color: INK });
+  });
+  return y - boxH - 22;
+}
+
+// Space for a wet signature on both sides. A performance review that nobody
+// signs is a memo; the supplier acknowledging it is the point of sending it.
+function drawSignOff(page, y, preparedBy, { bold, font }) {
+  const colW = (CONTENT_W - 40) / 2;
+  const cols = [
+    { x: MARGIN, label: 'Prepared by - Gulf Extrusion', name: preparedBy },
+    { x: MARGIN + colW + 40, label: 'Supplier acknowledgement - name, signature and date', name: '' },
+  ];
+  for (const c of cols) {
+    if (c.name) text(page, c.name, { x: c.x, y: y + 6, size: 8, font: bold, color: MUTED });
+    rule(page, y, { x: c.x, w: colW, color: rgb(0.65, 0.68, 0.72) });
+    text(page, c.label, { x: c.x, y: y - 11, size: 6.8, font, color: MUTED });
+  }
+  return y - 26;
 }
 
 // The counts sit beside the percentage on purpose: a supplier who disputes a
@@ -349,25 +471,26 @@ function drawComments(doc, report, comments, preparedBy, { bold, font }) {
     y -= leading;
   }
 
-  y -= 24;
-  rule(page, y, { w: 200 });
-  text(page, sanitize(preparedBy || 'Gulf Extrusion'), { x: MARGIN, y: y - 13, size: 9.5, font: bold });
-  text(page, `Prepared ${new Date().toISOString().slice(0, 10)}`, { x: MARGIN, y: y - 26, size: 8.5, font, color: MUTED });
+  // Attribution only, deliberately not a second signature rule: the sign-off
+  // block on the scorecard is the one place this document gets signed, and two
+  // ruled lines would leave the supplier guessing which.
+  y -= 18;
+  text(page, `${sanitize(preparedBy || 'Gulf Extrusion')} - ${new Date().toISOString().slice(0, 10)}`,
+    { x: MARGIN, y, size: 8, font, color: MUTED });
 }
 
 // Footers are drawn last because "Page N of M" cannot be known until every page
 // exists.
-function drawFooters(doc, report, { font }) {
+function drawFooters(doc, report, { font, bold }) {
   const pages = doc.getPages();
   const p = report.period || {};
+  const red = hexColor('#B91C1C');
   pages.forEach((page, i) => {
-    rule(page, MARGIN + 22);
-    text(page, `Gulf Extrusion - Supplier Performance Report - ${report.supplier} - ${p.month} ${p.year}`,
-      { x: MARGIN, y: MARGIN + 10, size: 7.5, font, color: MUTED });
-    text(page, `Page ${i + 1} of ${pages.length}`,
-      { x: MARGIN, y: MARGIN + 10, size: 7.5, font, color: MUTED, align: 'right', width: CONTENT_W });
-    text(page, 'Confidential - issued to the named supplier for performance review.',
-      { x: MARGIN, y: MARGIN, size: 6.5, font, color: MUTED });
+    rule(page, MARGIN + 16);
+    text(page, 'CONFIDENTIAL - SHARED UNDER SUPPLIER AGREEMENT',
+      { x: MARGIN, y: MARGIN + 4, size: 7, font: bold, color: red });
+    text(page, `${report.supplier} - ${p.frequency === 'YTD' ? 'YTD' : p.month} ${p.year} - Page ${i + 1} of ${pages.length}`,
+      { x: MARGIN, y: MARGIN + 4, size: 7, font, color: MUTED, align: 'right', width: CONTENT_W });
   });
 }
 
@@ -387,7 +510,12 @@ async function generateSupplierReportPdf(report, opts = {}) {
   const p1 = doc.addPage([PAGE_W, PAGE_H]);
   let y = drawHeader(p1, report, { bold, font, logo });
   y = drawRating(p1, report, y, { bold, font });
-  drawMetricTable(p1, report, y, { bold, font });
+  y = drawMetricCards(p1, report, y, { bold, font });
+  y = drawScoreExplainer(p1, report, y, { bold, font });
+  // Anchored near the foot of the page rather than left floating under the
+  // explainer: a signature block belongs at the bottom of the sheet. Falls back
+  // to following the content if the explainer ever runs that far down.
+  drawSignOff(p1, Math.min(y, MARGIN + 78), preparedBy, { bold, font });
 
   const matrixRows = report.dieLifeRows || [];
   if (matrixRows.length) {
@@ -423,7 +551,7 @@ async function generateSupplierReportPdf(report, opts = {}) {
   }
 
   drawComments(doc, report, comments, preparedBy, { bold, font });
-  drawFooters(doc, report, { font });
+  drawFooters(doc, report, { font, bold });
   return doc.save();
 }
 

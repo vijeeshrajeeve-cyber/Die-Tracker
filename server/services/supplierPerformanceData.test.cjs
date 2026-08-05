@@ -105,3 +105,46 @@ test('getSnapshot returns null die life when nothing was entered', async () => {
   assert.equal(out.dieLife, null);
   assert.equal(out.dieFailure, null, 'unrecorded is not a perfect 0%');
 });
+
+test('previousPeriodRange Monthly steps back one month', () => {
+  const p = d.previousPeriodRange({ year: 2026, month: 'Aug', frequency: 'Monthly' });
+  assert.equal(p.from, '2026-07-01');
+  assert.equal(p.to, '2026-07-31');
+  assert.equal(p.label, 'Jul 2026');
+});
+
+test('previousPeriodRange Monthly rolls back into the previous year at January', () => {
+  const p = d.previousPeriodRange({ year: 2026, month: 'Jan', frequency: 'Monthly' });
+  assert.equal(p.from, '2025-12-01');
+  assert.equal(p.to, '2025-12-31');
+  assert.equal(p.label, 'Dec 2025');
+});
+
+test('previousPeriodRange Quarterly gives the whole preceding quarter', () => {
+  // Aug sits in Q3, so the comparison is the full Q2 -- not Apr-to-Aug.
+  const p = d.previousPeriodRange({ year: 2026, month: 'Aug', frequency: 'Quarterly' });
+  assert.equal(p.from, '2026-04-01');
+  assert.equal(p.to, '2026-06-30');
+  assert.equal(p.label, 'Apr-Jun 2026');
+});
+
+test('previousPeriodRange Quarterly rolls back a year from Q1', () => {
+  const p = d.previousPeriodRange({ year: 2026, month: 'Feb', frequency: 'Quarterly' });
+  assert.equal(p.from, '2025-10-01');
+  assert.equal(p.to, '2025-12-31');
+  assert.equal(p.label, 'Oct-Dec 2025');
+});
+
+test('previousPeriodRange YTD compares the same window a year earlier', () => {
+  // Jan-Aug against Jan-Aug, not against the whole of last year -- otherwise a
+  // part-year is judged against a full one.
+  const p = d.previousPeriodRange({ year: 2026, month: 'Aug', frequency: 'YTD' });
+  assert.equal(p.from, '2025-01-01');
+  assert.equal(p.to, '2025-08-31');
+  assert.equal(p.label, 'Jan-Aug 2025');
+});
+
+test('previousPeriodRange YTD handles a leap February', () => {
+  const p = d.previousPeriodRange({ year: 2025, month: 'Feb', frequency: 'YTD' });
+  assert.equal(p.to, '2024-02-29');
+});
