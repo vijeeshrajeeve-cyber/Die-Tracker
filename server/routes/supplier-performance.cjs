@@ -67,6 +67,12 @@ router.get('/', authMiddleware, async (req, res) => {
         const snapshot = await data.getSnapshot(pool, { supplier, from, to });
         const trend = await data.getMonthlyTrend(pool, { supplier, year, throughMonth: month });
 
+        // The month-by-month figures behind the two die life metrics. Sent with
+        // the report so the on-screen matrix and the PDF render one source.
+        const dieMonths = [];
+        for (let i = 1; i <= data.MONTHS.indexOf(month) + 1; i += 1) dieMonths.push(i);
+        const dieLifeRows = await dieLife.getDieLifeRows(pool, { supplier, year, months: dieMonths });
+
         const scores = {};
         for (const m of metrics) scores[m.key] = model.scoreMetric(m, snapshot[m.key]);
         const overall = model.overallRating(metrics, snapshot);
@@ -78,6 +84,7 @@ router.get('/', authMiddleware, async (req, res) => {
             snapshot,
             scores,
             trend,
+            dieLifeRows,
             rating: overall ? { ...overall, band: model.ratingBand(overall.score) } : null,
         });
     } catch (error) { handle(res, error, 'Failed to build the supplier report'); }

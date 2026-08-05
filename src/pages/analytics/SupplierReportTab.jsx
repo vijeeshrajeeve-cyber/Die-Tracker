@@ -5,6 +5,7 @@ import { MONTHS } from '../../utils/constants';
 import RatingHero from '../../components/analytics/RatingHero';
 import MetricCard from '../../components/analytics/MetricCard';
 import TrendCard from '../../components/analytics/TrendCard';
+import DieLifeMatrix from '../../components/analytics/DieLifeMatrix';
 
 const FREQUENCIES = ['Monthly', 'Quarterly', 'YTD'];
 
@@ -86,6 +87,10 @@ export default function SupplierReportTab({ theme }) {
             ))}
           </div>
 
+          <div style={{ marginTop: '1.5rem' }}>
+            <DieLifeMatrix rows={report.dieLifeRows} theme={theme} />
+          </div>
+
           <h2 style={{ fontSize: '0.75rem', fontWeight: 700, color: theme.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '2rem 0 0.75rem' }}>
             Trends · Jan–{month} {year}
           </h2>
@@ -98,7 +103,7 @@ export default function SupplierReportTab({ theme }) {
           <p style={{ fontSize: 11, color: theme.textDim, marginTop: '1.5rem', lineHeight: 1.6 }}>
             Each metric is scored 0–10 against its target band, then combined using the weights above.
             Metrics with no data for the period are excluded from the rating rather than scored zero.
-            Die life and die failure are not tracked in this system and are not part of the rating.
+            Die life and die failure come from the figures entered on the Die Life Data tab.
           </p>
         </div>
       )}
