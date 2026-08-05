@@ -31,7 +31,14 @@ function overallRating(metrics, snapshot) {
     contributing += 1;
   }
   if (!wsum) return null;
-  return { score: sum / wsum, contributing };
+  // Rounded to 4dp because the weights do not sum exactly in IEEE754 — a set
+  // totalling "100%" lands on 0.9999999999999999, and renormalising by it turns
+  // a genuine 10 into 9.999999999999998. That is invisible at one decimal place
+  // but not at a band boundary: ratingBand tests `score >= 8.5`, so an exact
+  // 8.5 computed as 8.499999999999999 would print "Fair - Watch" instead of
+  // "Good - Reliable" on a report sent to a supplier. Four decimals is far
+  // finer than anything displayed and removes the artifact.
+  return { score: Math.round((sum / wsum) * 1e4) / 1e4, contributing };
 }
 
 function ratingBand(score) {

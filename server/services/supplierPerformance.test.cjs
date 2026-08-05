@@ -54,9 +54,18 @@ test('overallRating never treats a missing metric as a zero score', () => {
 });
 
 test('overallRating weights the contributors correctly', () => {
-  // delivery .30 scoring 10, design .20 scoring 0 -> (10*.3 + 0*.2) / .5 = 6
+  // Delivery scores 10 (at its target), design scores 0 (at its floor), and
+  // the mean renormalises over just those two weights.
+  //
+  // Derived from METRIC_DEFAULTS rather than hardcoded: the weights are pinned
+  // by their own tests, and this one is about the renormalisation, so it should
+  // not have to be rewritten every time the business re-balances a weight.
+  const wDelivery = metric('deliveryLeadTime').weight;
+  const wDesign = metric('designLeadTime').weight;
+  const expected = (10 * wDelivery + 0 * wDesign) / (wDelivery + wDesign);
+
   const out = p.overallRating(METRIC_DEFAULTS, { deliveryLeadTime: 30, designLeadTime: 10 });
-  assert.equal(Math.round(out.score * 100) / 100, 6);
+  assert.equal(Math.round(out.score * 100) / 100, Math.round(expected * 100) / 100);
   assert.equal(out.contributing, 2);
 });
 
@@ -72,4 +81,48 @@ test('ratingBand boundaries', () => {
   assert.equal(p.ratingBand(5.5).label, 'Fair · Watch');
   assert.equal(p.ratingBand(4.0).label, 'Marginal · Action needed');
   assert.equal(p.ratingBand(3.9).label, 'At risk');
+});
+
+// --- Die life and die failure -------------------------------------------
+// The higher-is-better branch of scoreMetric has never run in production --
+// every metric until now was lower-better. Untested branches are where the
+// bugs live.
+
+test('scoreMetric scores die life on the higher-is-better branch', () => {
+  const m = metric('dieLife'); // ten 77, zero 20
+  assert.equal(p.scoreMetric(m, 77), 10);
+  assert.equal(p.scoreMetric(m, 20), 0);
+  assert.equal(Math.round(p.scoreMetric(m, 48.5) * 100) / 100, 5);
+});
+
+test('scoreMetric clamps die life at both ends', () => {
+  const m = metric('dieLife');
+  assert.equal(p.scoreMetric(m, 500), 10, 'beating the target cannot score above 10');
+  assert.equal(p.scoreMetric(m, 0), 0, 'below the floor cannot score below 0');
+});
+
+test('scoreMetric scores die failure lower-is-better', () => {
+  const m = metric('dieFailure'); // ten 19, zero 40
+  assert.equal(p.scoreMetric(m, 19), 10);
+  assert.equal(p.scoreMetric(m, 40), 0);
+  assert.equal(p.scoreMetric(m, 60), 0, 'clamped');
+});
+
+test('an unrecorded die life is excluded, not scored zero', () => {
+  const snapshot = {
+    dieLife: null, dieFailure: null, designLeadTime: 3, deliveryLeadTime: 30,
+    trialRatio: 1.5, qdRate: 5, designRevisions: 1,
+  };
+  const out = p.overallRating(METRIC_DEFAULTS, snapshot);
+  assert.equal(out.score, 10, 'renormalised over the metrics that have data');
+  assert.equal(out.contributing, 5);
+});
+
+test('a score landing exactly on a band boundary is not lost to float error', () => {
+  // The weights do not sum exactly in IEEE754, so renormalisation can turn an
+  // exact 8.5 into 8.499999999999999 and drop the supplier a whole band.
+  // Delivery LT alone: ten 30, zero 55. Halfway (42.5) scores exactly 5.
+  const out = p.overallRating(METRIC_DEFAULTS, { deliveryLeadTime: 42.5 });
+  assert.equal(out.score, 5);
+  assert.equal(p.ratingBand(out.score).label, 'Marginal · Action needed');
 });

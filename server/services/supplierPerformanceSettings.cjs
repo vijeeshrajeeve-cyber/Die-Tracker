@@ -2,32 +2,48 @@
 
 // Scoring targets and weights for the supplier scorecard.
 //
-// Die Life and Die Failure are deliberately absent: nothing in the schema
-// records tonnage extruded or dies failing before rated life, and 45% of the
-// original design's weighting rested on them. Omitted rather than estimated.
-// See docs/superpowers/specs/2026-08-04-supplier-performance-evaluation-design.md.
+// Die Life and Die Failure were absent at launch because nothing in the schema
+// recorded tonnage extruded or dies failing before rated life. They are now
+// captured by hand each month in supplier_die_life, and carry 45% of the
+// rating between them — the weighting the original design intended.
 //
-// The seed targets come from the observed distribution on real orders, not
-// from the design mock. The mock's ≤7 day design-lead-time target sat far
-// above actual performance of 1.6–5.2 days, which would have scored every
-// supplier 10/10 and made that 20% of the rating carry no information.
+// Targets are resolved per year: 77 MT is the 2026 die life KPI and under 19%
+// is the 2026 failure target, both set by the business. The lead-time and trial
+// seeds come from the observed distribution on real orders, not from a mock —
+// the mock's ≤7 day design-lead-time target sat far above actual performance of
+// 1.6–5.2 days, which would have scored every supplier 10/10.
+//
+// See docs/superpowers/specs/2026-08-05-die-life-failure-and-report-pdf-design.md.
 const METRIC_DEFAULTS = [
   { key: 'ordersPlaced', label: 'Orders Placed', unit: '', scored: false, decimals: 0,
     blurb: 'Dies ordered in the period' },
-  { key: 'designLeadTime', label: 'Avg Design Lead Time', unit: 'days', scored: true,
-    lowerBetter: true, ten: 3, zero: 10, target: 3, weight: 0.20, decimals: 1,
-    blurb: 'Order placed → design received' },
+  // The only higher-is-better metric in the system, and the heaviest.
+  { key: 'dieLife', label: 'Avg Die Life', unit: 'MT', scored: true,
+    lowerBetter: false, ten: 77, zero: 20, target: 77, weight: 0.25, decimals: 1,
+    blurb: 'Tonnage extruded per die, entered monthly' },
+  // 19% is the business target. The 0-point of 40% is a seed, roughly the 2x
+  // spread the other quality metrics use — revisit once real failure data
+  // accumulates.
+  { key: 'dieFailure', label: 'Die Failure Rate', unit: '%', scored: true,
+    lowerBetter: true, ten: 19, zero: 40, target: 19, weight: 0.20, decimals: 1,
+    blurb: 'Dies failing before rated life' },
   { key: 'deliveryLeadTime', label: 'Avg Delivery Lead Time', unit: 'days', scored: true,
-    lowerBetter: true, ten: 30, zero: 55, target: 30, weight: 0.30, decimals: 0,
+    lowerBetter: true, ten: 30, zero: 55, target: 30, weight: 0.20, decimals: 0,
     blurb: 'Order placed → die received on site' },
+  { key: 'designLeadTime', label: 'Avg Design Lead Time', unit: 'days', scored: true,
+    lowerBetter: true, ten: 3, zero: 10, target: 3, weight: 0.15, decimals: 1,
+    blurb: 'Order placed → design received' },
   { key: 'trialRatio', label: 'Avg Trial Ratio', unit: 'trials/die', scored: true,
-    lowerBetter: true, ten: 1.5, zero: 3.0, target: 1.5, weight: 0.20, decimals: 2,
+    lowerBetter: true, ten: 1.5, zero: 3.0, target: 1.5, weight: 0.10, decimals: 2,
     blurb: 'Trials needed before acceptance' },
+  // QD Rate and Design Revisions drop to 5% each. Both are known-flat: only 8
+  // QDs exist and 1 order of 659 has any revisions, so neither can currently
+  // tell one supplier from another. That weight is better spent on die life.
   { key: 'qdRate', label: 'QD Rate', unit: '%', scored: true,
-    lowerBetter: true, ten: 5, zero: 20, target: 5, weight: 0.20, decimals: 1,
+    lowerBetter: true, ten: 5, zero: 20, target: 5, weight: 0.05, decimals: 1,
     blurb: 'Discrepancies raised per die received' },
   { key: 'designRevisions', label: 'Design Revisions', unit: 'per die', scored: true,
-    lowerBetter: true, ten: 1.0, zero: 3.0, target: 1.0, weight: 0.10, decimals: 2,
+    lowerBetter: true, ten: 1.0, zero: 3.0, target: 1.0, weight: 0.05, decimals: 2,
     blurb: 'Design revisions before approval' },
 ];
 

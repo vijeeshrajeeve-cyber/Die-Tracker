@@ -14,10 +14,26 @@ test('METRIC_DEFAULTS weights total exactly 1', () => {
   assert.equal(Math.round(total * 1000) / 1000, 1);
 });
 
-test('METRIC_DEFAULTS omits die life and die failure', () => {
+test('METRIC_DEFAULTS carries die life and die failure', () => {
+  // Replaces an earlier test asserting these were absent. They were omitted
+  // when nothing recorded tonnage; supplier_die_life now does.
   const keys = s.METRIC_DEFAULTS.map(m => m.key);
-  assert.ok(!keys.includes('dieLife'), 'die life is not tracked and must not appear');
-  assert.ok(!keys.includes('dieFailure'), 'die failure is not tracked and must not appear');
+  assert.ok(keys.includes('dieLife'));
+  assert.ok(keys.includes('dieFailure'));
+});
+
+test('die life is the only higher-is-better metric', () => {
+  const dl = s.METRIC_DEFAULTS.find(m => m.key === 'dieLife');
+  assert.equal(dl.lowerBetter, false);
+  assert.equal(dl.ten, 77, "2026's KPI target");
+  assert.equal(dl.zero, 20);
+  const others = s.METRIC_DEFAULTS.filter(m => m.scored && m.key !== 'dieLife');
+  for (const m of others) assert.equal(m.lowerBetter, true, `${m.key} should be lower-better`);
+});
+
+test('die life and die failure together carry 45% of the rating', () => {
+  const w = (k) => s.METRIC_DEFAULTS.find(m => m.key === k).weight;
+  assert.equal(Math.round((w('dieLife') + w('dieFailure')) * 100), 45);
 });
 
 test('getSettings returns the code defaults when no row exists', async () => {
