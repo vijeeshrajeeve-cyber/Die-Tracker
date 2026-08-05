@@ -232,3 +232,68 @@ test('an unscored metric gets no movement claim', async () => {
   assert.ok(!/252 better than/.test(pages[0]), 'order volume must not be judged');
   assert.match(pages[0], /better than Jan-Dec 2025/, 'scored metrics still compare');
 });
+
+test('the trend page comes before the die life detail', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  const trendPage = pages.findIndex((p) => /MONTHLY TREND/.test(p));
+  const matrixPage = pages.findIndex((p) => /Dies In Service/.test(p));
+  assert.ok(trendPage > 0, 'trend page missing');
+  assert.ok(matrixPage > 0, 'matrix page missing');
+  assert.equal(trendPage, 1, 'trends should be page 2');
+  assert.ok(trendPage < matrixPage, 'having seen the score, the next question is the direction');
+});
+
+test('the header spells out the exact window covered', async () => {
+  // "Quarterly" ending in August covers July to August, not a whole quarter.
+  // A supplier reading the word alone cannot know that.
+  const report = {
+    ...baseReport,
+    period: { from: '2026-07-01', to: '2026-08-31', frequency: 'Quarterly', year: 2026, month: 'Aug' },
+  };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.match(pages[0], /Quarterly report/);
+  assert.match(pages[0], /1 Jul to 31 Aug 2026/);
+});
+
+test('a window spanning two years prints both years', async () => {
+  const report = {
+    ...baseReport,
+    period: { from: '2025-10-01', to: '2025-12-31', frequency: 'Quarterly', year: 2025, month: 'Dec' },
+  };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.match(pages[0], /1 Oct to 31 Dec 2025/);
+});
+
+test('every trend chart shares one timeline', async () => {
+  // A page of charts each scaled to its own months cannot be read across.
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const report = {
+    metrics,
+    trend: [
+      { month: 'Jan', dieLife: null, deliveryLeadTime: 28, dieFailure: 12 },
+      { month: 'Feb', dieLife: null, deliveryLeadTime: 26, dieFailure: 14 },
+      { month: 'Mar', dieLife: 60, deliveryLeadTime: null, dieFailure: 11 },
+      { month: 'Apr', dieLife: 70, deliveryLeadTime: null, dieFailure: 13 },
+    ],
+  };
+  const charts = trendable(report);
+  for (const c of charts) {
+    assert.deepEqual(c.axis, ['Jan', 'Feb', 'Mar', 'Apr'], `${c.metric.key} has its own axis`);
+  }
+});
+
+test('a point keeps the month position it actually belongs to', async () => {
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const report = {
+    metrics,
+    trend: [
+      { month: 'Jan', dieLife: null },
+      { month: 'Feb', dieLife: null },
+      { month: 'Mar', dieLife: 60 },
+      { month: 'Apr', dieLife: 70 },
+    ],
+  };
+  const dieLife = trendable(report).find((c) => c.metric.key === 'dieLife');
+  // Plotted at index 2 and 3, not squashed to the left edge as 0 and 1.
+  assert.deepEqual(dieLife.points.map((p) => p.index), [2, 3]);
+});

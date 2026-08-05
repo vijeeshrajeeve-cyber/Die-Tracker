@@ -102,6 +102,18 @@ export default function SupplierReportTab({ theme, refreshKey = 0 }) {
         </button>
       </div>
 
+      {/* Quarterly ending in August covers July to August, not a whole quarter,
+          and YTD runs January to the chosen month. Showing the resolved window
+          stops the wrong period being exported and sent to a supplier. */}
+      {report && !loading && report.period && (
+        <p className="no-print" style={{ fontSize: 12, color: theme.textDim, margin: '-0.75rem 0 1.25rem' }}>
+          Covering <strong style={{ color: theme.textMuted }}>{report.period.from}</strong> to{' '}
+          <strong style={{ color: theme.textMuted }}>{report.period.to}</strong>
+          {frequency === 'Quarterly' && ' · quarter to date — pick the last month of the quarter for a full one'}
+          {frequency === 'YTD' && ' · January to the selected month — pick December for a full year'}
+        </p>
+      )}
+
       {error && <div style={{ padding: 16, borderRadius: 10, border: '1px solid #EF4444', color: '#EF4444', fontSize: '0.85rem', marginBottom: '1.5rem' }}>{error}</div>}
       {loading && <div style={{ color: theme.textDim, fontSize: '0.85rem' }}>Building report…</div>}
 

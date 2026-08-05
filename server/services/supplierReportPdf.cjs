@@ -84,6 +84,20 @@ function scoreBandColor(score) {
   return '#DC2626';
 }
 
+// "1 Jul - 31 Aug 2026". Drops the repeated year when both ends share one.
+function periodCaption(p) {
+  const day = (iso) => {
+    const [y, m, d] = String(iso || '').split('-').map(Number);
+    if (!y || !m || !d) return '';
+    return { d, m: MONTH_NAMES[m - 1], y };
+  };
+  const a = day(p.from);
+  const b = day(p.to);
+  if (!a || !b) return `${p.month} ${p.year}`;
+  const left = a.y === b.y ? `${a.d} ${a.m}` : `${a.d} ${a.m} ${a.y}`;
+  return `${left} to ${b.d} ${b.m} ${b.y}`;
+}
+
 function drawHeader(page, report, { bold, font, logo }) {
   let y = PAGE_H - MARGIN;
 
@@ -99,7 +113,12 @@ function drawHeader(page, report, { bold, font, logo }) {
 
   text(page, report.supplier, { x: MARGIN, y, size: 22, font: bold });
   const p = report.period || {};
-  text(page, `${p.month} ${p.year} - ${p.frequency}`, { x: MARGIN, y: y - 16, size: 10, font, color: MUTED });
+  // The exact window, spelled out. "Quarterly" ending in August means July to
+  // August, not a whole quarter, and "YTD" means January to the chosen month --
+  // neither is obvious to a supplier reading the word alone, and this document
+  // has to stand on its own once it has left the building.
+  const covered = periodCaption(p);
+  text(page, `${p.frequency} report - ${covered}`, { x: MARGIN, y: y - 16, size: 10, font, color: MUTED });
   text(page, `Generated ${new Date().toISOString().slice(0, 10)}`, { x: MARGIN, y, size: 9, font, color: MUTED, align: 'right', width: CONTENT_W });
   return y - 40;
 }
@@ -364,7 +383,15 @@ function drawMatrix(page, report, y, { bold, font }) {
 // are skipped entirely by the caller -- the browser export devoted a whole page
 // to five boxes reading "Not enough data", which is not something to send to a
 // supplier.
-function drawTrendChart(page, { x, y, w, h, points, target, color, label, unit }, { bold, font }) {
+// Every chart on the page shares one timeline: January through the reported
+// month, whether or not this metric has a figure in each of them.
+//
+// Scaling each chart to its own data instead would give the page a different
+// x-axis per card -- die life running Jul-Sep beside design lead time running
+// Jan-Apr -- and nothing on a page headed "monthly trend" could be compared
+// with anything else. Months without a figure leave a gap in the line rather
+// than a plotted zero or an interpolated straight-through.
+function drawTrendChart(page, { x, y, w, h, axis, points, target, color, label, unit }, { bold, font }) {
   text(page, label, { x, y: y + h + 8, size: 9, font: bold });
   text(page, unit || '', { x, y: y + h + 8, size: 7.5, font, color: MUTED, align: 'right', width: w });
 
@@ -377,7 +404,8 @@ function drawTrendChart(page, { x, y, w, h, points, target, color, label, unit }
   max += range * 0.2;
   const span = max - min;
 
-  const px = (i) => x + (i / Math.max(1, points.length - 1)) * w;
+  const lastIdx = Math.max(1, axis.length - 1);
+  const px = (i) => x + (i / lastIdx) * w;
   const py = (v) => y + ((v - min) / span) * h;
 
   page.drawRectangle({ x, y, width: w, height: h, borderColor: RULE, borderWidth: 0.6 });
@@ -389,16 +417,25 @@ function drawTrendChart(page, { x, y, w, h, points, target, color, label, unit }
   }
 
   const c = hexColor(color);
-  for (let i = 1; i < points.length; i += 1) {
+  // Join only months that sit next to each other. Drawing straight through a
+  // gap would invent a reading for a month nobody recorded.
+  for (let k = 1; k < points.length; k += 1) {
+    if (points[k].index !== points[k - 1].index + 1) continue;
     page.drawLine({
-      start: { x: px(i - 1), y: py(points[i - 1].value) },
-      end: { x: px(i), y: py(points[i].value) },
+      start: { x: px(points[k - 1].index), y: py(points[k - 1].value) },
+      end: { x: px(points[k].index), y: py(points[k].value) },
       thickness: 1.4, color: c,
     });
   }
-  points.forEach((p, i) => {
-    page.drawCircle({ x: px(i), y: py(p.value), size: 2, color: c });
-    text(page, p.month, { x: px(i) - 12, y: y - 9, size: 6.5, font, color: MUTED, align: 'center', width: 24 });
+  for (const p of points) {
+    page.drawCircle({ x: px(p.index), y: py(p.value), size: 2, color: c });
+  }
+
+  // Twelve labels on a half-width chart collide, so thin them out.
+  const step = axis.length > 8 ? 2 : 1;
+  axis.forEach((m, i) => {
+    if (i % step !== 0 && i !== axis.length - 1) return;
+    text(page, m, { x: px(i) - 12, y: y - 9, size: 6.5, font, color: MUTED, align: 'center', width: 24 });
   });
 }
 
@@ -415,15 +452,19 @@ const TREND_COLORS = {
 // die life was 0 MT for the six months before anyone started recording it.
 // A month with no figure is absent from the line, not a point on the floor.
 function trendable(report) {
+  const trend = report.trend || [];
+  // The shared timeline for every chart on the page: January through the month
+  // this report ends at.
+  const axis = trend.map((r) => r.month);
   const out = [];
   for (const m of report.metrics || []) {
     if (!m.scored) continue;
-    const points = (report.trend || [])
-      .map((r) => ({ month: r.month, value: r[m.key] }))
+    const points = trend
+      .map((r, index) => ({ index, month: r.month, value: r[m.key] }))
       .filter((p) => p.value !== null && p.value !== undefined && p.value !== ''
         && Number.isFinite(Number(p.value)))
-      .map((p) => ({ month: p.month, value: Number(p.value) }));
-    if (points.length >= 2) out.push({ metric: m, points });
+      .map((p) => ({ index: p.index, month: p.month, value: Number(p.value) }));
+    if (points.length >= 2) out.push({ metric: m, points, axis });
   }
   return out;
 }
@@ -517,23 +558,24 @@ async function generateSupplierReportPdf(report, opts = {}) {
   // to following the content if the explainer ever runs that far down.
   drawSignOff(p1, Math.min(y, MARGIN + 78), preparedBy, { bold, font });
 
-  const matrixRows = report.dieLifeRows || [];
-  if (matrixRows.length) {
-    const p2 = doc.addPage([PAGE_W, PAGE_H]);
-    drawMatrix(p2, report, PAGE_H - MARGIN - 20, { bold, font });
-  }
-
+  // Trends come before the die life detail: having seen the score, the next
+  // question is which way it is moving.
   const charts = trendable(report);
   if (charts.length) {
-    const p3 = doc.addPage([PAGE_W, PAGE_H]);
-    text(p3, `TRENDS - JAN TO ${String((report.period || {}).month || '').toUpperCase()} ${(report.period || {}).year || ''}`,
+    const p2 = doc.addPage([PAGE_W, PAGE_H]);
+    text(p2, `MONTHLY TREND - JAN TO ${String((report.period || {}).month || '').toUpperCase()} ${(report.period || {}).year || ''}`,
       { x: MARGIN, y: PAGE_H - MARGIN - 20, size: 8.5, font: bold, color: MUTED });
+    // The series is always monthly regardless of the report frequency, so a
+    // quarterly or year-to-date report still shows month-by-month movement
+    // rather than a single flat point.
+    text(p2, 'Monthly figures across the year to date, whatever period this report covers. Dashed line is the target.',
+      { x: MARGIN, y: PAGE_H - MARGIN - 32, size: 7.2, font, color: MUTED });
 
     // Two per row, three rows a page.
     const cw = (CONTENT_W - 24) / 2;
     const ch = 96;
-    let cy = PAGE_H - MARGIN - 64;
-    let page = p3;
+    let cy = PAGE_H - MARGIN - 76;
+    let page = p2;
     charts.forEach((c, i) => {
       const col = i % 2;
       if (col === 0 && i > 0) cy -= ch + 44;
@@ -543,11 +585,17 @@ async function generateSupplierReportPdf(report, opts = {}) {
       }
       drawTrendChart(page, {
         x: MARGIN + col * (cw + 24), y: cy - ch, w: cw, h: ch,
-        points: c.points, target: c.metric.scored ? c.metric.target : null,
+        axis: c.axis, points: c.points, target: c.metric.scored ? c.metric.target : null,
         color: TREND_COLORS[c.metric.key] || '#1F6FB0',
         label: c.metric.label, unit: c.metric.unit,
       }, { bold, font });
     });
+  }
+
+  const matrixRows = report.dieLifeRows || [];
+  if (matrixRows.length) {
+    const pm = doc.addPage([PAGE_W, PAGE_H]);
+    drawMatrix(pm, report, PAGE_H - MARGIN - 20, { bold, font });
   }
 
   drawComments(doc, report, comments, preparedBy, { bold, font });
