@@ -287,6 +287,16 @@ export const supplierPerformanceAPI = {
         return apiRequest(`/supplier-performance?${qs}`);
     },
 
+    getDieLife: async ({ year, month }) => {
+        const qs = new URLSearchParams({ year: String(year), month: String(month) });
+        return apiRequest(`/supplier-performance/die-life?${qs}`);
+    },
+
+    saveDieLife: async ({ year, month, entries }) => apiRequest('/supplier-performance/die-life', {
+        method: 'PUT',
+        body: JSON.stringify({ year, month, entries }),
+    }),
+
     getSettings: async () => apiRequest('/supplier-performance/settings'),
 
     saveSettings: async (metrics) => apiRequest('/supplier-performance/settings', {

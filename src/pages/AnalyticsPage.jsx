@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import OverviewTab from './analytics/OverviewTab';
 import SupplierReportTab from './analytics/SupplierReportTab';
+import DieLifeTab from './analytics/DieLifeTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'supplier', label: 'Supplier Report' },
+  { id: 'dielife', label: 'Die Life Data' },
 ];
 
 export default function AnalyticsPage({ data, suppliers, theme }) {
@@ -43,6 +45,9 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
       </div>
       <div style={{ display: tab === 'supplier' ? 'block' : 'none' }}>
         <SupplierReportTab theme={theme} />
+      </div>
+      <div style={{ display: tab === 'dielife' ? 'block' : 'none' }}>
+        <DieLifeTab theme={theme} />
       </div>
     </div>
   );
