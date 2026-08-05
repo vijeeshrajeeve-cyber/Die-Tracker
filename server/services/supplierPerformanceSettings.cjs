@@ -59,8 +59,20 @@ function validateMetrics(metrics) {
   if (pct !== 1) throw fail(400, `Weights must total 100% (currently ${Math.round(total * 100)}%)`);
 }
 
-async function getSettings(pool) {
-  const { rows } = await pool.query('SELECT metrics FROM supplier_performance_settings ORDER BY id LIMIT 1');
+// Targets are set annually — 77 MT is 2026's die life KPI, not a constant — and
+// these reports leave the building. A supplier sent 7.4/10 in March must get
+// 7.4/10 if they ask for a copy in November, so a report resolves the targets
+// for its own year.
+//
+// Resolution order: the exact year, then the most recent EARLIER year, then the
+// code defaults. Never forward: setting 2027's targets must not rescore 2026.
+async function getSettings(pool, year) {
+  const y = Number(year) || new Date().getFullYear();
+  const { rows } = await pool.query(
+    `SELECT metrics FROM supplier_performance_settings
+      WHERE year IS NOT NULL AND year <= $1
+      ORDER BY year DESC LIMIT 1`, [y]);
+
   let stored = [];
   try {
     const parsed = JSON.parse(rows[0]?.metrics || '[]');
@@ -77,20 +89,18 @@ async function getSettings(pool) {
   });
 }
 
-async function saveSettings(pool, metrics) {
+async function saveSettings(pool, year, metrics) {
+  const y = Number(year);
+  if (!Number.isInteger(y) || y < 2000 || y > 2100) throw fail(400, 'A valid year is required');
   validateMetrics(metrics);
   const slim = metrics
     .filter(m => METRIC_DEFAULTS.find(d => d.key === m.key && d.scored))
     .map(m => ({ key: m.key, ten: Number(m.ten), zero: Number(m.zero), target: Number(m.target), weight: Number(m.weight) }));
-  const json = JSON.stringify(slim);
-  const existing = await pool.query('SELECT id FROM supplier_performance_settings ORDER BY id LIMIT 1');
-  if (existing.rows.length) {
-    await pool.query(
-      'UPDATE supplier_performance_settings SET metrics = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [json, existing.rows[0].id]);
-  } else {
-    await pool.query('INSERT INTO supplier_performance_settings (metrics) VALUES ($1)', [json]);
-  }
+  await pool.query(
+    `INSERT INTO supplier_performance_settings (year, metrics) VALUES ($1, $2)
+     ON CONFLICT (year) DO UPDATE
+        SET metrics = EXCLUDED.metrics, updated_at = CURRENT_TIMESTAMP`,
+    [y, JSON.stringify(slim)]);
 }
 
 module.exports = { METRIC_DEFAULTS, validateMetrics, getSettings, saveSettings };

@@ -522,6 +522,13 @@ const initializeDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Scoring targets are set annually: 77 MT is 2026's die life KPI, not a
+      -- constant. Without a year, setting 2027's targets would silently
+      -- rescore a report already sent to a supplier in March 2026.
+      -- The backfill lives further down, after app_migrations exists.
+      ALTER TABLE supplier_performance_settings ADD COLUMN IF NOT EXISTS year INTEGER;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sps_year ON supplier_performance_settings (year);
+
       -- Manual monthly die life capture, per supplier. Nothing in this system
       -- records tonnage extruded, so these three numbers are typed in once a
       -- month by the people who know them.
@@ -889,6 +896,19 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'force_pwd_reset_all_users_v1') THEN
           UPDATE users SET password_must_change = true;
           INSERT INTO app_migrations (id) VALUES ('force_pwd_reset_all_users_v1');
+        END IF;
+      END $$;
+
+      -- Any pre-existing scoring settings row was set against current-year
+      -- performance, so that is the year it belongs to. Must stay below the
+      -- app_migrations table above -- the whole block is one query, executed in
+      -- file order, so referencing it earlier fails with "relation does not exist".
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'sps_year_scope_v1') THEN
+          UPDATE supplier_performance_settings
+             SET year = EXTRACT(YEAR FROM CURRENT_DATE)::INTEGER
+           WHERE year IS NULL;
+          INSERT INTO app_migrations (id) VALUES ('sps_year_scope_v1');
         END IF;
       END $$;
 

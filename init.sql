@@ -433,11 +433,15 @@ CREATE TABLE IF NOT EXISTS qd_settings (
 -- column is a JSON array of { key, ten, zero, target, weight }. Empty
 -- means "use the code defaults" (see supplierPerformanceSettings.cjs).
 -- No backticks in this block: it is mirrored into a JS template literal.
+-- One row per year: targets are set annually, and a report already sent to a
+-- supplier must keep the score it was given when next year's are set.
 CREATE TABLE IF NOT EXISTS supplier_performance_settings (
     id         SERIAL PRIMARY KEY,
+    year       INTEGER,
     metrics    TEXT DEFAULT '[]',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sps_year ON supplier_performance_settings (year);
 
 -- Manual monthly die life capture, per supplier. Failure percentage is
 -- derived from the counts at read time, never stored. Every value is
