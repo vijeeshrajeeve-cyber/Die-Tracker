@@ -9,7 +9,7 @@ import DieLifeMatrix from '../../components/analytics/DieLifeMatrix';
 
 const FREQUENCIES = ['Monthly', 'Quarterly', 'YTD'];
 
-export default function SupplierReportTab({ theme }) {
+export default function SupplierReportTab({ theme, refreshKey = 0 }) {
   const [suppliers, setSuppliers] = useState([]);
   const [supplier, setSupplier] = useState('');
   const [year] = useState(new Date().getFullYear());
@@ -40,7 +40,12 @@ export default function SupplierReportTab({ theme }) {
     } finally {
       setLoading(false);
     }
-  }, [supplier, year, month, frequency]);
+    // refreshKey is a dependency, not a value used here: it changes when die
+    // life figures are saved on the other tab, which is the one way this
+    // report can go stale without any of its own controls moving. The lint
+    // rule cannot see that, hence the exemption rather than a real unused dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplier, year, month, frequency, refreshKey]);
 
   useEffect(() => { load(); }, [load]);
 

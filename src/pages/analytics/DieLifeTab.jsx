@@ -11,7 +11,7 @@ import { BRAND } from '../../utils/brand';
 // The failure percentage is shown but never typed: it is derived here exactly
 // as the server derives it, so the person entering counts can see the number
 // the supplier will be judged on while they can still correct the counts.
-export default function DieLifeTab({ theme }) {
+export default function DieLifeTab({ theme, onSaved }) {
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -76,6 +76,10 @@ export default function DieLifeTab({ theme }) {
       const next = {};
       for (const r of data || []) next[r.supplier] = r;
       setRows(next); setSaved(next);
+      // Tells the Supplier Report tab its report is out of date. It stays
+      // mounted while hidden, so it would otherwise keep the figures it
+      // fetched on page load.
+      if (onSaved) onSaved();
       dialogs.notify('Die life data saved.', 'success');
     } catch (e) {
       dialogs.notify('Failed to save: ' + e.message, 'error');
