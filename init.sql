@@ -433,11 +433,34 @@ CREATE TABLE IF NOT EXISTS qd_settings (
 -- column is a JSON array of { key, ten, zero, target, weight }. Empty
 -- means "use the code defaults" (see supplierPerformanceSettings.cjs).
 -- No backticks in this block: it is mirrored into a JS template literal.
+-- One row per year: targets are set annually, and a report already sent to a
+-- supplier must keep the score it was given when next year's are set.
 CREATE TABLE IF NOT EXISTS supplier_performance_settings (
     id         SERIAL PRIMARY KEY,
+    year       INTEGER,
     metrics    TEXT DEFAULT '[]',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sps_year ON supplier_performance_settings (year);
+
+-- Manual monthly die life capture, per supplier. Failure percentage is
+-- derived from the counts at read time, never stored. Every value is
+-- nullable and NULL means "not recorded" -- never zero. Rationale in db.cjs.
+CREATE TABLE IF NOT EXISTS supplier_die_life (
+    id                SERIAL PRIMARY KEY,
+    supplier          TEXT     NOT NULL,
+    year              INTEGER  NOT NULL,
+    month             SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+    avg_die_life_mt   NUMERIC,
+    dies_in_service   INTEGER,
+    dies_failed       INTEGER,
+    updated_by        INTEGER REFERENCES users(id),
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (supplier, year, month)
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_die_life_lookup
+    ON supplier_die_life (upper(btrim(supplier)), year, month);
 
 CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
     id SERIAL PRIMARY KEY,

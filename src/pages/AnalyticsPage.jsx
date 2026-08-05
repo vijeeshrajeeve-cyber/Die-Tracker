@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
 import OverviewTab from './analytics/OverviewTab';
 import SupplierReportTab from './analytics/SupplierReportTab';
+import DieLifeTab from './analytics/DieLifeTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'supplier', label: 'Supplier Report' },
+  { id: 'dielife', label: 'Die Life Data' },
 ];
 
 export default function AnalyticsPage({ data, suppliers, theme }) {
   const [tab, setTab] = useState('overview');
+  // Bumped when die life figures are saved. The panels below stay mounted, so
+  // without this the Supplier Report keeps showing the report it fetched on
+  // page load — and the monthly routine is "enter the figures, then look at the
+  // report", which would silently show yesterday's numbers.
+  const [dieLifeVersion, setDieLifeVersion] = useState(0);
 
   return (
     <div>
@@ -42,7 +49,10 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
         <OverviewTab data={data} suppliers={suppliers} theme={theme} />
       </div>
       <div style={{ display: tab === 'supplier' ? 'block' : 'none' }}>
-        <SupplierReportTab theme={theme} />
+        <SupplierReportTab theme={theme} refreshKey={dieLifeVersion} />
+      </div>
+      <div style={{ display: tab === 'dielife' ? 'block' : 'none' }}>
+        <DieLifeTab theme={theme} onSaved={() => setDieLifeVersion((v) => v + 1)} />
       </div>
     </div>
   );

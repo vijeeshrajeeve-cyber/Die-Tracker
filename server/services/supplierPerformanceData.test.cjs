@@ -77,3 +77,74 @@ test('getMonthlyTrend returns one row per month through the selected one', async
   const trend = await d.getMonthlyTrend(pool, { supplier: 'PHME', year: 2026, throughMonth: 'Mar' });
   assert.deepEqual(trend.map(r => r.month), ['Jan', 'Feb', 'Mar']);
 });
+
+test('getSnapshot derives the die life period from its own date range', async () => {
+  // getSnapshot's signature stays { supplier, from, to }; the months are parsed
+  // out of those dates so no caller has to change.
+  const pool = makePool([
+    [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '3', design_lead_time: '2' }]],
+    [/FROM die_orders[\s\S]*die_received_date BETWEEN/, [{ delivery_lead_time: '25', dies_received: '2' }]],
+    [/FROM quality_discrepancies/, [{ qd_count: '0' }]],
+    [/FROM supplier_die_life/, [{ month: 4, avg_die_life_mt: '60', dies_in_service: 10, dies_failed: 2 }]],
+  ]);
+  const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-06-30' });
+  const dieCall = pool.calls.find(c => /supplier_die_life/.test(c.sql));
+  assert.deepEqual(dieCall.params, ['PHME', 2026, [4, 5, 6]]);
+  assert.equal(out.dieLife, 60);
+  assert.equal(out.dieFailure, 20);
+});
+
+test('getSnapshot returns null die life when nothing was entered', async () => {
+  const pool = makePool([
+    [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '1' }]],
+    [/FROM die_orders[\s\S]*die_received_date BETWEEN/, [{ dies_received: '0' }]],
+    [/FROM quality_discrepancies/, [{ qd_count: '0' }]],
+    [/FROM supplier_die_life/, []],
+  ]);
+  const out = await d.getSnapshot(pool, { supplier: 'NEWCO', from: '2026-08-01', to: '2026-08-31' });
+  assert.equal(out.dieLife, null);
+  assert.equal(out.dieFailure, null, 'unrecorded is not a perfect 0%');
+});
+
+test('previousPeriodRange Monthly steps back one month', () => {
+  const p = d.previousPeriodRange({ year: 2026, month: 'Aug', frequency: 'Monthly' });
+  assert.equal(p.from, '2026-07-01');
+  assert.equal(p.to, '2026-07-31');
+  assert.equal(p.label, 'Jul 2026');
+});
+
+test('previousPeriodRange Monthly rolls back into the previous year at January', () => {
+  const p = d.previousPeriodRange({ year: 2026, month: 'Jan', frequency: 'Monthly' });
+  assert.equal(p.from, '2025-12-01');
+  assert.equal(p.to, '2025-12-31');
+  assert.equal(p.label, 'Dec 2025');
+});
+
+test('previousPeriodRange Quarterly gives the whole preceding quarter', () => {
+  // Aug sits in Q3, so the comparison is the full Q2 -- not Apr-to-Aug.
+  const p = d.previousPeriodRange({ year: 2026, month: 'Aug', frequency: 'Quarterly' });
+  assert.equal(p.from, '2026-04-01');
+  assert.equal(p.to, '2026-06-30');
+  assert.equal(p.label, 'Apr-Jun 2026');
+});
+
+test('previousPeriodRange Quarterly rolls back a year from Q1', () => {
+  const p = d.previousPeriodRange({ year: 2026, month: 'Feb', frequency: 'Quarterly' });
+  assert.equal(p.from, '2025-10-01');
+  assert.equal(p.to, '2025-12-31');
+  assert.equal(p.label, 'Oct-Dec 2025');
+});
+
+test('previousPeriodRange YTD compares the same window a year earlier', () => {
+  // Jan-Aug against Jan-Aug, not against the whole of last year -- otherwise a
+  // part-year is judged against a full one.
+  const p = d.previousPeriodRange({ year: 2026, month: 'Aug', frequency: 'YTD' });
+  assert.equal(p.from, '2025-01-01');
+  assert.equal(p.to, '2025-08-31');
+  assert.equal(p.label, 'Jan-Aug 2025');
+});
+
+test('previousPeriodRange YTD handles a leap February', () => {
+  const p = d.previousPeriodRange({ year: 2025, month: 'Feb', frequency: 'YTD' });
+  assert.equal(p.to, '2024-02-29');
+});

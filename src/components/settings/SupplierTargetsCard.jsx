@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Target } from 'lucide-react';
 import { supplierPerformanceAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
@@ -8,16 +8,18 @@ import { BRAND } from '../../utils/brand';
 // threshold is a business judgement, not something the data dictates — the
 // seeds are only a starting point taken from observed performance.
 export default function SupplierTargetsCard({ theme, isAdmin }) {
+  const thisYear = new Date().getFullYear();
+  const [year, setYear] = useState(thisYear);
   const [metrics, setMetrics] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    supplierPerformanceAPI.getSettings()
-      .then((rows) => { if (!cancelled) setMetrics(rows || []); })
-      .catch(() => { if (!cancelled) setMetrics([]); });
-    return () => { cancelled = true; };
+  const load = useCallback((y) => {
+    supplierPerformanceAPI.getSettings(y)
+      .then((rows) => setMetrics(rows || []))
+      .catch(() => setMetrics([]));
   }, []);
+
+  useEffect(() => { load(year); }, [load, year]);
 
   const scored = metrics.filter((m) => m.scored);
   const weightTotal = scored.reduce((a, m) => a + Number(m.weight || 0), 0);
@@ -31,12 +33,23 @@ export default function SupplierTargetsCard({ theme, isAdmin }) {
   const save = async () => {
     setSaving(true);
     try {
-      setMetrics(await supplierPerformanceAPI.saveSettings(metrics));
-      dialogs.notify('Scoring targets saved.', 'success');
+      setMetrics(await supplierPerformanceAPI.saveSettings(year, metrics));
+      dialogs.notify(`Scoring targets saved for ${year}.`, 'success');
     } catch (e) {
       dialogs.notify('Failed to save: ' + e.message, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Copying is a read of the previous year's resolved settings — which already
+  // falls back to the nearest earlier year — into this year's unsaved form.
+  const copyPrevious = async () => {
+    try {
+      setMetrics(await supplierPerformanceAPI.getSettings(year - 1));
+      dialogs.notify(`Loaded ${year - 1} targets. Review them, then save to apply to ${year}.`, 'info');
+    } catch (e) {
+      dialogs.notify('Could not load the previous year: ' + e.message, 'error');
     }
   };
 
@@ -49,9 +62,24 @@ export default function SupplierTargetsCard({ theme, isAdmin }) {
         <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, margin: 0 }}>
           <Target size={20} /> Supplier Scoring Targets
         </h3>
-        <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '4px', marginBottom: 0 }}>
-          Drives the rating on the Analytics &rarr; Supplier Report tab. &ldquo;10 at&rdquo; scores full marks, &ldquo;0 at&rdquo; scores nothing; weights must total 100%.
+        <p style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '4px', marginBottom: '0.75rem' }}>
+          Drives the rating on the Analytics &rarr; Supplier Report tab. &ldquo;10 at&rdquo; scores full marks,
+          &ldquo;0 at&rdquo; scores nothing; weights must total 100%. Targets are held per year, so a report
+          already sent to a supplier keeps the score it was given.
         </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ fontSize: '0.78rem', color: theme.textDim }} htmlFor="st-year">Targets for</label>
+          <select id="st-year" value={year} onChange={(e) => setYear(Number(e.target.value))}
+            style={{ padding: '6px 10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>
+            {Array.from({ length: 6 }, (_, i) => thisYear - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {isAdmin && (
+            <button onClick={copyPrevious} type="button"
+              style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontSize: '0.78rem', cursor: 'pointer' }}>
+              Copy from {year - 1}
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ background: theme.inputBg, borderRadius: '12px', overflowX: 'auto' }}>
@@ -90,7 +118,7 @@ export default function SupplierTargetsCard({ theme, isAdmin }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: '1rem' }}>
           <button onClick={save} disabled={saving || !weightOk}
             style={{ padding: '8px 18px', background: weightOk ? BRAND.navy : theme.cardBorder, color: 'white', border: 'none', borderRadius: 8, cursor: weightOk && !saving ? 'pointer' : 'not-allowed', fontSize: '0.85rem' }}>
-            Save targets
+            Save {year} targets
           </button>
           <span style={{ fontSize: '0.78rem', color: weightOk ? theme.textDim : '#EF4444' }}>
             Weights total {Math.round(weightTotal * 100)}%{weightOk ? '' : ' — must be 100% to save'}

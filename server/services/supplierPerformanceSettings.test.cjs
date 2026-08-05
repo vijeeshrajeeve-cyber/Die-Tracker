@@ -14,20 +14,36 @@ test('METRIC_DEFAULTS weights total exactly 1', () => {
   assert.equal(Math.round(total * 1000) / 1000, 1);
 });
 
-test('METRIC_DEFAULTS omits die life and die failure', () => {
+test('METRIC_DEFAULTS carries die life and die failure', () => {
+  // Replaces an earlier test asserting these were absent. They were omitted
+  // when nothing recorded tonnage; supplier_die_life now does.
   const keys = s.METRIC_DEFAULTS.map(m => m.key);
-  assert.ok(!keys.includes('dieLife'), 'die life is not tracked and must not appear');
-  assert.ok(!keys.includes('dieFailure'), 'die failure is not tracked and must not appear');
+  assert.ok(keys.includes('dieLife'));
+  assert.ok(keys.includes('dieFailure'));
+});
+
+test('die life is the only higher-is-better metric', () => {
+  const dl = s.METRIC_DEFAULTS.find(m => m.key === 'dieLife');
+  assert.equal(dl.lowerBetter, false);
+  assert.equal(dl.ten, 77, "2026's KPI target");
+  assert.equal(dl.zero, 20);
+  const others = s.METRIC_DEFAULTS.filter(m => m.scored && m.key !== 'dieLife');
+  for (const m of others) assert.equal(m.lowerBetter, true, `${m.key} should be lower-better`);
+});
+
+test('die life and die failure together carry 45% of the rating', () => {
+  const w = (k) => s.METRIC_DEFAULTS.find(m => m.key === k).weight;
+  assert.equal(Math.round((w('dieLife') + w('dieFailure')) * 100), 45);
 });
 
 test('getSettings returns the code defaults when no row exists', async () => {
   const pool = makePool([{ rows: [] }]);
-  assert.deepEqual(await s.getSettings(pool), s.METRIC_DEFAULTS);
+  assert.deepEqual(await s.getSettings(pool, 2026), s.METRIC_DEFAULTS);
 });
 
 test('getSettings merges stored tunables over the defaults', async () => {
-  const pool = makePool([{ rows: [{ metrics: JSON.stringify([{ key: 'designLeadTime', target: 2, ten: 2, zero: 8, weight: 0.2 }]) }] }]);
-  const out = await s.getSettings(pool);
+  const pool = makePool([{ rows: [{ metrics: JSON.stringify([{ key: 'designLeadTime', target: 2, ten: 2, zero: 8, weight: 0.15 }]) }] }]);
+  const out = await s.getSettings(pool, 2026);
   const dlt = out.find(m => m.key === 'designLeadTime');
   assert.equal(dlt.target, 2);
   assert.equal(dlt.zero, 8);
@@ -36,7 +52,36 @@ test('getSettings merges stored tunables over the defaults', async () => {
 
 test('getSettings falls back to defaults when the stored JSON is junk', async () => {
   const pool = makePool([{ rows: [{ metrics: 'not json' }] }]);
-  assert.deepEqual(await s.getSettings(pool), s.METRIC_DEFAULTS);
+  assert.deepEqual(await s.getSettings(pool, 2026), s.METRIC_DEFAULTS);
+});
+
+test('getSettings asks only for years at or before the one requested', async () => {
+  // The whole point of year scoping: setting 2027's targets must not rescore a
+  // 2026 report that was already sent to a supplier.
+  const pool = makePool([{ rows: [] }]);
+  await s.getSettings(pool, 2026);
+  assert.ok(/year <= \$1/.test(pool.calls[0].sql), 'must not resolve forward');
+  assert.ok(/ORDER BY year DESC/.test(pool.calls[0].sql), 'nearest earlier year wins');
+  assert.deepEqual(pool.calls[0].params, [2026]);
+});
+
+test('getSettings defaults to the current year when none is given', async () => {
+  const pool = makePool([{ rows: [] }]);
+  await s.getSettings(pool);
+  assert.equal(pool.calls[0].params[0], new Date().getFullYear());
+});
+
+test('saveSettings upserts against the given year', async () => {
+  const pool = makePool([{ rows: [] }, { rows: [] }]);
+  await s.saveSettings(pool, 2027, s.METRIC_DEFAULTS);
+  const ins = pool.calls.find(c => /INSERT INTO supplier_performance_settings/.test(c.sql));
+  assert.ok(/ON CONFLICT \(year\)/.test(ins.sql));
+  assert.equal(ins.params[0], 2027);
+});
+
+test('saveSettings rejects a missing year', async () => {
+  const pool = makePool([]);
+  await assert.rejects(() => s.saveSettings(pool, null, s.METRIC_DEFAULTS), (e) => e.status === 400);
 });
 
 test('validateMetrics rejects weights that do not total 1', () => {
@@ -54,9 +99,25 @@ test('validateMetrics accepts the defaults unchanged', () => {
 });
 
 test('saveSettings persists only the tunable fields', async () => {
-  const pool = makePool([{ rows: [{ id: 1 }] }, { rows: [] }]);
-  await s.saveSettings(pool, s.METRIC_DEFAULTS);
-  const upd = pool.calls.find(c => /UPDATE supplier_performance_settings/.test(c.sql));
-  const stored = JSON.parse(upd.params[0]);
+  const pool = makePool([{ rows: [] }, { rows: [] }]);
+  await s.saveSettings(pool, 2026, s.METRIC_DEFAULTS);
+  const ins = pool.calls.find(c => /INSERT INTO supplier_performance_settings/.test(c.sql));
+  const stored = JSON.parse(ins.params[1]);
   assert.deepEqual(Object.keys(stored[0]).sort(), ['key', 'target', 'ten', 'weight', 'zero']);
+});
+
+test('METRIC_DEFAULTS is in the order the business asked for', () => {
+  // Array order is presentation order in the PDF, both analytics tabs and the
+  // Settings table. Set 2026-08-05; pinned so a later edit cannot reshuffle the
+  // report without someone noticing.
+  assert.deepEqual(s.METRIC_DEFAULTS.map(m => m.key), [
+    'ordersPlaced',
+    'designLeadTime',
+    'deliveryLeadTime',
+    'dieLife',
+    'dieFailure',
+    'trialRatio',
+    'qdRate',
+    'designRevisions',
+  ]);
 });

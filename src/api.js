@@ -287,11 +287,43 @@ export const supplierPerformanceAPI = {
         return apiRequest(`/supplier-performance?${qs}`);
     },
 
-    getSettings: async () => apiRequest('/supplier-performance/settings'),
+    // Returns a Blob. The report is rebuilt server-side, so what downloads is
+    // what the database says, not what this page happens to be showing.
+    exportPdf: async ({ supplier, year, month, frequency, comments }) => {
+        const response = await fetch(`${API_BASE_URL}/supplier-performance/pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getToken()}`,
+            },
+            body: JSON.stringify({ supplier, year, month, frequency, comments }),
+        });
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
 
-    saveSettings: async (metrics) => apiRequest('/supplier-performance/settings', {
+    getDieLife: async ({ year, month }) => {
+        const qs = new URLSearchParams({ year: String(year), month: String(month) });
+        return apiRequest(`/supplier-performance/die-life?${qs}`);
+    },
+
+    saveDieLife: async ({ year, month, entries }) => apiRequest('/supplier-performance/die-life', {
         method: 'PUT',
-        body: JSON.stringify({ metrics }),
+        body: JSON.stringify({ year, month, entries }),
+    }),
+
+    getSettings: async (year) => {
+        const qs = new URLSearchParams(year ? { year: String(year) } : {});
+        return apiRequest(`/supplier-performance/settings${qs.toString() ? `?${qs}` : ''}`);
+    },
+
+    saveSettings: async (year, metrics) => apiRequest('/supplier-performance/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ year, metrics }),
     }),
 };
 

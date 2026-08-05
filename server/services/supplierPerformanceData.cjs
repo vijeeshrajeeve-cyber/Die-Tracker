@@ -4,6 +4,8 @@
 // the arithmetic stays testable without a database and the SQL stays in one
 // place.
 
+const { getDieLifeForPeriod } = require('./supplierDieLife.cjs');
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -25,6 +27,66 @@ function periodRange({ year, month, frequency }) {
 
 // Postgres returns numerics as strings; null must survive as null.
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+// The period immediately before the reported one, used for the "better than
+// last period" line on each metric card.
+//
+// Deliberately self-referential: the supplier is compared to its own history,
+// never to another supplier. These reports leave the building, so a comparison
+// that reveals how anyone else performs cannot appear in one.
+//
+// Each frequency steps back by its own shape rather than by a fixed month:
+// a quarter compares to the whole preceding quarter, and a year-to-date window
+// compares to the same window a year earlier, so a part-year is never judged
+// against a full one.
+function previousPeriodRange({ year, month, frequency }) {
+  const y = Number(year);
+  const idx = MONTHS.indexOf(month);
+  if (idx < 0) throw Object.assign(new Error(`Unknown month "${month}"`), { status: 400 });
+
+  if (frequency === 'Quarterly') {
+    const qStart = idx - (idx % 3);
+    const prevEnd = qStart - 1;
+    const py = prevEnd < 0 ? y - 1 : y;
+    const endIdx = prevEnd < 0 ? 11 : prevEnd;
+    const startIdx = endIdx - 2;
+    return {
+      from: `${py}-${pad(startIdx + 1)}-01`,
+      to: `${py}-${pad(endIdx + 1)}-${pad(lastDay(py, endIdx))}`,
+      label: `${MONTHS[startIdx]}-${MONTHS[endIdx]} ${py}`,
+    };
+  }
+
+  if (frequency === 'YTD') {
+    const py = y - 1;
+    return {
+      from: `${py}-01-01`,
+      to: `${py}-${pad(idx + 1)}-${pad(lastDay(py, idx))}`,
+      label: `${MONTHS[0]}-${MONTHS[idx]} ${py}`,
+    };
+  }
+
+  // Monthly
+  const py = idx === 0 ? y - 1 : y;
+  const pIdx = idx === 0 ? 11 : idx - 1;
+  return {
+    from: `${py}-${pad(pIdx + 1)}-01`,
+    to: `${py}-${pad(pIdx + 1)}-${pad(lastDay(py, pIdx))}`,
+    label: `${MONTHS[pIdx]} ${py}`,
+  };
+}
+
+// The die life table is keyed by (year, month), not by date. Deriving the month
+// list from the range getSnapshot already has keeps its signature — and every
+// caller, including getMonthlyTrend — untouched.
+function monthsOfRange(from, to) {
+  const year = Number(String(from).slice(0, 4));
+  const first = Number(String(from).slice(5, 7));
+  const last = Number(String(to).slice(5, 7));
+  const months = [];
+  for (let m = first; m <= last; m += 1) months.push(m);
+  return { year, months };
+}
 
 async function getSnapshot(pool, { supplier, from, to }) {
   const args = [supplier, from, to];
@@ -56,12 +118,19 @@ async function getSnapshot(pool, { supplier, from, to }) {
      WHERE upper(btrim(supplier)) = upper(btrim($1))
        AND qd_requested_date BETWEEN $2 AND $3`, args);
 
+  // Manually entered die life for the same months. Keyed by (year, month)
+  // rather than by date, so the range is translated first.
+  const { year, months } = monthsOfRange(from, to);
+  const die = await getDieLifeForPeriod(pool, { supplier, year, months });
+
   const o = ordered.rows[0] || {};
   const r = received.rows[0] || {};
   const diesReceived = num(r.dies_received) || 0;
   const qdCount = num(qd.rows[0] && qd.rows[0].qd_count) || 0;
 
   return {
+    dieLife: die.dieLife,
+    dieFailure: die.dieFailure,
     ordersPlaced: num(o.orders_placed) || 0,
     designLeadTime: num(o.design_lead_time),
     trialRatio: num(o.trial_ratio),
@@ -95,4 +164,7 @@ async function listSuppliers(pool) {
   return rows.map(r => r.name);
 }
 
-module.exports = { MONTHS, periodRange, getSnapshot, getMonthlyTrend, listSuppliers };
+module.exports = {
+  MONTHS, periodRange, previousPeriodRange, monthsOfRange,
+  getSnapshot, getMonthlyTrend, listSuppliers,
+};

@@ -4,6 +4,8 @@
 
 export const COLORS = {
   ordersPlaced: '#3B82F6',
+  dieLife: '#14B8A6',
+  dieFailure: '#F43F5E',
   designLeadTime: '#0EA5E9',
   deliveryLeadTime: '#6366F1',
   trialRatio: '#8B5CF6',
