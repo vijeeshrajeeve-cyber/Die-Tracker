@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { popoverDepth } from './useDismissable';
 
 const FOCUSABLE = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
@@ -34,6 +35,15 @@ export default function useDialog({ open, onClose, closeOnEscape = true, autoFoc
   const dialogRef = useRef(null);
   const restoreFocusTo = useRef(null);
 
+  // The key handler reads these through a ref so the effect can depend on `open`
+  // alone. Both change routinely while a dialog is open — `onClose` is usually an
+  // inline arrow, so every parent render makes a new one, and the QD drawer flips
+  // `closeOnEscape` off whenever an inline fact edit starts. Re-running the effect
+  // for either would tear it down mid-dialog, and teardown restores focus to the
+  // trigger — which blurs the field being edited and cancels the edit.
+  const opts = useRef({ onClose, closeOnEscape });
+  useEffect(() => { opts.current = { onClose, closeOnEscape }; });
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -64,9 +74,14 @@ export default function useDialog({ open, onClose, closeOnEscape = true, autoFoc
 
     const onKeyDown = (e) => {
       if (!isTopmost()) return;
-      if (e.key === 'Escape' && closeOnEscape) {
+      if (e.key === 'Escape' && opts.current.closeOnEscape) {
+        // An open popover inside this dialog owns Escape — dismissing a date
+        // picker must not also close the modal around it. This listener is on
+        // document in the capture phase, so it would otherwise take the key
+        // before the popover's own handler ever saw it.
+        if (popoverDepth() > 0) return;
         e.stopPropagation();
-        onClose?.();
+        opts.current.onClose?.();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -118,7 +133,7 @@ export default function useDialog({ open, onClose, closeOnEscape = true, autoFoc
         }
       }
     };
-  }, [open, onClose, closeOnEscape, autoFocus]);
+  }, [open, autoFocus]);
 
   return dialogRef;
 }

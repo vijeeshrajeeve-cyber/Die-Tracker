@@ -516,10 +516,15 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                 )}
 
                 {isEditing && f.type === 'date' && (
-                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}
+                    // Escape cancels the edit, as it does in the text and select
+                    // editors. The picker stops the event itself while its
+                    // calendar is open, so that keypress only dismisses the popover.
+                    onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); cancelEdit(); } }}>
                     {/* The shared picker commits the date it produces directly —
                         it also provides Today and Clear. */}
                     <DatePickerField
+                      autoFocus
                       aria-label={f.label}
                       value={draft}
                       theme={theme}

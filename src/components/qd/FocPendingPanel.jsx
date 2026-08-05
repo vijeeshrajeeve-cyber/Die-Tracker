@@ -1,7 +1,16 @@
 import React from 'react';
 import { Truck, FlaskConical, CheckCircle } from 'lucide-react';
 
-const COLS = '110px 1fr 1.1fr 0.9fr 96px 72px';
+// The identity columns flex; the last three hold content of a known width (a
+// date, a pill, a plant code) and are sized to it so nothing wraps. minmax(0,…)
+// lets the flexible columns fall below their content width, which is what makes
+// the ellipsis on a long die or supplier name actually fire.
+const COLS = '100px minmax(0, 1fr) minmax(0, 1.15fr) 92px 82px 56px';
+
+// A row is a <button>, which shrink-wraps to its content unless told otherwise —
+// left alone, its 1fr columns resolve against a narrower box than the header's
+// and the two grids drift apart.
+const ROW = { display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', width: '100%', boxSizing: 'border-box', textAlign: 'left' };
 
 // One bucket: a titled, counted list, or a green all-clear when it is empty.
 // A count of zero is itself an answer to "what is pending", so the bucket is
@@ -25,14 +34,14 @@ function FocBucket({ title, icon, rows, headers, emptyText, render, onOpen, s })
         </div>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '10px 0 8px', borderBottom: `1px solid ${s.border}` }}>
+          <div style={{ ...ROW, padding: '10px 0 8px', borderBottom: `1px solid ${s.border}` }}>
             {headers.map((h, i) => (
-              <span key={h} style={{ ...s.headCell, textAlign: i >= headers.length - 2 ? 'right' : 'left' }}>{h}</span>
+              <span key={h} style={{ ...s.headCell, textAlign: i >= headers.length - 2 ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</span>
             ))}
           </div>
           {rows.map((r) => (
             <button type="button" key={r.id} className="qd-foc-row row-open press-soft" onClick={() => onOpen && onOpen(r.id)}
-              style={{ display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${s.border}`, cursor: onOpen ? 'pointer' : 'default' }}>
+              style={{ ...ROW, padding: '11px 0', borderBottom: `1px solid ${s.border}`, cursor: onOpen ? 'pointer' : 'default' }}>
               {render(r)}
             </button>
           ))}
@@ -82,8 +91,11 @@ export default function FocPendingPanel({ foc, theme = {}, onOpen }) {
     </span>,
   ]);
 
+  // Six columns need room: below ~520px the die and supplier names are ellipsed
+  // to nothing, so the buckets stack rather than sit side by side. min(…, 100%)
+  // keeps that floor from overflowing a narrower container.
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(430px, 1fr))', gap: 16, marginBottom: 20 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(520px, 100%), 1fr))', gap: 16, marginBottom: 20 }}>
       <style>{`.qd-foc-row:hover { background: ${surfaceHover}; }`}</style>
 
       <FocBucket
@@ -95,7 +107,7 @@ export default function FocPendingPanel({ foc, theme = {}, onOpen }) {
         emptyText="No FOC replacement is outstanding."
         render={(r) => ([
           ...identity(r),
-          <span key="eta" style={{ fontFamily: mono, fontSize: 12.5, color: r.promised_eta ? muted : dim }}>
+          <span key="eta" style={{ fontFamily: mono, fontSize: 12.5, color: r.promised_eta ? muted : dim, whiteSpace: 'nowrap' }}>
             {r.promised_eta || 'no ETA'}
           </span>,
           <span key="over" style={{ textAlign: 'right' }}>
@@ -118,7 +130,7 @@ export default function FocPendingPanel({ foc, theme = {}, onOpen }) {
         emptyText="Every received replacement has been trialled."
         render={(r) => ([
           ...identity(r),
-          <span key="rec" style={{ fontFamily: mono, fontSize: 12.5, color: muted }}>{r.received_date || '—'}</span>,
+          <span key="rec" style={{ fontFamily: mono, fontSize: 12.5, color: muted, whiteSpace: 'nowrap' }}>{r.received_date || '—'}</span>,
           <span key="idle" style={{ textAlign: 'right' }}>
             {r.days_idle == null
               ? <span style={{ fontSize: 12, color: dim }}>—</span>
