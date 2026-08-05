@@ -105,3 +105,19 @@ test('saveSettings persists only the tunable fields', async () => {
   const stored = JSON.parse(ins.params[1]);
   assert.deepEqual(Object.keys(stored[0]).sort(), ['key', 'target', 'ten', 'weight', 'zero']);
 });
+
+test('METRIC_DEFAULTS is in the order the business asked for', () => {
+  // Array order is presentation order in the PDF, both analytics tabs and the
+  // Settings table. Set 2026-08-05; pinned so a later edit cannot reshuffle the
+  // report without someone noticing.
+  assert.deepEqual(s.METRIC_DEFAULTS.map(m => m.key), [
+    'ordersPlaced',
+    'designLeadTime',
+    'deliveryLeadTime',
+    'dieLife',
+    'dieFailure',
+    'trialRatio',
+    'qdRate',
+    'designRevisions',
+  ]);
+});

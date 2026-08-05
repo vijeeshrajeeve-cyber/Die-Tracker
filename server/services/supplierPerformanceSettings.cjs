@@ -14,9 +14,20 @@
 // 1.6–5.2 days, which would have scored every supplier 10/10.
 //
 // See docs/superpowers/specs/2026-08-05-die-life-failure-and-report-pdf-design.md.
+// Array order is presentation order everywhere — the PDF card grid, the
+// on-screen metric and trend cards, the Settings targets table, and the
+// "weighted across ..." sentence all iterate this list. Set by the business on
+// 2026-08-05 to follow the life of an order: volume, then the two lead times,
+// then how the die performed, then quality.
 const METRIC_DEFAULTS = [
   { key: 'ordersPlaced', label: 'Orders Placed', unit: '', scored: false, decimals: 0,
     blurb: 'Dies ordered in the period' },
+  { key: 'designLeadTime', label: 'Avg Design Lead Time', unit: 'days', scored: true,
+    lowerBetter: true, ten: 3, zero: 10, target: 3, weight: 0.15, decimals: 1,
+    blurb: 'Order placed → design received' },
+  { key: 'deliveryLeadTime', label: 'Avg Delivery Lead Time', unit: 'days', scored: true,
+    lowerBetter: true, ten: 30, zero: 55, target: 30, weight: 0.20, decimals: 0,
+    blurb: 'Order placed → die received on site' },
   // The only higher-is-better metric in the system, and the heaviest.
   { key: 'dieLife', label: 'Avg Die Life', unit: 'MT', scored: true,
     lowerBetter: false, ten: 77, zero: 20, target: 77, weight: 0.25, decimals: 1,
@@ -24,15 +35,13 @@ const METRIC_DEFAULTS = [
   // 19% is the business target. The 0-point of 40% is a seed, roughly the 2x
   // spread the other quality metrics use — revisit once real failure data
   // accumulates.
+  //
+  // Not labelled "Avg": it pools total dies failed over total dies in service
+  // rather than averaging each month's percentage, so a busy month counts for
+  // more. Calling it an average would describe a different calculation.
   { key: 'dieFailure', label: 'Die Failure Rate', unit: '%', scored: true,
     lowerBetter: true, ten: 19, zero: 40, target: 19, weight: 0.20, decimals: 1,
     blurb: 'Dies failing before rated life' },
-  { key: 'deliveryLeadTime', label: 'Avg Delivery Lead Time', unit: 'days', scored: true,
-    lowerBetter: true, ten: 30, zero: 55, target: 30, weight: 0.20, decimals: 0,
-    blurb: 'Order placed → die received on site' },
-  { key: 'designLeadTime', label: 'Avg Design Lead Time', unit: 'days', scored: true,
-    lowerBetter: true, ten: 3, zero: 10, target: 3, weight: 0.15, decimals: 1,
-    blurb: 'Order placed → design received' },
   { key: 'trialRatio', label: 'Avg Trial Ratio', unit: 'trials/die', scored: true,
     lowerBetter: true, ten: 1.5, zero: 3.0, target: 1.5, weight: 0.10, decimals: 2,
     blurb: 'Trials needed before acceptance' },
