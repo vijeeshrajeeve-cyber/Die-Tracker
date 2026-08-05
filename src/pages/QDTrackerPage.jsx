@@ -19,7 +19,18 @@ const OUTCOME_ICON = {
   'Reference only': Eye,
 };
 const PLANT_COLORS = { 'GEX 1': '#32a838' };
-const SUP_COLS = '1.4fr 60px 60px 60px 70px 70px 90px';
+// The flexible column takes a floor rather than minmax(0, …): it must be free to
+// fall below its content width so a long name ellipses instead of setting the
+// column's size, but not free to collapse to nothing — in a narrow panel that
+// hides the value outright. At the floor the row overflows the panel instead,
+// header and all, which is the lesser failure.
+const SUP_COLS = 'minmax(96px, 1.4fr) 60px 60px 60px 70px 70px 90px';
+const QDS_COLS = '100px 130px 100px minmax(140px, 1fr) 160px 70px';
+
+// A row rendered as a <button> shrink-wraps to its content unless told
+// otherwise: its fr column resolves against a narrower box than the header's and
+// the two grids drift apart.
+const ROW_FILL = { width: '100%', boxSizing: 'border-box', textAlign: 'left' };
 
 // Rendered from the real trend the server derives (90-day QD rate vs the prior
 // 90 days) — the design's arrows were fixed strings.
@@ -483,12 +494,16 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                 <span style={sectionLabel}>Supplier performance</span>
                 <span style={{ fontSize: '0.72rem', color: dim }}>Sorted by open QDs · click to filter</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: SUP_COLS, gap: 8, alignItems: 'center', padding: '8px 20px', borderBottom: `1px solid ${border}` }}>
+              {/* The rows scroll and this header does not, so the scrollbar would
+                  narrow them out from under it. The list reserves its gutter
+                  whether or not it is scrolling (8px, per index.css) and the
+                  header pads by the same, which keeps the columns in step. */}
+              <div style={{ display: 'grid', gridTemplateColumns: SUP_COLS, gap: 8, alignItems: 'center', padding: '8px 28px 8px 20px', borderBottom: `1px solid ${border}` }}>
                 {['Supplier', 'QDs', 'Open', 'FOC', 'Rejected', 'Avg res.', 'Trend'].map((h, i) => (
-                  <span key={h} style={{ fontSize: 10.5, fontWeight: 700, color: dim, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 0 ? 'left' : 'right' }}>{h}</span>
+                  <span key={h} style={{ fontSize: 10.5, fontWeight: 700, color: dim, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 0 ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</span>
                 ))}
               </div>
-              <div style={{ overflowY: 'auto', maxHeight: 196 }}>
+              <div style={{ overflowY: 'auto', scrollbarGutter: 'stable', maxHeight: 196 }}>
                 {visibleSuppliers.map(s => {
                   const tr = TREND[s.trend] || TREND.flat;
                   const openDot = s.open > 1 ? '#FBBF24' : s.open === 1 ? '#60A5FA' : '#34D399';
@@ -498,9 +513,11 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                   // reader announces whether this supplier is currently selected.
                   return (
                     <button type="button" key={s.name} className="qd-row row-open press-soft" aria-pressed={pickedSuppliers.includes(s.name)} onClick={() => toggleSupplier(s.name)}
-                      style={{ display: 'grid', gridTemplateColumns: SUP_COLS, gap: 8, alignItems: 'center', padding: '8px 20px', borderBottom: `1px solid ${border}`, background: pickedSuppliers.includes(s.name) ? surfaceHover : bg }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: openDot, flexShrink: 0 }} />{s.name}
+                      style={{ ...ROW_FILL, display: 'grid', gridTemplateColumns: SUP_COLS, gap: 8, alignItems: 'center', padding: '8px 20px', borderBottom: `1px solid ${border}`, background: pickedSuppliers.includes(s.name) ? surfaceHover : bg }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: openDot, flexShrink: 0 }} />
+                        {/* The name is its own element so the ellipsis has something to clip. */}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
                       </span>
                       <span style={num}>{s.total}</span>
                       <span style={{ ...num, color: openCol }}>{s.open}</span>
@@ -529,7 +546,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
               const sc = QD_STATUS_CONFIG[q.status] || QD_STATUS_CONFIG.Open;
               return (
                 <button type="button" key={q.id} className="qd-row row-open press-soft" onClick={() => setSelectedId(q.id)}
-                  style={{ display: 'grid', gridTemplateColumns: '100px 130px 100px 1fr 160px 70px', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: `1px solid ${border}` }}>
+                  style={{ ...ROW_FILL, display: 'grid', gridTemplateColumns: QDS_COLS, gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: `1px solid ${border}` }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no}</span>
                     {approvalPill(q.approval_state)}
