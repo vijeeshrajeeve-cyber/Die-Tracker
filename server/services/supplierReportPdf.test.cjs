@@ -81,3 +81,31 @@ test('the document survives a supplier with no rating at all', async () => {
   const pages = await textOf(await generateSupplierReportPdf(report, {}));
   assert.match(pages[0], /Not enough data/);
 });
+
+test('the matrix page lists each month with its counts', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  const matrix = pages.find((p) => /Dies In Service/.test(p));
+  assert.ok(matrix, 'no matrix section found');
+  assert.match(matrix, /Jun/);
+  assert.match(matrix, /Jul/);
+});
+
+test('the matrix total is weighted, agreeing with the score on page 1', async () => {
+  // 10 dies at 60 MT and 20 at 70 MT weights to 66.7, not the simple mean 65.
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  const matrix = pages.find((p) => /Dies In Service/.test(p));
+  assert.match(matrix, /66\.7/);
+});
+
+test('no matrix section when nothing was ever entered', async () => {
+  const report = { ...baseReport, dieLifeRows: [] };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.ok(!pages.some((p) => /Dies In Service/.test(p)), 'an empty table is worse than no table');
+});
+
+test('a metric with no trend data produces no chart', async () => {
+  const report = { ...baseReport, trend: [{ month: 'Aug', dieLife: null, dieFailure: null, deliveryLeadTime: null, ordersPlaced: 0 }] };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.ok(!pages.some((p) => /Not enough data/.test(p)),
+    'the browser export wasted a page on five of these');
+});

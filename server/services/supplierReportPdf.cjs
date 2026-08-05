@@ -173,6 +173,132 @@ function drawMetricTable(page, report, y, { bold, font }) {
   return y - 30;
 }
 
+// The counts sit beside the percentage on purpose: a supplier who disputes a
+// failure rate can be shown the two numbers it came from.
+function drawMatrix(page, report, y, { bold, font }) {
+  const rows = report.dieLifeRows || [];
+  if (!rows.length) return y;
+
+  const cols = [
+    { x: MARGIN, w: 90, align: 'left' },
+    { x: MARGIN + 95, w: 100, align: 'right' },
+    { x: MARGIN + 200, w: 95, align: 'right' },
+    { x: MARGIN + 300, w: 90, align: 'right' },
+    { x: MARGIN + 395, w: 104, align: 'right' },
+  ];
+
+  text(page, 'DIE LIFE & FAILURE', { x: MARGIN, y, size: 8.5, font: bold, color: MUTED });
+  y -= 14;
+  tableRow(page, ['Month', 'Avg Die Life (MT)', 'Dies In Service', 'Dies Failed', 'Failure %'], cols,
+    { y, font: bold, color: MUTED, size: 8.5 });
+  y -= 6;
+  rule(page, y);
+  y -= 15;
+
+  let failed = 0, inService = 0, weighted = 0, weight = 0;
+  for (const r of rows) {
+    const pct = (r.diesInService != null && r.diesInService > 0 && r.diesFailed != null)
+      ? (r.diesFailed / r.diesInService) * 100 : null;
+    tableRow(page, [
+      MONTH_NAMES[r.month - 1] || String(r.month),
+      fmt(r.avgDieLifeMt, 1) || '-',
+      r.diesInService == null ? '-' : String(r.diesInService),
+      r.diesFailed == null ? '-' : String(r.diesFailed),
+      pct == null ? '-' : `${pct.toFixed(1)}%`,
+    ], cols, { y, font, size: 9.5 });
+
+    if (r.diesInService != null) {
+      inService += r.diesInService;
+      if (r.diesFailed != null) failed += r.diesFailed;
+      if (r.avgDieLifeMt != null && r.diesInService > 0) {
+        weighted += r.avgDieLifeMt * r.diesInService;
+        weight += r.diesInService;
+      }
+    }
+    y -= 17;
+  }
+
+  // Weighted exactly as the server aggregates. A simple mean here would print a
+  // figure that quietly disagrees with the score on page 1.
+  const totalLife = weight > 0 ? weighted / weight : null;
+  const totalRate = inService > 0 ? (failed / inService) * 100 : null;
+  rule(page, y + 6, { thickness: 1.1 });
+  y -= 6;
+  tableRow(page, [
+    'Period',
+    fmt(totalLife, 1) || '-',
+    inService ? String(inService) : '-',
+    inService ? String(failed) : '-',
+    totalRate == null ? '-' : `${totalRate.toFixed(1)}%`,
+  ], cols, { y, font: bold, size: 9.5 });
+
+  y -= 20;
+  text(page, 'Figures entered monthly. Failure % is derived from the counts, never entered directly.',
+    { x: MARGIN, y, size: 8, font, color: MUTED });
+  return y - 26;
+}
+
+// A small line chart, drawn as vector art. Metrics with fewer than two points
+// are skipped entirely by the caller -- the browser export devoted a whole page
+// to five boxes reading "Not enough data", which is not something to send to a
+// supplier.
+function drawTrendChart(page, { x, y, w, h, points, target, color, label, unit }, { bold, font }) {
+  text(page, label, { x, y: y + h + 8, size: 9, font: bold });
+  text(page, unit || '', { x, y: y + h + 8, size: 7.5, font, color: MUTED, align: 'right', width: w });
+
+  const values = points.map((p) => p.value);
+  const all = target != null ? [...values, target] : values;
+  let min = Math.min(...all);
+  let max = Math.max(...all);
+  const range = (max - min) || 1;
+  min -= range * 0.2;
+  max += range * 0.2;
+  const span = max - min;
+
+  const px = (i) => x + (i / Math.max(1, points.length - 1)) * w;
+  const py = (v) => y + ((v - min) / span) * h;
+
+  page.drawRectangle({ x, y, width: w, height: h, borderColor: RULE, borderWidth: 0.6 });
+
+  if (target != null) {
+    const ty = py(target);
+    page.drawLine({ start: { x, y: ty }, end: { x: x + w, y: ty }, thickness: 0.8, color: MUTED, dashArray: [3, 3] });
+    text(page, `target ${target}`, { x: x - 2, y: ty + 3, size: 6.5, font, color: MUTED, align: 'right', width: w });
+  }
+
+  const c = hexColor(color);
+  for (let i = 1; i < points.length; i += 1) {
+    page.drawLine({
+      start: { x: px(i - 1), y: py(points[i - 1].value) },
+      end: { x: px(i), y: py(points[i].value) },
+      thickness: 1.4, color: c,
+    });
+  }
+  points.forEach((p, i) => {
+    page.drawCircle({ x: px(i), y: py(p.value), size: 2, color: c });
+    text(page, p.month, { x: px(i) - 12, y: y - 9, size: 6.5, font, color: MUTED, align: 'center', width: 24 });
+  });
+}
+
+const TREND_COLORS = {
+  dieLife: '#14B8A6', dieFailure: '#F43F5E', deliveryLeadTime: '#6366F1',
+  designLeadTime: '#0EA5E9', trialRatio: '#8B5CF6', qdRate: '#EF4444', designRevisions: '#F59E0B',
+};
+
+// Returns the metrics that actually have two or more points to draw.
+function trendable(report) {
+  const out = [];
+  for (const m of report.metrics || []) {
+    if (!m.scored) continue;
+    const points = (report.trend || [])
+      .map((r) => ({ month: r.month, value: r[m.key] }))
+      .filter((p) => Number.isFinite(Number(p.value)))
+      .map((p) => ({ month: p.month, value: Number(p.value) }));
+    if (points.length >= 2) out.push({ metric: m, points });
+  }
+  return out;
+}
+
 // Footers are drawn last because "Page N of M" cannot be known until every page
 // exists.
 function drawFooters(doc, report, { font }) {
@@ -206,6 +332,39 @@ async function generateSupplierReportPdf(report, opts = {}) {
   let y = drawHeader(p1, report, { bold, font, logo });
   y = drawRating(p1, report, y, { bold, font });
   drawMetricTable(p1, report, y, { bold, font });
+
+  const matrixRows = report.dieLifeRows || [];
+  if (matrixRows.length) {
+    const p2 = doc.addPage([PAGE_W, PAGE_H]);
+    drawMatrix(p2, report, PAGE_H - MARGIN - 20, { bold, font });
+  }
+
+  const charts = trendable(report);
+  if (charts.length) {
+    const p3 = doc.addPage([PAGE_W, PAGE_H]);
+    text(p3, `TRENDS - JAN TO ${String((report.period || {}).month || '').toUpperCase()} ${(report.period || {}).year || ''}`,
+      { x: MARGIN, y: PAGE_H - MARGIN - 20, size: 8.5, font: bold, color: MUTED });
+
+    // Two per row, three rows a page.
+    const cw = (CONTENT_W - 24) / 2;
+    const ch = 96;
+    let cy = PAGE_H - MARGIN - 64;
+    let page = p3;
+    charts.forEach((c, i) => {
+      const col = i % 2;
+      if (col === 0 && i > 0) cy -= ch + 44;
+      if (cy < MARGIN + 60) {
+        page = doc.addPage([PAGE_W, PAGE_H]);
+        cy = PAGE_H - MARGIN - 64;
+      }
+      drawTrendChart(page, {
+        x: MARGIN + col * (cw + 24), y: cy - ch, w: cw, h: ch,
+        points: c.points, target: c.metric.scored ? c.metric.target : null,
+        color: TREND_COLORS[c.metric.key] || '#1F6FB0',
+        label: c.metric.label, unit: c.metric.unit,
+      }, { bold, font });
+    });
+  }
 
   drawFooters(doc, report, { font });
   return doc.save();
