@@ -109,3 +109,34 @@ test('a metric with no trend data produces no chart', async () => {
   assert.ok(!pages.some((p) => /Not enough data/.test(p)),
     'the browser export wasted a page on five of these');
 });
+
+test('comments are printed over the name of whoever generated the report', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {
+    comments: 'Delivery has improved. Please hold the trial ratio below 1.5 next quarter.',
+    preparedBy: 'Vijeesh',
+  }));
+  const joined = pages.join(' ');
+  assert.match(joined, /Comments/i);
+  assert.match(joined, /hold the trial ratio/);
+  assert.match(joined, /Vijeesh/);
+});
+
+test('no comments section when none were written', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  assert.ok(!/Comments & Action Points/i.test(pages.join(' ')));
+});
+
+test('long comments wrap instead of running off the page', async () => {
+  const long = 'The delivery lead time is the priority for the coming quarter and we expect it held under thirty days. '.repeat(8);
+  const bytes = await generateSupplierReportPdf(baseReport, { comments: long, preparedBy: 'Vijeesh' });
+  const pages = await textOf(bytes);
+  assert.match(pages.join(' '), /priority for the coming quarter/);
+});
+
+test('a character outside WinAnsi does not crash the generator', async () => {
+  // StandardFonts throw on unencodable characters. A supplier name or a comment
+  // pasted from Word will contain them sooner or later.
+  const report = { ...baseReport, supplier: 'PDTMC — 中文' };
+  const bytes = await generateSupplierReportPdf(report, { comments: 'Target ≤ 30 days · confirmed' });
+  assert.ok(bytes.length > 1000);
+});

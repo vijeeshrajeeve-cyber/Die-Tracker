@@ -299,6 +299,55 @@ function trendable(report) {
   return out;
 }
 
+// Greedy wrap against the real measured width. Long words that still overflow
+// are left long rather than broken mid-word.
+function wrapText(str, font, size, maxW) {
+  const out = [];
+  for (const para of sanitize(str).split(/\r?\n/)) {
+    if (!para.trim()) { out.push(''); continue; }
+    let line = '';
+    for (const word of para.split(/\s+/)) {
+      const next = line ? `${line} ${word}` : word;
+      if (font.widthOfTextAtSize(next, size) > maxW && line) {
+        out.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) out.push(line);
+  }
+  return out;
+}
+
+function drawComments(doc, report, comments, preparedBy, { bold, font }) {
+  const body = String(comments || '').trim();
+  if (!body) return;
+
+  const size = 10;
+  const leading = 15;
+  const lines = wrapText(body, font, size, CONTENT_W);
+
+  // Its own page, so the remarks are never orphaned two lines below a chart.
+  const page = doc.addPage([PAGE_W, PAGE_H]);
+  let y = PAGE_H - MARGIN - 20;
+  text(page, 'COMMENTS & ACTION POINTS', { x: MARGIN, y, size: 8.5, font: bold, color: MUTED });
+  y -= 10;
+  rule(page, y);
+  y -= 24;
+
+  for (const line of lines) {
+    if (y < MARGIN + 90) break; // one page of remarks is enough
+    text(page, line, { x: MARGIN, y, size, font });
+    y -= leading;
+  }
+
+  y -= 24;
+  rule(page, y, { w: 200 });
+  text(page, sanitize(preparedBy || 'Gulf Extrusion'), { x: MARGIN, y: y - 13, size: 9.5, font: bold });
+  text(page, `Prepared ${new Date().toISOString().slice(0, 10)}`, { x: MARGIN, y: y - 26, size: 8.5, font, color: MUTED });
+}
+
 // Footers are drawn last because "Page N of M" cannot be known until every page
 // exists.
 function drawFooters(doc, report, { font }) {
@@ -316,7 +365,7 @@ function drawFooters(doc, report, { font }) {
 }
 
 async function generateSupplierReportPdf(report, opts = {}) {
-  const { logoBytes = null } = opts;
+  const { logoBytes = null, comments = '', preparedBy = '' } = opts;
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -366,6 +415,7 @@ async function generateSupplierReportPdf(report, opts = {}) {
     });
   }
 
+  drawComments(doc, report, comments, preparedBy, { bold, font });
   drawFooters(doc, report, { font });
   return doc.save();
 }
