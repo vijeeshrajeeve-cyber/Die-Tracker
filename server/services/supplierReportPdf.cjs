@@ -391,7 +391,7 @@ function drawMatrix(page, report, y, { bold, font }) {
 // Jan-Apr -- and nothing on a page headed "monthly trend" could be compared
 // with anything else. Months without a figure leave a gap in the line rather
 // than a plotted zero or an interpolated straight-through.
-function drawTrendChart(page, { x, y, w, h, axis, points, target, color, label, unit }, { bold, font }) {
+function drawTrendChart(page, { x, y, w, h, axis, points, target, color, label, unit, bars }, { bold, font }) {
   text(page, label, { x, y: y + h + 8, size: 9, font: bold });
   text(page, unit || '', { x, y: y + h + 8, size: 7.5, font, color: MUTED, align: 'right', width: w });
 
@@ -399,8 +399,11 @@ function drawTrendChart(page, { x, y, w, h, axis, points, target, color, label, 
   const all = target != null ? [...values, target] : values;
   let min = Math.min(...all);
   let max = Math.max(...all);
+  // Bars are read against zero: starting the axis part-way up exaggerates the
+  // difference between one month and the next.
+  if (bars) min = 0;
   const range = (max - min) || 1;
-  min -= range * 0.2;
+  if (!bars) min -= range * 0.2;
   max += range * 0.2;
   const span = max - min;
 
@@ -413,22 +416,44 @@ function drawTrendChart(page, { x, y, w, h, axis, points, target, color, label, 
   if (target != null) {
     const ty = py(target);
     page.drawLine({ start: { x, y: ty }, end: { x: x + w, y: ty }, thickness: 0.8, color: MUTED, dashArray: [3, 3] });
-    text(page, `target ${target}`, { x: x - 2, y: ty + 3, size: 6.5, font, color: MUTED, align: 'right', width: w });
   }
 
   const c = hexColor(color);
-  // Join only months that sit next to each other. Drawing straight through a
-  // gap would invent a reading for a month nobody recorded.
-  for (let k = 1; k < points.length; k += 1) {
-    if (points[k].index !== points[k - 1].index + 1) continue;
-    page.drawLine({
-      start: { x: px(points[k - 1].index), y: py(points[k - 1].value) },
-      end: { x: px(points[k].index), y: py(points[k].value) },
-      thickness: 1.4, color: c,
-    });
+  if (bars) {
+    // A count reads as bars, matching how the app charts it on screen. Zero is
+    // a real reading here, so a bar of no height still gets its baseline tick.
+    const slot = w / axis.length;
+    const bw = Math.min(slot * 0.55, 9);
+    for (const p of points) {
+      const bx = px(p.index) - bw / 2;
+      const top = py(p.value);
+      page.drawRectangle({ x: bx, y: y + 0.6, width: bw, height: Math.max(0.8, top - y), color: c });
+    }
+  } else {
+    // Join only months that sit next to each other. Drawing straight through a
+    // gap would invent a reading for a month nobody recorded.
+    for (let k = 1; k < points.length; k += 1) {
+      if (points[k].index !== points[k - 1].index + 1) continue;
+      page.drawLine({
+        start: { x: px(points[k - 1].index), y: py(points[k - 1].value) },
+        end: { x: px(points[k].index), y: py(points[k].value) },
+        thickness: 1.4, color: c,
+      });
+    }
+    for (const p of points) {
+      page.drawCircle({ x: px(p.index), y: py(p.value), size: 2, color: c });
+    }
   }
-  for (const p of points) {
-    page.drawCircle({ x: px(p.index), y: py(p.value), size: 2, color: c });
+
+  // The target caption goes on last, knocked out of the plot. Drawn earlier it
+  // is painted over by the series wherever the data crosses its own target --
+  // which is precisely where a reader looks.
+  if (target != null) {
+    const ty = py(target);
+    const caption = `target ${target}`;
+    const capW = font.widthOfTextAtSize(caption, 6.5);
+    page.drawRectangle({ x: x + w - capW - 4, y: ty + 1.4, width: capW + 4, height: 8, color: rgb(1, 1, 1) });
+    text(page, caption, { x: x - 2, y: ty + 3, size: 6.5, font, color: MUTED, align: 'right', width: w });
   }
 
   // Twelve labels on a half-width chart collide, so thin them out.
@@ -451,6 +476,13 @@ const TREND_COLORS = {
 // month into a plotted zero. That would draw a supplier a chart claiming their
 // die life was 0 MT for the six months before anyone started recording it.
 // A month with no figure is absent from the line, not a point on the floor.
+// Every metric in the breakdown gets a chart, order volume included -- the page
+// is the whole scorecard over time, and a missing card reads as an oversight
+// rather than as an absence of data.
+//
+// A metric is dropped only when it has no figure in any month of the year. That
+// is the case the original browser export got wrong: it printed a page of five
+// boxes reading "Not enough data", which is worse than not printing them.
 function trendable(report) {
   const trend = report.trend || [];
   // The shared timeline for every chart on the page: January through the month
@@ -458,13 +490,13 @@ function trendable(report) {
   const axis = trend.map((r) => r.month);
   const out = [];
   for (const m of report.metrics || []) {
-    if (!m.scored) continue;
     const points = trend
       .map((r, index) => ({ index, month: r.month, value: r[m.key] }))
       .filter((p) => p.value !== null && p.value !== undefined && p.value !== ''
         && Number.isFinite(Number(p.value)))
       .map((p) => ({ index: p.index, month: p.month, value: Number(p.value) }));
-    if (points.length >= 2) out.push({ metric: m, points, axis });
+    // One recorded month is worth showing as a single marker. Zero is not.
+    if (points.length >= 1) out.push({ metric: m, points, axis });
   }
   return out;
 }
@@ -587,7 +619,8 @@ async function generateSupplierReportPdf(report, opts = {}) {
         x: MARGIN + col * (cw + 24), y: cy - ch, w: cw, h: ch,
         axis: c.axis, points: c.points, target: c.metric.scored ? c.metric.target : null,
         color: TREND_COLORS[c.metric.key] || '#1F6FB0',
-        label: c.metric.label, unit: c.metric.unit,
+        label: c.metric.label, unit: c.metric.unit || 'count',
+        bars: !c.metric.scored,
       }, { bold, font });
     });
   }

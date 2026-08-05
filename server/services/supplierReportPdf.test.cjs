@@ -166,7 +166,10 @@ test('an unrecorded month is absent from the trend line, not plotted as zero', a
   assert.ok(!dieLife.points.some((p) => p.value === 0), 'no blank month became a zero');
 });
 
-test('a metric with fewer than two recorded months gets no chart at all', async () => {
+test('a single recorded month is charted as a marker, not dropped', async () => {
+  // Superseded an earlier rule requiring two points. Every metric in the
+  // breakdown now gets a chart, so the page is the whole scorecard over time
+  // and a missing card reads as an oversight rather than an absence of data.
   const { trendable } = require('./supplierReportPdf.cjs');
   const report = {
     metrics,
@@ -176,7 +179,9 @@ test('a metric with fewer than two recorded months gets no chart at all', async 
     ],
   };
   const charts = trendable(report);
-  assert.ok(!charts.some((c) => c.metric.key === 'dieLife'), 'one point is not a trend');
+  const dl = charts.find((c) => c.metric.key === 'dieLife');
+  assert.ok(dl, 'one month is still worth showing');
+  assert.deepEqual(dl.points.map((p) => p.index), [1], 'plotted at February, not the left edge');
   assert.ok(charts.some((c) => c.metric.key === 'deliveryLeadTime'));
 });
 
@@ -296,4 +301,29 @@ test('a point keeps the month position it actually belongs to', async () => {
   const dieLife = trendable(report).find((c) => c.metric.key === 'dieLife');
   // Plotted at index 2 and 3, not squashed to the left edge as 0 and 1.
   assert.deepEqual(dieLife.points.map((p) => p.index), [2, 3]);
+});
+
+test('every metric in the breakdown gets a trend chart, order volume included', async () => {
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const charts = trendable(baseReport);
+  const keys = charts.map((c) => c.metric.key);
+  for (const m of metrics) {
+    assert.ok(keys.includes(m.key), `${m.key} has no trend chart`);
+  }
+});
+
+test('a metric with a single recorded month still gets a chart', async () => {
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const report = { metrics, trend: [{ month: 'Jan', dieLife: null }, { month: 'Feb', dieLife: 65 }] };
+  const dieLife = trendable(report).find((c) => c.metric.key === 'dieLife');
+  assert.ok(dieLife, 'one month is worth a marker');
+  assert.equal(dieLife.points.length, 1);
+});
+
+test('a metric recorded in no month at all is still dropped', async () => {
+  // The original browser export gave a whole page to boxes reading "Not enough
+  // data". An empty chart is worse than an absent one.
+  const { trendable } = require('./supplierReportPdf.cjs');
+  const report = { metrics, trend: [{ month: 'Jan', dieLife: null }, { month: 'Feb', dieLife: null }] };
+  assert.ok(!trendable(report).some((c) => c.metric.key === 'dieLife'));
 });
