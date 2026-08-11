@@ -2,7 +2,9 @@
 // Uses a relative /api path in both dev (via Vite proxy in vite.config.js)
 // and production (via the Nginx reverse proxy). Override with VITE_API_URL
 // only if hosting the backend on a different origin.
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// Optional chaining because import.meta.env only exists under Vite — without it
+// the module cannot be imported by a plain node test.
+const API_BASE_URL = import.meta.env?.VITE_API_URL || '/api';
 
 // Get token from localStorage
 const getToken = () => localStorage.getItem('token');
@@ -77,8 +79,9 @@ const apiRequest = async (endpoint, options = {}) => {
     // "Unexpected token '<'" that hides the real status from the user.
     const raw = await response.text();
     let data = null;
+    let parsed = false;
     if (raw) {
-        try { data = JSON.parse(raw); } catch { /* not JSON — handled below */ }
+        try { data = JSON.parse(raw); parsed = true; } catch { /* not JSON — handled below */ }
     }
 
     if (!response.ok) {
@@ -89,7 +92,11 @@ const apiRequest = async (endpoint, options = {}) => {
         throw new Error(data?.detail || data?.error || nonApiErrorMessage(response.status));
     }
 
-    return data ?? {};
+    // A body that parsed is returned as-is, including a literal `null` — that is
+    // a real answer from endpoints like /frozen-designs/match ("nothing frozen
+    // for this key"), and turning it into {} makes every `if (!match)` guard
+    // fail. The {} fallback is only for a response with no body to read.
+    return parsed ? data : {};
 };
 
 // Auth API

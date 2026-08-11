@@ -23,7 +23,9 @@ export default function FrozenDesignBanner({ profile, plant, press, cavity, onRe
     return () => { cancelled = true; };
   }, [profile, plant, press, cavity]);
 
-  if (!match) return null;
+  // Require an id, not just a truthy object: Release stamps match.id onto the
+  // order and skips the design stages, so a shapeless match must never render.
+  if (!match?.id) return null;
 
   const noteRequired = reason === 'Other';
   const canBypass = !noteRequired || note.trim().length > 0;
