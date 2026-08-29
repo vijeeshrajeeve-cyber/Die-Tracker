@@ -538,4 +538,22 @@ CREATE TABLE IF NOT EXISTS user_signatures (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Which (order, stage) pairs have already appeared in a daily summary report
+-- that was emailed. A stage reports exactly once: the primary key is what stops
+-- a back-dated entry being counted twice, and its absence is what lets a late
+-- entry be found at all.
+--
+-- The schedule and recipients live on reminder_settings, which db.cjs creates
+-- on boot -- that table has never been mirrored here, so neither are its
+-- daily_summary_* columns.
+CREATE TABLE IF NOT EXISTS daily_report_ledger (
+    order_id    INTEGER NOT NULL REFERENCES die_orders(id) ON DELETE CASCADE,
+    stage       TEXT    NOT NULL,
+    stage_date  DATE    NOT NULL,
+    reported_on DATE    NOT NULL,
+    PRIMARY KEY (order_id, stage)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_report_ledger_reported_on
+    ON daily_report_ledger(reported_on);
+
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing

@@ -24,6 +24,7 @@ const emailRouter = require('./routes/email.cjs');
 const emailService = require('./services/email.cjs');
 const designReminderService = require('./services/designReminder.cjs');
 const focReminderService = require('./services/focReminder.cjs');
+const dailySummaryService = require('./services/dailySummary.cjs');
 const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
 const plantBudgetsRouter = require('./routes/plant-budgets.cjs');
 const existingDataRouter = require('./routes/existing-data.cjs');
@@ -201,6 +202,9 @@ const startServer = async () => {
         // Start the FOC chasers — overdue replacements out to suppliers,
         // received-but-untrialled dies in to our own owner
         focReminderService.scheduleFocReminders();
+
+        // Daily summary of the previous day's activity (runs when enabled in settings)
+        dailySummaryService.scheduleDailySummary();
 
         // Start IMAP poller if receive is enabled in config
         emailService.getEmailConfig().then(config => {

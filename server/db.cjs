@@ -1,6 +1,9 @@
 require('dotenv').config();
 const { Pool, types } = require('pg');
 const bcrypt = require('bcryptjs');
+// Safe to require here: dailySummaryData takes its db as an argument and never
+// requires this module back, so there is no cycle.
+const { STAGES, stageDateOf } = require('./services/dailySummaryData.cjs');
 
 // Return PostgreSQL DATE columns as raw 'YYYY-MM-DD' strings instead of JS Date
 // objects. The default parser converts to a Date in the server's local zone,
@@ -795,6 +798,29 @@ const initializeDatabase = async () => {
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_internal_to       TEXT DEFAULT '';
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS foc_idle_days         INTEGER DEFAULT 3;
 
+      -- Daily summary: schedule, recipients, and the once-a-day guard. Shares
+      -- reminder_settings with the design and FOC reminders so all scheduled
+      -- mail is configured in one place.
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_enabled  BOOLEAN DEFAULT false;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_time     TEXT DEFAULT '06:00';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_last_run DATE;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_to       TEXT DEFAULT '';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_cc       TEXT DEFAULT '';
+
+      -- Which (order, stage) pairs have already appeared in a report that was
+      -- emailed. A stage reports exactly once: the primary key is what stops a
+      -- back-dated entry being counted twice, and its absence is what lets a
+      -- late entry be found at all.
+      CREATE TABLE IF NOT EXISTS daily_report_ledger (
+        order_id    INTEGER NOT NULL REFERENCES die_orders(id) ON DELETE CASCADE,
+        stage       TEXT    NOT NULL,
+        stage_date  DATE    NOT NULL,
+        reported_on DATE    NOT NULL,
+        PRIMARY KEY (order_id, stage)
+      );
+      CREATE INDEX IF NOT EXISTS idx_daily_report_ledger_reported_on
+        ON daily_report_ledger(reported_on);
+
       -- Email log (sent and received emails)
       CREATE TABLE IF NOT EXISTS email_log (
         id SERIAL PRIMARY KEY,
@@ -937,6 +963,57 @@ const initializeDatabase = async () => {
       -- Plant added after Press; backfill for databases created before the split.
       ALTER TABLE sample_followups ADD COLUMN IF NOT EXISTS plant TEXT;
     `);
+
+    // One-time: fill the daily-summary ledger with everything that happened
+    // before today, so the first report does not open with several years of
+    // history filed under "Recorded late".
+    //
+    // The boundary is strictly `< today`, not `<=`. Seeding today as well would
+    // swallow the migration day itself, and the first real report -- which runs
+    // tomorrow morning covering exactly today -- would show zeros everywhere.
+    //
+    // Written in JavaScript rather than SQL so it reuses parseStageDate: two of
+    // the stage columns are free text and a SQL-side parser would be a second,
+    // divergent copy of that logic.
+    const ledgerSeeded = await client.query(
+      `SELECT 1 FROM app_migrations WHERE id = 'daily_report_ledger_seed_v1'`
+    );
+    if (ledgerSeeded.rows.length === 0) {
+      const now = new Date();
+      const p2 = (n) => String(n).padStart(2, '0');
+      const todayStr = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+
+      const orders = await client.query(`
+        SELECT id, type, die_requested_date, ordered_date, design_received_date,
+               design_approved_date, pr_entry, oracle_entry, design_to_ems_date,
+               die_received_date, submission_date
+          FROM die_orders
+      `);
+
+      const ledgerRows = [];
+      for (const order of orders.rows) {
+        for (const stage of STAGES) {
+          const stageDate = stageDateOf(order, stage);
+          if (stageDate && stageDate < todayStr) {
+            ledgerRows.push([order.id, stage.key, stageDate, todayStr]);
+          }
+        }
+      }
+
+      for (let i = 0; i < ledgerRows.length; i += 500) {
+        const chunk = ledgerRows.slice(i, i + 500);
+        const values = chunk.map((_, n) =>
+          `($${n * 4 + 1}, $${n * 4 + 2}, $${n * 4 + 3}, $${n * 4 + 4})`).join(', ');
+        await client.query(
+          `INSERT INTO daily_report_ledger (order_id, stage, stage_date, reported_on)
+           VALUES ${values} ON CONFLICT (order_id, stage) DO NOTHING`,
+          chunk.flat()
+        );
+      }
+
+      await client.query(`INSERT INTO app_migrations (id) VALUES ('daily_report_ledger_seed_v1')`);
+      console.log(`Seeded daily_report_ledger with ${ledgerRows.length} historical stage(s)`);
+    }
 
     // Create default admin user if not exists
     const adminUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';

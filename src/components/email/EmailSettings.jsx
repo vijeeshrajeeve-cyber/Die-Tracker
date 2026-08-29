@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Mail, Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, Send, Inbox, RefreshCw, Bell, Truck } from 'lucide-react';
 import { emailAPI } from '../../api';
 import { BRAND } from '../../utils/brand';
+import { inputStyle, cardStyle } from './settingsStyles';
+import ToggleButton from './ToggleButton';
+import DailySummarySettings from './DailySummarySettings';
 
 const EmailSettings = ({ theme }) => {
     const [config, setConfig] = useState({
@@ -225,54 +228,6 @@ const EmailSettings = ({ theme }) => {
         setTimeout(() => setToast(null), 4000);
     };
 
-    const inputStyle = {
-        width: '100%',
-        padding: '12px 14px',
-        background: theme.inputBg,
-        border: `1px solid ${theme.cardBorder}`,
-        borderRadius: '10px',
-        color: theme.text,
-        fontSize: '0.875rem',
-        outline: 'none',
-        boxSizing: 'border-box'
-    };
-
-    const cardStyle = {
-        background: theme.cardBg, borderRadius: '20px',
-        padding: '24px', border: `1px solid ${theme.cardBorder}`,
-        boxShadow: theme.shadowMd,
-        marginBottom: '1.5rem'
-    };
-
-    const ToggleButton = ({ enabled, onToggle, label, sublabel, icon: Icon, color }) => (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Icon size={20} color={enabled ? color : theme.textDim} />
-                <div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: 0 }}>{label}</h3>
-                    <p style={{ fontSize: '0.8rem', color: theme.textDim, margin: '2px 0 0' }}>{sublabel}</p>
-                </div>
-            </div>
-            <button
-                onClick={onToggle}
-                style={{
-                    width: '52px', height: '28px', borderRadius: '14px',
-                    background: enabled ? color : theme.cardBorder,
-                    border: 'none', cursor: 'pointer', position: 'relative',
-                    transition: 'background 0.2s'
-                }}
-            >
-                <div style={{
-                    width: '22px', height: '22px', borderRadius: '50%',
-                    background: 'white', position: 'absolute', top: '3px',
-                    left: enabled ? '27px' : '3px',
-                    transition: 'left 0.2s',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                }} />
-            </button>
-        </div>
-    );
-
     if (loading) {
         return <div style={{ padding: '40px', textAlign: 'center', color: theme.textDim }}>Loading configuration...</div>;
     }
@@ -310,8 +265,9 @@ const EmailSettings = ({ theme }) => {
             </div>
 
             {/* Send Toggle */}
-            <div style={cardStyle}>
+            <div style={cardStyle(theme)}>
                 <ToggleButton
+                    theme={theme}
                     enabled={config.send_enabled}
                     onToggle={() => setConfig({ ...config, send_enabled: !config.send_enabled })}
                     label="Outgoing Email (SMTP)"
@@ -322,8 +278,9 @@ const EmailSettings = ({ theme }) => {
             </div>
 
             {/* Receive Toggle */}
-            <div style={cardStyle}>
+            <div style={cardStyle(theme)}>
                 <ToggleButton
+                    theme={theme}
                     enabled={config.receive_enabled}
                     onToggle={() => setConfig({ ...config, receive_enabled: !config.receive_enabled })}
                     label="Incoming Email (IMAP)"
@@ -348,8 +305,9 @@ const EmailSettings = ({ theme }) => {
             </div>
 
             {/* Automatic Design Reminders */}
-            <div style={cardStyle}>
+            <div style={cardStyle(theme)}>
                 <ToggleButton
+                    theme={theme}
                     enabled={reminder.enabled}
                     onToggle={() => setReminder({ ...reminder, enabled: !reminder.enabled })}
                     label="Automatic Design Reminders"
@@ -371,7 +329,7 @@ const EmailSettings = ({ theme }) => {
                             max={60}
                             value={reminder.days}
                             onChange={(e) => setReminder({ ...reminder, days: Math.max(1, Math.min(60, parseInt(e.target.value) || 1)) })}
-                            style={inputStyle}
+                            style={inputStyle(theme)}
                         />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             Remind for orders in "Awaiting Design" longer than this many days
@@ -385,7 +343,7 @@ const EmailSettings = ({ theme }) => {
                             type="time"
                             value={reminder.time}
                             onChange={(e) => setReminder({ ...reminder, time: e.target.value || '08:00' })}
-                            style={inputStyle}
+                            style={inputStyle(theme)}
                         />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             Time of day the reminder emails are sent (server time, Asia/Dubai)
@@ -440,7 +398,7 @@ const EmailSettings = ({ theme }) => {
             </div>
 
             {/* FOC replacement chasers — one out to the supplier, one in to us */}
-            <div style={cardStyle}>
+            <div style={cardStyle(theme)}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Truck size={18} color="#34D399" /> FOC Replacement Reminders
                 </h3>
@@ -449,6 +407,7 @@ const EmailSettings = ({ theme }) => {
                 </p>
 
                 <ToggleButton
+                    theme={theme}
                     enabled={foc.supplierEnabled}
                     onToggle={() => setFoc({ ...foc, supplierEnabled: !foc.supplierEnabled })}
                     label="Chase the supplier"
@@ -466,7 +425,7 @@ const EmailSettings = ({ theme }) => {
                         </label>
                         <input id="emailsettings-supplier-send-time" type="time" value={foc.supplierTime}
                             onChange={(e) => setFoc({ ...foc, supplierTime: e.target.value || '08:00' })}
-                            style={inputStyle} />
+                            style={inputStyle(theme)} />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             Emails go to each supplier's contact email (Settings → Suppliers). A supplier with no email is skipped.
                         </p>
@@ -476,6 +435,7 @@ const EmailSettings = ({ theme }) => {
                 <div style={{ height: 1, background: theme.cardBorder, margin: '22px 0' }} />
 
                 <ToggleButton
+                    theme={theme}
                     enabled={foc.internalEnabled}
                     onToggle={() => setFoc({ ...foc, internalEnabled: !foc.internalEnabled })}
                     label="Chase our own team"
@@ -493,7 +453,7 @@ const EmailSettings = ({ theme }) => {
                         </label>
                         <input id="emailsettings-send-to" type="text" value={foc.internalTo} placeholder="quality@example.com, hod@example.com"
                             onChange={(e) => setFoc({ ...foc, internalTo: e.target.value })}
-                            style={inputStyle} />
+                            style={inputStyle(theme)} />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             Whoever owns FOC follow-up. Required to enable this reminder.
                         </p>
@@ -504,7 +464,7 @@ const EmailSettings = ({ theme }) => {
                         </label>
                         <input id="emailsettings-internal-send-time" type="time" value={foc.internalTime}
                             onChange={(e) => setFoc({ ...foc, internalTime: e.target.value || '08:00' })}
-                            style={inputStyle} />
+                            style={inputStyle(theme)} />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-idle-days">
@@ -512,7 +472,7 @@ const EmailSettings = ({ theme }) => {
                         </label>
                         <input id="emailsettings-idle-days" type="number" min={0} max={60} value={foc.idleDays}
                             onChange={(e) => setFoc({ ...foc, idleDays: Math.max(0, Math.min(60, parseInt(e.target.value) || 0)) })}
-                            style={inputStyle} />
+                            style={inputStyle(theme)} />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             How long a received die may sit untrialled before it is flagged
                         </p>
@@ -571,8 +531,11 @@ const EmailSettings = ({ theme }) => {
                 </div>
             </div>
 
+            {/* Daily Summary Report */}
+            <DailySummarySettings theme={theme} showToast={showToast} />
+
             {/* SMTP/IMAP Configuration */}
-            <div style={cardStyle}>
+            <div style={cardStyle(theme)}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Mail size={18} color={theme.primary} /> Connection Settings
                 </h3>
@@ -589,7 +552,7 @@ const EmailSettings = ({ theme }) => {
                                 value={config.smtp_host}
                                 onChange={(e) => setConfig({ ...config, smtp_host: e.target.value })}
                                 placeholder="smtp.office365.com"
-                                style={inputStyle}
+                                style={inputStyle(theme)}
                             />
                         </div>
                         <div>
@@ -600,7 +563,7 @@ const EmailSettings = ({ theme }) => {
                                 type="number"
                                 value={config.smtp_port}
                                 onChange={(e) => setConfig({ ...config, smtp_port: parseInt(e.target.value) || 587 })}
-                                style={inputStyle}
+                                style={inputStyle(theme)}
                             />
                         </div>
                     </div>
@@ -616,7 +579,7 @@ const EmailSettings = ({ theme }) => {
                                 value={config.imap_host}
                                 onChange={(e) => setConfig({ ...config, imap_host: e.target.value })}
                                 placeholder="outlook.office365.com"
-                                style={inputStyle}
+                                style={inputStyle(theme)}
                             />
                         </div>
                         <div>
@@ -627,7 +590,7 @@ const EmailSettings = ({ theme }) => {
                                 type="number"
                                 value={config.imap_port}
                                 onChange={(e) => setConfig({ ...config, imap_port: parseInt(e.target.value) || 993 })}
-                                style={inputStyle}
+                                style={inputStyle(theme)}
                             />
                         </div>
                     </div>
@@ -642,7 +605,7 @@ const EmailSettings = ({ theme }) => {
                             value={config.email_user}
                             onChange={(e) => setConfig({ ...config, email_user: e.target.value })}
                             placeholder="dieorders@yourcompany.com"
-                            style={inputStyle}
+                            style={inputStyle(theme)}
                         />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             Used for both SMTP and IMAP authentication
@@ -659,7 +622,7 @@ const EmailSettings = ({ theme }) => {
                                 value={config.email_password}
                                 onChange={(e) => setConfig({ ...config, email_password: e.target.value })}
                                 placeholder="App password or account password"
-                                style={{ ...inputStyle, paddingRight: '40px' }}
+                                style={{ ...inputStyle(theme), paddingRight: '40px' }}
                             />
                             <button onClick={() => setShowPassword(!showPassword)} style={{
                                 position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
@@ -683,7 +646,7 @@ const EmailSettings = ({ theme }) => {
                             value={config.mailbox_email}
                             onChange={(e) => setConfig({ ...config, mailbox_email: e.target.value })}
                             placeholder="dieorders@yourcompany.com"
-                            style={inputStyle}
+                            style={inputStyle(theme)}
                         />
                         <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
                             The "From" address shown on sent emails (usually same as username)
@@ -693,7 +656,7 @@ const EmailSettings = ({ theme }) => {
             </div>
 
             {/* Setup Guide */}
-            <div style={{ ...cardStyle, background: 'rgba(59,130,246,0.05)', borderColor: 'rgba(59,130,246,0.2)' }}>
+            <div style={{ ...cardStyle(theme), background: 'rgba(59,130,246,0.05)', borderColor: 'rgba(59,130,246,0.2)' }}>
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: theme.primary, margin: '0 0 12px' }}>
                     Quick Setup Guide (Office 365)
                 </h3>
