@@ -644,6 +644,39 @@ export const emailAPI = {
             body: JSON.stringify({ which }),
         });
     },
+
+    // The 06:00 report on the previous day's activity.
+    getDailySummarySettings: async () => {
+        return apiRequest('/email/daily-summary-settings');
+    },
+
+    updateDailySummarySettings: async (settings) => {
+        return apiRequest('/email/daily-summary-settings', {
+            method: 'PUT',
+            body: JSON.stringify(settings),
+        });
+    },
+
+    // Sends to the configured recipients immediately, exactly as the scheduler
+    // would. Use downloadDailySummaryPdf to preview — that one sends nothing.
+    runDailySummaryNow: async () => {
+        return apiRequest('/email/daily-summary-settings/run-now', { method: 'POST' });
+    },
+
+    // Returns a Blob. Preview only: the report is rebuilt server-side and no
+    // ledger rows are consumed, so this never affects what the morning mail says.
+    downloadDailySummaryPdf: async (date) => {
+        const response = await fetch(
+            `${API_BASE_URL}/email/daily-summary.pdf?date=${encodeURIComponent(date)}`,
+            { headers: { Authorization: `Bearer ${getToken()}` } }
+        );
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
 };
 
 // Sample Followups API

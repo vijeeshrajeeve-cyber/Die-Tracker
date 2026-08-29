@@ -8,6 +8,7 @@ const emailService = require('../services/email.cjs');
 const qdDocument = require('../services/qdDocument.cjs');
 const designReminderService = require('../services/designReminder.cjs');
 const focReminderService = require('../services/focReminder.cjs');
+const dailySummaryService = require('../services/dailySummary.cjs');
 const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -333,6 +334,91 @@ router.post('/foc-reminder-settings/run-now', authMiddleware, async (req, res) =
     } catch (error) {
         console.error('Manual FOC reminder run error:', error);
         res.status(500).json({ error: error.message || 'Failed to run FOC reminders' });
+    }
+});
+
+// ── Daily summary ─────────────────────────────────────────────────────────────
+
+router.get('/daily-summary-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const settings = await dailySummaryService.getDailySummarySettings();
+        res.json({ settings, state: dailySummaryService.getDailySummaryState() });
+    } catch (error) {
+        console.error('Get daily summary settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch daily summary settings' });
+    }
+});
+
+router.put('/daily-summary-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const { enabled, time, to, cc } = req.body;
+
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({ error: 'enabled must be a boolean' });
+        }
+        if (time !== undefined && !HHMM.test(time)) {
+            return res.status(400).json({ error: 'time must be in HH:MM (24-hour) format' });
+        }
+
+        // Turning it on with nobody to send to would fail quietly every morning,
+        // so it is refused up front.
+        const recipients = to === undefined ? undefined : String(to).trim();
+        if (enabled === true && recipients !== undefined && !recipients) {
+            return res.status(400).json({ error: 'At least one recipient is required to enable the daily summary' });
+        }
+
+        const settings = await dailySummaryService.updateDailySummarySettings({
+            enabled, time,
+            to: recipients,
+            cc: cc === undefined ? undefined : String(cc).trim(),
+        });
+        res.json({ message: 'Daily summary settings updated', settings });
+    } catch (error) {
+        console.error('Update daily summary settings error:', error);
+        res.status(500).json({ error: 'Failed to update daily summary settings' });
+    }
+});
+
+// Sends the real report to the real recipient list, now. It commits to the
+// ledger for exactly that reason — a stage it reports has been reported. The
+// PDF download below is the preview that does not.
+router.post('/daily-summary-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const summary = await dailySummaryService.sendDailySummary();
+        res.json({ message: 'Daily summary sent', summary });
+    } catch (error) {
+        console.error('Manual daily summary run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to send the daily summary' });
+    }
+});
+
+// Preview only: renders the identical PDF and writes nothing to the ledger.
+router.get('/daily-summary.pdf', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const date = String(req.query.date || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+        }
+
+        const { bytes } = await dailySummaryService.renderPdfFor(date, { commit: false });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Daily-Die-Summary-${date}.pdf"`);
+        res.send(Buffer.from(bytes));
+    } catch (error) {
+        console.error('Daily summary PDF error:', error);
+        res.status(500).json({ error: 'Failed to generate the daily summary PDF' });
     }
 });
 
