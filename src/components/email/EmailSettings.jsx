@@ -4,6 +4,7 @@ import { emailAPI } from '../../api';
 import { BRAND } from '../../utils/brand';
 import { inputStyle, cardStyle } from './settingsStyles';
 import ToggleButton from './ToggleButton';
+import DailySummarySettings from './DailySummarySettings';
 
 const EmailSettings = ({ theme }) => {
     const [config, setConfig] = useState({
@@ -529,6 +530,9 @@ const EmailSettings = ({ theme }) => {
                     ))}
                 </div>
             </div>
+
+            {/* Daily Summary Report */}
+            <DailySummarySettings theme={theme} showToast={showToast} />
 
             {/* SMTP/IMAP Configuration */}
             <div style={cardStyle(theme)}>
