@@ -38,8 +38,11 @@ const pad = (n) => String(n).padStart(2, '0');
 
 // Accepts what the columns actually hold: ISO dates, ISO timestamps, DD/MM/YYYY
 // (the form sanitizeDate in routes/backup-requests.cjs:21 accepts), and real
-// Date objects, since DATE columns come back from pg as Dates. Everything else
-// is null -- never a guess. Callers count the nulls rather than hiding them.
+// Date objects. DATE columns arrive as plain 'YYYY-MM-DD' strings -- db.cjs:10
+// overrides pg's parser for OID 1082 -- but TIMESTAMP is left alone, so
+// created_at really does come back as a Date and the pending-age fallback
+// depends on this branch. Everything else is null -- never a guess. Callers
+// count the nulls rather than hiding them.
 function parseStageDate(value) {
   if (value === null || value === undefined) return null;
 
