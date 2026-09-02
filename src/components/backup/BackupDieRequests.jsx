@@ -98,9 +98,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [orderValues, setOrderValues] = useState(null);
   const [orderSources, setOrderSources] = useState({});
   const [dieNoBasis, setDieNoBasis] = useState(null);
-  // The last suffix this component proposed. Lets the effect tell its own
-  // suggestion (safe to replace) from a number the user typed (never touch).
+  const [cavityBasis, setCavityBasis] = useState(null);
+  // The last values this component proposed. Let the effect tell its own
+  // suggestion (safe to replace) from something the user typed (never touch).
   const proposedSuffixRef = useRef('');
+  const proposedCavityRef = useRef('');
   const [orderFileHandle, setOrderFileHandle] = useState(null);
   // Fallback File (no write-back handle) for browsers without the File System Access API.
   const [orderFile, setOrderFile] = useState(null);
@@ -140,15 +142,17 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const formProfile = formData['Profile'];
   const formPress = formData['Press'];
   const formDieSuffix = formData['Die Suffix'];
+  const formCavity = formData['Cavity'];
 
-  // Propose the next die number once the key is complete, but only for a new
-  // request — an existing request's number is already issued, and overwriting
-  // it would orphan the die's history.
+  // Propose the die number and cavity once the key is complete, but only for a
+  // new request — an existing request's number is already issued, and
+  // overwriting it would orphan the die's history.
   //
-  // The field is replaced when it is empty OR still holds the value we last
+  // A field is replaced when it is empty OR still holds the value we last
   // proposed. A suffix derived from PRESS 2 is wrong the moment the user picks
   // PRESS 6 (253 vs 604), so freezing the first proposal would quietly save an
-  // invalid number. Anything the user typed themselves is never touched.
+  // invalid number. Anything the user typed themselves is never touched: typing
+  // re-runs this effect, and the cleanup cancels the request in flight.
   useEffect(() => {
     if (editingRequest) return;
     const profile = (formProfile || '').trim();
@@ -156,23 +160,38 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     const plant = (formPlant || '').trim();
     if (!profile || !press || !plant) return;
 
-    const current = (formDieSuffix || '').trim();
-    if (current && current !== proposedSuffixRef.current) return;
+    const heldSuffix = String(formDieSuffix ?? '').trim();
+    const heldCavity = String(formCavity ?? '').trim();
+    const suffixIsOurs = !heldSuffix || heldSuffix === proposedSuffixRef.current;
+    const cavityIsOurs = !heldCavity || heldCavity === proposedCavityRef.current;
+    if (!suffixIsOurs && !cavityIsOurs) return;
 
     let cancelled = false;
     backupRequestsAPI.nextDieNumber({ plant, profile, press })
       .then((result) => {
-        // Typing in the field re-runs this effect, whose cleanup cancels this
-        // promise — so reaching here means the field is still ours to write.
-        if (cancelled || !result?.dieNo) return;
-        const suffix = splitDieNo(result.dieNo).suffix;
-        proposedSuffixRef.current = suffix;
-        setFormData((prev) => ({ ...prev, 'Die Suffix': suffix }));
-        setDieNoBasis(result.basis);
+        if (cancelled || !result) return;
+
+        if (suffixIsOurs && result.dieNo) {
+          const suffix = splitDieNo(result.dieNo).suffix;
+          proposedSuffixRef.current = suffix;
+          setFormData((prev) => ({ ...prev, 'Die Suffix': suffix }));
+          setDieNoBasis(result.basis);
+        }
+
+        // Cavity only ever comes from a real die. When the new key has no die
+        // history our previous proposal is cleared rather than left standing —
+        // it described a different profile or press, and its hint would name a
+        // die that has nothing to do with this request.
+        if (cavityIsOurs) {
+          const value = result.cavity ? result.cavity.value : '';
+          proposedCavityRef.current = value;
+          setFormData((prev) => ({ ...prev, 'Cavity': value }));
+          setCavityBasis(result.cavity ? result.cavity.die_no : null);
+        }
       })
       .catch((err) => console.error('Next die number lookup failed:', err));
     return () => { cancelled = true; };
-  }, [formPlant, formProfile, formPress, formDieSuffix, editingRequest]);
+  }, [formPlant, formProfile, formPress, formDieSuffix, formCavity, editingRequest]);
 
   const pressCodeByName = useMemo(() => {
     const map = {};
@@ -268,7 +287,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     setFormData({ ...EMPTY_FORM, 'Requested Date': getTodayDateString() });
     setDieWarning('');
     setDieNoBasis(null);
+    setCavityBasis(null);
     proposedSuffixRef.current = '';
+    proposedCavityRef.current = '';
     setShowModal(true);
   };
 
@@ -389,7 +410,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const openEditModal = (request) => {
     setEditingRequest(request);
     setDieNoBasis(null);
+    setCavityBasis(null);
     proposedSuffixRef.current = '';
+    proposedCavityRef.current = '';
     setFormData({
       'Plant': request['Plant'] || '',
       'Profile': splitDieNo(request['DIE NO']).profile,
@@ -1155,12 +1178,24 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Cavity */}
               <div>
-                <label style={labelStyle} htmlFor="backupdierequests-cavity">Cavity</label>
+                <label style={labelStyle} htmlFor="backupdierequests-cavity">
+                  Cavity
+                  {cavityBasis && (
+                    <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>
+                      from die list {cavityBasis}
+                    </span>
+                  )}
+                </label>
                 <input id="backupdierequests-cavity"
                   type="number"
                   min="0"
                   value={formData['Cavity']}
-                  onChange={(e) => setFormData({ ...formData, 'Cavity': e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, 'Cavity': e.target.value });
+                    // The hint names the die this count came from. Once the user
+                    // types their own, it no longer describes this value.
+                    setCavityBasis(null);
+                  }}
                   style={inputStyle}
                   placeholder="No. of cavities"
                 />

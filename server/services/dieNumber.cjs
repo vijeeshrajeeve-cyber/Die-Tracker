@@ -18,7 +18,7 @@ function parseSuffix(dieNo) {
 // normalizePlant stays the single definition of 'GEX 01' === 'GEX 2'.
 async function collectCandidates(client, prof, pressNo) {
   const dies = await client.query(
-    `SELECT die_no, plant FROM existing_die_details
+    `SELECT die_no, plant, raw_data->>'NumHoles' AS cavity FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
        AND split_part(die_no, '_', 2) ~ '^[0-9]{3}$'
        AND left(split_part(die_no, '_', 2), 1)::int = $2`,
@@ -65,9 +65,28 @@ async function nextDieNumber(client, { plant, profile, press }) {
     }
   }
 
+  // Cavity comes from the newest DIE, which is not always the newest of the
+  // three sources: die_orders.cavity is set on 7 of 659 rows, and a backup
+  // request's cavity is only what someone typed. Cavity climbs as a design is
+  // revised (10018 on press 2 runs 2 -> 3 -> 4), so the newest die is the one
+  // that reflects the current design.
+  let cavity = null;
+  let cavityHighest = null;
+  for (const row of rows) {
+    if (row.source !== 'die') continue;
+    const value = String(row.cavity == null ? '' : row.cavity).trim();
+    if (!value) continue;
+    const suffix = parseSuffix(row.die_no);
+    if (suffix === null) continue;
+    if (cavityHighest === null || suffix > cavityHighest) {
+      cavityHighest = suffix;
+      cavity = { value, die_no: row.die_no };
+    }
+  }
+
   // A profile with no history on this press starts the sequence at 01.
   const next = highest === null ? (pressNo * 100) + 1 : highest + 1;
-  return { dieNo: `${prof}-${next}`, basis };
+  return { dieNo: `${prof}-${next}`, basis, cavity };
 }
 
 // The client-side duplicate check can hold every request and order in memory

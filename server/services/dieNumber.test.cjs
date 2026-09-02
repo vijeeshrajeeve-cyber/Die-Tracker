@@ -96,6 +96,52 @@ test('an unusable press or empty profile returns null without querying', async (
   assert.equal(client.calls.length, 0);
 });
 
+// Cavity comes from the newest DIE, which is not always the newest of the three
+// sources — here a backup request sets the die-number ceiling but carries no
+// authority over cavity.
+test('cavity comes from the newest die list row, not the newest source', async () => {
+  const client = makeClient({
+    dies: [{ die_no: '29663_213', plant: 'GEX 01', cavity: '2' }],
+    requests: [{ die_no: '29663-252', plant: 'GEX 01' }],
+  });
+  const result = await d.nextDieNumber(client, { plant: 'GEX 01', profile: '29663', press: 'PRESS 2' });
+  assert.equal(result.dieNo, '29663-253');
+  assert.deepEqual(result.cavity, { value: '2', die_no: '29663_213' });
+});
+
+// Cavity climbs as a design is revised: 10018 on press 2 runs 2 -> 3 -> 4, and
+// only the newest die reflects the current design.
+test('cavity takes the newest die when the group disagrees', async () => {
+  const client = makeClient({
+    dies: [
+      { die_no: '10018_201', plant: 'GEX 01', cavity: '2' },
+      { die_no: '10018_203', plant: 'GEX 01', cavity: '4' },
+      { die_no: '10018_202', plant: 'GEX 01', cavity: '3' },
+    ],
+  });
+  const result = await d.nextDieNumber(client, { plant: 'GEX 01', profile: '10018', press: 'PRESS 2' });
+  assert.deepEqual(result.cavity, { value: '4', die_no: '10018_203' });
+});
+
+// die_orders.cavity is set on 7 of 659 rows, so orders and requests never speak
+// for cavity even when they are the only rows present.
+test('cavity is null when no die list row carries one', async () => {
+  const client = makeClient({
+    dies: [{ die_no: '29663_213', plant: 'GEX 01', cavity: '' }],
+    orders: [{ die_no: '29663-204', plant: 'GEX 1' }],
+    requests: [{ die_no: '29663-252', plant: 'GEX 01' }],
+  });
+  const result = await d.nextDieNumber(client, { plant: 'GEX 01', profile: '29663', press: 'PRESS 2' });
+  assert.equal(result.cavity, null);
+});
+
+test('a profile with no history has no cavity either', async () => {
+  const client = makeClient({});
+  const result = await d.nextDieNumber(client, { plant: 'GEX 2', profile: '51150', press: 'PRESS 8' });
+  assert.equal(result.dieNo, '51150-801');
+  assert.equal(result.cavity, null);
+});
+
 // Requests write '29663-213'; the die list stores '29663_213' and may pad the
 // profile. Both have to be recognised as the same physical die.
 test('dieNoExistsInDieList matches across separator and zero padding', async () => {
