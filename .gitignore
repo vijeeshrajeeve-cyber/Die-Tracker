@@ -63,3 +63,7 @@ pi_analysis_output.txt
 # Plan-bridge handle: a 127.0.0.1 URL plus a session token, regenerated per run.
 # The plan documents beside it are worth keeping; this is not.
 .agent-native/plans/*/.plan-url
+
+# Impeccable design-hook cache (shared config.json IS tracked)
+.impeccable/hook.cache.json
+.impeccable/config.local.json
