@@ -34,6 +34,39 @@ const extractProfile = (dieNo) => {
     return text.split('-')[0].replace(/^0+/, '') || null;
 };
 
+// Column aliases per field. normalizeKey() strips case and punctuation, so
+// 'Die No', 'die_no' and 'DIE NO' collapse to one key — only genuinely
+// different words need listing. The ID*/*Primary spellings are what the
+// plants' own die-management system exports (e.g. the GEX-01 die list).
+const DIE_NO_ALIASES = ['die no', 'die_no', 'die', 'die number', 'die number/name', 'die number name', 'iddie', 'die id'];
+const PROFILE_ALIASES = ['profile', 'profile number', 'profile_number', 'idprofile', 'profile id'];
+const CUSTOMER_ALIASES = ['customer', 'customer name', 'customer_name', 'party', 'client', 'idcustomer1', 'idcustomer'];
+const PRESS_ALIASES = ['press', 'press name', 'press code', 'machine', 'pressprimary', 'primary press'];
+const DIE_SIZE_ALIASES = ['die size', 'die_size', 'size', 'section size', 'profile size', 'diesdiam', 'die diam', 'die diameter'];
+
+// Rows per INSERT statement. Postgres caps a statement at 65535 bound
+// parameters; at 9 columns this leaves a wide margin however many rows the
+// client sends in one request.
+const INSERT_BATCH = 1000;
+
+// One multi-row INSERT per batch instead of a query per row. A 45,000-row die
+// list is thousands of sequential round-trips otherwise, which runs past the
+// proxy's 60s read timeout and rolls the whole transaction back.
+const insertRows = async (client, table, columns, values) => {
+    const colList = columns.map((c) => c.name).join(', ');
+    for (let start = 0; start < values.length; start += INSERT_BATCH) {
+        const batch = values.slice(start, start + INSERT_BATCH);
+        const placeholders = batch.map((_, i) => {
+            const base = i * columns.length;
+            return `(${columns.map((c, j) => `$${base + j + 1}${c.cast || ''}`).join(', ')})`;
+        }).join(', ');
+        await client.query(
+            `INSERT INTO ${table} (${colList}) VALUES ${placeholders}`,
+            batch.flat()
+        );
+    }
+};
+
 const toInt = (value) => {
     if (value === null || value === undefined || value === '') return null;
     const parsed = parseInt(String(value).replace(/,/g, ''), 10);
@@ -72,36 +105,43 @@ router.post('/die-details/import', authMiddleware, adminMiddleware, async (req, 
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     const plant = clean(req.body?.plant, 100);
     const sourceFile = clean(req.body?.sourceFile, 255);
+    // A large sheet arrives as several chunks: only the first clears the
+    // plant's existing rows, the rest append. Omitting the flag keeps the
+    // original replace-everything behaviour for single-request imports.
+    const replace = req.body?.replace !== false;
     if (!plant) return res.status(400).json({ error: 'plant is required' });
     if (rows.length === 0) return res.status(400).json({ error: 'rows array is required' });
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        await client.query('DELETE FROM existing_die_details WHERE plant = $1', [plant]);
+        if (replace) {
+            await client.query('DELETE FROM existing_die_details WHERE plant = $1', [plant]);
+        }
 
-        let imported = 0;
+        const values = [];
         let skipped = 0;
         for (const row of rows) {
-            const dieNo = clean(getField(row, ['die no', 'die_no', 'die', 'die number', 'die number/name', 'die number name']));
-            const profile = clean(getField(row, ['profile', 'profile number', 'profile_number'])) || extractProfile(dieNo);
-            const customer = clean(getField(row, ['customer', 'customer name', 'customer_name', 'party', 'client']));
-            const dieSize = clean(getField(row, ['die size', 'die_size', 'size', 'section size', 'profile size']));
-            const press = clean(getField(row, ['press', 'press name', 'press code', 'machine']));
+            const dieNo = clean(getField(row, DIE_NO_ALIASES));
+            const profile = clean(getField(row, PROFILE_ALIASES)) || extractProfile(dieNo);
+            const customer = clean(getField(row, CUSTOMER_ALIASES));
+            const dieSize = clean(getField(row, DIE_SIZE_ALIASES));
+            const press = clean(getField(row, PRESS_ALIASES));
 
             if (!dieNo && !profile && !customer && !dieSize && !press) {
                 skipped++;
                 continue;
             }
 
-            await client.query(
-                `INSERT INTO existing_die_details
-                    (plant, die_no, profile_number, customer, die_size, press, raw_data, source_file)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
-                [plant, dieNo, profile, customer, dieSize, press, JSON.stringify(row), sourceFile]
-            );
-            imported++;
+            values.push([plant, dieNo, profile, customer, dieSize, press, JSON.stringify(row), sourceFile]);
         }
+
+        await insertRows(client, 'existing_die_details', [
+            { name: 'plant' }, { name: 'die_no' }, { name: 'profile_number' },
+            { name: 'customer' }, { name: 'die_size' }, { name: 'press' },
+            { name: 'raw_data', cast: '::jsonb' }, { name: 'source_file' },
+        ], values);
+        const imported = values.length;
 
         await client.query('COMMIT');
         res.json({ imported, skipped, total: rows.length, meta: await getMeta() });
@@ -119,36 +159,40 @@ router.post('/production/import', authMiddleware, adminMiddleware, async (req, r
     const plant = clean(req.body?.plant, 100);
     const sourceFile = clean(req.body?.sourceFile, 255);
     if (!plant) return res.status(400).json({ error: 'plant is required' });
+    const replace = req.body?.replace !== false;
     if (rows.length === 0) return res.status(400).json({ error: 'rows array is required' });
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        await client.query('DELETE FROM existing_production_data WHERE plant = $1', [plant]);
+        if (replace) {
+            await client.query('DELETE FROM existing_production_data WHERE plant = $1', [plant]);
+        }
 
-        let imported = 0;
+        const values = [];
         let skipped = 0;
         for (const row of rows) {
-            const dieNo = clean(getField(row, ['die no', 'die_no', 'die', 'die number', 'die number/name', 'die number name']));
-            const profile = clean(getField(row, ['profile', 'profile number', 'profile_number'])) || extractProfile(dieNo);
-            const customer = clean(getField(row, ['customer', 'customer name', 'customer_name', 'party', 'client']));
+            const dieNo = clean(getField(row, DIE_NO_ALIASES));
+            const profile = clean(getField(row, PROFILE_ALIASES)) || extractProfile(dieNo);
+            const customer = clean(getField(row, CUSTOMER_ALIASES));
             const productionDate = clean(getField(row, ['production date', 'production_date', 'date', 'prod date', 'month']));
             const quantity = toInt(getField(row, ['quantity', 'qty', 'production qty', 'production quantity', 'pieces', 'pcs']));
-            const press = clean(getField(row, ['press', 'press name', 'press code', 'machine']));
+            const press = clean(getField(row, PRESS_ALIASES));
 
             if (!dieNo && !profile && !customer && !productionDate && quantity === null && !press) {
                 skipped++;
                 continue;
             }
 
-            await client.query(
-                `INSERT INTO existing_production_data
-                    (plant, die_no, profile_number, customer, production_date, quantity, press, raw_data, source_file)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
-                [plant, dieNo, profile, customer, productionDate, quantity, press, JSON.stringify(row), sourceFile]
-            );
-            imported++;
+            values.push([plant, dieNo, profile, customer, productionDate, quantity, press, JSON.stringify(row), sourceFile]);
         }
+
+        await insertRows(client, 'existing_production_data', [
+            { name: 'plant' }, { name: 'die_no' }, { name: 'profile_number' },
+            { name: 'customer' }, { name: 'production_date' }, { name: 'quantity' },
+            { name: 'press' }, { name: 'raw_data', cast: '::jsonb' }, { name: 'source_file' },
+        ], values);
+        const imported = values.length;
 
         await client.query('COMMIT');
         res.json({ imported, skipped, total: rows.length, meta: await getMeta() });

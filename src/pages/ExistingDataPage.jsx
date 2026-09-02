@@ -19,6 +19,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
   const [ddFileName, setDdFileName] = useState('');
   const [ddImporting, setDdImporting] = useState(false);
   const [ddStatus, setDdStatus] = useState(null);
+  const [ddProgress, setDdProgress] = useState(null);
 
   // Production Data tab
   const [pdPlant, setPdPlant] = useState('');
@@ -26,6 +27,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
   const [pdFileName, setPdFileName] = useState('');
   const [pdImporting, setPdImporting] = useState(false);
   const [pdStatus, setPdStatus] = useState(null);
+  const [pdProgress, setPdProgress] = useState(null);
 
   const loadMeta = async () => {
     setMetaLoading(true);
@@ -99,8 +101,12 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
     if (!ddPlant || !ddRows) return;
     setDdImporting(true);
     setDdStatus(null);
+    setDdProgress({ done: 0, total: ddRows.length });
     try {
-      const result = await existingDataAPI.importDieDetails({ plant: ddPlant, rows: ddRows, sourceFile: ddFileName });
+      const result = await existingDataAPI.importDieDetails({
+        plant: ddPlant, rows: ddRows, sourceFile: ddFileName,
+        onProgress: (done, total) => setDdProgress({ done, total }),
+      });
       setDdStatus({ type: 'success', message: `Imported ${result.imported} rows, skipped ${result.skipped}` });
       setMeta(result.meta);
       setDdRows(null);
@@ -110,6 +116,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
       setDdStatus({ type: 'error', message: err.message || 'Import failed — check connection' });
     } finally {
       setDdImporting(false);
+      setDdProgress(null);
     }
   };
 
@@ -117,8 +124,12 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
     if (!pdPlant || !pdRows) return;
     setPdImporting(true);
     setPdStatus(null);
+    setPdProgress({ done: 0, total: pdRows.length });
     try {
-      const result = await existingDataAPI.importProduction({ plant: pdPlant, rows: pdRows, sourceFile: pdFileName });
+      const result = await existingDataAPI.importProduction({
+        plant: pdPlant, rows: pdRows, sourceFile: pdFileName,
+        onProgress: (done, total) => setPdProgress({ done, total }),
+      });
       setPdStatus({ type: 'success', message: `Imported ${result.imported} rows, skipped ${result.skipped}` });
       setMeta(result.meta);
       setPdRows(null);
@@ -128,6 +139,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
       setPdStatus({ type: 'error', message: err.message || 'Import failed — check connection' });
     } finally {
       setPdImporting(false);
+      setPdProgress(null);
     }
   };
 
@@ -163,7 +175,7 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
     rows, fileName,
     handleFileChange,
     importing, handleImport,
-    status,
+    status, progress,
   ) => (
     <div style={{ padding: '1.25rem 0 0.5rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -223,7 +235,11 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
               fontWeight: 600, fontSize: '0.875rem', whiteSpace: 'nowrap',
             }}
           >
-            {importing ? 'Importing…' : 'Import'}
+            {/* A big sheet goes up in batches, so show how far along it is
+                rather than leaving the button on "Importing…" for a minute. */}
+            {importing && progress?.total
+              ? `Importing… ${Math.round((progress.done / progress.total) * 100)}%`
+              : importing ? 'Importing…' : 'Import'}
           </button>
         </div>
       )}
@@ -264,11 +280,11 @@ export default function ExistingDataPage({ plants, theme, setToast }) {
 
       {activeTab === 'die-details' && renderTabContent(
         ddPlant, setDdPlant, ddRows, ddFileName,
-        handleDdFileChange, ddImporting, handleDdImport, ddStatus,
+        handleDdFileChange, ddImporting, handleDdImport, ddStatus, ddProgress,
       )}
       {activeTab === 'production' && renderTabContent(
         pdPlant, setPdPlant, pdRows, pdFileName,
-        handlePdFileChange, pdImporting, handlePdImport, pdStatus,
+        handlePdFileChange, pdImporting, handlePdImport, pdStatus, pdProgress,
       )}
 
       {/* Status Table */}

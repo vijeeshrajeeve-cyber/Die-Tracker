@@ -429,24 +429,48 @@ export const profilesAPI = {
     },
 };
 
+// Rows per import request. A plant's full die list runs to tens of thousands
+// of rows — at roughly 800 bytes of JSON each, sending them in one body is
+// ~36MB, well past the 10mb cap on both nginx and express.json, which answers
+// with a bare 413. Batching keeps every request around 1.5MB and each one
+// finishes far inside the proxy's 60s read timeout.
+const IMPORT_CHUNK_ROWS = 2000;
+
+// Only the first batch carries replace: true — that is the one that clears the
+// plant's existing rows. The rest append, so the import stays "replace
+// everything for this plant" however many requests it takes.
+const importInChunks = async (endpoint, { plant, rows, sourceFile, onProgress }) => {
+    if (!rows || rows.length === 0) throw new Error('The file has no rows to import');
+
+    let imported = 0;
+    let skipped = 0;
+    let meta = null;
+    for (let start = 0; start < rows.length; start += IMPORT_CHUNK_ROWS) {
+        const chunk = rows.slice(start, start + IMPORT_CHUNK_ROWS);
+        const result = await apiRequest(endpoint, {
+            method: 'POST',
+            body: JSON.stringify({ plant, rows: chunk, sourceFile, replace: start === 0 }),
+        });
+        imported += result.imported;
+        skipped += result.skipped;
+        meta = result.meta;
+        onProgress?.(start + chunk.length, rows.length);
+    }
+    return { imported, skipped, total: rows.length, meta };
+};
+
 // Existing Data API
 export const existingDataAPI = {
     getMeta: async () => {
         return apiRequest('/existing-data/meta');
     },
 
-    importDieDetails: async ({ plant, rows, sourceFile }) => {
-        return apiRequest('/existing-data/die-details/import', {
-            method: 'POST',
-            body: JSON.stringify({ plant, rows, sourceFile }),
-        });
+    importDieDetails: async ({ plant, rows, sourceFile, onProgress }) => {
+        return importInChunks('/existing-data/die-details/import', { plant, rows, sourceFile, onProgress });
     },
 
-    importProduction: async ({ plant, rows, sourceFile }) => {
-        return apiRequest('/existing-data/production/import', {
-            method: 'POST',
-            body: JSON.stringify({ plant, rows, sourceFile }),
-        });
+    importProduction: async ({ plant, rows, sourceFile, onProgress }) => {
+        return importInChunks('/existing-data/production/import', { plant, rows, sourceFile, onProgress });
     },
 };
 
