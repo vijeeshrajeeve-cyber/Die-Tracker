@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
-import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, extractProfileFromDie, getUser } from '../../api';
+import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, existingDataAPI, extractProfileFromDie, getUser } from '../../api';
+import { applyPrefill } from '../../utils/dieOrderPrefill';
 import { userSignature } from '../../utils/emailSignature';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
@@ -93,6 +94,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderRow, setOrderRow] = useState(null);
   const [orderValues, setOrderValues] = useState(null);
+  const [orderSources, setOrderSources] = useState({});
   const [orderFileHandle, setOrderFileHandle] = useState(null);
   // Fallback File (no write-back handle) for browsers without the File System Access API.
   const [orderFile, setOrderFile] = useState(null);
@@ -463,7 +465,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     const src = frozen?.source_order || {};
     const initialSupplier = frozen?.supplier || src.supplier || '';
     const matchedSupplier = suppliers.find((s) => s.name === initialSupplier);
-    setOrderValues({
+    const baseValues = {
       SUPPLIER: initialSupplier,
       DATE: getTodayDateString(),
       DIE_SIZE: frozen?.die_size || src.die_size || '',
@@ -484,7 +486,31 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       FINISH_ANODIZING: false,
       FINISH_POWDER: false,
       PENDING_ORDER_KG: '0',
+    };
+
+    // History fills only what the request and the frozen design left blank.
+    let match = { order: null, dieList: null };
+    try {
+      match = await existingDataAPI.matchDie({
+        plant: request['Plant'],
+        profile: extractProfileFromDie(request['DIE NO']),
+        press: baseValues.PRESS,
+        cavity: baseValues.NO_OF_CAV,
+      });
+    } catch { /* lookup failed — open the modal with what we already have */ }
+
+    const { values, sources } = applyPrefill(baseValues, match, {
+      supplierNames: suppliers.map((s) => s.name),
     });
+
+    // MODE OF SHIPMENT follows whichever supplier ended up selected.
+    if (values.SUPPLIER !== baseValues.SUPPLIER) {
+      const filledSupplier = suppliers.find((s) => s.name === values.SUPPLIER);
+      values.SHIPMENT = filledSupplier?.shipment_mode || values.SHIPMENT;
+    }
+
+    setOrderValues(values);
+    setOrderSources(sources);
     setShowOrderModal(true);
   };
 
@@ -644,6 +670,14 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     fontSize: '0.875rem',
     cursor: 'pointer',
   };
+
+  // Names where an auto-filled value came from, so the person generating a
+  // supplier-facing PDF can see which numbers are history rather than input.
+  const renderSourceHint = (field) => (
+    orderSources[field]
+      ? <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>from {orderSources[field]}</span>
+      : null
+  );
 
   return (
     <div>
@@ -1255,7 +1289,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
               <div>
-                <label style={labelStyle} htmlFor="backupdierequests-supplier">SUPPLIER</label>
+                <label style={labelStyle} htmlFor="backupdierequests-supplier">SUPPLIER{renderSourceHint('SUPPLIER')}</label>
                 <select id="backupdierequests-supplier"
                   value={orderValues.SUPPLIER}
                   onChange={(e) => {
@@ -1284,7 +1318,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle} htmlFor="backupdierequests-die-size">DIE SIZE</label>
+                <label style={labelStyle} htmlFor="backupdierequests-die-size">DIE SIZE{renderSourceHint('DIE_SIZE')}</label>
                 <input id="backupdierequests-die-size" type="text" value={orderValues.DIE_SIZE} onChange={(e) => setOrderValues({ ...orderValues, DIE_SIZE: e.target.value })} style={inputStyle} />
               </div>
 
@@ -1312,14 +1346,14 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
 
               <div>
-                <label style={labelStyle}>SOLID</label>
+                <label style={labelStyle}>SOLID{renderSourceHint('SOLID')}</label>
                 <label style={checkboxBoxStyle}>
                   <input type="checkbox" checked={!!orderValues.SOLID} onChange={(e) => setOrderValues({ ...orderValues, SOLID: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
                   Solid
                 </label>
               </div>
               <div>
-                <label style={labelStyle}>HOLLOW</label>
+                <label style={labelStyle}>HOLLOW{renderSourceHint('HOLLOW')}</label>
                 <label style={checkboxBoxStyle}>
                   <input type="checkbox" checked={!!orderValues.HOLLOW} onChange={(e) => setOrderValues({ ...orderValues, HOLLOW: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: theme.primary }} />
                   Hollow
@@ -1327,7 +1361,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
               </div>
 
               <div>
-                <label style={labelStyle} htmlFor="backupdierequests-bolster-no">BOLSTER No</label>
+                <label style={labelStyle} htmlFor="backupdierequests-bolster-no">BOLSTER No{renderSourceHint('BOLSTER_NO')}</label>
                 <input id="backupdierequests-bolster-no" type="text" value={orderValues.BOLSTER_NO} onChange={(e) => setOrderValues({ ...orderValues, BOLSTER_NO: e.target.value })} style={inputStyle} />
               </div>
               <div>
