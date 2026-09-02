@@ -32,10 +32,30 @@ router.get('/lookup', authMiddleware, async (req, res) => {
             'SELECT profile_number, customer_name FROM profiles WHERE profile_number = $1 LIMIT 1',
             [profile]
         );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Profile not found', profile_number: profile });
+        if (result.rows.length > 0) {
+            return res.json({ ...result.rows[0], source: 'profiles' });
         }
-        res.json(result.rows[0]);
+
+        // The profiles master is nearly empty (4 rows against 20,916 profiles
+        // in the die list), so fall back to the customer recorded against the
+        // plant's own dies before giving up.
+        const fromDieList = await pool.query(
+            `SELECT customer FROM existing_die_details
+             WHERE regexp_replace(profile_number, '^0+', '') = $1
+               AND customer IS NOT NULL AND customer <> ''
+             ORDER BY updated_at DESC NULLS LAST
+             LIMIT 1`,
+            [profile]
+        );
+        if (fromDieList.rows.length > 0) {
+            return res.json({
+                profile_number: profile,
+                customer_name: fromDieList.rows[0].customer,
+                source: 'die list',
+            });
+        }
+
+        return res.status(404).json({ error: 'Profile not found', profile_number: profile });
     } catch (error) {
         console.error('Error looking up profile:', error);
         res.status(500).json({ error: 'Lookup failed' });
