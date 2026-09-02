@@ -2,6 +2,7 @@
 const path = require('path');
 const fs = require('fs');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { collectJFileData } = require('./jFileData.cjs');
 
 // ── Template ────────────────────────────────────────────────────────────────
 const TEMPLATE_PATH = path.join(__dirname, '../assets/backup-j-template.pdf');
@@ -98,21 +99,6 @@ function formatDate(date = new Date()) {
   return `${d}/${m}/${date.getFullYear()}`;
 }
 
-/** Normalise an object key: lowercase, strip non-alphanumeric. */
-const normalizeKey = (k) => String(k || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-/** Try a list of aliases against a raw_data JSONB object. */
-function getFieldFromRaw(rawData, aliases) {
-  if (!rawData || typeof rawData !== 'object') return null;
-  const norm = {};
-  for (const [k, v] of Object.entries(rawData)) norm[normalizeKey(k)] = v;
-  for (const alias of aliases) {
-    const v = norm[normalizeKey(alias)];
-    if (v != null && String(v).trim() !== '') return String(v).trim();
-  }
-  return null;
-}
-
 /**
  * Draw text clamped to maxWidth — truncates with a trailing '…' when needed.
  */
@@ -155,28 +141,6 @@ function eraseReasonCheck(page, col, row) {
 
 // ── Database queries ────────────────────────────────────────────────────────
 
-async function queryActiveDies(pool, profile) {
-  const { rows } = await pool.query(
-    `SELECT die_no, raw_data
-     FROM existing_die_details
-     WHERE profile_number = $1
-     ORDER BY die_no
-     LIMIT 10`,
-    [profile]
-  );
-  return rows;
-}
-
-async function queryExtrudedVolume(pool, dieNo) {
-  const { rows } = await pool.query(
-    `SELECT COALESCE(SUM(quantity), 0)::bigint AS total
-     FROM existing_production_data
-     WHERE die_no = $1`,
-    [dieNo]
-  );
-  return Number(rows[0]?.total || 0);
-}
-
 async function queryOrderVolume(pool, profile) {
   const { rows } = await pool.query(
     `SELECT COALESCE(SUM(quantity), 0)::bigint AS total
@@ -185,19 +149,6 @@ async function queryOrderVolume(pool, profile) {
     [profile]
   );
   return Number(rows[0]?.total || 0);
-}
-
-async function queryPrevSuppliers(pool, profile) {
-  const { rows } = await pool.query(
-    `SELECT DISTINCT supplier
-     FROM die_orders
-     WHERE die_no LIKE $1 || '-%'
-       AND supplier IS NOT NULL
-       AND supplier <> ''
-     ORDER BY supplier`,
-    [profile]
-  );
-  return rows.map((r) => r.supplier);
 }
 
 // ── Main export ─────────────────────────────────────────────────────────────
@@ -215,16 +166,10 @@ async function generateJFilePdf(backupRequest, orderValues, pool) {
   const profile = extractProfile(dieNo);
 
   // ── Parallel DB queries ─────────────────────────────────────────────────
-  const [activeDieRows, orderVolume, prevSuppliersList] = await Promise.all([
-    queryActiveDies(pool, profile),
+  const [{ activeDies, prevSuppliers: prevSuppliersList }, orderVolume] = await Promise.all([
+    collectJFileData(pool, dieNo),
     queryOrderVolume(pool, profile),
-    queryPrevSuppliers(pool, profile),
   ]);
-
-  // Per-die extruded volumes (sequential is fine — usually ≤10 rows)
-  const extrudedVolumes = await Promise.all(
-    activeDieRows.map((r) => queryExtrudedVolume(pool, r.die_no))
-  );
 
   // ── Load template ───────────────────────────────────────────────────────
   const pdf  = await PDFDocument.load(getTemplateBytes());
@@ -253,20 +198,17 @@ async function generateJFilePdf(backupRequest, orderValues, pool) {
 
   // ── Active dies — "No. of Active Dies" + "Extruded Volume" columns ───────
   // Col 7 (activeDie) width ≈ 88 pt; col 8 (extruded) width ≈ 50 pt
-  for (let i = 0; i < activeDieRows.length && i < 10; i++) {
+  for (let i = 0; i < activeDies.length; i++) {
     const y = rowY(i);
-    const row = activeDieRows[i];
-    const rawData = (typeof row.raw_data === 'object' && row.raw_data) ? row.raw_data : {};
+    const die = activeDies[i];
 
-    const supplier = getFieldFromRaw(rawData, [
-      'supplier', 'die supplier', 'manufacturer', 'vendor', 'source', 'made by', 'madeby',
-    ]) || '';
-    const activeDieText = supplier ? `${row.die_no} ${supplier}` : row.die_no;
+    const activeDieText = die.supplier ? `${die.die_no} ${die.supplier}` : die.die_no;
     drawClamped(page, activeDieText, COL_X.activeDie, y, font, FS_SM, 88);
 
-    const vol = extrudedVolumes[i] || 0;
-    if (vol > 0) {
-      drawClamped(page, formatKg(vol), COL_X.extruded, y, font, FS_SM, 50);
+    // A die still on order has extruded nothing yet, which is not the same as
+    // having extruded zero — leave the cell blank rather than printing 0 Kg.
+    if (die.tonnage !== null) {
+      drawClamped(page, formatKg(die.tonnage), COL_X.extruded, y, font, FS_SM, 50);
     }
   }
 
