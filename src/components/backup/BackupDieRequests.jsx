@@ -98,6 +98,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [orderValues, setOrderValues] = useState(null);
   const [orderSources, setOrderSources] = useState({});
   const [dieNoBasis, setDieNoBasis] = useState(null);
+  // The last suffix this component proposed. Lets the effect tell its own
+  // suggestion (safe to replace) from a number the user typed (never touch).
+  const proposedSuffixRef = useRef('');
   const [orderFileHandle, setOrderFileHandle] = useState(null);
   // Fallback File (no write-back handle) for browsers without the File System Access API.
   const [orderFile, setOrderFile] = useState(null);
@@ -139,25 +142,32 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const formDieSuffix = formData['Die Suffix'];
 
   // Propose the next die number once the key is complete, but only for a new
-  // request and only into an empty field — an existing request's number is
-  // already issued, and overwriting it would orphan the die's history.
+  // request — an existing request's number is already issued, and overwriting
+  // it would orphan the die's history.
+  //
+  // The field is replaced when it is empty OR still holds the value we last
+  // proposed. A suffix derived from PRESS 2 is wrong the moment the user picks
+  // PRESS 6 (253 vs 604), so freezing the first proposal would quietly save an
+  // invalid number. Anything the user typed themselves is never touched.
   useEffect(() => {
     if (editingRequest) return;
     const profile = (formProfile || '').trim();
     const press = (formPress || '').trim();
     const plant = (formPlant || '').trim();
     if (!profile || !press || !plant) return;
-    if ((formDieSuffix || '').trim()) return;
+
+    const current = (formDieSuffix || '').trim();
+    if (current && current !== proposedSuffixRef.current) return;
 
     let cancelled = false;
     backupRequestsAPI.nextDieNumber({ plant, profile, press })
       .then((result) => {
+        // Typing in the field re-runs this effect, whose cleanup cancels this
+        // promise — so reaching here means the field is still ours to write.
         if (cancelled || !result?.dieNo) return;
-        setFormData((prev) => (
-          (prev['Die Suffix'] || '').trim()
-            ? prev
-            : { ...prev, 'Die Suffix': splitDieNo(result.dieNo).suffix }
-        ));
+        const suffix = splitDieNo(result.dieNo).suffix;
+        proposedSuffixRef.current = suffix;
+        setFormData((prev) => ({ ...prev, 'Die Suffix': suffix }));
         setDieNoBasis(result.basis);
       })
       .catch((err) => console.error('Next die number lookup failed:', err));
@@ -257,6 +267,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     setEditingRequest(null);
     setFormData({ ...EMPTY_FORM, 'Requested Date': getTodayDateString() });
     setDieWarning('');
+    setDieNoBasis(null);
+    proposedSuffixRef.current = '';
     setShowModal(true);
   };
 
@@ -377,6 +389,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const openEditModal = (request) => {
     setEditingRequest(request);
     setDieNoBasis(null);
+    proposedSuffixRef.current = '';
     setFormData({
       'Plant': request['Plant'] || '',
       'Profile': splitDieNo(request['DIE NO']).profile,
@@ -1079,7 +1092,13 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 <input id="backupdierequests-die-no"
                   type="text"
                   value={formData['Die Suffix']}
-                  onChange={(e) => { setFormData({ ...formData, 'Die Suffix': e.target.value }); if (dieWarning) setDieWarning(''); }}
+                  onChange={(e) => {
+                    setFormData({ ...formData, 'Die Suffix': e.target.value });
+                    // The hint names where a proposed number came from. Once the
+                    // user types their own, it no longer describes this value.
+                    setDieNoBasis(null);
+                    if (dieWarning) setDieWarning('');
+                  }}
                   onBlur={() => checkDuplicateDie(composeDieNo(formData['Profile'], formData['Die Suffix']))}
                   style={{
                     ...inputStyle,
