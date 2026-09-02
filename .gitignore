@@ -45,8 +45,7 @@ backup-*.sql.gz
 supabase/.temp/
 supabase/.branches/
 
-# Test files
-*.test.js
+# Coverage output
 coverage/
 
 # Windows Zone.Identifier alternate data stream files
