@@ -7,6 +7,7 @@ const {
     clean, getField, extractProfile, composeDieSize,
     DIE_NO_ALIASES, PROFILE_ALIASES, CUSTOMER_ALIASES, PRESS_ALIASES,
 } = require('../services/dieListImport.cjs');
+const { findDieListMatch, findRecentOrderMatch } = require('../services/dieOrderPrefill.cjs');
 
 // Rows per INSERT statement. Postgres caps a statement at 65535 bound
 // parameters; at 9 columns this leaves a wide margin however many rows the
@@ -62,6 +63,28 @@ router.get('/meta', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Existing data meta error:', error);
         res.status(500).json({ error: 'Failed to fetch existing data metadata' });
+    }
+});
+
+// Prefill source for the Generate Die Order PDF modal. Reports what each source
+// found without merging them — only the client knows which fields the user has
+// already filled, and blank-only merging is the whole point.
+router.get('/die-match', authMiddleware, async (req, res) => {
+    const key = {
+        plant: req.query.plant,
+        profile: req.query.profile,
+        press: req.query.press,
+        cavity: req.query.cavity,
+    };
+    try {
+        const [order, dieList] = await Promise.all([
+            findRecentOrderMatch(pool, key),
+            findDieListMatch(pool, key),
+        ]);
+        res.json({ order, dieList });
+    } catch (error) {
+        console.error('Die match lookup error:', error);
+        res.status(500).json({ error: 'Die match lookup failed' });
     }
 });
 

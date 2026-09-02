@@ -465,6 +465,14 @@ export const existingDataAPI = {
         return apiRequest('/existing-data/meta');
     },
 
+    matchDie: async ({ plant, profile, press, cavity }) => {
+        const query = new URLSearchParams({
+            plant: plant ?? '', profile: profile ?? '',
+            press: press ?? '', cavity: cavity ?? '',
+        });
+        return apiRequest(`/existing-data/die-match?${query}`);
+    },
+
     importDieDetails: async ({ plant, rows, sourceFile, onProgress }) => {
         return importInChunks('/existing-data/die-details/import', { plant, rows, sourceFile, onProgress });
     },

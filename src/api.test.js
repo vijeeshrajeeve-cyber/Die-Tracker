@@ -99,3 +99,29 @@ test('an empty sheet is rejected before any request goes out', async () => {
   );
   assert.equal(sent.length, 0);
 });
+
+test('matchDie sends the whole key as query parameters', async () => {
+  let seenUrl = null;
+  globalThis.fetch = async (url) => {
+    seenUrl = url;
+    return new Response(JSON.stringify({ order: null, dieList: null }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  await existingDataAPI.matchDie({ plant: 'GEX 01', profile: '29663', press: 'PRESS 2', cavity: 2 });
+  assert.match(seenUrl, /\/existing-data\/die-match\?/);
+  assert.match(seenUrl, /plant=GEX\+01/);
+  assert.match(seenUrl, /profile=29663/);
+  assert.match(seenUrl, /press=PRESS\+2/);
+  assert.match(seenUrl, /cavity=2/);
+});
+
+test('matchDie passes both null sources through unchanged', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ order: null, dieList: null }), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  });
+  const result = await existingDataAPI.matchDie({ plant: 'GEX 01', profile: '29663', press: 'PRESS 2', cavity: 2 });
+  assert.equal(result.order, null);
+  assert.equal(result.dieList, null);
+});
