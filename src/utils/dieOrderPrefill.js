@@ -7,6 +7,9 @@
 export const SUPPLIER_ALIASES = {
   'PHOEINIX': 'PHOENIX',
   'PHOENIX MIDDLE EAST': 'PHME',
+  // GEX-2's own spellings for the same two firms.
+  'ME PHOENIX': 'PHME',
+  'PHOENIX INTERNATIONAL S.P.A.': 'PHOENIX',
 };
 
 // MODE OF SHIPMENT is derived from the matched supplier record, so a name that

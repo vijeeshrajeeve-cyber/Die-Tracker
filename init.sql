@@ -338,6 +338,15 @@ CREATE TABLE IF NOT EXISTS existing_die_details (
     customer TEXT,
     die_size TEXT,
     press TEXT,
+    -- Fields the app reads on every die lookup, promoted out of raw_data so the
+    -- queries stop naming a plant's own column spelling. See
+    -- server/services/dieListImport.cjs for the per-plant alias lists.
+    die_status TEXT,
+    cavity INTEGER,
+    die_type TEXT,
+    supplier TEXT,
+    tonnage BIGINT,
+    bolster_no TEXT,
     raw_data JSONB NOT NULL DEFAULT '{}',
     source_file TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

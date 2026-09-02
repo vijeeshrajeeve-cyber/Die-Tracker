@@ -24,26 +24,26 @@ function pickForPlant(rows, plant) {
   return rows.find((r) => normalizePlant(r.plant) === want) || null;
 }
 
+// The die list stores the press as a canonical press_name and the cavity as an
+// integer, both resolved at import — see services/dieListImport.cjs. That is
+// what lets one query serve two plants whose exports share no column names.
 async function findDieListMatch(client, { plant, profile, press, cavity }) {
   const prof = stripProfile(profile);
-  const pressNo = pressNumber(press);
+  const pressName = String(press == null ? '' : press).trim();
   const cav = (cavity === null || cavity === undefined || cavity === '' || !Number.isFinite(Number(cavity)))
     ? null
-    : String(Math.round(Number(cavity)));
-  if (!prof || pressNo === null || cav === null) return null;
+    : Math.round(Number(cavity));
+  if (!prof || !pressName || cav === null) return null;
 
   const { rows } = await client.query(
-    `SELECT die_no, plant, die_size,
-            raw_data->>'DieType'      AS die_type,
-            raw_data->>'IDBolster'    AS bolster_no,
-            raw_data->>'NameSupplier' AS supplier
+    `SELECT die_no, plant, die_size, die_type, bolster_no, supplier
      FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
-       AND NULLIF(regexp_replace(press, '\\D', '', 'g'), '')::int = $2
-       AND raw_data->>'NumHoles' = $3
-     ORDER BY NULLIF(split_part(die_no, '_', 2), '')::int DESC NULLS LAST
+       AND upper(trim(press)) = upper(trim($2))
+       AND cavity = $3
+     ORDER BY substring(die_no from '[-_]([0-9]+)$')::int DESC NULLS LAST
      LIMIT 50`,
-    [prof, pressNo, cav]
+    [prof, pressName, cav]
   );
   return pickForPlant(rows, plant);
 }

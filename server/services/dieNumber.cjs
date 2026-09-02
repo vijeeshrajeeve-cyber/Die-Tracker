@@ -17,11 +17,14 @@ function parseSuffix(dieNo) {
 // number can already exist. Plant is filtered in JS so the tested
 // normalizePlant stays the single definition of 'GEX 01' === 'GEX 2'.
 async function collectCandidates(client, prof, pressNo) {
+  // GEX-01 writes 29663_213 and GEX-2 writes 090001-801, so the suffix is read
+  // past either separator. Cavity is a real column because the import
+  // normalises NumHoles (GEX-01) and NumCavities (GEX-2) into it.
   const dies = await client.query(
-    `SELECT die_no, plant, raw_data->>'NumHoles' AS cavity FROM existing_die_details
+    `SELECT die_no, plant, cavity FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
-       AND split_part(die_no, '_', 2) ~ '^[0-9]{3}$'
-       AND left(split_part(die_no, '_', 2), 1)::int = $2`,
+       AND substring(die_no from '[-_]([0-9]+)$') ~ '^[0-9]{3}$'
+       AND left(substring(die_no from '[-_]([0-9]+)$'), 1)::int = $2`,
     [prof, pressNo]
   );
   const orders = await client.query(
@@ -47,6 +50,9 @@ async function collectCandidates(client, prof, pressNo) {
 
 async function nextDieNumber(client, { plant, profile, press }) {
   const prof = stripProfile(profile);
+  // Matching strips the padding; the proposal keeps the plant's own spelling,
+  // since GEX-2 writes 090001-2502 and 90001-801 would not look like its dies.
+  const asWritten = String(profile == null ? '' : profile).trim() || prof;
   const pressNo = pressNumber(press);
   if (!prof || pressNo === null) return null;
 
@@ -86,7 +92,7 @@ async function nextDieNumber(client, { plant, profile, press }) {
 
   // A profile with no history on this press starts the sequence at 01.
   const next = highest === null ? (pressNo * 100) + 1 : highest + 1;
-  return { dieNo: `${prof}-${next}`, basis, cavity };
+  return { dieNo: `${asWritten}-${next}`, basis, cavity };
 }
 
 // The client-side duplicate check can hold every request and order in memory
@@ -96,10 +102,12 @@ async function dieNoExistsInDieList(client, dieNo) {
   const prof = stripProfile(String(dieNo == null ? '' : dieNo).split(/[-_]/)[0]);
   if (!prof || suffix === null) return false;
 
+  // GEX-01 stores 29663_213 and GEX-2 stores 090001-801, so the suffix is read
+  // past either separator — otherwise the guard silently never fires for GEX-2.
   const { rows } = await client.query(
     `SELECT 1 FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
-       AND split_part(die_no, '_', 2) = $2
+       AND substring(die_no from '[-_]([0-9]+)$') = $2
      LIMIT 1`,
     [prof, String(suffix)]
   );

@@ -893,6 +893,18 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_existing_die_details_die_no ON existing_die_details(die_no);
       CREATE INDEX IF NOT EXISTS idx_existing_die_details_profile ON existing_die_details(profile_number);
 
+      -- Fields the app reads on every die lookup, promoted out of raw_data so
+      -- the queries stop naming a plant's own column spelling. GEX-01 calls
+      -- them DieStatus/NumHoles/DieType/NameSupplier/Tonnage/IDBolster; GEX-2
+      -- calls them DescrStatus/NumCavities/DescrDieType/DescrSupplier/
+      -- QtyKgGross and has no bolster at all. See services/dieListImport.cjs.
+      ALTER TABLE existing_die_details ADD COLUMN IF NOT EXISTS die_status TEXT;
+      ALTER TABLE existing_die_details ADD COLUMN IF NOT EXISTS cavity INTEGER;
+      ALTER TABLE existing_die_details ADD COLUMN IF NOT EXISTS die_type TEXT;
+      ALTER TABLE existing_die_details ADD COLUMN IF NOT EXISTS supplier TEXT;
+      ALTER TABLE existing_die_details ADD COLUMN IF NOT EXISTS tonnage BIGINT;
+      ALTER TABLE existing_die_details ADD COLUMN IF NOT EXISTS bolster_no TEXT;
+
       -- Uploaded existing production data by plant
       CREATE TABLE IF NOT EXISTS existing_production_data (
         id SERIAL PRIMARY KEY,

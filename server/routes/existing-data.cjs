@@ -4,9 +4,10 @@ const { pool } = require('../db.cjs');
 const { authMiddleware, adminMiddleware } = require('./auth.cjs');
 
 const {
-    clean, getField, extractProfile, composeDieSize,
+    clean, getField, extractProfile, mapRow, isEmptyRow,
     DIE_NO_ALIASES, PROFILE_ALIASES, CUSTOMER_ALIASES, PRESS_ALIASES,
 } = require('../services/dieListImport.cjs');
+const { loadPresses } = require('../services/frozenDesigns.cjs');
 const { findDieListMatch, findRecentOrderMatch } = require('../services/dieOrderPrefill.cjs');
 
 // Rows per INSERT statement. Postgres caps a statement at 65535 bound
@@ -106,26 +107,31 @@ router.post('/die-details/import', authMiddleware, adminMiddleware, async (req, 
             await client.query('DELETE FROM existing_die_details WHERE plant = $1', [plant]);
         }
 
+        // The press is resolved against the master at import time, so the die
+        // list's own spelling ('M_PRESS.4', 'P35') never reaches a query.
+        const presses = await loadPresses(client);
+
         const values = [];
         let skipped = 0;
         for (const row of rows) {
-            const dieNo = clean(getField(row, DIE_NO_ALIASES));
-            const profile = clean(getField(row, PROFILE_ALIASES)) || extractProfile(dieNo);
-            const customer = clean(getField(row, CUSTOMER_ALIASES));
-            const dieSize = composeDieSize(row);
-            const press = clean(getField(row, PRESS_ALIASES));
-
-            if (!dieNo && !profile && !customer && !dieSize && !press) {
+            const m = mapRow(row, presses);
+            if (isEmptyRow(m)) {
                 skipped++;
                 continue;
             }
 
-            values.push([plant, dieNo, profile, customer, dieSize, press, JSON.stringify(row), sourceFile]);
+            values.push([
+                plant, m.dieNo, m.profile, m.customer, m.dieSize, m.press,
+                m.dieStatus, m.cavity, m.dieType, m.supplier, m.tonnage, m.bolsterNo,
+                JSON.stringify(row), sourceFile,
+            ]);
         }
 
         await insertRows(client, 'existing_die_details', [
             { name: 'plant' }, { name: 'die_no' }, { name: 'profile_number' },
             { name: 'customer' }, { name: 'die_size' }, { name: 'press' },
+            { name: 'die_status' }, { name: 'cavity' }, { name: 'die_type' },
+            { name: 'supplier' }, { name: 'tonnage' }, { name: 'bolster_no' },
             { name: 'raw_data', cast: '::jsonb' }, { name: 'source_file' },
         ], values);
         const imported = values.length;

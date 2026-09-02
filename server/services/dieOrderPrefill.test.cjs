@@ -45,6 +45,8 @@ test('stripProfile removes leading zeros from both spellings', () => {
   assert.equal(p.stripProfile(null), '');
 });
 
+// The die list stores a canonical press_name and an integer cavity, both
+// resolved at import, so the query matches on those directly.
 test('findDieListMatch returns the first row and passes the stripped profile', async () => {
   const client = makeClient([dieListRows([
     { die_no: '29663_213', plant: 'GEX 01', die_size: '355X200', die_type: 'Hollow', bolster_no: 'BOL-2-2-A', supplier: 'PDTMC' },
@@ -52,7 +54,26 @@ test('findDieListMatch returns the first row and passes the stripped profile', a
   const match = await p.findDieListMatch(client, { plant: 'GEX 01', profile: '29663', press: 'PRESS 2', cavity: 2 });
   assert.equal(match.die_no, '29663_213');
   assert.equal(match.die_size, '355X200');
-  assert.deepEqual(client.calls[0].params, ['29663', 2, '2']);
+  assert.deepEqual(client.calls[0].params, ['29663', 'PRESS 2', 2]);
+});
+
+// GEX-2 die numbers use a hyphen and its export has no bolster column.
+test('findDieListMatch works for a GEX-2 die', async () => {
+  const client = makeClient([dieListRows([
+    { die_no: '090001-2502', plant: 'GEX 2', die_size: '250X140', die_type: 'SOLID', bolster_no: null, supplier: 'ME PHOENIX' },
+  ])]);
+  const match = await p.findDieListMatch(client, { plant: 'GEX 02', profile: '090001', press: 'PRESS 7', cavity: 8 });
+  assert.equal(match.die_no, '090001-2502');
+  assert.equal(match.die_type, 'SOLID');
+  assert.equal(match.bolster_no, null);
+  assert.deepEqual(client.calls[0].params, ['90001', 'PRESS 7', 8]);
+});
+
+// The newest die wins, and the suffix sits past either separator.
+test('findDieListMatch orders on the suffix regardless of separator', async () => {
+  const client = makeClient([dieListRows([])]);
+  await p.findDieListMatch(client, { plant: 'GEX 2', profile: '90001', press: 'PRESS 7', cavity: 8 });
+  assert.match(client.calls[0].sql, /substring\(die_no from '\[-_\]\(\[0-9\]\+\)\$'\)::int DESC/);
 });
 
 test('findDieListMatch keeps only rows whose plant matches after normalisation', async () => {

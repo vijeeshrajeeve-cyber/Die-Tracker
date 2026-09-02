@@ -14,6 +14,9 @@ const SUPPLIER_ALIASES = {
   'GIANGSU': 'JIANGSU',
   'GIANSUN': 'JIANGSU',
   'JIANSU': 'JIANGSU',
+  // GEX-2's own spellings for the same two firms.
+  'ME PHOENIX': 'PHME',
+  'PHOENIX INTERNATIONAL S.P.A.': 'PHOENIX',
 };
 
 // The form's table has ten rows.
@@ -37,14 +40,15 @@ function dieKey(dieNo) {
   return `${stripProfile(parts[0])}-${parts[1]}`.toUpperCase();
 }
 
+// Status, tonnage and supplier are real columns because the import normalises
+// them from either plant's spelling — DieStatus/Tonnage/NameSupplier at GEX-01,
+// DescrStatus/QtyKgGross/DescrSupplier at GEX-2.
 function queryDieListActive(pool, prof) {
   return pool.query(
-    `SELECT die_no,
-            raw_data->>'Tonnage'      AS tonnage,
-            raw_data->>'NameSupplier' AS supplier
+    `SELECT die_no, tonnage, supplier
      FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
-       AND upper(COALESCE(raw_data->>'DieStatus', '')) NOT IN ('SCRAPPED', 'HOLD')
+       AND upper(COALESCE(die_status, '')) NOT IN ('SCRAPPED', 'HOLD')
      ORDER BY die_no`,
     [prof]
   );
@@ -65,10 +69,10 @@ function queryOrdersInProcess(pool, prof) {
 // someone, and "Previous suppliers" is a purchase history.
 function queryDieListSuppliers(pool, prof) {
   return pool.query(
-    `SELECT DISTINCT raw_data->>'NameSupplier' AS supplier
+    `SELECT DISTINCT supplier
      FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
-       AND NULLIF(raw_data->>'NameSupplier', '') IS NOT NULL`,
+       AND NULLIF(supplier, '') IS NOT NULL`,
     [prof]
   );
 }
