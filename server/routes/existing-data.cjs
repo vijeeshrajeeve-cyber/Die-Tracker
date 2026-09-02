@@ -3,46 +3,10 @@ const router = express.Router();
 const { pool } = require('../db.cjs');
 const { authMiddleware, adminMiddleware } = require('./auth.cjs');
 
-const clean = (value, max = 500) => {
-    if (value === null || value === undefined) return null;
-    const text = String(value).trim();
-    return text ? text.substring(0, max) : null;
-};
-
-const normalizeKey = (key) => String(key || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-
-const getField = (row, aliases) => {
-    const normalized = {};
-    Object.entries(row || {}).forEach(([key, value]) => {
-        normalized[normalizeKey(key)] = value;
-    });
-
-    for (const alias of aliases) {
-        const value = normalized[normalizeKey(alias)];
-        if (value !== null && value !== undefined && String(value).trim() !== '') {
-            return value;
-        }
-    }
-    return null;
-};
-
-const extractProfile = (dieNo) => {
-    const text = clean(dieNo);
-    if (!text) return null;
-    return text.split('-')[0].replace(/^0+/, '') || null;
-};
-
-// Column aliases per field. normalizeKey() strips case and punctuation, so
-// 'Die No', 'die_no' and 'DIE NO' collapse to one key — only genuinely
-// different words need listing. The ID*/*Primary spellings are what the
-// plants' own die-management system exports (e.g. the GEX-01 die list).
-const DIE_NO_ALIASES = ['die no', 'die_no', 'die', 'die number', 'die number/name', 'die number name', 'iddie', 'die id'];
-const PROFILE_ALIASES = ['profile', 'profile number', 'profile_number', 'idprofile', 'profile id'];
-const CUSTOMER_ALIASES = ['customer', 'customer name', 'customer_name', 'party', 'client', 'idcustomer1', 'idcustomer'];
-const PRESS_ALIASES = ['press', 'press name', 'press code', 'machine', 'pressprimary', 'primary press'];
-const DIE_SIZE_ALIASES = ['die size', 'die_size', 'size', 'section size', 'profile size', 'diesdiam', 'die diam', 'die diameter'];
+const {
+    clean, getField, extractProfile, composeDieSize,
+    DIE_NO_ALIASES, PROFILE_ALIASES, CUSTOMER_ALIASES, PRESS_ALIASES,
+} = require('../services/dieListImport.cjs');
 
 // Rows per INSERT statement. Postgres caps a statement at 65535 bound
 // parameters; at 9 columns this leaves a wide margin however many rows the
@@ -125,7 +89,7 @@ router.post('/die-details/import', authMiddleware, adminMiddleware, async (req, 
             const dieNo = clean(getField(row, DIE_NO_ALIASES));
             const profile = clean(getField(row, PROFILE_ALIASES)) || extractProfile(dieNo);
             const customer = clean(getField(row, CUSTOMER_ALIASES));
-            const dieSize = clean(getField(row, DIE_SIZE_ALIASES));
+            const dieSize = composeDieSize(row);
             const press = clean(getField(row, PRESS_ALIASES));
 
             if (!dieNo && !profile && !customer && !dieSize && !press) {
