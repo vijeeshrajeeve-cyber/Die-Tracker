@@ -3,6 +3,7 @@ import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, Chevr
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, existingDataAPI, extractProfileFromDie, getUser } from '../../api';
 import { applyPrefill } from '../../utils/dieOrderPrefill';
+import { composeDieNo, splitDieNo } from '../../utils/dieNumber';
 import { userSignature } from '../../utils/emailSignature';
 import { formatDate } from '../../utils/helpers';
 import DatePickerField from '../DatePickerField';
@@ -27,7 +28,8 @@ const COLUMNS = [
 
 const EMPTY_FORM = {
   'Plant': '',
-  'DIE NO': '',
+  'Profile': '',
+  'Die Suffix': '',
   'Customer': '',
   'Press': '',
   'Cavity': '',
@@ -95,6 +97,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [orderRow, setOrderRow] = useState(null);
   const [orderValues, setOrderValues] = useState(null);
   const [orderSources, setOrderSources] = useState({});
+  const [dieNoBasis, setDieNoBasis] = useState(null);
   const [orderFileHandle, setOrderFileHandle] = useState(null);
   // Fallback File (no write-back handle) for browsers without the File System Access API.
   const [orderFile, setOrderFile] = useState(null);
@@ -127,6 +130,39 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
       .catch((err) => console.error('Failed to load orders:', err));
     return () => { cancelled = true; };
   }, []);
+
+  // Pulled out of formData so the effect below can depend on the individual
+  // values rather than the whole object, which changes on every keystroke.
+  const formPlant = formData['Plant'];
+  const formProfile = formData['Profile'];
+  const formPress = formData['Press'];
+  const formDieSuffix = formData['Die Suffix'];
+
+  // Propose the next die number once the key is complete, but only for a new
+  // request and only into an empty field — an existing request's number is
+  // already issued, and overwriting it would orphan the die's history.
+  useEffect(() => {
+    if (editingRequest) return;
+    const profile = (formProfile || '').trim();
+    const press = (formPress || '').trim();
+    const plant = (formPlant || '').trim();
+    if (!profile || !press || !plant) return;
+    if ((formDieSuffix || '').trim()) return;
+
+    let cancelled = false;
+    backupRequestsAPI.nextDieNumber({ plant, profile, press })
+      .then((result) => {
+        if (cancelled || !result?.dieNo) return;
+        setFormData((prev) => (
+          (prev['Die Suffix'] || '').trim()
+            ? prev
+            : { ...prev, 'Die Suffix': splitDieNo(result.dieNo).suffix }
+        ));
+        setDieNoBasis(result.basis);
+      })
+      .catch((err) => console.error('Next die number lookup failed:', err));
+    return () => { cancelled = true; };
+  }, [formPlant, formProfile, formPress, formDieSuffix, editingRequest]);
 
   const pressCodeByName = useMemo(() => {
     const map = {};
@@ -340,9 +376,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
   const openEditModal = (request) => {
     setEditingRequest(request);
+    setDieNoBasis(null);
     setFormData({
       'Plant': request['Plant'] || '',
-      'DIE NO': request['DIE NO'] || '',
+      'Profile': splitDieNo(request['DIE NO']).profile,
+      'Die Suffix': splitDieNo(request['DIE NO']).suffix,
       'Customer': request['Customer'] || '',
       'Press': request['Press'] || '',
       'Cavity': request['Cavity'] ?? '',
@@ -359,15 +397,15 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     setShowModal(true);
   };
 
-  const handleDieBlur = async () => {
-    const die = (formData['DIE NO'] || '').trim();
+  const handleProfileBlur = async () => {
+    const profile = (formData['Profile'] || '').trim();
     const existingCustomer = (formData['Customer'] || '').trim();
 
-    checkDuplicateDie(die);
+    checkDuplicateDie(composeDieNo(profile, formData['Die Suffix']));
 
-    if (!die || existingCustomer) return;
+    if (!profile || existingCustomer) return;
     try {
-      const result = await profilesAPI.lookup(die);
+      const result = await profilesAPI.lookup(profile);
       if (result?.customer_name) {
         setFormData(prev => ({ ...prev, 'Customer': result.customer_name }));
       }
@@ -377,7 +415,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   };
 
   const handleSave = async () => {
-    const die = (formData['DIE NO'] || '').trim();
+    const die = composeDieNo(formData['Profile'], formData['Die Suffix']);
 
     // Block duplicates — a die number with an existing backup request or die order cannot be re-used.
     const duplicateWarning = getDuplicateDieWarning(die);
@@ -412,7 +450,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
         try { await profilesAPI.save(die, customer); } catch (e) { console.error('Save profile failed:', e); }
       }
 
-      const payload = { ...formData, 'Customer': customer };
+      // formData now carries Profile and Die Suffix; the API and the database
+      // still take one composed die_no.
+      const payload = { ...formData, 'Customer': customer, 'DIE NO': die };
 
       if (editingRequest) {
         await backupRequestsAPI.update(editingRequest.id, payload);
@@ -1008,19 +1048,44 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                 </select>
               </div>
 
+              {/* PROFILE */}
+              <div>
+                <label style={labelStyle} htmlFor="backupdierequests-profile">PROFILE</label>
+                <input id="backupdierequests-profile"
+                  type="text"
+                  value={formData['Profile']}
+                  onChange={(e) => { setFormData({ ...formData, 'Profile': e.target.value }); if (dieWarning) setDieWarning(''); }}
+                  onBlur={handleProfileBlur}
+                  style={inputStyle}
+                  placeholder="e.g. 29663"
+                />
+              </div>
+
               {/* DIE NO */}
               <div>
-                <label style={labelStyle} htmlFor="backupdierequests-die-no">DIE NO</label>
+                <label style={labelStyle} htmlFor="backupdierequests-die-no">
+                  DIE NO
+                  {dieNoBasis === null && (formData['Die Suffix'] || '').trim() && (
+                    <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>
+                      first die on this press
+                    </span>
+                  )}
+                  {dieNoBasis && (
+                    <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>
+                      next after {dieNoBasis.die_no}
+                    </span>
+                  )}
+                </label>
                 <input id="backupdierequests-die-no"
                   type="text"
-                  value={formData['DIE NO']}
-                  onChange={(e) => { setFormData({ ...formData, 'DIE NO': e.target.value }); if (dieWarning) setDieWarning(''); }}
-                  onBlur={handleDieBlur}
+                  value={formData['Die Suffix']}
+                  onChange={(e) => { setFormData({ ...formData, 'Die Suffix': e.target.value }); if (dieWarning) setDieWarning(''); }}
+                  onBlur={() => checkDuplicateDie(composeDieNo(formData['Profile'], formData['Die Suffix']))}
                   style={{
                     ...inputStyle,
                     border: dieWarning ? '1px solid #F59E0B' : inputStyle.border,
                   }}
-                  placeholder="Enter die number"
+                  placeholder="e.g. 253"
                 />
                 {dieWarning && (
                   <div style={{
@@ -1188,7 +1253,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
             <FrozenDesignBanner
               infoOnly
-              profile={extractProfileFromDie(formData['DIE NO'])}
+              profile={extractProfileFromDie(formData['Profile'])}
               plant={formData['Plant']}
               press={formData['Press']}
               cavity={formData['Cavity']}
