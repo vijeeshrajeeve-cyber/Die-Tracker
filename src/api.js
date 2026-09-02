@@ -496,6 +496,13 @@ export const backupRequestsAPI = {
         return apiRequest('/backup-requests');
     },
 
+    nextDieNumber: async ({ plant, profile, press }) => {
+        const query = new URLSearchParams({
+            plant: plant ?? '', profile: profile ?? '', press: press ?? '',
+        });
+        return apiRequest(`/backup-requests/next-die-number?${query}`);
+    },
+
     create: async (request) => {
         return apiRequest('/backup-requests', {
             method: 'POST',

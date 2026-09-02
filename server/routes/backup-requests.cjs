@@ -7,6 +7,7 @@ const fdService = require('../services/frozenDesigns.cjs');
 const fdStore = require('../services/frozenDesignStorage.cjs');
 const { pdfPathsFromFiles, mergePdfs } = require('../services/frozenDesignMerge.cjs');
 const { findDieListMatch, findRecentOrderMatch } = require('../services/dieOrderPrefill.cjs');
+const { nextDieNumber, dieNoExistsInDieList } = require('../services/dieNumber.cjs');
 
 const router = express.Router();
 
@@ -97,10 +98,36 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Proposes the next die number for the New Backup Request form: the highest
+// suffix already used for this plant + profile + press, plus one.
+router.get('/next-die-number', async (req, res) => {
+    try {
+        const result = await nextDieNumber(pool, {
+            plant: req.query.plant,
+            profile: req.query.profile,
+            press: req.query.press,
+        });
+        res.json(result || { dieNo: null, basis: null });
+    } catch (error) {
+        console.error('Next die number lookup error:', error);
+        res.status(500).json({ error: 'Next die number lookup failed' });
+    }
+});
+
 // Create backup request
 router.post('/', requestValidation, handleValidationErrors, async (req, res) => {
     try {
         const data = req.body;
+
+        // The client blocks duplicates against requests and orders, which it
+        // holds in memory. It cannot hold 44,669 rows of existing_die_details,
+        // so a number that collides with a physical die is caught here.
+        const dieNo = data['DIE NO'];
+        if (dieNo && await dieNoExistsInDieList(pool, dieNo)) {
+            return res.status(409).json({
+                error: `Die ${dieNo} already exists in the die list for this plant. Choose a different die number.`,
+            });
+        }
 
         const result = await pool.query(`
             INSERT INTO backup_die_requests (

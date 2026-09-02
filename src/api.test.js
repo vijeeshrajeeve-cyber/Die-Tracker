@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { frozenDesignsAPI, existingDataAPI } = await import('./api.js');
+const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -124,4 +124,30 @@ test('matchDie passes both null sources through unchanged', async () => {
   const result = await existingDataAPI.matchDie({ plant: 'GEX 01', profile: '29663', press: 'PRESS 2', cavity: 2 });
   assert.equal(result.order, null);
   assert.equal(result.dieList, null);
+});
+
+test('nextDieNumber sends plant, profile and press as query parameters', async () => {
+  let seenUrl = null;
+  globalThis.fetch = async (url) => {
+    seenUrl = url;
+    return new Response(JSON.stringify({ dieNo: '29663-253', basis: null }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  await backupRequestsAPI.nextDieNumber({ plant: 'GEX 01', profile: '29663', press: 'PRESS 2' });
+  assert.match(seenUrl, /\/backup-requests\/next-die-number\?/);
+  assert.match(seenUrl, /plant=GEX\+01/);
+  assert.match(seenUrl, /profile=29663/);
+  assert.match(seenUrl, /press=PRESS\+2/);
+});
+
+test('nextDieNumber returns the proposal and its basis', async () => {
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ dieNo: '29663-253', basis: { source: 'backup request', die_no: '29663-252' } }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+  const result = await backupRequestsAPI.nextDieNumber({ plant: 'GEX 01', profile: '29663', press: 'PRESS 2' });
+  assert.equal(result.dieNo, '29663-253');
+  assert.equal(result.basis.die_no, '29663-252');
 });
