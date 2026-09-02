@@ -345,6 +345,7 @@ CREATE TABLE IF NOT EXISTS existing_die_details (
 );
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_plant ON existing_die_details(plant);
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_die_no ON existing_die_details(die_no);
+CREATE INDEX IF NOT EXISTS idx_existing_die_details_profile ON existing_die_details(profile_number);
 
 -- Uploaded existing production data by plant
 CREATE TABLE IF NOT EXISTS existing_production_data (
