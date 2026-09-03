@@ -1,4 +1,5 @@
 'use strict';
+const { INACTIVE_DIE_STATUSES, activeDieClause } = require('./dieStatus.cjs');
 
 // Data behind the J-file's "No. of Active Dies", "Extruded Volume on Active
 // Dies" and "Previous suppliers" fields. Kept out of jFileTemplate.cjs, which
@@ -43,13 +44,30 @@ function dieKey(dieNo) {
 // Status, tonnage and supplier are real columns because the import normalises
 // them from either plant's spelling — DieStatus/Tonnage/NameSupplier at GEX-01,
 // DescrStatus/QtyKgGross/DescrSupplier at GEX-2.
+//
+// "Active" here is the same question the New Backup Request form asks as "Die
+// Available", so both read one list — see services/dieStatus.cjs. That list
+// also excludes dies sent to another plant, which a supplier-facing form must
+// not present as ours to run.
 function queryDieListActive(pool, prof) {
   return pool.query(
     `SELECT die_no, tonnage, supplier
      FROM existing_die_details
      WHERE regexp_replace(profile_number, '^0+', '') = $1
-       AND upper(COALESCE(die_status, '')) NOT IN ('SCRAPPED', 'HOLD')
+       AND ${activeDieClause(2)}
      ORDER BY die_no`,
+    [prof, INACTIVE_DIE_STATUSES]
+  );
+}
+
+// Every die number the plant has for this profile, whatever its status. Orders
+// are matched against this rather than against the active rows: a scrapped die
+// still has its old order, and matching on the active set alone would let that
+// order put the scrapped die back on the form as active.
+function queryDieListAllNumbers(pool, prof) {
+  return pool.query(
+    `SELECT die_no FROM existing_die_details
+     WHERE regexp_replace(profile_number, '^0+', '') = $1`,
     [prof]
   );
 }
@@ -99,8 +117,9 @@ async function collectJFileData(pool, profileOrDie) {
   const prof = stripProfile(String(profileOrDie == null ? '' : profileOrDie).split('-')[0]);
   if (!prof) return { activeDies: [], prevSuppliers: [] };
 
-  const [dieRes, orderRes, dieSupRes, orderSupRes] = await Promise.all([
+  const [dieRes, allDieRes, orderRes, dieSupRes, orderSupRes] = await Promise.all([
     queryDieListActive(pool, prof),
+    queryDieListAllNumbers(pool, prof),
     queryOrdersInProcess(pool, prof),
     queryDieListSuppliers(pool, prof),
     queryOrderSuppliers(pool, prof),
@@ -122,7 +141,7 @@ async function collectJFileData(pool, profileOrDie) {
   // An order earns a row only when the die list has never heard of it. The list
   // is a periodic export, so anything ordered since it was taken is missing —
   // but a die it already carries (often as IN ORDER) must not appear twice.
-  const seen = new Set(dieRes.rows.map((r) => dieKey(r.die_no)));
+  const seen = new Set(allDieRes.rows.map((r) => dieKey(r.die_no)));
   for (const r of orderRes.rows) {
     if (!r.die_no) continue;
     const key = dieKey(r.die_no);

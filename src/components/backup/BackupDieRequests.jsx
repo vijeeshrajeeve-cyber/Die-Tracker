@@ -99,10 +99,12 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [orderSources, setOrderSources] = useState({});
   const [dieNoBasis, setDieNoBasis] = useState(null);
   const [cavityBasis, setCavityBasis] = useState(null);
+  const [availableBasis, setAvailableBasis] = useState(null);
   // The last values this component proposed. Let the effect tell its own
   // suggestion (safe to replace) from something the user typed (never touch).
   const proposedSuffixRef = useRef('');
   const proposedCavityRef = useRef('');
+  const proposedAvailableRef = useRef('');
   const [orderFileHandle, setOrderFileHandle] = useState(null);
   // Fallback File (no write-back handle) for browsers without the File System Access API.
   const [orderFile, setOrderFile] = useState(null);
@@ -143,6 +145,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const formPress = formData['Press'];
   const formDieSuffix = formData['Die Suffix'];
   const formCavity = formData['Cavity'];
+  const formAvailable = formData['Die Available'];
 
   // Propose the die number and cavity once the key is complete, but only for a
   // new request — an existing request's number is already issued, and
@@ -162,9 +165,11 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
     const heldSuffix = String(formDieSuffix ?? '').trim();
     const heldCavity = String(formCavity ?? '').trim();
+    const heldAvailable = String(formAvailable ?? '').trim();
     const suffixIsOurs = !heldSuffix || heldSuffix === proposedSuffixRef.current;
     const cavityIsOurs = !heldCavity || heldCavity === proposedCavityRef.current;
-    if (!suffixIsOurs && !cavityIsOurs) return;
+    const availableIsOurs = !heldAvailable || heldAvailable === proposedAvailableRef.current;
+    if (!suffixIsOurs && !cavityIsOurs && !availableIsOurs) return;
 
     let cancelled = false;
     backupRequestsAPI.nextDieNumber({ plant, profile, press })
@@ -186,12 +191,22 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
           const value = result.cavity ? result.cavity.value : '';
           proposedCavityRef.current = value;
           setFormData((prev) => ({ ...prev, 'Cavity': value }));
-          setCavityBasis(result.cavity ? result.cavity.die_no : null);
+          setCavityBasis(result.cavity ? `from die list ${result.cavity.die_no}` : null);
+        }
+
+        // How many dies of this profile are still ours to run on this press.
+        // Zero is a real and useful answer — it is usually why a backup is
+        // being raised — so it is filled rather than left blank.
+        if (availableIsOurs && Number.isFinite(result.available)) {
+          const value = String(result.available);
+          proposedAvailableRef.current = value;
+          setFormData((prev) => ({ ...prev, 'Die Available': value }));
+          setAvailableBasis(`${result.available === 1 ? 'die' : 'dies'} usable on this press`);
         }
       })
       .catch((err) => console.error('Next die number lookup failed:', err));
     return () => { cancelled = true; };
-  }, [formPlant, formProfile, formPress, formDieSuffix, formCavity, editingRequest]);
+  }, [formPlant, formProfile, formPress, formDieSuffix, formCavity, formAvailable, editingRequest]);
 
   const pressCodeByName = useMemo(() => {
     const map = {};
@@ -288,8 +303,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     setDieWarning('');
     setDieNoBasis(null);
     setCavityBasis(null);
+    setAvailableBasis(null);
     proposedSuffixRef.current = '';
     proposedCavityRef.current = '';
+    proposedAvailableRef.current = '';
     setShowModal(true);
   };
 
@@ -411,8 +428,10 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     setEditingRequest(request);
     setDieNoBasis(null);
     setCavityBasis(null);
+    setAvailableBasis(null);
     proposedSuffixRef.current = '';
     proposedCavityRef.current = '';
+    proposedAvailableRef.current = '';
     setFormData({
       'Plant': request['Plant'] || '',
       'Profile': splitDieNo(request['DIE NO']).profile,
@@ -1182,7 +1201,7 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
                   Cavity
                   {cavityBasis && (
                     <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>
-                      from die list {cavityBasis}
+                      {cavityBasis}
                     </span>
                   )}
                 </label>
@@ -1214,13 +1233,23 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
 
               {/* Die Available */}
               <div>
-                <label style={labelStyle} htmlFor="backupdierequests-die-available">Die Available</label>
+                <label style={labelStyle} htmlFor="backupdierequests-die-available">
+                  Die Available
+                  {availableBasis && (
+                    <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>
+                      {availableBasis}
+                    </span>
+                  )}
+                </label>
                 <input id="backupdierequests-die-available"
                   type="text"
                   value={formData['Die Available']}
-                  onChange={(e) => setFormData({ ...formData, 'Die Available': e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, 'Die Available': e.target.value });
+                    setAvailableBasis(null);
+                  }}
                   style={inputStyle}
-                  placeholder="e.g. Yes / No"
+                  placeholder="No. of usable dies"
                 />
               </div>
 

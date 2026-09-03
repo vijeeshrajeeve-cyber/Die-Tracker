@@ -4,12 +4,13 @@ const assert = require('node:assert/strict');
 const d = require('./dieNumber.cjs');
 
 // Mock client that answers each table with canned rows.
-function makeClient({ dies = [], orders = [], requests = [] } = {}) {
+function makeClient({ dies = [], orders = [], requests = [], available = [{ count: 0 }] } = {}) {
   const calls = [];
   return {
     calls,
     query: async (sql, params) => {
       calls.push({ sql, params });
+      if (sql.includes('COUNT(')) return { rows: available, rowCount: available.length };
       if (sql.includes('existing_die_details')) return { rows: dies, rowCount: dies.length };
       if (sql.includes('die_orders')) return { rows: orders, rowCount: orders.length };
       if (sql.includes('backup_die_requests')) return { rows: requests, rowCount: requests.length };
@@ -149,6 +150,38 @@ test('a profile with no history has no cavity either', async () => {
   const result = await d.nextDieNumber(client, { plant: 'GEX 2', profile: '51150', press: 'PRESS 8' });
   assert.equal(result.dieNo, '51150-801');
   assert.equal(result.cavity, null);
+});
+
+// ── Die Available ─────────────────────────────────────────────────────────
+
+// Counted on the press column, not on the sequence candidates: those are
+// filtered to 3-digit suffixes and would miss a die like 051150-3501.
+test('nextDieNumber reports how many dies are still usable on this press', async () => {
+  const client = makeClient({ available: [{ count: 7 }] });
+  const result = await d.nextDieNumber(client, { plant: 'GEX 2', profile: '051150', press: 'PRESS 8' });
+  assert.equal(result.available, 7);
+});
+
+test('the availability query excludes the four inactive statuses on the chosen press', async () => {
+  const client = makeClient({ available: [{ count: 0 }] });
+  await d.nextDieNumber(client, { plant: 'GEX 2', profile: '051150', press: 'PRESS 8' });
+  const q = client.calls.find((c) => c.sql.includes('COUNT('));
+  assert.deepEqual(q.params[2], ['SCRAPPED', 'HOLD', 'TRANSFERRED', 'SENT TO TALEX']);
+  assert.deepEqual(q.params.slice(0, 2), ['51150', 'PRESS 8']);
+  assert.match(q.sql, /upper\(trim\(press\)\) = upper\(trim\(\$2\)\)/);
+});
+
+// GEX-01's rows predate the status column, so every die_status there is NULL.
+test('a die with no recorded status is not counted as available', async () => {
+  const client = makeClient({ available: [{ count: 0 }] });
+  await d.nextDieNumber(client, { plant: 'GEX 01', profile: '29663', press: 'PRESS 2' });
+  const q = client.calls.find((c) => c.sql.includes('COUNT('));
+  assert.match(q.sql, /NULLIF\(die_status, ''\) IS NOT NULL/);
+});
+
+test('available is null when the key is unusable', async () => {
+  const client = makeClient({});
+  assert.equal(await d.nextDieNumber(client, { plant: 'GEX 2', profile: '', press: 'PRESS 8' }), null);
 });
 
 // Requests write '29663-213'; the die list stores '29663_213' and may pad the

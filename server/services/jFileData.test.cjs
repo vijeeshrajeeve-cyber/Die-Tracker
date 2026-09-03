@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const d = require('./jFileData.cjs');
 
 // The supplier lookups are the DISTINCT ones; the row lookups are not.
-function makePool({ dies = [], orders = [], dieSuppliers = [], orderSuppliers = [] } = {}) {
+function makePool({ dies = [], orders = [], dieSuppliers = [], orderSuppliers = [], allDieNos = null } = {}) {
   const calls = [];
   return {
     calls,
@@ -12,7 +12,12 @@ function makePool({ dies = [], orders = [], dieSuppliers = [], orderSuppliers = 
       calls.push({ sql, params });
       const distinct = sql.includes('DISTINCT');
       if (sql.includes('existing_die_details')) {
-        return distinct ? { rows: dieSuppliers.map((s) => ({ supplier: s })) } : { rows: dies };
+        if (distinct) return { rows: dieSuppliers.map((s) => ({ supplier: s })) };
+        // The "every die number for this profile" lookup selects die_no alone.
+        if (/SELECT\s+die_no\s+FROM/.test(sql)) {
+          return { rows: (allDieNos ?? dies.map((d2) => d2.die_no)).map((n) => ({ die_no: n })) };
+        }
+        return { rows: dies };
       }
       if (sql.includes('die_orders')) {
         return distinct ? { rows: orderSuppliers.map((s) => ({ supplier: s })) } : { rows: orders };
@@ -36,11 +41,15 @@ test('canonicalSupplierName keeps a name it has no mapping for', () => {
   assert.equal(d.canonicalSupplierName(null), null);
 });
 
-test('the die list query excludes scrapped and held dies', async () => {
+// "Active" here and "Die Available" on the request form are the same question,
+// so both read the one list in services/dieStatus.cjs — including dies sent to
+// another plant, which must not reach a supplier-facing form as ours to run.
+test('the die list query uses the shared inactive-status list', async () => {
   const pool = makePool({ dies: [{ die_no: '29663_210', tonnage: '91805', supplier: 'PDTMC' }] });
   await d.collectJFileData(pool, '29663-252');
   const dieQuery = pool.calls.find((c) => c.sql.includes('existing_die_details') && !c.sql.includes('DISTINCT'));
-  assert.match(dieQuery.sql, /NOT IN \('SCRAPPED', 'HOLD'\)/);
+  assert.deepEqual(dieQuery.params[1], ['SCRAPPED', 'HOLD', 'TRANSFERRED', 'SENT TO TALEX']);
+  assert.match(dieQuery.sql, /NULLIF\(die_status, ''\) IS NOT NULL/);
 });
 
 test('active dies carry their tonnage and a canonical supplier', async () => {
@@ -88,6 +97,23 @@ test('a die in both sources is listed once, whatever the spelling', async () => 
   });
   const { activeDies } = await d.collectJFileData(pool, '29663-252');
   assert.deepEqual(activeDies.map((a) => a.die_no), ['29663_603']);
+});
+
+// A scrapped die still has its old order row. Matching orders against the
+// ACTIVE dies only would let that order put the scrapped die back on the form.
+test('an order for a die the plant has already scrapped is not resurrected', async () => {
+  const pool = makePool({
+    dies: [{ die_no: '051150-815', tonnage: '100', supplier: 'ALMAX' }],
+    allDieNos: ['051150-815', '051150-3501', '051150-807'],
+    orders: [
+      { die_no: '051150-3501', supplier: 'PDTMC', status: 'DONE' },
+      { die_no: '051150-807', supplier: 'PDTMC', status: 'DONE' },
+      { die_no: '051150-901', supplier: 'WEFA', status: 'PENDING FOR ORDERING' },
+    ],
+  });
+  const { activeDies } = await d.collectJFileData(pool, '051150-818');
+  assert.deepEqual(activeDies.map((a) => a.die_no), ['051150-815', '051150-901'],
+    'only the genuinely unknown order earns a row');
 });
 
 test('a die with no recorded tonnage reports null rather than zero', async () => {

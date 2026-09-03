@@ -1,6 +1,7 @@
 'use strict';
 const { pressNumber, stripProfile } = require('./dieOrderPrefill.cjs');
 const { normalizePlant } = require('./frozenDesigns.cjs');
+const { INACTIVE_DIE_STATUSES, activeDieClause } = require('./dieStatus.cjs');
 
 // A die number is <profile>-<press number><2-digit sequence>: 29663-253 is
 // press 2, sequence 53. The die list writes the same shape with an underscore
@@ -48,6 +49,21 @@ async function collectCandidates(client, prof, pressNo) {
   ];
 }
 
+// How many dies of this profile are still ours to run on this press. Counted on
+// the press column rather than the sequence candidates, which are filtered to
+// 3-digit suffixes and would miss a die like 051150-3501.
+async function countAvailableDies(client, prof, pressName) {
+  const { rows } = await client.query(
+    `SELECT COUNT(*)::int AS count
+     FROM existing_die_details
+     WHERE regexp_replace(profile_number, '^0+', '') = $1
+       AND upper(trim(press)) = upper(trim($2))
+       AND ${activeDieClause(3)}`,
+    [prof, pressName, INACTIVE_DIE_STATUSES]
+  );
+  return rows[0]?.count ?? 0;
+}
+
 async function nextDieNumber(client, { plant, profile, press }) {
   const prof = stripProfile(profile);
   // Matching strips the padding; the proposal keeps the plant's own spelling,
@@ -55,6 +71,8 @@ async function nextDieNumber(client, { plant, profile, press }) {
   const asWritten = String(profile == null ? '' : profile).trim() || prof;
   const pressNo = pressNumber(press);
   if (!prof || pressNo === null) return null;
+
+  const available = await countAvailableDies(client, prof, String(press).trim());
 
   const want = normalizePlant(plant);
   const rows = (await collectCandidates(client, prof, pressNo))
@@ -92,7 +110,7 @@ async function nextDieNumber(client, { plant, profile, press }) {
 
   // A profile with no history on this press starts the sequence at 01.
   const next = highest === null ? (pressNo * 100) + 1 : highest + 1;
-  return { dieNo: `${asWritten}-${next}`, basis, cavity };
+  return { dieNo: `${asWritten}-${next}`, basis, cavity, available };
 }
 
 // The client-side duplicate check can hold every request and order in memory
@@ -114,4 +132,4 @@ async function dieNoExistsInDieList(client, dieNo) {
   return rows.length > 0;
 }
 
-module.exports = { parseSuffix, nextDieNumber, dieNoExistsInDieList };
+module.exports = { parseSuffix, nextDieNumber, dieNoExistsInDieList, countAvailableDies };
