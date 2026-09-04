@@ -196,8 +196,13 @@ const parseOrderCalendarDate = (raw) => {
 
   // Last resort: a format none of the branches above recognised, such as
   // "Sep 4 2026" or "2026/09/04". The spec has Date.parse read those as LOCAL
-  // time, so reading the day back with toISOString() returned the day before
-  // for every one of them — not only at night, but at any hour.
+  // time, so reading the day back with toISOString() returned the day before.
+  //
+  // No stored data was affected by that: db.cjs sets a type parser returning
+  // DATE columns as raw 'YYYY-MM-DD', and every caller here reads a DATE
+  // column, so real values are always caught by the ISO branch above. This
+  // branch is the junk-tolerance the docstring promises, and localDay keeps it
+  // honest if it ever does fire.
   const t = Date.parse(s0);
   if (!Number.isNaN(t)) {
     const d = new Date(t);

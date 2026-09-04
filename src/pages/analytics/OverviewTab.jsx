@@ -27,6 +27,9 @@ const parseOrderCalendarDate = (raw) => {
   // back with toISOString() returned the day before. This parser must agree
   // with the one in DieOrderingSystem.jsx or analytics and the register
   // disagree about which month an order falls in.
+  //
+  // Unreachable for real data — DATE columns arrive as raw 'YYYY-MM-DD' and
+  // are caught above — so this is junk tolerance, not a live code path.
   const t = Date.parse(s0);
   if (!Number.isNaN(t)) {
     const d = new Date(t);
