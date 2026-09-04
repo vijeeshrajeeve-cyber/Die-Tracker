@@ -6,6 +6,7 @@ import { formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
 import CorrectorSelect from '../components/ui/CorrectorSelect';
 import TrialsSection from '../components/sample/TrialsSection';
+import { trialCountFor } from '../utils/trials';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
@@ -21,7 +22,6 @@ const SF_DISPLAY_TO_SNAKE = {
   'Ascona Reference': 'ascona_reference',
   'Submission Date': 'submission_date',
   'Sample Approval Date': 'sample_approval_date',
-  'No of Trial': 'no_of_trial',
   'Remark': 'remark',
   'Sample Status': 'status',
   'Corrector': 'corrector',
@@ -57,7 +57,6 @@ const formToOrderFields = (form) => ({
   'Submission Date': form.submission_date || '',
   'Sample Approval Date': form.sample_approval_date || '',
   'Sample Status': form.status || 'Pending',
-  'No of Trial': form.no_of_trial || 0,
   'Remark': form.remark || '',
   'Corrector': form.corrector || '',
 });
@@ -74,12 +73,11 @@ const formToSfFields = (form) => ({
   sample_approval_date: form.sample_approval_date || '',
   delay_days: computeSfDelay(form.die_received_date, form.submission_date),
   status: form.status || 'Pending',
-  no_of_trial: form.no_of_trial || 0,
   remark: form.remark || '',
   corrector: form.corrector || '',
 });
 
-const EMPTY_FORM = { die: '', plant: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' };
+const EMPTY_FORM = { die: '', plant: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', remark: '', corrector: '' };
 
 export default function SampleFollowupPage({
   sampleFollowups,
@@ -165,7 +163,10 @@ export default function SampleFollowupPage({
     }
     const ok = await dialogs.confirm({
       title: 'Clear sample followup data',
-      message: 'Only the sample and trial fields are reset. The underlying die order is kept.',
+      // Logged trials survive this: they are a record of what happened, and the
+      // same reason they are admin-only to delete applies here. Deleting the die
+      // order itself still cascades them away.
+      message: 'Only the sample fields are reset. Logged trials and the underlying die order are kept.',
       confirmLabel: 'Clear fields',
       tone: 'warning',
     });
@@ -178,7 +179,6 @@ export default function SampleFollowupPage({
         'Sample Approval Date': null,
         'Ascona Reference': 'No',
         'Sample Status': '',
-        'No of Trial': 0,
         'Remark': '',
         'Press': '',
       });
@@ -432,14 +432,17 @@ export default function SampleFollowupPage({
                         </span>
                       </td>
                       <td style={{ ...td, textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          defaultValue={sf.no_of_trial || 0}
-                          onBlur={(e) => handleSfInlineSave(sf, 'No of Trial', parseInt(e.target.value, 10) || 0)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                          style={{ width: '60px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', fontFamily: 'monospace' }}
-                        />
+                        {(() => {
+                          const { count, isLegacy } = trialCountFor(trialsOf(sf), sf.no_of_trial);
+                          return (
+                            <span
+                              title={isLegacy ? 'Recorded before trials were logged individually' : 'Counted from the logged trials'}
+                              style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: isLegacy ? theme.textMuted : theme.text, fontStyle: isLegacy ? 'italic' : 'normal' }}
+                            >
+                              {count}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ ...td, minWidth: '160px' }}>
                         <input
@@ -457,7 +460,7 @@ export default function SampleFollowupPage({
                           <button
                             onClick={() => {
                               setEditingSampleFollowup(sf);
-                              setSampleFollowupForm({ die: sf.die || '', plant: sf.plant || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' });
+                              setSampleFollowupForm({ die: sf.die || '', plant: sf.plant || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', remark: sf.remark || '', corrector: sf.corrector || '' });
                               setShowSampleFollowupForm(true);
                             }}
                             style={{ padding: '6px', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
@@ -519,7 +522,6 @@ export default function SampleFollowupPage({
                 { key: 'sample_approval_date', label: 'Sample Approval Date', type: 'date' },
                 { key: 'delay_days', label: 'Delay Days', type: 'number' },
                 { key: 'status', label: 'Status', type: 'select', options: SF_STATUSES },
-                { key: 'no_of_trial', label: 'No. of Trial', type: 'number' },
                 { key: 'corrector', label: 'Corrector', type: 'corrector' },
               ].map(field => (
                 <div key={field.key}>
