@@ -120,8 +120,16 @@ A fixed list in code, one reason per trial, required when the result is Not OK:
 fit; the person explains in Comments. If `Other` starts appearing often, that is
 the signal the list needs a new entry.
 
-Defined as a single exported constant shared by the frontend dropdown and the
-backend validator, so the two can never disagree about what is allowed.
+The frontend dropdown and the backend validator hold separate copies — one is
+ESM for Vite, one is CommonJS for the server, and neither can import the other.
+A test reads both and fails if they ever drift, so a reason added to one and not
+the other cannot ship.
+
+Switching a trial from Not OK back to OK **drops the reason rather than
+erroring**. That sequence is ordinary — someone picks Not OK, chooses a reason,
+then corrects themselves — and the database forbids storing a reason on a
+passing trial anyway, so refusing the edit would only make the user clear a
+field the system is about to ignore.
 
 ## User interface
 
@@ -191,8 +199,10 @@ user is looking at.
 `server/services/sampleTrials.test.cjs`:
 
 - a Not OK trial without a reason is rejected
-- an OK trial carrying a reason is rejected
+- an OK trial carrying a reason has it dropped, not stored
 - a reason outside the fixed list is rejected
+- every reason in the list is accepted, and the list is exactly the agreed
+  vocabulary in the agreed order
 - a future trial date is rejected; today is accepted
 - next trial number is max + 1, and 1 for a die with no trials
 - the derived count prefers logged trials and falls back to the legacy number
