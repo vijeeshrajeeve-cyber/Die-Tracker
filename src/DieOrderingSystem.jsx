@@ -2145,6 +2145,33 @@ export default function DieOrderingSystem() {
     }
   };
 
+  // Like handleInlineFieldSave but for several fields written together, so a
+  // pair that must agree (a date and the status it implies) can never be half
+  // saved. Writes one change-log entry per field, matching what the audit trail
+  // already records for single edits. Deliberately silent: the caller shows a
+  // toast that describes the whole action.
+  const handleOrderFieldsSave = async (order, fields) => {
+    const changed = Object.entries(fields).filter(([field, value]) => order[field] !== value);
+    if (changed.length === 0) return;
+
+    const changeLog = changed.map(([field, value]) => ({
+      date: new Date().toISOString().split('T')[0],
+      field,
+      oldValue: order[field] ?? '',
+      newValue: value,
+      changedBy: user?.username || 'unknown',
+      stage: order.STATUS,
+    }));
+
+    const patch = Object.fromEntries(changed);
+    await ordersAPI.patch(order.id, { ...patch, 'Change Log': changeLog });
+    setData(prev => prev.map(o => (
+      o.id === order.id
+        ? { ...o, ...patch, changeCount: (o.changeCount || 0) + changed.length }
+        : o
+    )));
+  };
+
   // Handle mandrels per cavity change - auto-calculates Total Mandrels
   const handleMandrelsChange = async (order, mandrelsPerCavity) => {
     const mpc = parseInt(mandrelsPerCavity, 10) || 0;
@@ -3114,6 +3141,7 @@ export default function DieOrderingSystem() {
               theme={theme}
               setToast={setToast}
               handleInlineFieldSave={handleInlineFieldSave}
+              handleOrderFieldsSave={handleOrderFieldsSave}
               fetchOrders={fetchOrders}
               fetchSampleFollowups={fetchSampleFollowups}
               sampleTrials={sampleTrials}

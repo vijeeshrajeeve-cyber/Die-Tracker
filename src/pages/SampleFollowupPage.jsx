@@ -93,6 +93,7 @@ export default function SampleFollowupPage({
   theme,
   setToast,
   handleInlineFieldSave,
+  handleOrderFieldsSave,
   fetchOrders,
   fetchSampleFollowups,
   sampleTrials,
@@ -211,6 +212,23 @@ export default function SampleFollowupPage({
       setToast({ message: `Failed to save ${displayField}`, type: 'error' });
       setTimeout(() => setToast(null), 5000);
     }
+  };
+
+  // Writes a date and (optionally) the status it implies, in one request, down
+  // whichever path this row came from. `newStatus` of null means the ladder
+  // refused to move the record — the date still saves.
+  const saveSfFields = async (sf, { dateField, snakeDateField, dateValue, newStatus }) => {
+    if (sf._source === 'order') {
+      const fields = { [dateField]: dateValue };
+      if (newStatus) fields['Sample Status'] = newStatus;
+      await handleOrderFieldsSave(sf._order, fields);
+      return;
+    }
+    const raw = sf._raw;
+    const updated = { ...raw, [snakeDateField]: dateValue };
+    if (newStatus) updated.status = newStatus;
+    await sampleFollowupsAPI.update(raw.id, updated);
+    setSampleFollowupsStandalone(prev => prev.map(r => (r.id === raw.id ? updated : r)));
   };
 
   // A trial hangs off whichever table its followup came from. `null` means the
