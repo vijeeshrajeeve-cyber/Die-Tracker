@@ -6,6 +6,7 @@ import { formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
 import CorrectorSelect from '../components/ui/CorrectorSelect';
 import TrialsSection from '../components/sample/TrialsSection';
+import StampTodayButton from '../components/sample/StampTodayButton';
 import { trialCountFor } from '../utils/trials';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
@@ -38,6 +39,8 @@ const computeSfDelay = (received, submission) => {
   const diff = Math.floor((end.setHours(0, 0, 0, 0) - start.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
   return diff > 0 ? diff : 0;
 };
+
+const day = (v) => (v ? String(v).slice(0, 10) : '');
 
 const extractProfile = (dieNo) => {
   if (!dieNo) return '';
@@ -451,20 +454,44 @@ export default function SampleFollowupPage({
                         </select>
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <input
                           type="date"
-                          defaultValue={sf.submission_date ? String(sf.submission_date).split('T')[0] : ''}
+                          // Keyed on the value: these inputs are uncontrolled
+                          // (defaultValue), so React will not refresh them when
+                          // the stamp changes the underlying date. Changing the
+                          // key remounts the input with the new value.
+                          key={`sub-${sf.id}-${day(sf.submission_date)}`}
+                          defaultValue={day(sf.submission_date)}
                           onBlur={(e) => handleSfInlineSave(sf, 'Submission Date', e.target.value)}
                           style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                         />
+                          <StampTodayButton
+                            sf={sf} compact
+                            dateField="Submission Date" snakeDateField="submission_date"
+                            targetStatus="Sample Submitted" label="Submission date"
+                            currentDate={sf.submission_date} currentStatus={sf.status}
+                            onSave={saveSfFields} setToast={setToast}
+                          />
+                        </div>
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                        <input
-                          type="date"
-                          defaultValue={sf.sample_approval_date ? String(sf.sample_approval_date).split('T')[0] : ''}
-                          onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
-                          style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input
+                            type="date"
+                            key={`app-${sf.id}-${day(sf.sample_approval_date)}`}
+                            defaultValue={day(sf.sample_approval_date)}
+                            onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
+                            style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                          />
+                          <StampTodayButton
+                            sf={sf} compact
+                            dateField="Sample Approval Date" snakeDateField="sample_approval_date"
+                            targetStatus="Approved" label="Sample approval date"
+                            currentDate={sf.sample_approval_date} currentStatus={sf.status}
+                            onSave={saveSfFields} setToast={setToast}
+                          />
+                        </div>
                       </td>
                       <td style={{ ...td, textAlign: 'center' }}>
                         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: computeSfDelay(sf.die_received_date, sf.submission_date) > 0 ? '#EF4444' : '#10B981' }}>
@@ -570,7 +597,45 @@ export default function SampleFollowupPage({
                 { key: 'corrector', label: 'Corrector', type: 'corrector' },
               ].map(field => (
                 <div key={field.key}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
+                    {editingSampleFollowup && field.key === 'submission_date' && (
+                      <StampTodayButton
+                        sf={editingSampleFollowup}
+                        dateField="Submission Date" snakeDateField="submission_date"
+                        targetStatus="Sample Submitted" label="Submission date"
+                        currentDate={sampleFollowupForm.submission_date}
+                        currentStatus={sampleFollowupForm.status}
+                        setToast={setToast}
+                        onSave={async (sf, args) => {
+                          await saveSfFields(sf, args);
+                          setSampleFollowupForm(f => ({
+                            ...f,
+                            submission_date: args.dateValue,
+                            status: args.newStatus || f.status,
+                          }));
+                        }}
+                      />
+                    )}
+                    {editingSampleFollowup && field.key === 'sample_approval_date' && (
+                      <StampTodayButton
+                        sf={editingSampleFollowup}
+                        dateField="Sample Approval Date" snakeDateField="sample_approval_date"
+                        targetStatus="Approved" label="Sample approval date"
+                        currentDate={sampleFollowupForm.sample_approval_date}
+                        currentStatus={sampleFollowupForm.status}
+                        setToast={setToast}
+                        onSave={async (sf, args) => {
+                          await saveSfFields(sf, args);
+                          setSampleFollowupForm(f => ({
+                            ...f,
+                            sample_approval_date: args.dateValue,
+                            status: args.newStatus || f.status,
+                          }));
+                        }}
+                      />
+                    )}
+                  </div>
                   {field.type === 'corrector' ? (
                     <CorrectorSelect
                       value={sampleFollowupForm[field.key] || ''}
