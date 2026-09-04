@@ -2,10 +2,11 @@ const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const svc = require('../services/sampleTrials.cjs');
+const { todayLocal } = require('../services/dates.cjs');
 
 const router = express.Router();
 
-const today = () => svc.todayLocal();
+const today = () => todayLocal();
 
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);

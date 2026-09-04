@@ -57,7 +57,7 @@ const ChunkFallback = ({ theme }) => (
 import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
 import { BRAND, BRAND_ALPHA } from './utils/brand';
 import { correctorOptions } from './utils/correctorOptions';
-import { todayLocal } from './utils/today.js';
+import { todayLocal, localDay } from './utils/today.js';
 
 
 
@@ -194,11 +194,15 @@ const parseOrderCalendarDate = (raw) => {
     if (!Number.isNaN(Date.parse(head))) return head;
   }
 
+  // Last resort: a format none of the branches above recognised, such as
+  // "Sep 4 2026" or "2026/09/04". The spec has Date.parse read those as LOCAL
+  // time, so reading the day back with toISOString() returned the day before
+  // for every one of them — not only at night, but at any hour.
   const t = Date.parse(s0);
   if (!Number.isNaN(t)) {
     const d = new Date(t);
     const y = d.getFullYear();
-    if (y >= 1990 && y <= 2100) return d.toISOString().slice(0, 10);
+    if (y >= 1990 && y <= 2100) return localDay(d);
   }
   return null;
 };

@@ -11,7 +11,6 @@
 // This module owns the vocabulary and the rules. It never decides Sample
 // Status — a failed trial does not reject a sample; a person does.
 
-const { todayLocal } = require('./dates.cjs');
 
 const TRIAL_RESULTS = ['OK', 'Not OK'];
 
@@ -161,6 +160,6 @@ async function deleteTrial(client, id) {
 
 module.exports = {
   TRIAL_RESULTS, FAIL_REASONS, ISO_DATE, TRIAL_COLS,
-  normaliseDate, todayLocal, validateTrial, nextTrialNo,
+  normaliseDate, validateTrial, nextTrialNo,
   parentRef, listTrials, trialsForParent, createTrial, updateTrial, deleteTrial,
 };
