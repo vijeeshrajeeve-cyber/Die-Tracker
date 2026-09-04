@@ -226,6 +226,38 @@ CREATE TABLE IF NOT EXISTS sample_followups (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- One row per trial of a die sample. Two nullable parents because Sample
+-- Followup rows are a merge of two tables: dies that came through the order
+-- flow live in die_orders, records added by hand live in sample_followups. A
+-- generic parent_id + parent_type pair was rejected: Postgres cannot
+-- foreign-key it, so nothing would stop a trial pointing at a die that no
+-- longer exists.
+CREATE TABLE IF NOT EXISTS sample_trials (
+    id                 SERIAL PRIMARY KEY,
+    die_order_id       INTEGER REFERENCES die_orders(id) ON DELETE CASCADE,
+    sample_followup_id INTEGER REFERENCES sample_followups(id) ON DELETE CASCADE,
+    trial_no           INTEGER NOT NULL,
+    trial_date         DATE NOT NULL,
+    result             TEXT NOT NULL CHECK (result IN ('OK', 'Not OK')),
+    fail_reason        TEXT,
+    comments           TEXT,
+    created_by         INTEGER REFERENCES users(id),
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT sample_trials_one_parent CHECK (
+        (die_order_id IS NULL) <> (sample_followup_id IS NULL)
+    ),
+    CONSTRAINT sample_trials_reason_matches_result CHECK (
+        (result = 'Not OK' AND fail_reason IS NOT NULL)
+        OR (result = 'OK' AND fail_reason IS NULL)
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_order_no
+    ON sample_trials(die_order_id, trial_no) WHERE die_order_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_sf_no
+    ON sample_trials(sample_followup_id, trial_no) WHERE sample_followup_id IS NOT NULL;
+
 -- Seed suppliers
 INSERT INTO suppliers (name, region) VALUES
     ('ADEX', 'Europe'),
