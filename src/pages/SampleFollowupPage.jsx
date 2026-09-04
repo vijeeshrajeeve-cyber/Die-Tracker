@@ -246,26 +246,53 @@ export default function SampleFollowupPage({
   });
 
   const handleExport = async () => {
+    const followupColumns = [
+      { key: 'die', label: 'Die' },
+      { key: 'profile', label: 'Profile' },
+      { key: 'plant', label: 'Plant' },
+      { key: 'press', label: 'Press' },
+      { key: 'supplier', label: 'Supplier' },
+      { key: 'customer', label: 'Customer' },
+      { key: 'die_received_date', label: 'Die Received Date', format: 'date' },
+      { key: 'ascona_reference', label: 'Ascona Ref', format: (v) => v || 'No' },
+      { key: 'submission_date', label: 'Submission Date', format: 'date' },
+      { key: 'sample_approval_date', label: 'Sample Approval Date', format: 'date' },
+      { key: 'delay_days', label: 'Delay Days', format: (_, sf) => computeSfDelay(sf.die_received_date, sf.submission_date) },
+      { key: 'status', label: 'Status', format: (v) => v || 'Pending' },
+      { key: 'no_of_trial', label: 'No. of Trial', format: (v, sf) => trialCountFor(trialsOf(sf), v).count },
+      { key: 'remark', label: 'Remark' },
+      { key: 'corrector', label: 'Corrector' },
+    ];
+
+    // One row per trial across everything currently filtered on screen, so the
+    // export matches what the user is looking at.
+    const trialRows = filteredFollowups.flatMap(sf =>
+      trialsOf(sf).map(t => ({
+        die: sf.die, profile: sf.profile, plant: sf.plant, supplier: sf.supplier,
+        trial_no: t.trial_no, trial_date: t.trial_date, result: t.result,
+        fail_reason: t.fail_reason, comments: t.comments,
+      }))
+    );
+
     await exportToExcel({
-      rows: filteredFollowups,
       filename: 'sample_followups',
-      sheetName: 'Sample Followup',
-      columns: [
-        { key: 'die', label: 'Die' },
-        { key: 'profile', label: 'Profile' },
-        { key: 'plant', label: 'Plant' },
-        { key: 'press', label: 'Press' },
-        { key: 'supplier', label: 'Supplier' },
-        { key: 'customer', label: 'Customer' },
-        { key: 'die_received_date', label: 'Die Received Date', format: 'date' },
-        { key: 'ascona_reference', label: 'Ascona Ref', format: (v) => v || 'No' },
-        { key: 'submission_date', label: 'Submission Date', format: 'date' },
-        { key: 'sample_approval_date', label: 'Sample Approval Date', format: 'date' },
-        { key: 'delay_days', label: 'Delay Days', format: (_, sf) => computeSfDelay(sf.die_received_date, sf.submission_date) },
-        { key: 'status', label: 'Status', format: (v) => v || 'Pending' },
-        { key: 'no_of_trial', label: 'No. of Trial', format: (v) => v || 0 },
-        { key: 'remark', label: 'Remark' },
-        { key: 'corrector', label: 'Corrector' },
+      sheets: [
+        { name: 'Sample Followup', rows: filteredFollowups, columns: followupColumns },
+        {
+          name: 'Trials',
+          rows: trialRows,
+          columns: [
+            { key: 'die', label: 'Die' },
+            { key: 'profile', label: 'Profile' },
+            { key: 'plant', label: 'Plant' },
+            { key: 'supplier', label: 'Supplier' },
+            { key: 'trial_no', label: 'Trial No' },
+            { key: 'trial_date', label: 'Trial Date', format: 'date' },
+            { key: 'result', label: 'Result' },
+            { key: 'fail_reason', label: 'Reason' },
+            { key: 'comments', label: 'Comments' },
+          ],
+        },
       ],
     });
   };
