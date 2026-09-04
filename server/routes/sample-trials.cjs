@@ -5,7 +5,7 @@ const svc = require('../services/sampleTrials.cjs');
 
 const router = express.Router();
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => svc.todayLocal();
 
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);

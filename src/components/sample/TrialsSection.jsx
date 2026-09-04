@@ -4,8 +4,8 @@ import { sampleTrialsAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
 import { TRIAL_RESULTS, TRIAL_FAIL_REASONS } from '../../utils/constants';
 import { formatDate } from '../../utils/helpers';
+import { todayLocal } from '../../utils/today.js';
 
-const today = () => new Date().toISOString().slice(0, 10);
 const EMPTY = { trial_date: '', result: 'OK', fail_reason: '', comments: '' };
 
 const resultStyle = {
@@ -40,7 +40,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
 
   const save = async () => {
     if (!form.trial_date) return notify('Trial date is required', 'error');
-    if (form.trial_date > today()) return notify('Trial date cannot be in the future', 'error');
+    if (form.trial_date > todayLocal()) return notify('Trial date cannot be in the future', 'error');
     if (form.result === 'Not OK' && !form.fail_reason) {
       return notify('Select a reason for the failed trial', 'error');
     }
@@ -93,7 +93,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
         </div>
         {parent && !adding && (
           <button
-            onClick={() => { setForm({ ...EMPTY, trial_date: today() }); setAdding(true); }}
+            onClick={() => { setForm({ ...EMPTY, trial_date: todayLocal() }); setAdding(true); }}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid #0891B2', borderRadius: '8px', color: '#0891B2', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
           >
             <Plus size={14} /> Add Trial
@@ -165,7 +165,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
                   <input
                     id="trial-date" type="date" style={input}
                     value={form.trial_date}
-                    max={today()}
+                    max={todayLocal()}
                     onChange={(e) => setForm({ ...form, trial_date: e.target.value })}
                   />
                 </div>

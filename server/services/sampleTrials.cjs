@@ -40,6 +40,16 @@ function normaliseDate(value) {
   return null;
 }
 
+// The local calendar day as 'YYYY-MM-DD'. NOT toISOString().slice(0, 10):
+// that is the UTC day, and this server runs Asia/Dubai (UTC+4), so between
+// midnight and 4am it would reject a trial dated today as being in the future.
+function todayLocal(now = new Date()) {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 const trim = (v) => (v === null || v === undefined ? '' : String(v).trim());
 
 // `today` is an ISO day string so the caller decides what "today" means and the
@@ -159,6 +169,6 @@ async function deleteTrial(client, id) {
 
 module.exports = {
   TRIAL_RESULTS, FAIL_REASONS, ISO_DATE, TRIAL_COLS,
-  normaliseDate, validateTrial, nextTrialNo,
+  normaliseDate, todayLocal, validateTrial, nextTrialNo,
   parentRef, listTrials, trialsForParent, createTrial, updateTrial, deleteTrial,
 };
