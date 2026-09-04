@@ -78,7 +78,87 @@ function nextTrialNo(trials) {
   return (trials || []).reduce((max, t) => Math.max(max, Number(t.trial_no) || 0), 0) + 1;
 }
 
+const TRIAL_COLS = [
+  'id', 'die_order_id', 'sample_followup_id', 'trial_no',
+  'trial_date', 'result', 'fail_reason', 'comments', 'created_by', 'created_at',
+].join(', ');
+
+// Exactly one parent, matching the sample_trials_one_parent check constraint.
+// Returning null rather than throwing keeps the route's error handling in one
+// place.
+function parentRef(input = {}) {
+  const order = Number(input.die_order_id) || null;
+  const followup = Number(input.sample_followup_id) || null;
+  if (order && followup) return null;
+  if (order) return { column: 'die_order_id', id: order };
+  if (followup) return { column: 'sample_followup_id', id: followup };
+  return null;
+}
+
+async function listTrials(client) {
+  const { rows } = await client.query(
+    `SELECT ${TRIAL_COLS} FROM sample_trials ORDER BY trial_no ASC, id ASC`
+  );
+  return rows;
+}
+
+async function trialsForParent(client, parent) {
+  const { rows } = await client.query(
+    `SELECT ${TRIAL_COLS} FROM sample_trials WHERE ${parent.column} = $1 ORDER BY trial_no ASC`,
+    [parent.id]
+  );
+  return rows;
+}
+
+async function createTrial(client, input, userId, today) {
+  const parent = parentRef(input);
+  if (!parent) {
+    return { ok: false, status: 400, error: 'A trial must belong to exactly one die record' };
+  }
+  const check = validateTrial(input, today);
+  if (!check.ok) return { ok: false, status: 400, error: check.error };
+
+  // trial_no is assigned here and never accepted from the client, so two people
+  // adding a trial at once cannot both claim the same number. The partial
+  // unique index is the backstop if they race.
+  const existing = await trialsForParent(client, parent);
+  const trial_no = nextTrialNo(existing);
+  const { trial_date, result, fail_reason, comments } = check.value;
+
+  const { rows } = await client.query(
+    `INSERT INTO sample_trials (${parent.column}, trial_no, trial_date, result, fail_reason, comments, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING ${TRIAL_COLS}`,
+    [parent.id, trial_no, trial_date, result, fail_reason, comments, userId]
+  );
+  return { ok: true, row: rows[0] };
+}
+
+// The parent is never changed by an edit — a trial cannot move to another die.
+async function updateTrial(client, id, input, today) {
+  const check = validateTrial(input, today);
+  if (!check.ok) return { ok: false, status: 400, error: check.error };
+  const { trial_date, result, fail_reason, comments } = check.value;
+
+  const { rows, rowCount } = await client.query(
+    `UPDATE sample_trials
+        SET trial_date = $1, result = $2, fail_reason = $3, comments = $4,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING ${TRIAL_COLS}`,
+    [trial_date, result, fail_reason, comments, id]
+  );
+  if (!rowCount) return { ok: false, status: 404, error: 'Trial not found' };
+  return { ok: true, row: rows[0] };
+}
+
+async function deleteTrial(client, id) {
+  const { rowCount } = await client.query('DELETE FROM sample_trials WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
 module.exports = {
-  TRIAL_RESULTS, FAIL_REASONS, ISO_DATE,
+  TRIAL_RESULTS, FAIL_REASONS, ISO_DATE, TRIAL_COLS,
   normaliseDate, validateTrial, nextTrialNo,
+  parentRef, listTrials, trialsForParent, createTrial, updateTrial, deleteTrial,
 };
