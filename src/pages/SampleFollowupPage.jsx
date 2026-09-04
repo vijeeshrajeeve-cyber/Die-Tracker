@@ -5,6 +5,7 @@ import { dialogs } from '../components/ui/DialogProvider';
 import { formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
 import CorrectorSelect from '../components/ui/CorrectorSelect';
+import TrialsSection from '../components/sample/TrialsSection';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
@@ -96,6 +97,8 @@ export default function SampleFollowupPage({
   handleInlineFieldSave,
   fetchOrders,
   fetchSampleFollowups,
+  sampleTrials,
+  fetchSampleTrials,
 }) {
   const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm };
   const tableStyle = { width: '100%' };
@@ -208,6 +211,25 @@ export default function SampleFollowupPage({
       setToast({ message: `Failed to save ${displayField}`, type: 'error' });
       setTimeout(() => setToast(null), 5000);
     }
+  };
+
+  // A trial hangs off whichever table its followup came from. `null` means the
+  // record has not been saved yet, so there is nothing to attach a trial to.
+  const trialParentOf = (sf) => {
+    if (!sf) return null;
+    if (sf._source === 'order') return { die_order_id: sf._order.id };
+    if (sf._source === 'standalone') return { sample_followup_id: sf._raw.id };
+    return null;
+  };
+
+  const trialsOf = (sf) => {
+    const parent = trialParentOf(sf);
+    if (!parent) return [];
+    const key = parent.die_order_id ? 'die_order_id' : 'sample_followup_id';
+    const id = parent.die_order_id || parent.sample_followup_id;
+    return (sampleTrials || [])
+      .filter(t => t[key] === id)
+      .sort((a, b) => a.trial_no - b.trial_no);
   };
 
   const sfPlants = Array.from(new Set(sampleFollowups.map(sf => (sf.plant || '').trim()).filter(Boolean))).sort();
@@ -555,6 +577,14 @@ export default function SampleFollowupPage({
                 />
               </div>
             </div>
+            <TrialsSection
+              parent={trialParentOf(editingSampleFollowup)}
+              trials={trialsOf(editingSampleFollowup)}
+              theme={theme}
+              user={user}
+              onChanged={fetchSampleTrials}
+              setToast={setToast}
+            />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
               <button
                 onClick={() => { setShowSampleFollowupForm(false); setEditingSampleFollowup(null); }}

@@ -8,7 +8,7 @@ import Papa from 'papaparse';
 let xlsxPromise = null;
 const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -1757,6 +1757,19 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
+  // Individual trials, fetched wholesale and grouped by parent on the SF page.
+  // A trial hangs off die_orders or sample_followups depending on where its
+  // followup came from, so there is no single parent list to page against.
+  const [sampleTrials, setSampleTrials] = useState([]);
+  const fetchSampleTrials = useCallback(async () => {
+    try {
+      const response = await sampleTrialsAPI.getAll();
+      setSampleTrials(response.sampleTrials || []);
+    } catch (error) {
+      console.error('Failed to fetch sample trials:', error);
+    }
+  }, []);
+
   // Profile = everything before the first "-" in DIE NO (e.g. "14716-235" → "14716"). Derived only.
   const extractProfile = (dieNo) => {
     if (!dieNo) return '';
@@ -1839,6 +1852,7 @@ export default function DieOrderingSystem() {
       fetchCorrectors();
       fetchBackupRequests();
       fetchSampleFollowups();
+      fetchSampleTrials();
       fetchApiKeys();
       fetchPlantBudgets();
       fetchProfileMeta();
@@ -1851,7 +1865,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchSampleTrials, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -3102,6 +3116,8 @@ export default function DieOrderingSystem() {
               handleInlineFieldSave={handleInlineFieldSave}
               fetchOrders={fetchOrders}
               fetchSampleFollowups={fetchSampleFollowups}
+              sampleTrials={sampleTrials}
+              fetchSampleTrials={fetchSampleTrials}
             />
           )}
 
