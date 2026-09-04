@@ -7,6 +7,7 @@ const multer = require('multer');
 const { pool } = require('../db.cjs');
 const qd = require('../services/qualityDiscrepancies.cjs');
 const store = require('../services/qdStorage.cjs');
+const { todayLocal } = require('../services/dates.cjs');
 const qdSettings = require('../services/qdSettings.cjs');
 const email = require('../services/email.cjs');
 const qdDocument = require('../services/qdDocument.cjs');
@@ -161,7 +162,7 @@ router.post('/', async (req, res) => {
     const id = await qd.createQD(client, {
       qdNo: null,
       dieNo: String(dieNo).trim(),
-      raisedDate: new Date().toISOString().slice(0, 10),
+      raisedDate: todayLocal(),
       qdRequestedDate: requestedDate,
       plant: String(plant).trim(),
       supplier: String(supplier).trim(),

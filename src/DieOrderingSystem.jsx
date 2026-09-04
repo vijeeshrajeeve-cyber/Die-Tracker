@@ -57,6 +57,7 @@ const ChunkFallback = ({ theme }) => (
 import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
 import { BRAND, BRAND_ALPHA } from './utils/brand';
 import { correctorOptions } from './utils/correctorOptions';
+import { todayLocal } from './utils/today.js';
 
 
 
@@ -631,7 +632,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
             press={form.Press}
             cavity={form.Cavity}
             onRelease={(match) => {
-              const today = new Date().toISOString().split('T')[0];
+              const today = todayLocal();
               setForm(prev => ({
                 ...prev,
                 'Design Received Date': today,
@@ -1041,7 +1042,9 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     const { newStatus, oldStatus, reason } = statusReasonModal;
     const now = new Date();
     const logEntry = {
-      date: now.toISOString().split('T')[0],
+      // date and time must agree: toTimeString() is local, so reading the day
+      // from toISOString() logged a 1am change as yesterday at 01:00.
+      date: todayLocal(now),
       time: now.toTimeString().split(' ')[0],
       field: 'STATUS',
       oldValue: oldStatus,
@@ -2045,7 +2048,7 @@ export default function DieOrderingSystem() {
 
       // Create change log entry
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field,
         oldValue,
         newValue,
@@ -2104,7 +2107,7 @@ export default function DieOrderingSystem() {
 
     try {
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field: 'PR Number',
         oldValue: order['PR Number'] || '',
         newValue: prNumber,
@@ -2127,7 +2130,7 @@ export default function DieOrderingSystem() {
     if (order[field] === value) return;
     try {
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field,
         oldValue: order[field] ?? '',
         newValue: value,
@@ -2155,7 +2158,7 @@ export default function DieOrderingSystem() {
     if (changed.length === 0) return;
 
     const changeLog = changed.map(([field, value]) => ({
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocal(),
       field,
       oldValue: order[field] ?? '',
       newValue: value,
@@ -2181,7 +2184,7 @@ export default function DieOrderingSystem() {
     if (order['Mandrels per Cavity'] === mpc && order['Total Mandrels'] === totalMandrels) return;
     try {
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field: 'Mandrels per Cavity',
         oldValue: order['Mandrels per Cavity'] ?? '',
         newValue: mpc,
@@ -2203,7 +2206,7 @@ export default function DieOrderingSystem() {
     const oldValue = order['Cavity'] || 0;
     if (oldValue === newCavity) return;
     const changeLogEntry = {
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocal(),
       field: 'Cavity',
       oldValue,
       newValue: newCavity,

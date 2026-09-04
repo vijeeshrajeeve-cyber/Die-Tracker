@@ -6,6 +6,7 @@ import DatePickerField from '../DatePickerField';
 import CorrectorSelect from '../ui/CorrectorSelect';
 import useDialog from '../../hooks/useDialog';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
+import { todayLocal } from '../../utils/today.js';
 
 
 // qd_billet_parameters columns — order here drives the Production parameters grid.
@@ -64,7 +65,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], correctors = 
   const [qdRequestedDate, setQdRequestedDate] = useState(
     isEdit
       ? (editQd.qd_requested_date ? String(editQd.qd_requested_date).slice(0, 10) : '')
-      : new Date().toISOString().slice(0, 10)
+      : todayLocal()
   );
   const [plant, setPlant] = useState(editQd?.plant || 'GEX 2');
   const [supplier, setSupplier] = useState(editQd?.supplier || suppliers[0] || '');

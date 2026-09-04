@@ -5,8 +5,9 @@ import { QD_STATUSES } from '../../utils/constants';
 import DatePickerField from '../DatePickerField';
 import useDialog from '../../hooks/useDialog';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
+import { todayLocal } from '../../utils/today.js';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocal();
 
 // Records the verdict on the open FOC round.
 //

@@ -11,6 +11,8 @@
 // This module owns the vocabulary and the rules. It never decides Sample
 // Status — a failed trial does not reject a sample; a person does.
 
+const { todayLocal } = require('./dates.cjs');
+
 const TRIAL_RESULTS = ['OK', 'Not OK'];
 
 // Fixed, and stored verbatim in the fail_reason column. Changing a string here
@@ -38,16 +40,6 @@ function normaliseDate(value) {
   const dmy = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
   if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   return null;
-}
-
-// The local calendar day as 'YYYY-MM-DD'. NOT toISOString().slice(0, 10):
-// that is the UTC day, and this server runs Asia/Dubai (UTC+4), so between
-// midnight and 4am it would reject a trial dated today as being in the future.
-function todayLocal(now = new Date()) {
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 const trim = (v) => (v === null || v === undefined ? '' : String(v).trim());

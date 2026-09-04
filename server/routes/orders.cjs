@@ -2,6 +2,7 @@ const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
+const { todayLocal } = require('../services/dates.cjs');
 
 const router = express.Router();
 
@@ -72,7 +73,7 @@ const parseSpecialFollowUpInput = (value) => {
 const autoUpdateBackupRequests = async (dieNo, orderedDate) => {
     if (!dieNo) return;
     try {
-        const today = orderedDate || new Date().toISOString().split('T')[0];
+        const today = orderedDate || todayLocal();
         await pool.query(`
             UPDATE backup_die_requests
             SET status = 'Completed', ordered_date = $1, updated_at = CURRENT_TIMESTAMP
@@ -607,7 +608,7 @@ router.post('/:id/revisions', orderIdValidation, revisionValidation, handleValid
     try {
         const { id } = req.params;
         const { targetStatus, notes, revisionDate, revisionPdf } = req.body;
-        const revDate = revisionDate || new Date().toISOString().split('T')[0];
+        const revDate = revisionDate || todayLocal();
 
         await client.query('BEGIN');
 
@@ -701,7 +702,7 @@ router.patch('/:id/complete-stage', orderIdValidation, completeStageValidation, 
     try {
         const { id } = req.params;
         const { field, nextStatus } = req.body;
-        const date = sanitizeDate(req.body.date) || new Date().toISOString().split('T')[0];
+        const date = sanitizeDate(req.body.date) || todayLocal();
         const mapping = RECEIVED_FIELDS[field];
 
         await client.query('BEGIN');

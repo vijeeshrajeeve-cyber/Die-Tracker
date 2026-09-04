@@ -6,6 +6,7 @@ import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import CorrectorSelect from '../components/ui/CorrectorSelect';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
+import { todayLocal } from '../utils/today.js';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
 // are recorded on the revision row via the complete-stage endpoint.
@@ -129,7 +130,7 @@ export default function FlowPage({
   const handleCompleteStep = async (order, e) => {
     e.stopPropagation();
     if (!workflow || !workflow.nextStatus) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocal();
     const nextStatus = currentFlow.status === 'AWAITING FOR DESIGN' && isSimulationEnabled(order.simulationEnabled)
       ? 'UNDER SIMULATION'
       : workflow.nextStatus;
@@ -401,7 +402,7 @@ export default function FlowPage({
                     )}
                     {isDone && (
                       <td style={{ ...styles.td, textAlign: 'center' }}>
-                        <button onClick={(e) => { e.stopPropagation(); setDieReceivanceOrder(order); setDieReceivanceForm({ die_received_date: new Date().toISOString().split('T')[0], corrector: '' }); }} style={{ padding: '6px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid rgba(8,145,178,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#0891B2', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }} title="Confirm Die Receivance" onMouseEnter={(e) => { e.currentTarget.style.background = '#0891B2'; e.currentTarget.style.color = 'white'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(8,145,178,0.15)'; e.currentTarget.style.color = '#0891B2'; }}>
+                        <button onClick={(e) => { e.stopPropagation(); setDieReceivanceOrder(order); setDieReceivanceForm({ die_received_date: todayLocal(), corrector: '' }); }} style={{ padding: '6px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid rgba(8,145,178,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#0891B2', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }} title="Confirm Die Receivance" onMouseEnter={(e) => { e.currentTarget.style.background = '#0891B2'; e.currentTarget.style.color = 'white'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(8,145,178,0.15)'; e.currentTarget.style.color = '#0891B2'; }}>
                           <Package size={16} /> Confirm
                         </button>
                       </td>

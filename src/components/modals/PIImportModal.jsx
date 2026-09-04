@@ -5,6 +5,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 
 import useDialog from '../../hooks/useDialog';
+import { todayLocal } from '../../utils/today.js';
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -246,7 +247,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [], theme = 
                 if (anyDate) orderDate = parseDateDMY(anyDate[1]);
             }
             if (!orderDate) {
-                orderDate = new Date().toISOString().split('T')[0];
+                orderDate = todayLocal();
             }
 
             // Supplier - extract from "Die Supplier:" line (always on same line as SHIPMENT VIA)

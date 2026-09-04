@@ -10,6 +10,7 @@ import DatePickerField from '../DatePickerField';
 import FrozenDesignBanner from '../FrozenDesignBanner';
 import { dialogs } from '../ui/DialogProvider';
 import { BackupStatusPill } from '../ui/StatusPill';
+import { todayLocal } from '../../utils/today.js';
 
 const COLUMNS = [
   { key: 'slNo', label: 'SL NO', sortable: false },
@@ -45,7 +46,7 @@ const EMPTY_FORM = {
 
 const MANUAL_STATUSES = ['HOLD', 'Not required'];
 
-const getTodayDateString = () => new Date().toISOString().split('T')[0];
+const getTodayDateString = () => todayLocal();
 
 // Reasons for die ordering — must match the checkbox labels on the J-file template.
 const DIE_ORDER_REASONS = [
