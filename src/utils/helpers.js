@@ -1,4 +1,4 @@
-import { MONTHS } from './constants';
+import { MONTHS } from './constants.js';
 
 // Parse Excel date serial number to ISO string
 export const parseExcelDate = (value) => {

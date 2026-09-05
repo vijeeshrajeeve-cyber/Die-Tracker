@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from 'recharts';
 import { CHART_COLORS } from '../../utils/constants';
+import { localDay } from '../../utils/today.js';
 
 const isSimulationEnabled = (value) => {
   if (value === true || value === 1) return true;
@@ -21,11 +22,19 @@ const parseOrderCalendarDate = (raw) => {
     const head = s0.slice(0, 10);
     if (!Number.isNaN(Date.parse(head))) return head;
   }
+  // Last resort: a format the ISO branch above did not recognise, such as
+  // "Sep 4 2026". Date.parse reads those as LOCAL time, so reading the day
+  // back with toISOString() returned the day before. This parser must agree
+  // with the one in DieOrderingSystem.jsx or analytics and the register
+  // disagree about which month an order falls in.
+  //
+  // Unreachable for real data — DATE columns arrive as raw 'YYYY-MM-DD' and
+  // are caught above — so this is junk tolerance, not a live code path.
   const t = Date.parse(s0);
   if (!Number.isNaN(t)) {
     const d = new Date(t);
     const y = d.getFullYear();
-    if (y >= 1990 && y <= 2100) return d.toISOString().slice(0, 10);
+    if (y >= 1990 && y <= 2100) return localDay(d);
   }
   return null;
 };

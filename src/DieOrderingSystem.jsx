@@ -8,7 +8,7 @@ import Papa from 'papaparse';
 let xlsxPromise = null;
 const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 
@@ -57,6 +57,7 @@ const ChunkFallback = ({ theme }) => (
 import { dieDesignSignature, dieDesignSignatureText } from './utils/emailSignature';
 import { BRAND, BRAND_ALPHA } from './utils/brand';
 import { correctorOptions } from './utils/correctorOptions';
+import { todayLocal, localDay } from './utils/today.js';
 
 
 
@@ -193,11 +194,20 @@ const parseOrderCalendarDate = (raw) => {
     if (!Number.isNaN(Date.parse(head))) return head;
   }
 
+  // Last resort: a format none of the branches above recognised, such as
+  // "Sep 4 2026" or "2026/09/04". The spec has Date.parse read those as LOCAL
+  // time, so reading the day back with toISOString() returned the day before.
+  //
+  // No stored data was affected by that: db.cjs sets a type parser returning
+  // DATE columns as raw 'YYYY-MM-DD', and every caller here reads a DATE
+  // column, so real values are always caught by the ISO branch above. This
+  // branch is the junk-tolerance the docstring promises, and localDay keeps it
+  // honest if it ever does fire.
   const t = Date.parse(s0);
   if (!Number.isNaN(t)) {
     const d = new Date(t);
     const y = d.getFullYear();
-    if (y >= 1990 && y <= 2100) return d.toISOString().slice(0, 10);
+    if (y >= 1990 && y <= 2100) return localDay(d);
   }
   return null;
 };
@@ -631,7 +641,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
             press={form.Press}
             cavity={form.Cavity}
             onRelease={(match) => {
-              const today = new Date().toISOString().split('T')[0];
+              const today = todayLocal();
               setForm(prev => ({
                 ...prev,
                 'Design Received Date': today,
@@ -1041,7 +1051,9 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     const { newStatus, oldStatus, reason } = statusReasonModal;
     const now = new Date();
     const logEntry = {
-      date: now.toISOString().split('T')[0],
+      // date and time must agree: toTimeString() is local, so reading the day
+      // from toISOString() logged a 1am change as yesterday at 01:00.
+      date: todayLocal(now),
       time: now.toTimeString().split(' ')[0],
       field: 'STATUS',
       oldValue: oldStatus,
@@ -1757,6 +1769,19 @@ export default function DieOrderingSystem() {
     }
   }, []);
 
+  // Individual trials, fetched wholesale and grouped by parent on the SF page.
+  // A trial hangs off die_orders or sample_followups depending on where its
+  // followup came from, so there is no single parent list to page against.
+  const [sampleTrials, setSampleTrials] = useState([]);
+  const fetchSampleTrials = useCallback(async () => {
+    try {
+      const response = await sampleTrialsAPI.getAll();
+      setSampleTrials(response.sampleTrials || []);
+    } catch (error) {
+      console.error('Failed to fetch sample trials:', error);
+    }
+  }, []);
+
   // Profile = everything before the first "-" in DIE NO (e.g. "14716-235" → "14716"). Derived only.
   const extractProfile = (dieNo) => {
     if (!dieNo) return '';
@@ -1839,6 +1864,7 @@ export default function DieOrderingSystem() {
       fetchCorrectors();
       fetchBackupRequests();
       fetchSampleFollowups();
+      fetchSampleTrials();
       fetchApiKeys();
       fetchPlantBudgets();
       fetchProfileMeta();
@@ -1851,7 +1877,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
+  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchSampleTrials, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -2031,7 +2057,7 @@ export default function DieOrderingSystem() {
 
       // Create change log entry
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field,
         oldValue,
         newValue,
@@ -2090,7 +2116,7 @@ export default function DieOrderingSystem() {
 
     try {
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field: 'PR Number',
         oldValue: order['PR Number'] || '',
         newValue: prNumber,
@@ -2113,7 +2139,7 @@ export default function DieOrderingSystem() {
     if (order[field] === value) return;
     try {
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field,
         oldValue: order[field] ?? '',
         newValue: value,
@@ -2131,6 +2157,33 @@ export default function DieOrderingSystem() {
     }
   };
 
+  // Like handleInlineFieldSave but for several fields written together, so a
+  // pair that must agree (a date and the status it implies) can never be half
+  // saved. Writes one change-log entry per field, matching what the audit trail
+  // already records for single edits. Deliberately silent: the caller shows a
+  // toast that describes the whole action.
+  const handleOrderFieldsSave = async (order, fields) => {
+    const changed = Object.entries(fields).filter(([field, value]) => order[field] !== value);
+    if (changed.length === 0) return;
+
+    const changeLog = changed.map(([field, value]) => ({
+      date: todayLocal(),
+      field,
+      oldValue: order[field] ?? '',
+      newValue: value,
+      changedBy: user?.username || 'unknown',
+      stage: order.STATUS,
+    }));
+
+    const patch = Object.fromEntries(changed);
+    await ordersAPI.patch(order.id, { ...patch, 'Change Log': changeLog });
+    setData(prev => prev.map(o => (
+      o.id === order.id
+        ? { ...o, ...patch, changeCount: (o.changeCount || 0) + changed.length }
+        : o
+    )));
+  };
+
   // Handle mandrels per cavity change - auto-calculates Total Mandrels
   const handleMandrelsChange = async (order, mandrelsPerCavity) => {
     const mpc = parseInt(mandrelsPerCavity, 10) || 0;
@@ -2140,7 +2193,7 @@ export default function DieOrderingSystem() {
     if (order['Mandrels per Cavity'] === mpc && order['Total Mandrels'] === totalMandrels) return;
     try {
       const changeLogEntry = {
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         field: 'Mandrels per Cavity',
         oldValue: order['Mandrels per Cavity'] ?? '',
         newValue: mpc,
@@ -2162,7 +2215,7 @@ export default function DieOrderingSystem() {
     const oldValue = order['Cavity'] || 0;
     if (oldValue === newCavity) return;
     const changeLogEntry = {
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocal(),
       field: 'Cavity',
       oldValue,
       newValue: newCavity,
@@ -3100,8 +3153,11 @@ export default function DieOrderingSystem() {
               theme={theme}
               setToast={setToast}
               handleInlineFieldSave={handleInlineFieldSave}
+              handleOrderFieldsSave={handleOrderFieldsSave}
               fetchOrders={fetchOrders}
               fetchSampleFollowups={fetchSampleFollowups}
+              sampleTrials={sampleTrials}
+              fetchSampleTrials={fetchSampleTrials}
             />
           )}
 

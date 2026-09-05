@@ -5,10 +5,11 @@ import { QD_STATUS_CONFIG } from '../../utils/constants';
 import DatePickerField from '../DatePickerField';
 import useDialog from '../../hooks/useDialog';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
+import { todayLocal } from '../../utils/today.js';
 
 const isPdf = (name) => /\.pdf$/i.test(String(name || ''));
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocal();
 
 // Every status change needs a recorded reason; moving to FOC Accepted also
 // needs the ETA the supplier committed to, and moving to FOC Received the date

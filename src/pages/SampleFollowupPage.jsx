@@ -5,6 +5,9 @@ import { dialogs } from '../components/ui/DialogProvider';
 import { formatDate } from '../utils/helpers';
 import { exportToExcel } from '../utils/exportExcel';
 import CorrectorSelect from '../components/ui/CorrectorSelect';
+import TrialsSection from '../components/sample/TrialsSection';
+import StampTodayButton from '../components/sample/StampTodayButton';
+import { trialCountFor } from '../utils/trials';
 
 const SF_STATUSES = ['Pending', 'Sample Submitted', 'Approved', 'Rejected', 'On hold'];
 
@@ -20,7 +23,6 @@ const SF_DISPLAY_TO_SNAKE = {
   'Ascona Reference': 'ascona_reference',
   'Submission Date': 'submission_date',
   'Sample Approval Date': 'sample_approval_date',
-  'No of Trial': 'no_of_trial',
   'Remark': 'remark',
   'Sample Status': 'status',
   'Corrector': 'corrector',
@@ -37,6 +39,8 @@ const computeSfDelay = (received, submission) => {
   const diff = Math.floor((end.setHours(0, 0, 0, 0) - start.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
   return diff > 0 ? diff : 0;
 };
+
+const day = (v) => (v ? String(v).slice(0, 10) : '');
 
 const extractProfile = (dieNo) => {
   if (!dieNo) return '';
@@ -56,7 +60,6 @@ const formToOrderFields = (form) => ({
   'Submission Date': form.submission_date || '',
   'Sample Approval Date': form.sample_approval_date || '',
   'Sample Status': form.status || 'Pending',
-  'No of Trial': form.no_of_trial || 0,
   'Remark': form.remark || '',
   'Corrector': form.corrector || '',
 });
@@ -73,12 +76,11 @@ const formToSfFields = (form) => ({
   sample_approval_date: form.sample_approval_date || '',
   delay_days: computeSfDelay(form.die_received_date, form.submission_date),
   status: form.status || 'Pending',
-  no_of_trial: form.no_of_trial || 0,
   remark: form.remark || '',
   corrector: form.corrector || '',
 });
 
-const EMPTY_FORM = { die: '', plant: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', no_of_trial: 0, remark: '', corrector: '' };
+const EMPTY_FORM = { die: '', plant: '', press: '', supplier: '', customer: '', die_received_date: '', ascona_reference: 'No', submission_date: '', sample_approval_date: '', delay_days: 0, status: 'Pending', remark: '', corrector: '' };
 
 export default function SampleFollowupPage({
   sampleFollowups,
@@ -94,8 +96,11 @@ export default function SampleFollowupPage({
   theme,
   setToast,
   handleInlineFieldSave,
+  handleOrderFieldsSave,
   fetchOrders,
   fetchSampleFollowups,
+  sampleTrials,
+  fetchSampleTrials,
 }) {
   const tableContainer = { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm };
   const tableStyle = { width: '100%' };
@@ -162,7 +167,10 @@ export default function SampleFollowupPage({
     }
     const ok = await dialogs.confirm({
       title: 'Clear sample followup data',
-      message: 'Only the sample and trial fields are reset. The underlying die order is kept.',
+      // Logged trials survive this: they are a record of what happened, and the
+      // same reason they are admin-only to delete applies here. Deleting the die
+      // order itself still cascades them away.
+      message: 'Only the sample fields are reset. Logged trials and the underlying die order are kept.',
       confirmLabel: 'Clear fields',
       tone: 'warning',
     });
@@ -175,7 +183,6 @@ export default function SampleFollowupPage({
         'Sample Approval Date': null,
         'Ascona Reference': 'No',
         'Sample Status': '',
-        'No of Trial': 0,
         'Remark': '',
         'Press': '',
       });
@@ -210,6 +217,42 @@ export default function SampleFollowupPage({
     }
   };
 
+  // Writes a date and (optionally) the status it implies, in one request, down
+  // whichever path this row came from. `newStatus` of null means the ladder
+  // refused to move the record — the date still saves.
+  const saveSfFields = async (sf, { dateField, snakeDateField, dateValue, newStatus }) => {
+    if (sf._source === 'order') {
+      const fields = { [dateField]: dateValue };
+      if (newStatus) fields['Sample Status'] = newStatus;
+      await handleOrderFieldsSave(sf._order, fields);
+      return;
+    }
+    const raw = sf._raw;
+    const updated = { ...raw, [snakeDateField]: dateValue };
+    if (newStatus) updated.status = newStatus;
+    await sampleFollowupsAPI.update(raw.id, updated);
+    setSampleFollowupsStandalone(prev => prev.map(r => (r.id === raw.id ? updated : r)));
+  };
+
+  // A trial hangs off whichever table its followup came from. `null` means the
+  // record has not been saved yet, so there is nothing to attach a trial to.
+  const trialParentOf = (sf) => {
+    if (!sf) return null;
+    if (sf._source === 'order') return { die_order_id: sf._order.id };
+    if (sf._source === 'standalone') return { sample_followup_id: sf._raw.id };
+    return null;
+  };
+
+  const trialsOf = (sf) => {
+    const parent = trialParentOf(sf);
+    if (!parent) return [];
+    const key = parent.die_order_id ? 'die_order_id' : 'sample_followup_id';
+    const id = parent.die_order_id || parent.sample_followup_id;
+    return (sampleTrials || [])
+      .filter(t => t[key] === id)
+      .sort((a, b) => a.trial_no - b.trial_no);
+  };
+
   const sfPlants = Array.from(new Set(sampleFollowups.map(sf => (sf.plant || '').trim()).filter(Boolean))).sort();
 
   const filteredFollowups = sampleFollowups.filter(sf => {
@@ -224,26 +267,53 @@ export default function SampleFollowupPage({
   });
 
   const handleExport = async () => {
+    const followupColumns = [
+      { key: 'die', label: 'Die' },
+      { key: 'profile', label: 'Profile' },
+      { key: 'plant', label: 'Plant' },
+      { key: 'press', label: 'Press' },
+      { key: 'supplier', label: 'Supplier' },
+      { key: 'customer', label: 'Customer' },
+      { key: 'die_received_date', label: 'Die Received Date', format: 'date' },
+      { key: 'ascona_reference', label: 'Ascona Ref', format: (v) => v || 'No' },
+      { key: 'submission_date', label: 'Submission Date', format: 'date' },
+      { key: 'sample_approval_date', label: 'Sample Approval Date', format: 'date' },
+      { key: 'delay_days', label: 'Delay Days', format: (_, sf) => computeSfDelay(sf.die_received_date, sf.submission_date) },
+      { key: 'status', label: 'Status', format: (v) => v || 'Pending' },
+      { key: 'no_of_trial', label: 'No. of Trial', format: (v, sf) => trialCountFor(trialsOf(sf), v).count },
+      { key: 'remark', label: 'Remark' },
+      { key: 'corrector', label: 'Corrector' },
+    ];
+
+    // One row per trial across everything currently filtered on screen, so the
+    // export matches what the user is looking at.
+    const trialRows = filteredFollowups.flatMap(sf =>
+      trialsOf(sf).map(t => ({
+        die: sf.die, profile: sf.profile, plant: sf.plant, supplier: sf.supplier,
+        trial_no: t.trial_no, trial_date: t.trial_date, result: t.result,
+        fail_reason: t.fail_reason, comments: t.comments,
+      }))
+    );
+
     await exportToExcel({
-      rows: filteredFollowups,
       filename: 'sample_followups',
-      sheetName: 'Sample Followup',
-      columns: [
-        { key: 'die', label: 'Die' },
-        { key: 'profile', label: 'Profile' },
-        { key: 'plant', label: 'Plant' },
-        { key: 'press', label: 'Press' },
-        { key: 'supplier', label: 'Supplier' },
-        { key: 'customer', label: 'Customer' },
-        { key: 'die_received_date', label: 'Die Received Date', format: 'date' },
-        { key: 'ascona_reference', label: 'Ascona Ref', format: (v) => v || 'No' },
-        { key: 'submission_date', label: 'Submission Date', format: 'date' },
-        { key: 'sample_approval_date', label: 'Sample Approval Date', format: 'date' },
-        { key: 'delay_days', label: 'Delay Days', format: (_, sf) => computeSfDelay(sf.die_received_date, sf.submission_date) },
-        { key: 'status', label: 'Status', format: (v) => v || 'Pending' },
-        { key: 'no_of_trial', label: 'No. of Trial', format: (v) => v || 0 },
-        { key: 'remark', label: 'Remark' },
-        { key: 'corrector', label: 'Corrector' },
+      sheets: [
+        { name: 'Sample Followup', rows: filteredFollowups, columns: followupColumns },
+        {
+          name: 'Trials',
+          rows: trialRows,
+          columns: [
+            { key: 'die', label: 'Die' },
+            { key: 'profile', label: 'Profile' },
+            { key: 'plant', label: 'Plant' },
+            { key: 'supplier', label: 'Supplier' },
+            { key: 'trial_no', label: 'Trial No' },
+            { key: 'trial_date', label: 'Trial Date', format: 'date' },
+            { key: 'result', label: 'Result' },
+            { key: 'fail_reason', label: 'Reason' },
+            { key: 'comments', label: 'Comments' },
+          ],
+        },
       ],
     });
   };
@@ -384,20 +454,44 @@ export default function SampleFollowupPage({
                         </select>
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <input
                           type="date"
-                          defaultValue={sf.submission_date ? String(sf.submission_date).split('T')[0] : ''}
+                          // Keyed on the value: these inputs are uncontrolled
+                          // (defaultValue), so React will not refresh them when
+                          // the stamp changes the underlying date. Changing the
+                          // key remounts the input with the new value.
+                          key={`sub-${sf.id}-${day(sf.submission_date)}`}
+                          defaultValue={day(sf.submission_date)}
                           onBlur={(e) => handleSfInlineSave(sf, 'Submission Date', e.target.value)}
                           style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
                         />
+                          <StampTodayButton
+                            sf={sf} compact
+                            dateField="Submission Date" snakeDateField="submission_date"
+                            targetStatus="Sample Submitted" label="Submission date"
+                            currentDate={sf.submission_date} currentStatus={sf.status}
+                            onSave={saveSfFields} setToast={setToast}
+                          />
+                        </div>
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                        <input
-                          type="date"
-                          defaultValue={sf.sample_approval_date ? String(sf.sample_approval_date).split('T')[0] : ''}
-                          onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
-                          style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input
+                            type="date"
+                            key={`app-${sf.id}-${day(sf.sample_approval_date)}`}
+                            defaultValue={day(sf.sample_approval_date)}
+                            onBlur={(e) => handleSfInlineSave(sf, 'Sample Approval Date', e.target.value)}
+                            style={{ padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}
+                          />
+                          <StampTodayButton
+                            sf={sf} compact
+                            dateField="Sample Approval Date" snakeDateField="sample_approval_date"
+                            targetStatus="Approved" label="Sample approval date"
+                            currentDate={sf.sample_approval_date} currentStatus={sf.status}
+                            onSave={saveSfFields} setToast={setToast}
+                          />
+                        </div>
                       </td>
                       <td style={{ ...td, textAlign: 'center' }}>
                         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: computeSfDelay(sf.die_received_date, sf.submission_date) > 0 ? '#EF4444' : '#10B981' }}>
@@ -410,14 +504,17 @@ export default function SampleFollowupPage({
                         </span>
                       </td>
                       <td style={{ ...td, textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          defaultValue={sf.no_of_trial || 0}
-                          onBlur={(e) => handleSfInlineSave(sf, 'No of Trial', parseInt(e.target.value, 10) || 0)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                          style={{ width: '60px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', fontFamily: 'monospace' }}
-                        />
+                        {(() => {
+                          const { count, isLegacy } = trialCountFor(trialsOf(sf), sf.no_of_trial);
+                          return (
+                            <span
+                              title={isLegacy ? 'Recorded before trials were logged individually' : 'Counted from the logged trials'}
+                              style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: isLegacy ? theme.textMuted : theme.text, fontStyle: isLegacy ? 'italic' : 'normal' }}
+                            >
+                              {count}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ ...td, minWidth: '160px' }}>
                         <input
@@ -435,7 +532,7 @@ export default function SampleFollowupPage({
                           <button
                             onClick={() => {
                               setEditingSampleFollowup(sf);
-                              setSampleFollowupForm({ die: sf.die || '', plant: sf.plant || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', no_of_trial: sf.no_of_trial || 0, remark: sf.remark || '', corrector: sf.corrector || '' });
+                              setSampleFollowupForm({ die: sf.die || '', plant: sf.plant || '', press: sf.press || '', supplier: sf.supplier || '', customer: sf.customer || '', die_received_date: sf.die_received_date || '', ascona_reference: sf.ascona_reference || 'No', submission_date: sf.submission_date || '', sample_approval_date: sf.sample_approval_date || '', delay_days: sf.delay_days || 0, status: sf.status || 'Pending', remark: sf.remark || '', corrector: sf.corrector || '' });
                               setShowSampleFollowupForm(true);
                             }}
                             style={{ padding: '6px', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#3B82F6' }}
@@ -497,11 +594,48 @@ export default function SampleFollowupPage({
                 { key: 'sample_approval_date', label: 'Sample Approval Date', type: 'date' },
                 { key: 'delay_days', label: 'Delay Days', type: 'number' },
                 { key: 'status', label: 'Status', type: 'select', options: SF_STATUSES },
-                { key: 'no_of_trial', label: 'No. of Trial', type: 'number' },
                 { key: 'corrector', label: 'Corrector', type: 'corrector' },
               ].map(field => (
                 <div key={field.key}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{field.label}</label>
+                    {editingSampleFollowup && field.key === 'submission_date' && (
+                      <StampTodayButton
+                        sf={editingSampleFollowup}
+                        dateField="Submission Date" snakeDateField="submission_date"
+                        targetStatus="Sample Submitted" label="Submission date"
+                        currentDate={sampleFollowupForm.submission_date}
+                        currentStatus={sampleFollowupForm.status}
+                        setToast={setToast}
+                        onSave={async (sf, args) => {
+                          await saveSfFields(sf, args);
+                          setSampleFollowupForm(f => ({
+                            ...f,
+                            submission_date: args.dateValue,
+                            status: args.newStatus || f.status,
+                          }));
+                        }}
+                      />
+                    )}
+                    {editingSampleFollowup && field.key === 'sample_approval_date' && (
+                      <StampTodayButton
+                        sf={editingSampleFollowup}
+                        dateField="Sample Approval Date" snakeDateField="sample_approval_date"
+                        targetStatus="Approved" label="Sample approval date"
+                        currentDate={sampleFollowupForm.sample_approval_date}
+                        currentStatus={sampleFollowupForm.status}
+                        setToast={setToast}
+                        onSave={async (sf, args) => {
+                          await saveSfFields(sf, args);
+                          setSampleFollowupForm(f => ({
+                            ...f,
+                            sample_approval_date: args.dateValue,
+                            status: args.newStatus || f.status,
+                          }));
+                        }}
+                      />
+                    )}
+                  </div>
                   {field.type === 'corrector' ? (
                     <CorrectorSelect
                       value={sampleFollowupForm[field.key] || ''}
@@ -555,6 +689,14 @@ export default function SampleFollowupPage({
                 />
               </div>
             </div>
+            <TrialsSection
+              parent={trialParentOf(editingSampleFollowup)}
+              trials={trialsOf(editingSampleFollowup)}
+              theme={theme}
+              user={user}
+              onChanged={fetchSampleTrials}
+              setToast={setToast}
+            />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
               <button
                 onClick={() => { setShowSampleFollowupForm(false); setEditingSampleFollowup(null); }}

@@ -201,6 +201,20 @@ export const pageTitle = (tabId) => {
 // Preset reasons for bypassing a frozen design and following the normal flow.
 export const BYPASS_REASONS = ['Profile revised', 'Customer change', 'Quality issue', 'Other'];
 
+// Sample trial vocabulary. Mirrored from server/services/sampleTrials.cjs,
+// which is the authority — src/utils/trials.test.js fails if the two ever
+// drift. These strings are stored in the database; changing one is a data
+// migration, not an edit.
+export const TRIAL_RESULTS = ['OK', 'Not OK'];
+export const TRIAL_FAIL_REASONS = [
+  'Shape',
+  'Dimension Out of Spec',
+  'Aesthetic Out of Spec',
+  'Die Choked',
+  'Manufacturing issue',
+  'Other',
+];
+
 // QD Tracker status vocabulary — colours match the QD Tracker design.
 export const QD_STATUS_CONFIG = {
   'Open':             { fg: '#FBBF24', bg: 'rgba(245,158,11,0.15)' },

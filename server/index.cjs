@@ -26,6 +26,7 @@ const designReminderService = require('./services/designReminder.cjs');
 const focReminderService = require('./services/focReminder.cjs');
 const dailySummaryService = require('./services/dailySummary.cjs');
 const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
+const sampleTrialsRouter = require('./routes/sample-trials.cjs');
 const plantBudgetsRouter = require('./routes/plant-budgets.cjs');
 const existingDataRouter = require('./routes/existing-data.cjs');
 const autoBackupsRouter = require('./routes/auto-backups.cjs');
@@ -108,6 +109,9 @@ app.use('/api/quality-discrepancies', authMiddleware, pageAccessMiddleware('qd-t
 app.use('/api/signatures', authMiddleware, signaturesRouter);
 app.use('/api/api-keys', authMiddleware, adminMiddleware, apiKeysRouter);
 app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleFollowupsRouter);
+// Same page-access key: trials are part of the Sample Followup page, so anyone
+// who can see the page can see its trials.
+app.use('/api/sample-trials', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleTrialsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
 app.use('/api/existing-data', existingDataRouter);
 app.use('/api/auto-backups', authMiddleware, adminMiddleware, autoBackupsRouter);

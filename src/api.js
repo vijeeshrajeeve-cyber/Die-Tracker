@@ -745,6 +745,35 @@ export const sampleFollowupsAPI = {
     },
 };
 
+// Individual trials of a die sample. A trial hangs off whichever table its
+// followup came from, so create() takes either die_order_id or
+// sample_followup_id — never both.
+export const sampleTrialsAPI = {
+    getAll: async () => {
+        return apiRequest('/sample-trials');
+    },
+
+    create: async (data) => {
+        return apiRequest('/sample-trials', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    },
+
+    update: async (id, data) => {
+        return apiRequest(`/sample-trials/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    },
+
+    delete: async (id) => {
+        return apiRequest(`/sample-trials/${id}`, {
+            method: 'DELETE',
+        });
+    },
+};
+
 // Auto Backups API (admin only)
 export const autoBackupsAPI = {
     getAll: async () => {

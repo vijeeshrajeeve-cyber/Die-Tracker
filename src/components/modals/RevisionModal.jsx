@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, RotateCcw, Upload, FileText, AlertTriangle } from 'lucide-react';
 import { dialogs } from '../ui/DialogProvider';
 import useDialog from '../../hooks/useDialog';
+import { todayLocal } from '../../utils/today.js';
 
 function RevisionModal({
     isOpen,
@@ -46,7 +47,7 @@ function RevisionModal({
                 targetStatus,
                 notes: notes.trim(),
                 pdfFile,
-                revisionDate: new Date().toISOString().split('T')[0]
+                revisionDate: todayLocal()
             });
             onClose();
             setNotes('');

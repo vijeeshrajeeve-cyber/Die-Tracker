@@ -1,4 +1,4 @@
-import { parseDateDMY } from './helpers';
+import { parseDateDMY } from './helpers.js';
 
 // `xlsx` is ~800 KB and is only needed the moment someone clicks Export. A
 // static import put the whole spreadsheet writer in the main bundle, so it was
@@ -82,20 +82,32 @@ const applyDateFormats = (XLSX, ws, columns, rowCount) => {
   });
 };
 
-// Export an array of source rows to an .xlsx file using a curated column map.
-export const exportToExcel = async ({ rows, columns, filename, sheetName = 'Export' }) => {
-  const XLSX = await loadXLSX();
-  const safeRows = Array.isArray(rows) ? rows : [];
-  const exportRows = safeRows.map((r) => buildRow(r, columns));
+// Exposed for tests: the row mapping is the part with real logic, and it needs
+// no xlsx import to exercise.
+export const buildSheetData = ({ rows, columns }) =>
+  (Array.isArray(rows) ? rows : []).map((r) => buildRow(r, columns));
 
-  const ws = XLSX.utils.json_to_sheet(exportRows, {
-    header: columns.map((c) => c.label),
-  });
-  ws['!cols'] = computeColWidths(exportRows, columns);
-  applyDateFormats(XLSX, ws, columns, exportRows.length);
+// Export an array of source rows to an .xlsx file using a curated column map.
+//
+// Accepts either a single sheet ({ rows, columns, sheetName }) or several
+// ({ sheets: [{ name, rows, columns }] }). Callers passing one sheet keep
+// working unchanged.
+export const exportToExcel = async ({ rows, columns, filename, sheetName = 'Export', sheets }) => {
+  const XLSX = await loadXLSX();
+  const plan = sheets && sheets.length
+    ? sheets
+    : [{ name: sheetName, rows, columns }];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  plan.forEach(({ name, rows: sheetRows, columns: sheetColumns }) => {
+    const exportRows = buildSheetData({ rows: sheetRows, columns: sheetColumns });
+    const ws = XLSX.utils.json_to_sheet(exportRows, {
+      header: sheetColumns.map((c) => c.label),
+    });
+    ws['!cols'] = computeColWidths(exportRows, sheetColumns);
+    applyDateFormats(XLSX, ws, sheetColumns, exportRows.length);
+    XLSX.utils.book_append_sheet(wb, ws, String(name).slice(0, 31));
+  });
 
   const stamp = new Date().toISOString().slice(0, 10);
   const finalName = filename.endsWith('.xlsx') ? filename : `${filename}_${stamp}.xlsx`;
