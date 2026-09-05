@@ -48,10 +48,22 @@ const COL_X = {
   newDieNo:  147,
   press:     239,
   dieType:   287,
-  dieSize:   362,
-  activeDie: 442,   // "No. of Active Dies" column
-  extruded:  532,   // "Extruded Volume on Active Dies" column
 };
+
+// The wide value columns are centered between the template's printed rules rather
+// than left-aligned, so a long value stays evenly inside the cell instead of
+// running past the right-hand rule. Rule x-positions were probed from
+// backup-j-template.pdf; CELL_PAD is reserved on each side so the clamp can never
+// let text touch a rule.
+const CELL_PAD = 3;
+const CELL_RULES = {
+  dieSize:   [318.2, 420.6],   // "Die Size"
+  activeDie: [420.6, 513.2],   // "No. of Active Dies"
+  extruded:  [513.2, 604.2],   // "Extruded Volume on Active Dies"
+};
+const CELL = Object.fromEntries(Object.entries(CELL_RULES).map(([name, [left, right]]) => [
+  name, { center: (left + right) / 2, maxWidth: right - left - 2 * CELL_PAD },
+]));
 
 // Row text-baseline y-positions: Row 1 at index 0, stride ~14.5 pt downward.
 // Baselines match the template's row-number labels (1 → y=641.9, 10 → y=510.8).
@@ -100,7 +112,7 @@ function formatDate(date = new Date()) {
 }
 
 /**
- * Draw text clamped to maxWidth — truncates with a trailing '…' when needed.
+ * Draw text left-aligned at x, clipping trailing characters until it fits maxWidth.
  */
 function drawClamped(page, text, x, y, font, size, maxWidth) {
   if (!text) return;
@@ -116,6 +128,20 @@ function drawCentered(page, text, centerX, y, font, size) {
   if (!text) return;
   const w = font.widthOfTextAtSize(text, size);
   page.drawText(text, { x: centerX - w / 2, y, font, size, color: BLACK });
+}
+
+/**
+ * Draw text centered on centerX, clipping trailing characters until it fits
+ * maxWidth, so it can never cross either of the cell's printed rules.
+ */
+function drawCenteredClamped(page, text, centerX, y, font, size, maxWidth) {
+  if (!text) return;
+  let s = text;
+  while (s.length > 1 && font.widthOfTextAtSize(s, size) > maxWidth) {
+    s = s.slice(0, -1);
+  }
+  const w = font.widthOfTextAtSize(s, size);
+  page.drawText(s, { x: centerX - w / 2, y, font, size, color: BLACK });
 }
 
 /** Draw a tick mark inside the checkbox at (column, row). */
@@ -194,21 +220,20 @@ async function generateJFilePdf(backupRequest, orderValues, pool) {
   page.drawText(dieNo,                      { x: COL_X.newDieNo, y: y1, font, size: FS, color: BLACK });
   drawCentered(page, backupRequest.press || '', PRESS_CENTER_X, y1, font, FS);
   page.drawText(dieType,                   { x: COL_X.dieType,  y: y1, font, size: FS, color: BLACK });
-  drawClamped(page, orderValues.DIE_SIZE || '', COL_X.dieSize, y1, font, FS, 70);
+  drawCenteredClamped(page, orderValues.DIE_SIZE || '', CELL.dieSize.center, y1, font, FS, CELL.dieSize.maxWidth);
 
   // ── Active dies — "No. of Active Dies" + "Extruded Volume" columns ───────
-  // Col 7 (activeDie) width ≈ 88 pt; col 8 (extruded) width ≈ 50 pt
   for (let i = 0; i < activeDies.length; i++) {
     const y = rowY(i);
     const die = activeDies[i];
 
     const activeDieText = die.supplier ? `${die.die_no} ${die.supplier}` : die.die_no;
-    drawClamped(page, activeDieText, COL_X.activeDie, y, font, FS_SM, 88);
+    drawCenteredClamped(page, activeDieText, CELL.activeDie.center, y, font, FS_SM, CELL.activeDie.maxWidth);
 
     // A die still on order has extruded nothing yet, which is not the same as
     // having extruded zero — leave the cell blank rather than printing 0 Kg.
     if (die.tonnage !== null) {
-      drawClamped(page, formatKg(die.tonnage), COL_X.extruded, y, font, FS_SM, 50);
+      drawCenteredClamped(page, formatKg(die.tonnage), CELL.extruded.center, y, font, FS_SM, CELL.extruded.maxWidth);
     }
   }
 
