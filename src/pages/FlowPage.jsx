@@ -7,6 +7,7 @@ import DieAttentionLabels from '../components/DieAttentionLabels';
 import CorrectorSelect from '../components/ui/CorrectorSelect';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 import { todayLocal } from '../utils/today.js';
+import { skipTrialAllowed, skipTrialDefault, buildReceivancePatch } from '../utils/dieReceivance';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
 // are recorded on the revision row via the complete-stage endpoint.
@@ -85,7 +86,7 @@ export default function FlowPage({
   handleCavityChange,
 }) {
   const [dieReceivanceOrder, setDieReceivanceOrder] = useState(null);
-  const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '' });
+  const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '', skip_trial: false });
   const [cavityEdit, setCavityEdit] = useState(null);
   const [cavityReason, setCavityReason] = useState('');
   const [frozenMap, setFrozenMap] = useState({}); // orderId -> { id, frozen_at, files_count }
@@ -402,7 +403,7 @@ export default function FlowPage({
                     )}
                     {isDone && (
                       <td style={{ ...styles.td, textAlign: 'center' }}>
-                        <button onClick={(e) => { e.stopPropagation(); setDieReceivanceOrder(order); setDieReceivanceForm({ die_received_date: todayLocal(), corrector: '' }); }} style={{ padding: '6px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid rgba(8,145,178,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#0891B2', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }} title="Confirm Die Receivance" onMouseEnter={(e) => { e.currentTarget.style.background = '#0891B2'; e.currentTarget.style.color = 'white'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(8,145,178,0.15)'; e.currentTarget.style.color = '#0891B2'; }}>
+                        <button onClick={(e) => { e.stopPropagation(); setDieReceivanceOrder(order); setDieReceivanceForm({ die_received_date: todayLocal(), corrector: '', skip_trial: skipTrialDefault(order.TYPE) }); }} style={{ padding: '6px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid rgba(8,145,178,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#0891B2', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }} title="Confirm Die Receivance" onMouseEnter={(e) => { e.currentTarget.style.background = '#0891B2'; e.currentTarget.style.color = 'white'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(8,145,178,0.15)'; e.currentTarget.style.color = '#0891B2'; }}>
                           <Package size={16} /> Confirm
                         </button>
                       </td>
@@ -459,6 +460,21 @@ export default function FlowPage({
                   style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
+              {skipTrialAllowed(dieReceivanceOrder.TYPE) && (
+                <label htmlFor="flowpage-skip-trial" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', cursor: 'pointer' }}>
+                  <input
+                    id="flowpage-skip-trial"
+                    type="checkbox"
+                    checked={!!dieReceivanceForm.skip_trial}
+                    onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, skip_trial: e.target.checked })}
+                    style={{ marginTop: '2px', accentColor: '#22C55E' }}
+                  />
+                  <span>
+                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>Skip trial</span>
+                    <span style={{ display: 'block', fontSize: '0.75rem', color: theme.textMuted, marginTop: '2px' }}>Sample marked submitted and approved on the received date, with no trials.</span>
+                  </span>
+                </label>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
               <button onClick={() => setDieReceivanceOrder(null)} style={{ padding: '10px 20px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
@@ -467,29 +483,14 @@ export default function FlowPage({
                   if (!dieReceivanceForm.die_received_date) { setToast({ message: 'Please enter the die received date', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
                   if (!dieReceivanceForm.corrector.trim()) { setToast({ message: 'Please assign a corrector', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
                   try {
-                    const dieReceivanceLog = {
-                      date: dieReceivanceForm.die_received_date,
-                      field: 'STATUS',
-                      oldValue: dieReceivanceOrder.STATUS,
-                      newValue: 'DIE RECEIVED',
-                      stage: dieReceivanceOrder.STATUS,
-                      reason: `Corrector: ${dieReceivanceForm.corrector.trim()}`,
-                    };
-                    const patch = {
-                      STATUS: 'DIE RECEIVED',
-                      'Die Received Date': dieReceivanceForm.die_received_date,
-                      'Corrector': dieReceivanceForm.corrector.trim(),
-                      'Press': dieReceivanceOrder['Press'] || dieReceivanceOrder.Plant || '',
-                      'Ascona Reference': dieReceivanceOrder['Ascona Reference'] || 'No',
-                      'Sample Status': dieReceivanceOrder['Sample Status'] || 'Pending',
-                      'Change Log': [dieReceivanceLog],
-                    };
+                    const { patch } = buildReceivancePatch({ order: dieReceivanceOrder, form: dieReceivanceForm, skipTrial: dieReceivanceForm.skip_trial });
                     await ordersAPI.patch(dieReceivanceOrder.id, patch);
                     setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? {
                       ...o, ...patch, changeCount: (o.changeCount || 0) + 1,
                     } : o));
+                    const skipped = 'Submission Date' in patch;
                     setDieReceivanceOrder(null);
-                    setToast({ message: `Die ${dieReceivanceOrder['DIE NO']} confirmed & moved to Sample Followup`, type: 'success' });
+                    setToast({ message: `Die ${dieReceivanceOrder['DIE NO']} confirmed${skipped ? ', trial skipped' : ''} & moved to Sample Followup`, type: 'success' });
                     setActiveTab('flow-sample-followup');
                     setTimeout(() => setToast(null), 3000);
                   } catch (error) {
