@@ -132,6 +132,7 @@ const orderValidation = [
     body('Ascona Reference').optional().customSanitizer(sanitizeString),
     body('Sample Status').optional().customSanitizer(sanitizeString),
     body('Remark').optional().customSanitizer(sanitizeString),
+    body('Sample Remark').optional().customSanitizer(sanitizeString),
     body('Urgency').optional().trim().custom((value) => {
         const n = normalizeUrgencyInput(value);
         if (!['NORMAL', 'URGENT', 'TOP_URGENT'].includes(n)) {
@@ -207,6 +208,7 @@ router.get('/', async (req, res) => {
             'Ascona Reference': order.ascona_reference,
             'Sample Status': order.sample_status,
             'Remark': order.remark,
+            'Sample Remark': order.sample_remark,
             'Urgency': order.urgency || 'NORMAL',
             'specialFollowUp': !!order.special_follow_up,
             'Design to EMS Date': order.design_to_ems_date,
@@ -238,12 +240,12 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 design_approved_date, delay, pr_entry, pr_number, customer_name,
                 oracle_entry, supplier, status, overall_delay, eta, month,
                 die_received_date, submission_date, sample_approval_date, no_of_trial, corrector,
-                press, cavity, ascona_reference, sample_status, remark,
+                press, cavity, ascona_reference, sample_status, remark, sample_remark,
                 urgency, special_follow_up, design_to_ems_date,
                 frozen_design_id, frozen_design_action,
                 frozen_design_override_reason, frozen_design_override_note,
                 created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -280,6 +282,7 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['Ascona Reference']),
             sanitizeString(order['Sample Status']),
             sanitizeString(order['Remark']),
+            sanitizeString(order['Sample Remark']),
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
             sanitizeDate(order['Design to EMS Date']),
@@ -345,6 +348,7 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
             'Ascona Reference':       { col: 'ascona_reference',            fn: sanitizeString },
             'Sample Status':          { col: 'sample_status',               fn: sanitizeString },
             'Remark':                 { col: 'remark',                      fn: sanitizeString },
+            'Sample Remark':          { col: 'sample_remark',               fn: sanitizeString },
             'Urgency':                { col: 'urgency',                     fn: normalizeUrgencyInput },
             'specialFollowUp':        { col: 'special_follow_up',           fn: parseSpecialFollowUpInput },
             'Design to EMS Date':     { col: 'design_to_ems_date',          fn: sanitizeDate   },
@@ -424,12 +428,13 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
                 die_received_date = $25, submission_date = $26, sample_approval_date = $27,
                 no_of_trial = $28, corrector = $29,
                 press = $30, cavity = $31, ascona_reference = $32, sample_status = $33, remark = $34,
-                urgency = $35, special_follow_up = $36,
-                design_to_ems_date = $37,
-                frozen_design_id = $38, frozen_design_action = $39,
-                frozen_design_override_reason = $40, frozen_design_override_note = $41,
+                sample_remark = $35,
+                urgency = $36, special_follow_up = $37,
+                design_to_ems_date = $38,
+                frozen_design_id = $39, frozen_design_action = $40,
+                frozen_design_override_reason = $41, frozen_design_override_note = $42,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $42
+            WHERE id = $43
         `, [
             sanitizeString(order['Plant']),
             sanitizeString(order['Order No']),
@@ -465,6 +470,7 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['Ascona Reference']),
             sanitizeString(order['Sample Status']),
             sanitizeString(order['Remark']),
+            sanitizeString(order['Sample Remark']),
             normalizeUrgencyInput(order['Urgency']),
             parseSpecialFollowUpInput(order.specialFollowUp),
             sanitizeDate(order['Design to EMS Date']),

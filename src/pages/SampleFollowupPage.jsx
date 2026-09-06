@@ -23,7 +23,7 @@ const SF_DISPLAY_TO_SNAKE = {
   'Ascona Reference': 'ascona_reference',
   'Submission Date': 'submission_date',
   'Sample Approval Date': 'sample_approval_date',
-  'Remark': 'remark',
+  'Sample Remark': 'remark',
   'Sample Status': 'status',
   'Corrector': 'corrector',
 };
@@ -60,7 +60,7 @@ const formToOrderFields = (form) => ({
   'Submission Date': form.submission_date || '',
   'Sample Approval Date': form.sample_approval_date || '',
   'Sample Status': form.status || 'Pending',
-  'Remark': form.remark || '',
+  'Sample Remark': form.remark || '',
   'Corrector': form.corrector || '',
 });
 
@@ -183,7 +183,7 @@ export default function SampleFollowupPage({
         'Sample Approval Date': null,
         'Ascona Reference': 'No',
         'Sample Status': '',
-        'Remark': '',
+        'Sample Remark': '',
         'Press': '',
       });
       setToast({ message: 'Sample followup cleared', type: 'success' });
@@ -520,7 +520,7 @@ export default function SampleFollowupPage({
                         <input
                           type="text"
                           defaultValue={sf.remark || ''}
-                          onBlur={(e) => handleSfInlineSave(sf, 'Remark', e.target.value)}
+                          onBlur={(e) => handleSfInlineSave(sf, 'Sample Remark', e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                           placeholder="—"
                           style={{ width: '100%', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem' }}

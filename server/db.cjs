@@ -207,6 +207,7 @@ const initializeDatabase = async () => {
         ascona_reference TEXT DEFAULT 'No',
         sample_status TEXT DEFAULT 'Pending',
         remark TEXT,
+        sample_remark TEXT,
         urgency TEXT DEFAULT 'NORMAL',
         special_follow_up BOOLEAN DEFAULT false,
         design_revision_count INTEGER DEFAULT 0,
@@ -254,6 +255,11 @@ const initializeDatabase = async () => {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='remark') THEN
           ALTER TABLE die_orders ADD COLUMN remark TEXT;
+        END IF;
+        -- Notes about the sample itself, kept apart from the order-level remark
+        -- so the Sample Followup page never overwrites what the order form wrote.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='sample_remark') THEN
+          ALTER TABLE die_orders ADD COLUMN sample_remark TEXT;
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='change_log') THEN
           ALTER TABLE die_orders ADD COLUMN change_log TEXT DEFAULT '[]';

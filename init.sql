@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS die_orders (
     ascona_reference TEXT DEFAULT 'No',
     sample_status TEXT DEFAULT 'Pending',
     remark TEXT,
+    sample_remark TEXT,
     urgency TEXT DEFAULT 'NORMAL',
     special_follow_up BOOLEAN DEFAULT false,
     change_log TEXT DEFAULT '[]',
