@@ -1814,7 +1814,7 @@ export default function DieOrderingSystem() {
         delay_days: 0,
         status: o['Sample Status'] || 'Pending',
         no_of_trial: o['No of Trial'] || 0,
-        remark: o['Remark'] || '',
+        remark: o['Sample Remark'] || '',
         corrector: o['Corrector'] || '',
       }));
 

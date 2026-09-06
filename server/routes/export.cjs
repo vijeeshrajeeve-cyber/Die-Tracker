@@ -39,6 +39,7 @@ const FIELD_MAP = {
     'ascona_reference': 'ascona_reference',
     'sample_status': 'sample_status',
     'remark': 'remark',
+    'sample_remark': 'sample_remark',
     'urgency': 'urgency',
     'special_follow_up': 'special_follow_up'
 };
@@ -78,6 +79,7 @@ const DISPLAY_NAMES = {
     'ascona_reference': 'Ascona Reference',
     'sample_status': 'Sample Status',
     'remark': 'Remark',
+    'sample_remark': 'Sample Remark',
     'urgency': 'Urgency',
     'special_follow_up': 'Special Follow-Up'
 };
