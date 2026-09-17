@@ -153,6 +153,14 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
               const hasBudget = trendYear !== 'all' && !!(plantBudgets[trendYear]?.[plant]);
               const allValues = plantData.flatMap(d => { const vals = [d.new || 0, d.backup || 0]; if (hasBudget) { vals.push(d.backup_target || 0, d.new_target || 0); } return vals; });
               const yMax = Math.max(...allValues, 0) + 15;
+              const ytdNew = plantData.reduce((sum, d) => sum + (d.new || 0), 0);
+              const ytdBackup = plantData.reduce((sum, d) => sum + (d.backup || 0), 0);
+              const ytdLabel = trendYear === 'all' ? 'Total' : 'YTD';
+              // Year target is the sum of all 12 monthly targets, not just the months elapsed.
+              const targetNew = hasBudget ? plantData.reduce((sum, d) => sum + (Number(d.new_target) || 0), 0) : null;
+              const targetBackup = hasBudget ? plantData.reduce((sum, d) => sum + (Number(d.backup_target) || 0), 0) : null;
+              const ytdData = [{ label: ytdLabel, new: ytdNew, backup: ytdBackup, new_target: targetNew, backup_target: targetBackup }];
+              const ytdMax = Math.ceil(Math.max(ytdNew, ytdBackup, targetNew || 0, targetBackup || 0, 1) * 1.15);
               return (
                 <div key={plant} style={styles.chartCard}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
@@ -170,6 +178,8 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
                       </span>
                     )}
                   </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch' }}>
+                  <div style={{ flex: '1 1 260px', minWidth: 0 }}>
                   <ResponsiveContainer width="100%" height={220}>
                     <ComposedChart data={plantData} barCategoryGap="10%" barGap={2} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
                       <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
@@ -190,6 +200,38 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
                       {hasBudget && <Line dataKey="new_target" name="New Target" type="monotone" stroke="#22C55E" strokeWidth={2} dot={false} strokeDasharray="5 3" />}
                     </ComposedChart>
                   </ResponsiveContainer>
+                  </div>
+                  {/* YTD gets its own panel and scale: a year's total would flatten the monthly bars on a shared axis. */}
+                  <div style={{ flex: '0 0 150px', display: 'flex', flexDirection: 'column', borderLeft: `1px solid ${theme.cardBorder}`, paddingLeft: '10px' }}>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={ytdData} barGap={4} margin={{ top: 16, right: 4, left: 4, bottom: 0 }}>
+                        <XAxis xAxisId="actual" dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11, fontWeight: 700 }} />
+                        {hasBudget && <XAxis xAxisId="target" dataKey="label" hide />}
+                        <YAxis hide domain={[0, ytdMax]} />
+                        <Tooltip
+                          contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', padding: '10px 14px' }}
+                          itemStyle={{ color: '#FFFFFF', fontWeight: 500 }}
+                          labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
+                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                          formatter={(value, name) => (value == null ? null : [value, name])}
+                        />
+                        {hasBudget && <Bar xAxisId="target" dataKey="new_target" name="New Target" barSize={30} fill="rgba(34, 197, 94, 0.06)" stroke="#22C55E" strokeWidth={1.5} strokeDasharray="4 2" radius={[4, 4, 0, 0]} />}
+                        {hasBudget && <Bar xAxisId="target" dataKey="backup_target" name="Backup Target" barSize={30} fill="rgba(239, 68, 68, 0.06)" stroke="#EF4444" strokeWidth={1.5} strokeDasharray="4 2" radius={[4, 4, 0, 0]} />}
+                        <Bar xAxisId="actual" dataKey="new" name="New Dies" barSize={30} fill="#3B82F6" radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="new" position="top" fill="#94A3B8" fontSize={10} fontWeight={700} />
+                        </Bar>
+                        <Bar xAxisId="actual" dataKey="backup" name="Backup Dies" barSize={30} fill="#F59E0B" radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="backup" position="top" fill="#94A3B8" fontSize={10} fontWeight={700} />
+                        </Bar>
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                    {hasBudget && (
+                      <div style={{ textAlign: 'center', fontSize: '0.68rem', color: '#64748B', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>
+                        Target <span style={{ color: '#22C55E', fontWeight: 700 }}>{targetNew}</span> · <span style={{ color: '#EF4444', fontWeight: 700 }}>{targetBackup}</span>
+                      </div>
+                    )}
+                  </div>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginTop: '6px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', color: '#94A3B8' }}>
                       <span style={{ width: 10, height: 10, borderRadius: '2px', background: '#3B82F6', display: 'inline-block' }} /> New Dies
