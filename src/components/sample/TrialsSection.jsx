@@ -16,7 +16,7 @@ const resultStyle = {
 // Trials save the moment they are added, not when the record's Save button is
 // pressed — they are their own records with their own endpoint. The subtitle
 // says so, because two save models in one modal is otherwise a surprise.
-export default function TrialsSection({ parent, trials, theme, user, onChanged, setToast }) {
+export default function TrialsSection({ parent, trials, theme, user, onChanged, setToast, pane = false, legacyCount = 0 }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -79,8 +79,123 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
     }
   };
 
+  const addForm = adding && (
+    <div style={{ marginTop: '0.75rem', padding: '1rem', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', background: 'rgba(8,145,178,0.05)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <div>
+          <label style={label} htmlFor="trial-date">Trial Date</label>
+          <input
+            id="trial-date" type="date" style={input}
+            value={form.trial_date}
+            max={todayLocal()}
+            onChange={(e) => setForm({ ...form, trial_date: e.target.value })}
+          />
+        </div>
+        <div>
+          <label style={label} htmlFor="trial-result">Result</label>
+          <select
+            id="trial-result" style={input}
+            value={form.result}
+            onChange={(e) => setForm({ ...form, result: e.target.value, fail_reason: '' })}
+          >
+            {TRIAL_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        {form.result === 'Not OK' && (
+          <div style={{ gridColumn: 'span 2' }}>
+            <label style={label} htmlFor="trial-reason">Reason</label>
+            <select
+              id="trial-reason" style={input}
+              value={form.fail_reason}
+              onChange={(e) => setForm({ ...form, fail_reason: e.target.value })}
+            >
+              <option value="">Select a reason…</option>
+              {TRIAL_FAIL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ gridColumn: 'span 2' }}>
+          <label style={label} htmlFor="trial-comments">Comments</label>
+          <textarea
+            id="trial-comments" rows={2}
+            style={{ ...input, resize: 'vertical', fontFamily: 'inherit' }}
+            value={form.comments}
+            onChange={(e) => setForm({ ...form, comments: e.target.value })}
+          />
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '0.75rem' }}>
+        <button
+          onClick={reset}
+          style={{ padding: '8px 16px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.82rem' }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={save}
+          disabled={busy}
+          style={{ padding: '8px 18px', background: '#0891B2', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontSize: '0.82rem', opacity: busy ? 0.6 : 1 }}
+        >
+          {busy ? 'Saving…' : 'Save Trial'}
+        </button>
+      </div>
+    </div>
+  );
+
   const cell = { padding: '8px 10px', fontSize: '0.82rem', color: theme.text, borderTop: `1px solid ${theme.border || '#334155'}` };
   const head = { padding: '8px 10px', fontSize: '0.7rem', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'left' };
+
+  const openAdd = () => { setForm({ ...EMPTY, trial_date: todayLocal() }); setAdding(true); };
+
+  // The Sample Followup detail pane: the log is always a table, so an empty
+  // die still shows where its trials will land.
+  if (pane) {
+    return (
+      <section className="sf-trials" aria-labelledby="sf-trials-title">
+        <div className="sf-trials-head">
+          <div className="sf-trials-title">
+            <h3 id="sf-trials-title">Trials</h3>
+            <span>Saved as soon as you add them</span>
+          </div>
+          {parent && !adding && (
+            <button type="button" className="sf-button sf-button-tint sf-button-sm" onClick={openAdd}><Plus size={14} /> Add Trial</button>
+          )}
+        </div>
+        {!parent ? <p className="sf-dim">Save the record first to log trials.</p> : <>
+          <div className="sf-trials-table">
+            <table>
+              <thead><tr>
+                <th scope="col" className="sf-trial-no">#</th><th scope="col">Date</th><th scope="col">Result</th><th scope="col">Reason</th><th scope="col">Comments</th>
+                {user?.role === 'admin' && trials.length > 0 && <th scope="col" className="sf-trial-no"><span className="sf-visually-hidden">Delete</span></th>}
+              </tr></thead>
+              <tbody>
+                {trials.length === 0 ? (
+                  <tr>
+                    <td className="sf-mono">—</td>
+                    <td>{legacyCount > 0 ? `${legacyCount} legacy ${legacyCount === 1 ? 'trial' : 'trials'}, no details` : 'No trials logged yet'}</td>
+                    <td><span className="sf-pill sf-pill-neutral">—</span></td>
+                    <td>—</td><td className="sf-muted">—</td>
+                  </tr>
+                ) : trials.map(t => (
+                  <tr key={t.id}>
+                    <td className="sf-mono">{t.trial_no}</td>
+                    <td className="sf-nowrap">{formatDate(t.trial_date)}</td>
+                    <td><span className={`sf-pill ${t.result === 'OK' ? 'sf-pill-ok' : 'sf-pill-bad'}`}>{t.result}</span></td>
+                    <td>{t.fail_reason || '—'}</td>
+                    <td className="sf-muted">{t.comments || '—'}</td>
+                    {user?.role === 'admin' && (
+                      <td><button type="button" className="sf-icon-button sf-danger" onClick={() => remove(t)} aria-label={`Delete trial ${t.trial_no}`}><Trash2 size={13} /></button></td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {addForm}
+        </>}
+      </section>
+    );
+  }
 
   return (
     <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
@@ -93,7 +208,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
         </div>
         {parent && !adding && (
           <button
-            onClick={() => { setForm({ ...EMPTY, trial_date: todayLocal() }); setAdding(true); }}
+            onClick={openAdd}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid #0891B2', borderRadius: '8px', color: '#0891B2', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
           >
             <Plus size={14} /> Add Trial
@@ -157,68 +272,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
             </div>
           )}
 
-          {adding && (
-            <div style={{ marginTop: '0.75rem', padding: '1rem', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', background: 'rgba(8,145,178,0.05)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div>
-                  <label style={label} htmlFor="trial-date">Trial Date</label>
-                  <input
-                    id="trial-date" type="date" style={input}
-                    value={form.trial_date}
-                    max={todayLocal()}
-                    onChange={(e) => setForm({ ...form, trial_date: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label style={label} htmlFor="trial-result">Result</label>
-                  <select
-                    id="trial-result" style={input}
-                    value={form.result}
-                    onChange={(e) => setForm({ ...form, result: e.target.value, fail_reason: '' })}
-                  >
-                    {TRIAL_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </div>
-                {form.result === 'Not OK' && (
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={label} htmlFor="trial-reason">Reason</label>
-                    <select
-                      id="trial-reason" style={input}
-                      value={form.fail_reason}
-                      onChange={(e) => setForm({ ...form, fail_reason: e.target.value })}
-                    >
-                      <option value="">Select a reason…</option>
-                      {TRIAL_FAIL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={label} htmlFor="trial-comments">Comments</label>
-                  <textarea
-                    id="trial-comments" rows={2}
-                    style={{ ...input, resize: 'vertical', fontFamily: 'inherit' }}
-                    value={form.comments}
-                    onChange={(e) => setForm({ ...form, comments: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '0.75rem' }}>
-                <button
-                  onClick={reset}
-                  style={{ padding: '8px 16px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.82rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={save}
-                  disabled={busy}
-                  style={{ padding: '8px 18px', background: '#0891B2', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontSize: '0.82rem', opacity: busy ? 0.6 : 1 }}
-                >
-                  {busy ? 'Saving…' : 'Save Trial'}
-                </button>
-              </div>
-            </div>
-          )}
+          {addForm}
         </>
       )}
     </div>
