@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
   Calendar, Check, MessageSquare, Pencil, XCircle, Mail, ArrowUpCircle, CornerUpLeft, Repeat,
-  Download, Eye,
+  Download, Eye, Undo2,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, getUser } from '../../api';
-import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS, QD_APPROVAL_BADGE } from '../../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS, QD_APPROVAL_BADGE, QD_IMPORTED_BADGE } from '../../utils/constants';
+import { dialogs } from '../ui/DialogProvider';
 import { dieDesignSignature, userSignature } from '../../utils/emailSignature';
 import StatusChangeModal from './StatusChangeModal';
 import FocTrialModal from './FocTrialModal';
@@ -319,6 +320,28 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
 
   const handleResend = () => run(() => qualityDiscrepanciesAPI.resendPurchase(qd.id));
 
+  // Only for a QD brought in by the importer (the server refuses any other).
+  // It exists so a wrong import can be redone, which is why it takes everything
+  // recorded since with it.
+  const handleUndoImport = async () => {
+    const ok = await dialogs.confirm({
+      title: `Undo import of QD ${qd.qd_no}`,
+      message: 'This QD leaves the register together with everything recorded on it since it was imported: status changes, notes, FOC rounds and attachments. Its number becomes free to import again.',
+      confirmLabel: 'Undo import',
+    });
+    if (!ok) return;
+    setBusy(true);
+    setError('');
+    try {
+      await qualityDiscrepanciesAPI.undoImport(qd.id);
+      onClose();
+      await onChanged();
+    } catch (e) {
+      setError(e.message || 'Could not undo the import');
+      setBusy(false);
+    }
+  };
+
   // Streams the rendered QD form as a PDF — doesn't touch any data, so it
   // skips the onChanged refresh that `run` would otherwise trigger.
   const handleDownloadDocument = async () => {
@@ -377,6 +400,9 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
               {aBadge && (
                 <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: aBadge.bg, color: aBadge.fg }}>{aBadge.label}</span>
               )}
+              {qd.imported && (
+                <span title="Brought in from an existing QD form" style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: QD_IMPORTED_BADGE.bg, color: QD_IMPORTED_BADGE.fg }}>{QD_IMPORTED_BADGE.label}</span>
+              )}
             </div>
             <div style={{ fontSize: 13, color: dim, marginTop: 6 }}>
               Die <span style={{ fontFamily: mono, fontWeight: 600, color: muted }}>{qd.die_no}</span>
@@ -407,6 +433,12 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Eye size={15} /> Preview QD form
           </button>
+          {me?.role === 'admin' && qd.imported && (
+            <button onClick={handleUndoImport} disabled={busy} className="qd-action" title="Remove this imported QD so it can be imported again correctly"
+              style={{ padding: '8px 14px', background: bg, border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, color: '#FCA5A5', fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Undo2 size={15} /> Undo import
+            </button>
+          )}
           <select aria-label="Change QD status" value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
             style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
             {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
@@ -563,10 +595,10 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             {(qd.files || []).map(f => {
               const Icon = isPdf(f.original_name) ? FileText : ImageIcon;
               return (
-                <button key={f.id} type="button" className="qd-chip"
+                <button key={f.id} type="button" className="qd-chip" title={f.original_name}
                   onClick={() => qualityDiscrepanciesAPI.downloadFile(f.id, f.original_name)}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: `1px solid ${border}`, borderRadius: 8, fontSize: 12, color: muted, cursor: 'pointer', background: bg }}>
-                  <Icon size={15} style={{ color: isPdf(f.original_name) ? '#F87171' : '#60A5FA' }} /> {f.original_name}
+                  <Icon size={15} style={{ color: isPdf(f.original_name) ? '#F87171' : '#60A5FA' }} /> {f.category === 'original_form' ? 'Original QD form' : f.original_name}
                 </button>
               );
             })}
