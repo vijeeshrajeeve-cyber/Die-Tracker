@@ -87,6 +87,10 @@ Any value it cannot find is `''`. It never guesses.
 - It reads only fields anchored to a printed label: `QD #`, `DATE`,
   `Quality Discrepancy :`, `Recommended Action :`, `Prepared By`,
   `Authorized By`.
+- A paragraph (the issue, the recommended action) ends at the **next printed
+  label of the form, whichever it is**. Word does not emit the form's text in
+  a fixed order: on 2026PH-04 the recommended action is followed by the photo
+  captions, on 2026PH-06 by the Part-B labels.
 - The die row is read only for its first two cells, the items that follow the
   header's last label (`done`). They are accepted only when they look like a
   profile (`^\d{3,6}$`) and a suffix (`^\d{1,4}[A-Z]?$`). Otherwise both stay

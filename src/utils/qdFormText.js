@@ -50,6 +50,26 @@ export const dieNoFromFilename = (name) => {
 };
 
 const firstMatch = (text, re) => (text.match(re)?.[1] || '').trim();
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// The labels printed on the controlled form. A paragraph we read ends at the
+// first of these after it: Word does not emit the form's text in a fixed
+// order, so what follows a paragraph differs from one QD to the next (on
+// 2026PH-04 the recommended action runs into the photo captions, on 2026PH-06
+// into Part-B).
+const FORM_LABELS = [
+  'Quality Discrepancy :', 'Manufacturing Defect', 'Recommended Action',
+  'Part-A (To be filled', 'Part-B (To be filled', 'Production Parameters',
+  'Quality Discrepancy Acceptance', 'Action Taken', 'Supplier Comments/Corrective Action',
+  'Note- Quality Discrepancy', 'Received By (Supplier)', 'Quality Discrepancy Closed on',
+  'Prepared By', 'Authorized By', 'Name Signature', 'Profile Image', 'YES NO ETA',
+  'As for 1st trial', 'As for last trial',
+];
+const UNTIL_NEXT_LABEL = `(?=${FORM_LABELS.map(escapeRe).join('|')}|$)`;
+
+// The paragraph after "<label> :", up to the next printed label.
+const paragraphAfter = (t, label) => joinWrappedLines(
+  firstMatch(t, new RegExp(`${escapeRe(label)}[ \\t]*:([\\s\\S]*?)${UNTIL_NEXT_LABEL}`)));
 
 export const parseQdFormText = (text) => {
   const t = String(text || '');
@@ -60,10 +80,8 @@ export const parseQdFormText = (text) => {
   const die = t.match(/\bdone[ \t]*\n[ \t]*(\d{3,6})[ \t]+(\d{1,4}[A-Za-z]?)(?=[ \t\n]|$)/);
   // The colon matters: "Quality Discrepancy" is also the form's title and the
   // start of "Quality Discrepancy Closed on".
-  const issue = joinWrappedLines(firstMatch(t, /Quality Discrepancy[ \t]*:([\s\S]*?)Manufacturing Defect/));
-  // Ends at the photo captions that follow it in the text layer.
-  const recommendedAction = joinWrappedLines(
-    firstMatch(t, /Recommended Action[ \t]*:([\s\S]*?)(?=As for 1st trial|As for last trial|Prepared By|$)/));
+  const issue = paragraphAfter(t, 'Quality Discrepancy');
+  const recommendedAction = paragraphAfter(t, 'Recommended Action');
   // [ \t]+, not \s+: an unsigned line must not capture the line after it.
   const preparedBy = firstMatch(t, /Prepared By[ \t]+([^\n]+)/);
   const authorizedBy = firstMatch(t, /Authorized By[ \t]+([^\n]+)/);

@@ -27,6 +27,26 @@ test('reads every labelled field from the 2026PH-04 form', () => {
   });
 });
 
+// A second real form, 2026PH-06. Word emitted its text in a different order:
+// here Recommended Action is followed by the Part-B labels, not the photo
+// captions -- which is how a paragraph once swallowed half of Part-B.
+const SAMPLE_PH06 = 'DATE 17-Sep-26\nQD # 2026PH-06\nProfile\nNo Die no\nDie\nReceived\ndate\nSupplier\nName Press Die Type Die size\nNo of\nCavity Tooling\nNo of\ntrials\nNo of\ncorrection\ndone\n5434 601 18-Aug-26 Phoenix P6 Hollow 700x500 1 I-05256 1 0\nDate Die Soaking\nHours\nDie\nTemperature\nBillet\ntemp\nBreak\nthrough\nPressure\nRunning\nPressure\nBillet\nlength Alloy Ram\nSpeed\nAny Delay\nobserved\n1st Billet\nDetails 520 246 203 1000 6063 5\nLast Billet\nDetails 500 272 203 1175 6063 7\nYes\nQuality Discrepancy\nPart-A (To be filled by Gulfex Team)\nProduction Parameters\n6-Sep-26 16 Hours 460 No any delay\nobserved\nQuality Discrepancy : The QD was raised due to a mandrel rib crack.\nDuring production, The major crack developed on both the corner rib and\ncenter rib. The attached image shows the observed issue. The total\nextruded input material was only 28,643 kg.\nManufacturing Defect Die Performance No\nYES NO ETA\nName Signature\nProfile Image Approved design\nRecommended Action :\nBased on the above observations, we kindly request you to provide a replacement FOC mandrel\non an urgent basis.\nPart-B (To be filled by Supplier)\nQuality Discrepancy Acceptance\nAction Taken\nSupplier Comments/Corrective Action\nNote- Quality Discrepancy should be closed within 10 Working Days\nPrepared By Veera\nAuthorized By Imran Mulla\nReceived By (Supplier)\nQuality Discrepancy Closed on';
+
+test('a paragraph ends at the next printed label, whatever order Word emitted them in', () => {
+  assert.deepEqual(parseQdFormText(SAMPLE_PH06), {
+    qdNo: '2026PH-06',
+    raisedDate: '2026-09-17',
+    supplierCode: 'PH',
+    profileNo: '5434',
+    dieSuffix: '601',
+    issue: 'The QD was raised due to a mandrel rib crack.\n'
+      + 'During production, The major crack developed on both the corner rib and center rib. The attached image shows the observed issue. The total extruded input material was only 28,643 kg.',
+    recommendedAction: 'Based on the above observations, we kindly request you to provide a replacement FOC mandrel on an urgent basis.',
+    preparedBy: 'Veera',
+    authorizedBy: 'Imran Mulla',
+  });
+});
+
 test('joins pdfjs items, breaking lines on hasEOL and between pages', () => {
   const pages = [
     [{ str: 'DATE' }, { str: ' ' }, { str: '4-Jun-26' }, { str: '', hasEOL: true }, { str: 'QD #' }],
