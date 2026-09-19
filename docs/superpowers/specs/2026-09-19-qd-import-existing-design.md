@@ -78,10 +78,11 @@ Parsing is a pure function over the text pdfjs returns, in a plain module
 `src/utils/qdFormText.js`, so it can be unit-tested under `node:test`. pdfjs
 itself is loaded only by the modal.
 
-`parseQdFormText(pages)` takes the text items of each page, in pdfjs order,
-and returns `{ qdNo, raisedDate, supplierCode, profileNo, dieSuffix, issue,
-recommendedAction, preparedBy, authorizedBy }`. Any value it cannot find is
-`''`. It never guesses.
+`qdFormTextFromItems(pages)` joins the text items of each page, in pdfjs
+order, into one string with a newline wherever pdfjs marks an end of line.
+`parseQdFormText(text)` then returns `{ qdNo, raisedDate, supplierCode,
+profileNo, dieSuffix, issue, recommendedAction, preparedBy, authorizedBy }`.
+Any value it cannot find is `''`. It never guesses.
 
 - It reads only fields anchored to a printed label: `QD #`, `DATE`,
   `Quality Discrepancy :`, `Recommended Action :`, `Prepared By`,
