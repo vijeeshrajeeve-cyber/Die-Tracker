@@ -11,6 +11,8 @@ const { todayLocal } = require('../services/dates.cjs');
 const qdSettings = require('../services/qdSettings.cjs');
 const email = require('../services/email.cjs');
 const qdDocument = require('../services/qdDocument.cjs');
+const qdImport = require('../services/qdImport.cjs');
+const { adminMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
 
@@ -43,6 +45,26 @@ const acceptFiles = (req, res, next) => {
       : err.message === 'File type not allowed'
         ? `File type not allowed (accepted: ${store.ALLOWED_EXTENSIONS.join(', ')})`
         : err.message;
+    return res.status(400).json({ error: message });
+  });
+};
+
+// The import takes exactly one file, and it must be the form itself.
+const importUpload = multer({
+  storage: uploadStorage,
+  limits: { fileSize: store.MAX_FILE_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (/\.pdf$/i.test(file.originalname)) return cb(null, true);
+    cb(new Error('The original QD form must be a PDF'));
+  },
+});
+
+const acceptOriginalForm = (req, res, next) => {
+  importUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? `File too large (max ${Math.round(store.MAX_FILE_BYTES / 1024 / 1024)} MB)`
+      : err.message;
     return res.status(400).json({ error: message });
   });
 };
@@ -212,6 +234,54 @@ router.post('/', async (req, res) => {
   }
 });
 
+// POST /api/quality-discrepancies/import  (admin, multipart: file + fields)
+// Brings one old, already-issued QD form into the register. adminMiddleware
+// runs before multer so a non-admin's upload never reaches the disk.
+router.post('/import', adminMiddleware, acceptOriginalForm, async (req, res) => {
+  const file = req.file;
+  const discardTemp = () => (file ? fsp.unlink(file.path).catch(() => {}) : null);
+  if (!file) return res.status(400).json({ error: 'Attach the original QD form (PDF)' });
+
+  let fields;
+  try {
+    fields = qdImport.validateImport(req.body, { today: todayLocal() });
+  } catch (e) {
+    await discardTemp();
+    return res.status(400).json({ error: e.message });
+  }
+
+  const client = await pool.connect();
+  let dest = null;
+  try {
+    await client.query('BEGIN');
+    const id = await qdImport.insertImportedQd(client, fields, {
+      actor: actorFor(req), userId: req.user?.id, fileName: file.originalname,
+    });
+    const root = store.getRoot();
+    dest = store.buildStoredPath(root, { qdNo: fields.qdNo, qdId: id, fileName: file.originalname });
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await moveIntoPlace(file.path, dest);
+    await qdImport.attachOriginal(client, {
+      qdId: id, originalName: file.originalname, storedPath: path.relative(root, dest),
+      mimeType: file.mimetype, size: file.size, userId: req.user?.id,
+    });
+    await client.query('COMMIT');
+    res.status(201).json({ id });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    // A rejected import leaves nothing on disk: neither the moved original nor
+    // the temp upload.
+    if (dest) await fsp.unlink(dest).catch(() => {});
+    await discardTemp();
+    if (e.clientError || isClientError(e.message)) return res.status(400).json({ error: e.message });
+    if (e.code === '23505') return res.status(409).json({ error: `QD ${fields.qdNo} already exists in the register` });
+    console.error('Import QD error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // GET /settings → approver ids + Purchase recipients (any authed user may read;
 // the client uses it to prefill the admin form, and canApprove is derived here too)
 router.get('/settings', async (req, res) => {
@@ -258,6 +328,19 @@ router.get('/approvers', async (req, res) => {
   try {
     res.json({ approvers: await listEligibleApprovers() });
   } catch (e) { console.error('List approvers error:', e); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// GET /api/quality-discrepancies/exists?qdNo=2026PH-04 (admin) -> { exists }
+// Lets the import form flag a number already in the register up front. The
+// import route still enforces uniqueness itself.
+router.get('/exists', adminMiddleware, async (req, res) => {
+  try {
+    const qdNo = String(req.query.qdNo || '').trim();
+    res.json({ exists: qdNo ? await qdImport.qdNoExists(pool, qdNo) : false });
+  } catch (e) {
+    console.error('QD exists check error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Gate for approve / send back / resend. Being an approver is necessary but not
@@ -486,7 +569,7 @@ router.get('/:id/document', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="QD-${row.qd_no || row.id}.pdf"`);
     res.send(Buffer.from(bytes));
   } catch (e) {
-    if (/QD not found/.test(e.message)) return res.status(404).json({ error: e.message });
+    if (/QD not found|Original QD form missing/.test(e.message)) return res.status(404).json({ error: e.message });
     console.error('QD document error:', e); res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -717,6 +800,36 @@ router.delete('/:id/files/:fileId', async (req, res) => {
     console.error('Delete QD file error:', e);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// DELETE /api/quality-discrepancies/:id/import (admin) -- takes back a QD that
+// came in through the importer so a wrong import can be redone. Refused for a
+// QD raised in the app; there is still no general QD delete.
+router.delete('/:id/import', adminMiddleware, async (req, res) => {
+  if (!/^\d+$/.test(String(req.params.id))) return res.status(404).json({ error: 'QD not found' });
+  const client = await pool.connect();
+  let storedPaths;
+  try {
+    await client.query('BEGIN');
+    storedPaths = await qdImport.deleteImportedQd(client, Number(req.params.id));
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    if (e.notFound) return res.status(404).json({ error: e.message });
+    if (e.clientError) return res.status(400).json({ error: e.message });
+    console.error('Undo QD import error:', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+  // Files go only once the rows are gone for good: a stray file is harmless,
+  // a row pointing at a deleted file is not.
+  const root = path.resolve(store.getRoot());
+  for (const rel of storedPaths) {
+    const abs = path.resolve(root, rel);
+    if (abs.startsWith(root)) await fsp.unlink(abs).catch(() => {});
+  }
+  res.json({ message: 'Import undone' });
 });
 
 // GET /api/quality-discrepancies/files/:fileId  (download)
