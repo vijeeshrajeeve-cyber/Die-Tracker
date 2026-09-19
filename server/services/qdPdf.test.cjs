@@ -107,9 +107,49 @@ test('generateQdPdf renders every uploaded image, annexing what the form has no 
     fileBytes.set(i, PNG_1x1);
   }
   const loaded = await PDFDocument.load(await generateQdPdf(baseQd, { files, billets: [], fileBytes }));
-  // Two template cells plus eight working-area slots; the rest must be annexed
+  // Two template cells plus four working-area cells; the rest must be annexed
   // rather than dropped, so the form grows past its fixed two pages.
   assert.ok(loaded.getPageCount() >= 3, `expected an annexure, got ${loaded.getPageCount()} page(s)`);
+});
+
+// Every photo is laid out like the template's Profile Image / Approved design
+// row -- a labelled band over two full-height ruled cells -- so each blank
+// working area holds one row of two, not a grid of thumbnails.
+function photoSet(categories) {
+  const files = [];
+  const fileBytes = new Map();
+  categories.forEach((category, i) => {
+    files.push({ id: i + 1, original_name: `img${i + 1}.png`, mime_type: 'image/png', category });
+    fileBytes.set(i + 1, PNG_1x1);
+  });
+  return { files, fileBytes, billets: [] };
+}
+
+test('extra photos fill each working area two to a row, and only the rest is annexed', async () => {
+  const four = await generateQdPdf(baseQd, photoSet(
+    ['profile_image', 'approved_design', 'trial_photo', 'trial_photo', 'trial_photo', 'general'],
+  ));
+  assert.equal((await PDFDocument.load(four)).getPageCount(), 2);
+  assert.equal(await imagesOnPage(four, 0), 2, 'page 1 working area');
+  assert.equal(await imagesOnPage(four, 1), 4, 'page 2: its working area plus the two template cells');
+
+  const five = await generateQdPdf(baseQd, photoSet(
+    ['profile_image', 'approved_design', 'trial_photo', 'trial_photo', 'trial_photo', 'general', 'general'],
+  ));
+  assert.equal((await PDFDocument.load(five)).getPageCount(), 3);
+  assert.equal(await imagesOnPage(five, 2), 1, 'the fifth extra photo goes to the annexure');
+});
+
+test('each extra photo is headed by its category, numbered when the category repeats', async () => {
+  const [p1, p2, p3] = await textOf(await generateQdPdf(baseQd, photoSet(
+    ['trial_photo', 'trial_photo', 'trial_photo', 'general', 'profile_image', 'profile_image'],
+  )));
+  assert.ok(p1.includes('Trial photo 1') && p1.includes('Trial photo 2'), p1);
+  // The second profile image is numbered because the template cell already
+  // shows the first one.
+  assert.ok(p2.includes('Trial photo 3') && p2.includes('Profile Image 2'), p2);
+  // The lone general image needs no number.
+  assert.ok(/\bImage\b/.test(p3) && !p3.includes('Image 1'), p3);
 });
 
 test('text too long for a fixed box is reprinted in full on the annexure', async () => {
