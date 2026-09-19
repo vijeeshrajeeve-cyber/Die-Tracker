@@ -316,7 +316,7 @@ async function listQDs(client) {
   let rounds = new Map();
   if (ids.length) {
     files = (await client.query(
-      `SELECT id, qd_id, original_name, mime_type, size_bytes, uploaded_at
+      `SELECT id, qd_id, original_name, mime_type, size_bytes, uploaded_at, category
          FROM quality_discrepancy_files WHERE qd_id = ANY($1) ORDER BY uploaded_at ASC`,
       [ids]
     )).rows;

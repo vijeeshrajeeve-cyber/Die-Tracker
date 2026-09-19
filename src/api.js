@@ -942,6 +942,31 @@ export const qualityDiscrepanciesAPI = {
     deleteFile: async (id, fileId) =>
         apiRequest(`/quality-discrepancies/${id}/files/${fileId}`, { method: 'DELETE' }),
 
+    // Admin only. One old, already-issued QD form (PDF) plus the fields the
+    // admin confirmed: { qdNo, raisedDate, supplier, dieNo, plant, issue,
+    // recommendedAction?, preparedBy?, authorizedBy?, status, closedDate?,
+    // etaDate?, receivedDate? }. The server creates an Approved QD that keeps
+    // this PDF as its document. Blank values are not sent.
+    importExisting: async (file, fields) => {
+        const form = new FormData();
+        form.append('file', file);
+        Object.entries(fields || {}).forEach(([key, value]) => {
+            const v = value == null ? '' : String(value).trim();
+            if (v) form.append(key, v);
+        });
+        return apiRequest('/quality-discrepancies/import', { method: 'POST', body: form, isMultipart: true });
+    },
+
+    // Admin only. Whether a QD number is already in the register, so the
+    // import form can say so before anything else is filled in.
+    qdNoExists: async (qdNo) =>
+        apiRequest(`/quality-discrepancies/exists?${new URLSearchParams({ qdNo })}`),
+
+    // Admin only. Removes a QD that came in through the importer (the server
+    // refuses any other), with its timeline, files and FOC rounds.
+    undoImport: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/import`, { method: 'DELETE' }),
+
     downloadFile: async (fileId, filename) => {
         const token = getToken();
         const response = await fetch(`${API_BASE_URL}/quality-discrepancies/files/${fileId}`, {

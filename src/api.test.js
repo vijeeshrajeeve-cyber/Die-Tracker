@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI } = await import('./api.js');
+const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -150,4 +150,40 @@ test('nextDieNumber returns the proposal and its basis', async () => {
   const result = await backupRequestsAPI.nextDieNumber({ plant: 'GEX 01', profile: '29663', press: 'PRESS 2' });
   assert.equal(result.dieNo, '29663-253');
   assert.equal(result.basis.die_no, '29663-252');
+});
+
+// The import posts the PDF and the admin's fields in one multipart request.
+// Blank values are left out, so the server sees "not given", never "".
+test('importExisting posts the PDF and the filled fields as multipart, skipping blanks', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ id: 9 }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  };
+  const file = new File(['%PDF-1.4'], 'old.pdf', { type: 'application/pdf' });
+  const res = await qualityDiscrepanciesAPI.importExisting(file, {
+    qdNo: '2026PH-04', plant: 'GEX 1', etaDate: '', preparedBy: null,
+  });
+  assert.equal(res.id, 9);
+  assert.match(seen.url, /\/quality-discrepancies\/import$/);
+  assert.equal(seen.options.method, 'POST');
+  assert.ok(seen.options.body instanceof FormData);
+  assert.equal(seen.options.body.get('qdNo'), '2026PH-04');
+  assert.equal(seen.options.body.get('file').name, 'old.pdf');
+  assert.equal(seen.options.body.has('etaDate'), false);
+  assert.equal(seen.options.body.has('preparedBy'), false);
+  // The browser must set the multipart boundary itself.
+  assert.equal(seen.options.headers['Content-Type'], undefined);
+});
+
+test('qdNoExists and undoImport hit their endpoints', async () => {
+  const urls = [];
+  globalThis.fetch = async (url, options) => {
+    urls.push(`${options?.method || 'GET'} ${url}`);
+    return new Response(JSON.stringify({ exists: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  assert.deepEqual(await qualityDiscrepanciesAPI.qdNoExists('2026PH-04'), { exists: true });
+  await qualityDiscrepanciesAPI.undoImport(61);
+  assert.match(urls[0], /^GET .*\/quality-discrepancies\/exists\?qdNo=2026PH-04$/);
+  assert.match(urls[1], /^DELETE .*\/quality-discrepancies\/61\/import$/);
 });

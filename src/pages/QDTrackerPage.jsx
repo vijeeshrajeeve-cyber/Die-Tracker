@@ -1,15 +1,19 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import {
   Download, Plus, ClipboardList, Factory, Search, X,
-  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit,
+  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit, Upload,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, suppliersAPI, correctorsAPI } from '../api';
-import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES } from '../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES, QD_IMPORTED_BADGE } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
 import FocPendingPanel from '../components/qd/FocPendingPanel';
 import QdQueueBanner from '../components/qd/QdQueueBanner';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
+
+// Lazy: the import modal pulls in pdfjs, and only an admin importing an old
+// QD form ever needs it.
+const ImportQDModal = lazy(() => import('../components/qd/ImportQDModal'));
 
 const OUTCOME_ICON = {
   'Supplier rework': Truck,
@@ -88,6 +92,8 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
   const [status, setStatus] = useState('All');
   const [selectedId, setSelectedId] = useState(null);
   const [showRaise, setShowRaise] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const isAdmin = user?.role === 'admin';
   const [editQd, setEditQd] = useState(null); // the QD being edited (Draft/SentBack), or null
   const [pickedSuppliers, setPickedSuppliers] = useState([]);
 
@@ -267,6 +273,14 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
     );
   };
 
+  // Marks a QD brought in from an old form. Sits beside the approval pill,
+  // which an imported QD never shows (it is Approved).
+  const importedPill = (q) => (q.imported ? (
+    <span style={{ padding: '2px 7px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap', background: QD_IMPORTED_BADGE.bg, color: QD_IMPORTED_BADGE.fg }}>
+      {QD_IMPORTED_BADGE.label}
+    </span>
+  ) : null);
+
   return (
     <div style={{ padding: '32px 28px', color: text }}>
       <style>{`
@@ -291,6 +305,12 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
           <button onClick={exportCsv} className="qd-btn" style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Download size={16} /> Export
           </button>
+          {isAdmin && (
+            <button onClick={() => setShowImport(true)} className="qd-btn" title="Bring an old, already-issued QD form into the register"
+              style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Upload size={16} /> Import existing QD
+            </button>
+          )}
           <button onClick={() => setShowRaise(true)} className="qd-primary" style={{ padding: '10px 18px', background: BRAND.navy, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: `0 4px 12px ${BRAND_ALPHA.navyGlow}` }}>
             <Plus size={16} /> Raise QD
           </button>
@@ -402,7 +422,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                             {q.qd_no}
                             <span className="sr-only"> — open details</span>
                           </button>
-                          {approvalPill(q.approval_state)}
+                          {approvalPill(q.approval_state)}{importedPill(q)}
                         </span>
                       </td>
                       <td style={{ ...td, fontFamily: mono, fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{q.die_no}</td>
@@ -549,7 +569,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
                   style={{ ...ROW_FILL, display: 'grid', gridTemplateColumns: QDS_COLS, gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: `1px solid ${border}` }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no}</span>
-                    {approvalPill(q.approval_state)}
+                    {approvalPill(q.approval_state)}{importedPill(q)}
                   </span>
                   <span style={{ fontFamily: mono, fontSize: 12.5, color: muted }}>{q.die_no}</span>
                   <span style={{ fontSize: 12, color: muted }}>{q.supplier}</span>
@@ -609,6 +629,26 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
             }
             setSelectedId(id);
           }} />
+      )}
+      {showImport && (
+        <Suspense fallback={null}>
+          <ImportQDModal theme={theme} suppliers={supplierMaster}
+            onClose={() => setShowImport(false)}
+            onImported={async (id) => {
+              // An imported QD is Approved, so it lives in the normal register,
+              // and it may be from any year -- widen both so the drawer finds it.
+              setShowImport(false);
+              setShowDrafts(false);
+              setYear('All');
+              try {
+                const next = await qualityDiscrepanciesAPI.list('All', { drafts: false });
+                setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
+              } catch {
+                // The effect-driven load() triggered by the state changes above retries.
+              }
+              setSelectedId(id);
+            }} />
+        </Suspense>
       )}
     </div>
   );

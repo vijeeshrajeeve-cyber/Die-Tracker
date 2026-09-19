@@ -8,6 +8,22 @@ const qd = require('./qualityDiscrepancies.cjs');
 const store = require('./qdStorage.cjs');
 const qdPdf = require('./qdPdf.cjs');
 const signatures = require('./userSignatures.cjs');
+const { ORIGINAL_FORM } = require('./qdImport.cjs');
+
+// The PDF uploaded when an old QD was imported. Missing is an error, never a
+// cue to redraw: a redrawn form would disagree with the one already issued.
+async function readOriginalForm(row, files) {
+  const original = files.find((f) => f.category === ORIGINAL_FORM);
+  const root = path.resolve(store.getRoot());
+  const abs = original ? path.resolve(root, original.stored_path) : null;
+  const missing = () => new Error(`Original QD form missing for QD ${row.qd_no || row.id}`);
+  if (!abs || !abs.startsWith(root)) throw missing();
+  try {
+    return await fsp.readFile(abs);
+  } catch {
+    throw missing();
+  }
+}
 
 // Loads everything generateQdPdf needs for a single QD: the row (with
 // approved_by resolved to a username), its files, billet parameters, and the
@@ -19,6 +35,10 @@ async function buildQdPdfBytes(pool, qdId) {
   ]);
   const row = qrows[0];
   if (!row) throw new Error('QD not found');
+  // An imported QD's document is the form that was actually issued. Redrawing
+  // it from the few fields typed in at import would produce a certification
+  // record that disagrees with the one the supplier already holds.
+  if (row.imported) return { row, bytes: await readOriginalForm(row, filesRes.rows) };
   if (row.approved_by) {
     const u = await pool.query('SELECT username FROM users WHERE id = $1', [row.approved_by]);
     row.approved_by_name = u.rows[0]?.username || '';
