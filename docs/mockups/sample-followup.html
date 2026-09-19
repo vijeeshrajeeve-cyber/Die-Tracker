@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sample followup — design mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #09090b;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --dim: #8b8b94;
+      --card: #131316;
+      --line: #27272a;
+      --input: #18181b;
+      --header: #18181b;
+      --hover: rgba(255,255,255,0.06);
+      --primary: #1F6FB0;
+      --primary-text: #fff;
+      --primary-soft: rgba(31,111,176,0.14);
+      --link: #76b9ed;
+      --success: #79d7a4;
+      --success-bg: #183026;
+      --danger: #ff929b;
+      --danger-bg: #352024;
+      --amber: #eac477;
+      --amber-bg: #30291c;
+      --hold: #d4d4d8;
+      --hold-bg: #27272a;
+      --shadow: 0 4px 12px rgba(0,0,0,0.34);
+      --ease: cubic-bezier(0.23, 1, 0.32, 1);
+      --sidebar: 232px;
+    }
+    html[data-theme="light"] {
+      --bg: #fafafa;
+      --text: #09090b;
+      --muted: #57575e;
+      --dim: #6f6f77;
+      --card: #ffffff;
+      --line: #e4e4e7;
+      --input: #f4f4f5;
+      --header: #f4f4f5;
+      --hover: rgba(0,0,0,0.045);
+      --link: #1F6FB0;
+      --success: #177445;
+      --success-bg: #edf9f2;
+      --danger: #b42332;
+      --danger-bg: #fff0f1;
+      --amber: #8b5e12;
+      --amber-bg: #fbf5e8;
+      --hold: #3f3f46;
+      --hold-bg: #f4f4f5;
+      --shadow: 0 4px 12px rgba(0,0,0,0.09);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font: 13px/1.45 Inter, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-columns: var(--sidebar) 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .mono { font-family: "JetBrains Mono", Consolas, monospace; }
+
+    .ribbon {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #1F6FB0;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .ribbon strong { font-weight: 700; }
+    .ribbon kbd {
+      font-family: "JetBrains Mono", monospace;
+      background: rgba(0,0,0,.22);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .sidebar {
+      grid-row: 2;
+      background: var(--bg);
+      border-right: 1px solid var(--line);
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px 20px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .brand-mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      display: grid; place-items: center;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+    }
+    .nav-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--dim);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      padding: 16px 12px 6px;
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      color: var(--muted);
+      padding: 9px 12px;
+      border-radius: 10px;
+    }
+    .nav[aria-current="page"] {
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav svg { flex-shrink: 0; opacity: .9; }
+
+    .app {
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+    }
+    .topbar-right { display: flex; align-items: center; gap: 8px; }
+    .icon-btn {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--muted);
+      border-radius: 8px;
+    }
+    .user {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 8px 4px 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+    }
+    .avatar {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--primary-soft); color: var(--link);
+      display: grid; place-items: center;
+      font-weight: 600; font-size: 11px;
+    }
+
+    .page { flex: 1; min-height: 0; padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 16px; }
+    .page-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+    .page-head h1 { font-size: 22px; letter-spacing: -.6px; font-weight: 600; line-height: 1.2; }
+    .page-head p { color: var(--muted); margin-top: 4px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: 500;
+      transition: transform 110ms var(--ease), background-color 140ms ease, border-color 140ms ease;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn-ghost { background: transparent; }
+    .btn-danger { color: var(--danger); border-color: transparent; background: var(--danger-bg); }
+
+    .buckets { display: flex; gap: 4px; flex-wrap: wrap; }
+    .bucket {
+      border: 0; background: transparent;
+      color: var(--muted);
+      padding: 8px 12px;
+      border-radius: 8px;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .bucket[aria-pressed="true"] {
+      background: var(--card);
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .count {
+      font-variant-numeric: tabular-nums;
+      background: var(--input);
+      color: var(--muted);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .bucket[aria-pressed="true"] .count { color: var(--text); }
+    .count.warn { color: var(--amber); background: var(--amber-bg); }
+
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .search {
+      flex: 1; min-width: 220px;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--muted);
+    }
+    .search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); }
+    .toolbar select {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-width: 140px;
+    }
+
+    .workspace {
+      flex: 1; min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .workspace.register-mode { grid-template-columns: 1fr; }
+    .workspace.register-mode .case { display: none; }
+
+    .queue { min-width: 0; overflow: auto; border-right: 1px solid var(--line); }
+    .group-h {
+      position: sticky; top: 0; z-index: 1;
+      background: var(--header);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      text-align: left;
+      padding: 12px 14px;
+      border: 0;
+      background: transparent;
+      border-bottom: 1px solid var(--line);
+    }
+    .row:hover { background: var(--hover); }
+    .row.is-selected { background: var(--primary-soft); }
+    .row-main { min-width: 0; }
+    .row-die { font-weight: 500; }
+    .row-sub { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .row-meta { color: var(--dim); font-size: 11px; margin-top: 4px; }
+    .late { color: var(--amber); font-weight: 600; }
+
+    .stamp {
+      white-space: nowrap;
+      border: 1px solid var(--primary);
+      background: var(--primary);
+      color: #fff;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: transform 110ms var(--ease);
+    }
+    .stamp:active { transform: scale(0.97); }
+    .stamp.approve { background: var(--success); border-color: var(--success); color: #fff; }
+    html[data-theme="dark"] .stamp.approve { color: #052e16; }
+
+    .empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty h2 { color: var(--text); font-size: 16px; margin-bottom: 6px; }
+
+    .case { min-width: 0; overflow: auto; padding: 22px 24px 28px; }
+    .back-queue { display: none; margin-bottom: 8px; padding-left: 0; border: 0; }
+    @media (max-width: 980px) { .back-queue { display: inline-flex; } }
+    .case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .case-head h2 { font-size: 20px; font-weight: 600; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 8px; border-radius: 5px;
+      font-size: 11px; font-weight: 500;
+      background: var(--input); color: var(--muted);
+    }
+    .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .pill.pending { color: var(--amber); background: var(--amber-bg); }
+    .pill.submitted { color: var(--link); background: var(--primary-soft); }
+    .pill.approved { color: var(--success); background: var(--success-bg); }
+    .pill.rejected { color: var(--danger); background: var(--danger-bg); }
+    .pill.hold { color: var(--hold); background: var(--hold-bg); }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px 16px;
+      margin: 16px 0 22px;
+    }
+    .facts dt { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+    .facts dd { font-size: 13px; }
+
+    .strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      margin: 8px 0 22px;
+      padding: 4px 0 8px;
+    }
+    .stage {
+      position: relative;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      padding: 0 12px 0 0;
+      min-width: 0;
+    }
+    .stage:disabled { cursor: default; opacity: 1; }
+    .stage-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--line);
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+    }
+    .stage.is-done .stage-dot { background: var(--link); }
+    .stage.is-now .stage-dot {
+      background: var(--primary);
+      box-shadow: 0 0 0 4px var(--primary-soft);
+    }
+    .stage::after {
+      content: "";
+      position: absolute;
+      left: 10px; right: 0; top: 4px;
+      height: 2px;
+      background: var(--line);
+    }
+    .stage:last-child::after { display: none; }
+    .stage.is-done::after { background: var(--link); }
+    .stage-name { font-weight: 600; font-size: 12px; }
+    .stage-date { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .stage.is-now .stage-name { color: var(--link); }
+
+    .editor {
+      background: var(--input);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 18px;
+    }
+    .editor h3 { font-size: 14px; margin-bottom: 10px; }
+    .date-row { display: flex; gap: 8px; align-items: center; }
+    .date-row input[type="date"] {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .hint { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+
+    .trials { list-style: none; margin: 0 0 18px; }
+    .trials li {
+      display: grid;
+      grid-template-columns: 72px 1fr auto;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .ok { color: var(--success); font-weight: 600; }
+    .bad { color: var(--danger); font-weight: 600; }
+    .case-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .side-actions { margin-top: 18px; color: var(--muted); font-size: 12px; }
+    .side-actions summary { cursor: pointer; }
+    .side-actions .row-btns { display: flex; gap: 8px; margin-top: 10px; }
+
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+    th {
+      position: sticky; top: 0;
+      background: var(--header);
+      color: var(--muted);
+      font-weight: 500;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    .linkish { background: none; border: 0; padding: 0; color: var(--link); font-weight: 500; }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+      max-width: 360px;
+      transform: translateY(8px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 180ms var(--ease), opacity 180ms var(--ease);
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.ok { border-color: var(--success); }
+    .toast.err { border-color: var(--danger); }
+
+    @media (max-width: 980px) {
+      body { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .workspace { grid-template-columns: 1fr; }
+      .workspace.case-open .queue { display: none; }
+      .workspace.case-open .case { display: block; }
+      .queue { border-right: 0; }
+      .facts { grid-template-columns: 1fr 1fr; }
+      .strip { grid-template-columns: 1fr 1fr; gap: 16px 8px; }
+      .stage::after { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ribbon">
+    <span><strong>Design mockup</strong> — synthetic dies, not connected to Die Tracker. Try stamping Submit today / Approve today; the queue updates in place.</span>
+    <span>Keys: <kbd>J</kbd> <kbd>K</kbd> move · <kbd>Enter</kbd> stamp · <kbd>T</kbd> theme</span>
+  </div>
+
+  <aside class="sidebar" aria-label="App navigation">
+    <div class="brand"><span class="brand-mark">DT</span> Die Tracker</div>
+    <button class="nav" type="button" disabled>Dashboard</button>
+    <button class="nav" type="button" disabled>Orders</button>
+    <button class="nav" type="button" disabled>QD Tracker</button>
+    <div class="nav-label">Process flow</div>
+    <button class="nav" type="button" disabled>In Manufacturing</button>
+    <button class="nav" type="button" aria-current="page">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      Sample Followup
+    </button>
+  </aside>
+
+  <div class="app">
+    <header class="topbar">
+      <span class="muted" style="color:var(--muted)">Process flow / Sample followup</span>
+      <div class="topbar-right">
+        <button class="icon-btn" id="themeBtn" type="button" aria-label="Toggle theme" title="Toggle theme">◐</button>
+        <div class="user"><span class="avatar">VR</span> Office</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <header class="page-head">
+        <div>
+          <h1>Sample followup</h1>
+          <p>Close the samples that are ready. Trials stay visible, but they are not today’s job.</p>
+        </div>
+        <div class="actions">
+          <button class="btn" id="viewBtn" type="button">Register view</button>
+          <button class="btn" type="button" disabled>Export</button>
+          <button class="btn btn-primary" type="button" disabled>+ Add record</button>
+        </div>
+      </header>
+
+      <div class="buckets" role="tablist" aria-label="Work buckets">
+        <button class="bucket" data-bucket="close" aria-pressed="true" type="button">To close <span class="count warn" id="c-close">0</span></button>
+        <button class="bucket" data-bucket="submit" aria-pressed="false" type="button">Ready to submit <span class="count" id="c-submit">0</span></button>
+        <button class="bucket" data-bucket="approve" aria-pressed="false" type="button">Ready to approve <span class="count" id="c-approve">0</span></button>
+        <button class="bucket" data-bucket="trial" aria-pressed="false" type="button">In trial <span class="count" id="c-trial">0</span></button>
+        <button class="bucket" data-bucket="settled" aria-pressed="false" type="button">Settled <span class="count" id="c-settled">0</span></button>
+      </div>
+
+      <div class="toolbar">
+        <label class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+          <input id="q" type="search" placeholder="Search die, customer, supplier…" aria-label="Search samples" />
+        </label>
+        <select id="plant" aria-label="Filter by plant">
+          <option value="All">All plants</option>
+        </select>
+        <select id="sort" aria-label="Sort samples">
+          <option value="oldest">Oldest received</option>
+          <option value="newest">Newest received</option>
+          <option value="die">Die number</option>
+        </select>
+      </div>
+
+      <div class="workspace" id="workspace">
+        <div class="queue" id="queue" role="list"></div>
+        <aside class="case" id="case" aria-live="polite"></aside>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const today = () => new Date().toISOString().slice(0, 10);
+    const fmt = (iso) => {
+      if (!iso) return "Not recorded";
+      const [y, m, d] = iso.split("-");
+      return `${d} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]} ${y}`;
+    };
+    const daysBetween = (from, to = today()) => {
+      if (!from) return null;
+      const a = new Date(from + "T00:00:00");
+      const b = new Date(to + "T00:00:00");
+      return Math.max(0, Math.round((b - a) / 86400000));
+    };
+
+    const samples = [
+      { id: 1, die: "29663-253", customer: "Aluminium Profiles Ltd", plant: "GEX 1", press: "Press 3", supplier: "Precision Dies", corrector: "Ramesh", received: "2026-09-09", submitted: "", approved: "", status: "Pending", ascona: "No", remark: "Waiting on customer sign-off pack.", trials: [{ n: 1, date: "2026-09-11", result: "Not OK", reason: "Shape" }, { n: 2, date: "2026-09-14", result: "OK", reason: "" }] },
+      { id: 2, die: "30491-601", customer: "Gulf Extrusion", plant: "GEX 1", press: "Press 5", supplier: "Toolcraft", corrector: "Priya", received: "2026-09-14", submitted: "", approved: "", status: "Pending", ascona: "Yes", remark: "", trials: [{ n: 1, date: "2026-09-16", result: "OK", reason: "" }] },
+      { id: 3, die: "28810-112", customer: "Emirates Aluminium", plant: "Plant 2", press: "Press 2", supplier: "Precision Dies", corrector: "Ahmed", received: "2026-09-04", submitted: "", approved: "", status: "Pending", ascona: "No", remark: "Third trial cleared dimension.", trials: [{ n: 1, date: "2026-09-06", result: "Not OK", reason: "Dimension Out of Spec" }, { n: 2, date: "2026-09-08", result: "Not OK", reason: "Die Choked" }, { n: 3, date: "2026-09-12", result: "OK", reason: "" }] },
+      { id: 4, die: "27102-440", customer: "Sharjah Profiles", plant: "GEX 1", press: "Press 4", supplier: "Gulf Tools", corrector: "Ramesh", received: "2026-09-01", submitted: "2026-09-15", approved: "", status: "Sample Submitted", ascona: "Yes", remark: "Submitted with Ascona pack.", trials: [{ n: 1, date: "2026-09-10", result: "OK", reason: "" }] },
+      { id: 5, die: "31550-018", customer: "Aluminium Profiles Ltd", plant: "Plant 2", press: "Press 1", supplier: "Toolcraft", corrector: "Priya", received: "2026-09-12", submitted: today(), approved: "", status: "Sample Submitted", ascona: "No", remark: "", trials: [{ n: 1, date: "2026-09-16", result: "OK", reason: "" }] },
+      { id: 6, die: "30912-077", customer: "Gulf Extrusion", plant: "GEX 1", press: "Press 3", supplier: "Precision Dies", corrector: "Ahmed", received: "2026-09-16", submitted: "", approved: "", status: "Pending", ascona: "No", remark: "", trials: [{ n: 1, date: "2026-09-17", result: "Not OK", reason: "Shape" }] },
+      { id: 7, die: "29001-330", customer: "Emirates Aluminium", plant: "Plant 2", press: "Press 6", supplier: "Gulf Tools", corrector: "Ramesh", received: "2026-09-13", submitted: "", approved: "", status: "Pending", ascona: "No", remark: "Surface marks on first run.", trials: [] },
+      { id: 8, die: "26500-101", customer: "Sharjah Profiles", plant: "GEX 1", press: "Press 2", supplier: "Toolcraft", corrector: "Priya", received: "2026-08-20", submitted: "2026-08-28", approved: "2026-09-02", status: "Approved", ascona: "Yes", remark: "Closed.", trials: [{ n: 1, date: "2026-08-24", result: "OK", reason: "" }] },
+      { id: 9, die: "25880-220", customer: "Aluminium Profiles Ltd", plant: "Plant 2", press: "Press 4", supplier: "Precision Dies", corrector: "Ahmed", received: "2026-08-18", submitted: "2026-08-26", approved: "", status: "Rejected", ascona: "No", remark: "Customer rejected on aesthetic.", trials: [{ n: 1, date: "2026-08-22", result: "Not OK", reason: "Aesthetic Out of Spec" }, { n: 2, date: "2026-08-25", result: "OK", reason: "" }] },
+      { id: 10, die: "27440-008", customer: "Gulf Extrusion", plant: "GEX 1", press: "Press 5", supplier: "Gulf Tools", corrector: "Ramesh", received: "2026-09-02", submitted: "", approved: "", status: "On hold", ascona: "No", remark: "Press booked out until next week.", trials: [{ n: 1, date: "2026-09-05", result: "OK", reason: "" }] },
+    ];
+
+    const nextAction = (s) => {
+      if (s.status === "Sample Submitted") return { key: "approve", label: "Approve today", group: "approve" };
+      if (s.status === "Pending" && s.trials.at(-1)?.result === "OK") return { key: "submit", label: "Submit today", group: "submit" };
+      if (s.status === "Pending") return { key: "trial", label: "Waiting on trial", group: "trial" };
+      return { key: "none", label: s.status, group: "settled" };
+    };
+    const pillClass = (status) => ({
+      Pending: "pending",
+      "Sample Submitted": "submitted",
+      Approved: "approved",
+      Rejected: "rejected",
+      "On hold": "hold",
+    }[status] || "hold");
+
+    const state = {
+      bucket: "close",
+      plant: "All",
+      query: "",
+      sort: "oldest",
+      selected: 1,
+      view: "queue",
+      editor: null,
+      date: today(),
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const plants = [...new Set(samples.map((s) => s.plant))].sort();
+    plants.forEach((p) => {
+      const o = document.createElement("option");
+      o.value = p; o.textContent = p;
+      $("plant").appendChild(o);
+    });
+
+    const scoped = () => {
+      const q = state.query.trim().toLowerCase();
+      return samples.filter((s) => {
+        const plantOk = state.plant === "All" || s.plant === state.plant;
+        const textOk = !q || [s.die, s.customer, s.supplier, s.corrector].some((v) => v.toLowerCase().includes(q));
+        return plantOk && textOk;
+      });
+    };
+    const grouped = (list) => {
+      const g = { submit: [], approve: [], trial: [], settled: [] };
+      list.forEach((s) => g[nextAction(s).group].push(s));
+      const sortFn = (a, b) => {
+        if (state.sort === "die") return a.die.localeCompare(b.die, undefined, { numeric: true });
+        const ad = a.received, bd = b.received;
+        return state.sort === "newest" ? bd.localeCompare(ad) : ad.localeCompare(bd);
+      };
+      Object.values(g).forEach((arr) => arr.sort(sortFn));
+      return g;
+    };
+    const visibleIds = () => {
+      const g = grouped(scoped());
+      if (state.bucket === "close") return [...g.submit, ...g.approve];
+      return g[state.bucket] || [];
+    };
+
+    const toast = (msg, kind = "ok") => {
+      const el = $("toast");
+      el.textContent = msg;
+      el.className = `toast show ${kind}`;
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("show"), 3200);
+    };
+
+    const stamp = (sample, kind, dateValue) => {
+      if (kind === "submit") {
+        sample.submitted = dateValue;
+        if (sample.status === "Pending") sample.status = "Sample Submitted";
+        toast(`Submission date ${fmt(dateValue)} — status ${sample.status === "Sample Submitted" ? "moved to Sample Submitted" : "unchanged"}`);
+      } else if (kind === "approve") {
+        sample.approved = dateValue;
+        if (sample.status === "Sample Submitted") sample.status = "Approved";
+        toast(`Approval date ${fmt(dateValue)} — status ${sample.status === "Approved" ? "moved to Approved" : "unchanged"}`);
+      }
+      state.editor = null;
+      const still = visibleIds();
+      if (!still.find((s) => s.id === sample.id)) {
+        state.selected = still[0]?.id || sample.id;
+      }
+      render();
+    };
+
+    const setStatus = (sample, status) => {
+      sample.status = status;
+      toast(`${sample.die} moved to ${status}`);
+      state.editor = null;
+      render();
+    };
+
+    const renderCounts = (g, all) => {
+      $("c-submit").textContent = g.submit.length;
+      $("c-approve").textContent = g.approve.length;
+      $("c-close").textContent = g.submit.length + g.approve.length;
+      $("c-trial").textContent = g.trial.length;
+      $("c-settled").textContent = g.settled.length;
+      $("c-close").classList.toggle("warn", g.submit.length + g.approve.length > 0);
+    };
+
+    const renderQueue = (g) => {
+      const queue = $("queue");
+      const order = state.bucket === "close"
+        ? [["Ready to submit", g.submit], ["Ready to approve", g.approve]]
+        : state.bucket === "submit" ? [["Ready to submit", g.submit]]
+        : state.bucket === "approve" ? [["Ready to approve", g.approve]]
+        : state.bucket === "trial" ? [["In trial", g.trial]]
+        : [["Settled", g.settled]];
+
+      const html = order.map(([title, rows]) => {
+        if (!rows.length) return "";
+        return `<div class="group-h">${title} · ${rows.length}</div>` + rows.map((s) => {
+          const next = nextAction(s);
+          const delay = daysBetween(s.received, s.submitted || today());
+          const late = !s.submitted && delay >= 7;
+          const stampBtn = next.key === "submit" || next.key === "approve"
+            ? `<button class="stamp ${next.key === "approve" ? "approve" : ""}" data-stamp="${next.key}" data-id="${s.id}">${next.label}</button>`
+            : `<span class="pill ${pillClass(s.status)}">${s.status}</span>`;
+          return `<div class="row ${s.id === state.selected ? "is-selected" : ""}" role="listitem">
+            <button class="row-main" data-open="${s.id}" type="button">
+              <span class="mono row-die">${s.die}</span>
+              <span class="row-sub">${s.customer} · ${s.plant}</span>
+              <span class="row-meta ${late ? "late" : ""}">${delay == null ? "Received date missing" : s.submitted ? `${delay} days to submit` : `${delay} days open`}${s.trials.length ? ` · ${s.trials.length} trial${s.trials.length === 1 ? "" : "s"}` : ""}</span>
+            </button>
+            ${stampBtn}
+          </div>`;
+        }).join("");
+      }).join("");
+
+      queue.innerHTML = html || `<div class="empty"><h2>${state.bucket === "close" ? "Nothing to close" : "No samples here"}</h2><p>${state.bucket === "close" ? "Submissions and approvals for this filter are done." : "Try another bucket or clear search."}</p></div>`;
+    };
+
+    const renderRegister = (list) => {
+      $("queue").innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Die / customer</th><th>Plant</th><th>Status</th><th>Days</th><th>Next</th></tr></thead>
+        <tbody>${list.map((s) => {
+          const next = nextAction(s);
+          const delay = daysBetween(s.received, s.submitted || today());
+          return `<tr>
+            <td><button class="linkish mono" data-open="${s.id}" type="button">${s.die}</button><div class="row-sub">${s.customer}</div></td>
+            <td>${s.plant}<div class="row-sub">${s.press}</div></td>
+            <td><span class="pill ${pillClass(s.status)}">${s.status === "Sample Submitted" ? "Submitted" : s.status}</span></td>
+            <td>${delay == null ? "—" : delay + "d"}</td>
+            <td>${next.key === "submit" || next.key === "approve"
+              ? `<button class="stamp ${next.key === "approve" ? "approve" : ""}" data-stamp="${next.key}" data-id="${s.id}">${next.label}</button>`
+              : next.label}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table></div>`;
+    };
+
+    const renderCase = (s) => {
+      const el = $("case");
+      if (!s) { el.innerHTML = `<div class="empty"><h2>Select a sample</h2><p>The queue on the left is the work. This panel is the case file.</p></div>`; return; }
+      const next = nextAction(s);
+      const last = s.trials.at(-1);
+      const stages = [
+        { id: "received", name: "Die received", date: s.received, done: !!s.received, now: false },
+        { id: "trial", name: "Trials", date: last ? `${last.result} · ${fmt(last.date)}` : "None logged", done: !!last, now: next.group === "trial" },
+        { id: "submit", name: "Submitted", date: s.submitted, done: !!s.submitted, now: next.key === "submit" },
+        { id: "approve", name: "Approved", date: s.approved, done: !!s.approved, now: next.key === "approve" },
+      ];
+      const editor = state.editor && (state.editor === "submit" || state.editor === "approve") ? `
+        <form class="editor" id="dateForm">
+          <h3>${state.editor === "submit" ? "Record submission" : "Record approval"}</h3>
+          <div class="date-row">
+            <input id="dateInput" type="date" required value="${state.date}" max="${today()}" />
+            <button class="btn" type="button" id="todayBtn">Today</button>
+          </div>
+          <p class="hint">${state.editor === "submit"
+            ? (s.status === "Pending" ? "Saving advances the sample to Sample Submitted." : "Saving updates the date and keeps the current status.")
+            : (s.status === "Sample Submitted" ? "Saving advances the sample to Approved." : "Saving updates the date and keeps the current status.")}</p>
+          <div class="case-actions" style="margin-top:12px">
+            <button class="btn btn-primary" type="submit">Save date</button>
+            <button class="btn" type="button" id="cancelEdit">Cancel</button>
+          </div>
+        </form>` : "";
+
+      el.innerHTML = `
+        <div class="case-head">
+          <div>
+            <button class="btn btn-ghost back-queue" type="button" data-back>← Queue</button>
+            <h2 class="mono">${s.die}</h2>
+            <p class="row-sub">${s.customer}</p>
+          </div>
+          <span class="pill ${pillClass(s.status)}">${s.status}</span>
+        </div>
+        <dl class="facts">
+          <div><dt>Plant / press</dt><dd>${s.plant} / ${s.press}</dd></div>
+          <div><dt>Corrector</dt><dd>${s.corrector}</dd></div>
+          <div><dt>Supplier</dt><dd>${s.supplier}</dd></div>
+          <div><dt>Ascona</dt><dd>${s.ascona}</dd></div>
+          <div><dt>Source</dt><dd>Die order</dd></div>
+          <div><dt>Remark</dt><dd>${s.remark || "—"}</dd></div>
+        </dl>
+        <div class="strip" aria-label="Sample process">
+          ${stages.map((st) => `
+            <button class="stage ${st.done ? "is-done" : ""} ${st.now ? "is-now" : ""}" type="button" data-stage="${st.id}" ${st.id === "received" || st.id === "trial" ? "disabled" : ""}>
+              <div class="stage-dot"></div>
+              <span class="stage-name">${st.name}</span>
+              <span class="stage-date">${st.date ? (st.id === "trial" ? st.date : fmt(st.date)) : "Not recorded"}</span>
+            </button>`).join("")}
+        </div>
+        ${editor}
+        ${!state.editor && (next.key === "submit" || next.key === "approve") ? `
+          <div class="case-actions">
+            <button class="btn btn-primary" data-stamp="${next.key}" data-id="${s.id}" type="button">${next.label}</button>
+            <button class="btn" data-edit="${next.key}" type="button">Pick a different date</button>
+          </div>` : ""}
+        <h3 style="font-size:13px;margin:22px 0 8px">Trials</h3>
+        ${s.trials.length ? `<ol class="trials">${[...s.trials].reverse().map((t) => `
+          <li><span class="mono">#${t.n}</span><span>${fmt(t.date)}${t.reason ? ` · ${t.reason}` : ""}</span><span class="${t.result === "OK" ? "ok" : "bad"}">${t.result}</span></li>`).join("")}</ol>` : `<p class="hint">No trials logged yet. That is a corrector job — it will not block this mockup’s submit/approve path if you stamp from here.</p>`}
+        <details class="side-actions">
+          <summary>Hold, reject, or resume</summary>
+          <div class="row-btns">
+            <button class="btn" data-status="On hold" type="button">Put on hold</button>
+            <button class="btn btn-danger" data-status="Rejected" type="button">Reject sample</button>
+            ${s.status === "On hold" || s.status === "Rejected" ? `<button class="btn" data-status="Pending" type="button">Resume as pending</button>` : ""}
+          </div>
+        </details>
+      `;
+    };
+
+    const render = () => {
+      const all = scoped();
+      const g = grouped(all);
+      renderCounts(g, all);
+      const ws = $("workspace");
+      ws.classList.toggle("register-mode", state.view === "register");
+      if (state.view === "register") renderRegister(state.bucket === "close" ? [...g.submit, ...g.approve] : g[state.bucket] || all);
+      else renderQueue(g);
+      const selected = samples.find((s) => s.id === state.selected) || visibleIds()[0] || all[0];
+      if (selected) state.selected = selected.id;
+      if (state.view === "queue") renderCase(selected);
+      $("viewBtn").textContent = state.view === "queue" ? "Register view" : "Queue view";
+    };
+
+    document.querySelector(".buckets").addEventListener("click", (e) => {
+      const btn = e.target.closest(".bucket");
+      if (!btn) return;
+      state.bucket = btn.dataset.bucket;
+      document.querySelectorAll(".bucket").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      const first = visibleIds()[0];
+      if (first) state.selected = first.id;
+      state.editor = null;
+      render();
+    });
+    $("q").addEventListener("input", (e) => { state.query = e.target.value; render(); });
+    $("plant").addEventListener("change", (e) => { state.plant = e.target.value; render(); });
+    $("sort").addEventListener("change", (e) => { state.sort = e.target.value; render(); });
+    $("viewBtn").addEventListener("click", () => { state.view = state.view === "queue" ? "register" : "queue"; render(); });
+    $("themeBtn").addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+    });
+
+    document.body.addEventListener("click", (e) => {
+      const open = e.target.closest("[data-open]");
+      if (open) {
+        state.selected = +open.dataset.open;
+        state.editor = null;
+        $("workspace").classList.add("case-open");
+        render();
+        return;
+      }
+      const stampBtn = e.target.closest("[data-stamp]");
+      if (stampBtn) {
+        const sample = samples.find((s) => s.id === +stampBtn.dataset.id);
+        stamp(sample, stampBtn.dataset.stamp, today());
+        return;
+      }
+      const edit = e.target.closest("[data-edit]");
+      if (edit) {
+        const s = samples.find((x) => x.id === state.selected);
+        state.editor = edit.dataset.edit;
+        state.date = (state.editor === "submit" ? s.submitted : s.approved) || today();
+        render();
+        $("dateInput")?.focus();
+        return;
+      }
+      const stage = e.target.closest("[data-stage]");
+      if (stage && !stage.disabled) {
+        state.editor = stage.dataset.stage;
+        const s = samples.find((x) => x.id === state.selected);
+        state.date = (state.editor === "submit" ? s.submitted : s.approved) || today();
+        render();
+      }
+      const statusBtn = e.target.closest("[data-status]");
+      if (statusBtn) setStatus(samples.find((x) => x.id === state.selected), statusBtn.dataset.status);
+      if (e.target.closest("[data-back]")) {
+        $("workspace").classList.remove("case-open");
+      }
+    });
+
+    document.body.addEventListener("submit", (e) => {
+      if (e.target.id !== "dateForm") return;
+      e.preventDefault();
+      const s = samples.find((x) => x.id === state.selected);
+      stamp(s, state.editor, $("dateInput").value);
+    });
+    document.body.addEventListener("click", (e) => {
+      if (e.target.id === "todayBtn") { $("dateInput").value = today(); state.date = today(); }
+      if (e.target.id === "cancelEdit") { state.editor = null; render(); }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.target.matches("input, select, textarea")) return;
+      const list = visibleIds();
+      const i = list.findIndex((s) => s.id === state.selected);
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        state.selected = (list[i + 1] || list[0])?.id;
+        render();
+      }
+      if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        state.selected = (list[i - 1] || list.at(-1))?.id;
+        render();
+      }
+      if (e.key === "Enter") {
+        const s = samples.find((x) => x.id === state.selected);
+        const next = nextAction(s);
+        if (next.key === "submit" || next.key === "approve") stamp(s, next.key, today());
+      }
+      if (e.key === "t" || e.key === "T") $("themeBtn").click();
+    });
+
+    render();
+  </script>
+</body>
+</html>
