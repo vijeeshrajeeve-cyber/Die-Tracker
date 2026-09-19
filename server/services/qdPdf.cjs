@@ -13,7 +13,8 @@
 //   * text too long for its box is fitted, then clipped and reprinted in full on
 //     an "Annexure" continuation page, so no data is ever silently lost;
 //   * images beyond the template's Profile Image / Approved design cells go into
-//     the template's blank working areas, then onto annexure pages.
+//     the template's blank working areas, then onto annexure pages -- always in
+//     the same labelled band and ruled cells as that template row.
 //
 // The GULF EXTRUSION logo is not redrawable (Word emitted it as several hundred
 // tiny image masks), so it is embedded as a clipped region of the template PDF
@@ -631,13 +632,22 @@ async function drawSignatures(doc, page, qd, signatures) {
 const CAT_LABEL = { profile_image: 'Profile Image', approved_design: 'Approved design', trial_photo: 'Trial photo', general: 'Image' };
 const CAT_ORDER = ['trial_photo', 'profile_image', 'approved_design', 'general'];
 
-// The template's two blank working areas, each taking a 2x2 grid of photos.
+// The template's Profile Image / Approved design row is the house style for a
+// photo: a grey band carrying the label over a ruled cell, the row split in two
+// at COL[5]. Every other photo is laid out the same way, measured off that row.
+const PHOTO_BAND = P2.free - P2.imgBand;          // band height, rule to rule
+const PHOTO_LABEL_RISE = 541.3 - P2.imgBand;      // label baseline above the band's lower rule
+const PHOTO_ROW = P2.free - P2.imgCells;          // band plus picture cell
+const PHOTO_CELLS = [{ x0: LEFT + RULE, x1: COL[5] }, { x0: COL[5] + RULE, x1: RIGHT }];
+
+// The template's two blank working areas, each holding one row of two photos.
+// Their outer edges are already the page border and section rules.
 const FREE_AREAS = [
-  { pageNo: 0, x0: LEFT + RULE, x1: RIGHT, yB: P1.bottom + RULE, yT: P1.defect },
-  { pageNo: 1, x0: LEFT + RULE, x1: RIGHT, yB: P2.free + RULE, yT: P2.top },
+  { pageNo: 0, yB: P1.bottom, yT: P1.defect },
+  { pageNo: 1, yB: P2.free, yT: P2.top },
 ];
 
-async function placeImages(doc, p1, p2, files, fileBytes, { bold }) {
+async function placeImages(doc, p1, p2, files, fileBytes, fonts) {
   const renderable = (files || []).filter((f) => fileBytes.get(f.id) && /(png|jpe?g)$/i.test(f.original_name || ''));
   if (!renderable.length) return [];
   const taken = new Set();
@@ -650,50 +660,69 @@ async function placeImages(doc, p1, p2, files, fileBytes, { bold }) {
   if (profile) { taken.add(profile.id); await drawImage(doc, p2, profile, fileBytes, { x0: LEFT + RULE, x1: COL[5], ...cellY }); }
   if (approved) { taken.add(approved.id); await drawImage(doc, p2, approved, fileBytes, { x0: COL[5] + RULE, x1: RIGHT, ...cellY }); }
 
-  // Everything else fills the blank working areas, captioned so an auditor can
+  // Everything else fills the blank working areas, labelled so an auditor can
   // tell what each photo is.
   const rest = [...renderable].filter((f) => !taken.has(f.id))
     .sort((a, b) => ((CAT_ORDER.indexOf(a.category) + 1) || 99) - ((CAT_ORDER.indexOf(b.category) + 1) || 99));
-  const slots = [];
+  const photos = labelPhotos(rest, [profile, approved].filter(Boolean));
+  const pages = [p1, p2];
+  let next = 0;
   for (const area of FREE_AREAS) {
-    const w = (area.x1 - area.x0) / 2;
-    const h = (area.yT - area.yB) / 2;
-    for (let row = 0; row < 2; row++) {
-      for (let col = 0; col < 2; col++) {
-        slots.push({
-          page: area.pageNo === 0 ? p1 : p2,
-          x0: area.x0 + col * w, x1: area.x0 + (col + 1) * w,
-          yB: area.yT - (row + 1) * h, yT: area.yT - row * h,
-        });
-      }
-    }
+    if (next >= photos.length) break;
+    await drawPhotoRow(doc, pages[area.pageNo], area, photos.slice(next, next + 2), fileBytes, fonts);
+    next += 2;
   }
-  for (let i = 0; i < Math.min(rest.length, slots.length); i++) {
-    const { page, ...cell } = slots[i];
-    await drawImage(doc, page, rest[i], fileBytes, cell, bold);
-  }
-  return rest.slice(slots.length);
+  return photos.slice(next);
 }
 
-// Fits the image inside `cell` preserving aspect ratio. With a `labelFont` a
-// small caption is printed above it; without one the cell is a template cell
-// that is already labelled by the band above it.
-async function drawImage(doc, page, file, fileBytes, cell, labelFont = null) {
+// Labels for the photos outside the template's two named cells. A label that
+// recurs is numbered -- counting a photo already shown in a template cell as
+// the first -- so each one can be referred to on its own ("Trial photo 2").
+function labelPhotos(rest, inTemplateCells) {
+  const base = (file) => CAT_LABEL[file.category] || 'Image';
+  const total = new Map();
+  for (const f of [...inTemplateCells, ...rest]) total.set(base(f), (total.get(base(f)) || 0) + 1);
+  const seen = new Map(inTemplateCells.map((f) => [base(f), 1]));
+  return rest.map((file) => {
+    const label = base(file);
+    const n = (seen.get(label) || 0) + 1;
+    seen.set(label, n);
+    return { file, label: total.get(label) > 1 ? `${label} ${n}` : label };
+  });
+}
+
+// One row of the photo table between the rules at yT and yB: the shaded label
+// band, then two ruled picture cells. On the form the row's outer edges already
+// exist, so the band stops inside the border instead of greying half of it; an
+// annexure page has no border, so `boxed` draws the row's own.
+async function drawPhotoRow(doc, page, { yT, yB, boxed = false }, photos, fileBytes, { bold }) {
+  const band = yT - PHOTO_BAND;
+  shade(page, LEFT, band, RIGHT - LEFT, PHOTO_BAND, GREY_MID);
+  if (boxed) {
+    hrule(page, yT);
+    hrule(page, yB);
+    vrule(page, OUTER_L, yB, yT + RULE, EDGE);
+    vrule(page, OUTER_R, yB, yT + RULE, EDGE);
+  }
+  hrule(page, band);
+  vrule(page, COL[5], yB, yT);
+  for (const [i, { file, label }] of photos.entries()) {
+    const { x0, x1 } = PHOTO_CELLS[i];
+    drawLabel(page, label, { x0, x1, y: band + PHOTO_LABEL_RISE, size: 16, f: bold });
+    await drawImage(doc, page, file, fileBytes, { x0, x1, yB: yB + RULE, yT: band });
+  }
+}
+
+// Fits the image inside `cell` preserving aspect ratio.
+async function drawImage(doc, page, file, fileBytes, cell) {
   const bytes = fileBytes.get(file.id);
   if (!bytes) return;
-  let capH = 0;
-  if (labelFont) {
-    capH = 10;
-    page.drawText(sanitize(CAT_LABEL[file.category] || 'Image'), {
-      x: cell.x0 + 4, y: cell.yT - 9, size: 7, font: labelFont, color: BLACK,
-    });
-  }
   try {
     const img = /png$/i.test(file.mime_type || file.original_name || '')
       ? await doc.embedPng(bytes)
       : await doc.embedJpg(bytes);
     const availW = cell.x1 - cell.x0 - 8;
-    const availH = cell.yT - cell.yB - 8 - capH;
+    const availH = cell.yT - cell.yB - 8;
     if (availW <= 0 || availH <= 0) return;
     const scale = Math.min(availW / img.width, availH / img.height);
     const w = img.width * scale;
@@ -709,8 +738,9 @@ async function drawImage(doc, page, file, fileBytes, cell, labelFont = null) {
 // annexure ---------------------------------------------------------------
 // Continuation pages. The controlled form is fixed at two pages, so anything
 // that did not fit is reprinted here in full rather than being dropped.
-async function drawAnnexure(doc, qd, overflow, leftover, fileBytes, { font, bold }) {
+async function drawAnnexure(doc, qd, overflow, leftover, fileBytes, fonts) {
   if (!overflow.length && !leftover.length) return;
+  const { font, bold } = fonts;
   const MARGIN = LEFT;
   const TOP = 750;
   const BOTTOM = 50;
@@ -738,18 +768,12 @@ async function drawAnnexure(doc, qd, overflow, leftover, fileBytes, { font, bold
     y -= 8;
   }
 
-  const boxW = (RIGHT - MARGIN - 12) / 2;
-  const boxH = 150;
+  // Photos continue the form's photo table at the template row's own height,
+  // rows stacked so consecutive ones share a rule.
   for (let i = 0; i < leftover.length; i += 2) {
-    room(boxH + 6);
-    for (const [n, file] of [leftover[i], leftover[i + 1]].entries()) {
-      if (!file) continue;
-      const x0 = MARGIN + n * (boxW + 12);
-      const cell = { x0, x1: x0 + boxW, yB: y - boxH, yT: y };
-      page.drawRectangle({ x: cell.x0, y: cell.yB, width: boxW, height: boxH, borderColor: BLACK, borderWidth: 0.7 });
-      await drawImage(doc, page, file, fileBytes, cell, bold);
-    }
-    y -= boxH + 6;
+    room(PHOTO_ROW);
+    await drawPhotoRow(doc, page, { yT: y, yB: y - PHOTO_ROW, boxed: true }, leftover.slice(i, i + 2), fileBytes, fonts);
+    y -= PHOTO_ROW;
   }
 }
 
