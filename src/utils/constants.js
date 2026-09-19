@@ -265,3 +265,7 @@ export const QD_APPROVAL_BADGE = {
 // Which of those the register marks. Approved is left out on purpose: most QDs
 // end up approved, and a pill on nearly every row teaches the eye to skip it.
 export const QD_LIST_BADGE_STATES = ['Draft', 'Pending', 'SentBack'];
+
+// Marks a QD brought in from an old, already-issued form rather than raised in
+// the app. Shared by the register and the drawer, like QD_APPROVAL_BADGE.
+export const QD_IMPORTED_BADGE = { label: 'Imported', bg: 'rgba(14,165,233,0.15)', fg: '#38BDF8' };
