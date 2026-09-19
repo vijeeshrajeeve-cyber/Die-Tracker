@@ -454,6 +454,15 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- A QD brought in from an old, already-issued form (Import existing QD)
+      -- rather than raised in the app. Its document is the uploaded original,
+      -- and only these rows may be taken back with Undo import.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='imported') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN imported BOOLEAN NOT NULL DEFAULT FALSE;
+        END IF;
+      END $$;
+
       -- ── QD approval workflow ────────────────────────────────────────────
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='approval_state') THEN

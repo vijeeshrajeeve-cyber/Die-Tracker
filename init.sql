@@ -456,7 +456,9 @@ CREATE TABLE IF NOT EXISTS quality_discrepancies (
     supplier_acceptance   TEXT,
     action_taken          TEXT,
     supplier_comments     TEXT,
-    received_by_supplier  TEXT
+    received_by_supplier  TEXT,
+    -- Brought in from an old, already-issued form rather than raised in the app.
+    imported              BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_qd_supplier ON quality_discrepancies(supplier);
 CREATE INDEX IF NOT EXISTS idx_qd_status ON quality_discrepancies(status);
