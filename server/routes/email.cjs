@@ -9,6 +9,7 @@ const qdDocument = require('../services/qdDocument.cjs');
 const designReminderService = require('../services/designReminder.cjs');
 const focReminderService = require('../services/focReminder.cjs');
 const dailySummaryService = require('../services/dailySummary.cjs');
+const deliveryChaserService = require('../services/deliveryChaser.cjs');
 const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -419,6 +420,71 @@ router.get('/daily-summary.pdf', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Daily summary PDF error:', error);
         res.status(500).json({ error: 'Failed to generate the daily summary PDF' });
+    }
+});
+
+// ── Die delivery chaser ──────────────────────────────────────────────────────
+
+router.get('/delivery-chaser-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+        const settings = await deliveryChaserService.getChaserSettings();
+        res.json({ settings, state: deliveryChaserService.getChaserState() });
+    } catch (error) {
+        console.error('Get delivery chaser settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch delivery chaser settings' });
+    }
+});
+
+router.put('/delivery-chaser-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+        const { enabled, time, intervalDays, noEtaDays, cc } = req.body;
+        const whole = (v, min, max) => v === undefined || (Number.isInteger(v) && v >= min && v <= max);
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({ error: 'enabled must be a boolean' });
+        }
+        if (time !== undefined && !HHMM.test(time)) {
+            return res.status(400).json({ error: 'time must be in HH:MM (24-hour) format' });
+        }
+        if (!whole(intervalDays, 1, 60)) {
+            return res.status(400).json({ error: 'Chase every must be a whole number of days from 1 to 60' });
+        }
+        if (!whole(noEtaDays, 1, 365)) {
+            return res.status(400).json({ error: 'The no-ETA threshold must be a whole number of days from 1 to 365' });
+        }
+        const settings = await deliveryChaserService.updateChaserSettings({
+            enabled, time, intervalDays, noEtaDays,
+            cc: cc === undefined ? undefined : String(cc).trim(),
+        });
+        res.json({ message: 'Delivery chaser settings updated', settings });
+    } catch (error) {
+        console.error('Update delivery chaser settings error:', error);
+        res.status(500).json({ error: 'Failed to update delivery chaser settings' });
+    }
+});
+
+// Runs the chaser now. It still honours each supplier's every-N-days rule,
+// so pressing it twice cannot mail anyone twice.
+router.post('/delivery-chaser-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+        const summary = await deliveryChaserService.sendDeliveryChasers();
+        res.json({ message: 'Delivery chaser run complete', summary });
+    } catch (error) {
+        console.error('Manual delivery chaser run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to run the delivery chaser' });
+    }
+});
+
+// Preview only: builds every email the next run would send; sends and writes nothing.
+router.get('/delivery-chaser-preview', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+        res.json(await deliveryChaserService.previewDeliveryChasers());
+    } catch (error) {
+        console.error('Delivery chaser preview error:', error);
+        res.status(500).json({ error: 'Failed to build the delivery chaser preview' });
     }
 });
 

@@ -393,6 +393,8 @@ module.exports = {
     idleReceipts,
     buildSupplierBody,
     buildInternalBody,
+    escapeHtml,
+    table,
     isDue,
     localDateString,
     sendSupplierFocReminders,
