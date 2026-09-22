@@ -42,6 +42,9 @@ import FreezeDesignModal from './components/FreezeDesignModal';
 // the first time someone actually opens them.
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const WorkQueuePage = lazy(() => import('./pages/WorkQueuePage'));
+// Loaded on first visit like the Work Queue: the follow-up drawer and its
+// rules are only needed on this one page.
+const InManufacturingPage = lazy(() => import('./pages/InManufacturingPage'));
 // Dashboard is the landing tab, but it is still behind the login screen — and
 // it is the only other thing pulling in recharts.
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -3168,15 +3171,25 @@ export default function DieOrderingSystem() {
           )}
 
           {/* Process Flow Pages */}
-          {activeTab.startsWith('flow-') && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
+          {activeTab === 'flow-completed' && hasPageAccess(activeTab) && (
+            <Suspense fallback={<ChunkFallback theme={theme} />}>
+              <InManufacturingPage
+                data={data} searchTerm={searchTerm} setSearchTerm={setSearchTerm} theme={theme}
+                correctors={correctors} correctorsError={correctorsError}
+                setSelectedOrder={setSelectedOrder} setRevisionHistoryOrder={setRevisionHistoryOrder}
+                setData={setData} setToast={setToast} setActiveTab={setActiveTab}
+              />
+            </Suspense>
+          )}
+
+          {activeTab.startsWith('flow-') && activeTab !== 'flow-completed' && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
             <FlowPage
               data={data} activeTab={activeTab} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               sortConfig={sortConfig} handleSort={handleSort} suppliers={suppliers} theme={theme}
-              correctors={correctors} correctorsError={correctorsError}
               setSelectedOrder={setSelectedOrder} setShowAddOrderModal={setShowAddOrderModal}
               setRevisionOrder={setRevisionOrder} setChangelogOrder={setChangelogOrder}
               setRevisionHistoryOrder={setRevisionHistoryOrder}
-              setData={setData} setToast={setToast} setActiveTab={setActiveTab}
+              setData={setData} setToast={setToast}
               handleInlineFieldSave={handleInlineFieldSave} handleSizeChange={handleSizeChange}
               handleMandrelsChange={handleMandrelsChange} handlePRNumberChange={handlePRNumberChange}
               handleCavityChange={handleCavityChange}
