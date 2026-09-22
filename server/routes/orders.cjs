@@ -1,3 +1,4 @@
+const { presentOrder } = require('../services/orderPresentation.cjs');
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
@@ -172,50 +173,7 @@ router.get('/', async (req, res) => {
 
         const total = countResult.rows[0].total;
 
-        const formattedOrders = result.rows.map(order => ({
-            id: order.id,
-            'Plant': order.plant,
-            'Order No': order.order_no,
-            'DIE NO': order.die_no,
-            'TYPE': order.type,
-            'Die Size': order.die_size,
-            'Die Requested Date': order.die_requested_date,
-            'Ordered date': order.ordered_date,
-            'Type of shipment': order.shipment_type,
-            'Mandrels per Cavity': order.mandrels_per_cavity,
-            'Total Mandrels': order.total_mandrels,
-            'Design Received Date': order.design_received_date,
-            '3D Model Received Date': order.three_d_model_received_date,
-            'simulationEnabled': !!order.simulation_enabled,
-            'Design Approved Date': order.design_approved_date,
-            'Delay': order.delay,
-            'PR Entry': order.pr_entry,
-            'PR Number': order.pr_number,
-            'Customer Name': order.customer_name,
-            'Oracle Entry': order.oracle_entry,
-            'Supplier': order.supplier,
-            'STATUS': order.status,
-            'OVERALL DELAY': order.overall_delay,
-            'ETA': order.eta,
-            'month': order.month,
-            'Die Received Date': order.die_received_date,
-            'Submission Date': order.submission_date,
-            'Sample Approval Date': order.sample_approval_date,
-            'No of Trial': order.no_of_trial,
-            'Corrector': order.corrector,
-            'Press': order.press,
-            'Cavity': order.cavity,
-            'Ascona Reference': order.ascona_reference,
-            'Sample Status': order.sample_status,
-            'Remark': order.remark,
-            'Sample Remark': order.sample_remark,
-            'Urgency': order.urgency || 'NORMAL',
-            'specialFollowUp': !!order.special_follow_up,
-            'Design to EMS Date': order.design_to_ems_date,
-            'Design Revision Count': order.design_revision_count || 0,
-            'Last Revision Date': order.last_revision_date,
-            'changeCount': order.change_count || 0,
-        }));
+        const formattedOrders = result.rows.map(presentOrder);
 
         res.json({
             orders: formattedOrders,

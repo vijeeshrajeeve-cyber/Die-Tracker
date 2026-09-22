@@ -1,0 +1,2174 @@
+<!doctype html>
+<html lang="en" data-visualize-standalone>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Die Tracker - Assigned Work Queue Concept</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Die Tracker - Assigned Work Queue Concept" data-srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot; data-visualize-standalone&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;Die Tracker - Assigned Work Queue Concept&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --icon-size: 16px;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --corner-shape: round;
+  --radius: var(--border-radius-lg, 10px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: var(--visualize-paint-gutter, 0px);
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+.cursor-interaction {
+  cursor: var(--cursor-interaction, pointer);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: var(--cursor-interaction, pointer);
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner-shape);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: var(--corner-shape);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner-shape);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+hr {
+  width: 100%;
+  height: 1px;
+  margin-block: 6px;
+  border: 0;
+  background: var(--border);
+}
+
+.nav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.progress {
+  display: flex;
+  height: 8px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 8px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar:only-child {
+  border-radius: var(--radius-full);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.nav-link,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn,
+.nav-link {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner-shape);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: var(--cursor-interaction, pointer);
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover,
+.nav-link:not(:disabled):not([aria-disabled=&quot;true&quot;]):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.nav-pills .nav-link {
+  min-width: 0;
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.nav-justified .nav-link {
+  flex: 1 1 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.nav-pills .nav-link.active {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+.btn:disabled,
+.nav-link:disabled,
+.nav-link[aria-disabled=&quot;true&quot;] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: var(--corner-shape);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner-shape);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed=&quot;true&quot;],
+  [aria-selected=&quot;true&quot;],
+  .is-selected
+) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .btn,
+  .nav-link,
+  .form-control,
+  .form-select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Keep small-screen WebKit from zooming when a text field receives focus. */
+  .form-control,
+  .form-select {
+    font-size: max(16px, var(--font-size-normal));
+  }
+
+  .form-control[type=&quot;file&quot;]::file-selector-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control-color[type=&quot;color&quot;] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form-control:is(
+    [type=&quot;date&quot;],
+    [type=&quot;datetime-local&quot;],
+    [type=&quot;month&quot;],
+    [type=&quot;time&quot;],
+    [type=&quot;week&quot;]
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 8px;
+  }
+
+  .form-check {
+    min-height: 44px;
+    padding-inline: 15px;
+  }
+
+  .form-check-input {
+    position: relative;
+  }
+
+  .form-check-input::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    content: &quot;&quot;;
+    transform: translate(-50%, -50%);
+  }
+
+  .form-check-label {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .form-range {
+    height: 44px;
+    touch-action: pan-y;
+  }
+
+  .form-range::-webkit-slider-runnable-track {
+    height: 44px;
+  }
+
+  .form-range::-moz-range-track {
+    height: 44px;
+  }
+
+  .form-range::-webkit-slider-thumb {
+    margin-top: 12px;
+  }
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: var(--icon-size) !important;
+  height: var(--icon-size) !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;script type=&quot;application/json&quot; id=&quot;codex-visualization-widget-state&quot;&gt;__CODEX_VISUALIZATION_WIDGET_STATE__&lt;/script&gt;
+&lt;script&gt;(() =&gt; {
+  const root = document.documentElement;
+  const mediaQuery = globalThis.matchMedia(&quot;(prefers-color-scheme: dark)&quot;);
+  const apply = Reflect.apply;
+  const isArray = Array.isArray;
+  const hasOwn = Object.hasOwn;
+  const parentWindow = globalThis.parent;
+  const stringify = JSON.stringify;
+  const parse = JSON.parse;
+  const encode = TextEncoder.prototype.encode.bind(new TextEncoder());
+  const initialStateElement = document.getElementById(
+    &quot;codex-visualization-widget-state&quot;,
+  );
+  const initialGlobals = parse(initialStateElement?.textContent ?? &quot;{}&quot;);
+  initialStateElement?.remove();
+  /** @type {Record&lt;string, unknown&gt; | null} */
+  let state = initialGlobals.widgetState ?? null;
+  const statePersistence = initialGlobals.statePersistence ?? &quot;none&quot;;
+  let nextStateRequestId = 0;
+  /** @type {Map&lt;number, { resolve: () =&gt; void; reject: (error: Error) =&gt; void; timeout: ReturnType&lt;typeof globalThis.setTimeout&gt;; serializedState: string }&gt;} */
+  const pendingStateWrites = new Map();
+  const persistenceError = () =&gt;
+    Object.assign(
+      new Error(&quot;The host could not persist the widget state update&quot;),
+      {
+        code: -32000,
+        data: { code: &quot;widget_state_persistence_failed&quot;, retryable: false },
+      },
+    );
+  /**
+   * @param {object} prototype
+   * @param {string} property
+   */
+  const getPrototypeGetter = (prototype, property) =&gt; {
+    // oxlint-disable-next-line typescript/unbound-method -- invoked through captured Reflect.apply
+    const getter = Object.getOwnPropertyDescriptor(prototype, property)?.get;
+    if (getter == null) {
+      throw new Error(`Missing ${property} getter`);
+    }
+    return getter;
+  };
+  const getMessageData = getPrototypeGetter(MessageEvent.prototype, &quot;data&quot;);
+  const getMessagePorts = getPrototypeGetter(MessageEvent.prototype, &quot;ports&quot;);
+  const getMessageSource = getPrototypeGetter(MessageEvent.prototype, &quot;source&quot;);
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const addHostMessageListener = MessagePort.prototype.addEventListener;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const postHostMessage = MessagePort.prototype.postMessage;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const startHostPort = MessagePort.prototype.start;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const stopMessagePropagation = Event.prototype.stopImmediatePropagation;
+  /** @type {MessagePort | null} */
+  let hostPort = null;
+  const postToHost = (type, payload) =&gt; {
+    if (hostPort != null) {
+      apply(postHostMessage, hostPort, [{ type, ...payload }]);
+    }
+  };
+  const openExternal = ({ href }) =&gt; {
+    if (globalThis.navigator.userActivation?.isActive === true) {
+      postToHost(&quot;open-external&quot;, { href });
+    }
+  };
+  const sendFollowUpMessage = ({ context, prompt, title }) =&gt; {
+    if (globalThis.navigator.userActivation?.isActive === true) {
+      postToHost(&quot;follow-up&quot;, { context, prompt, title });
+    }
+    return Promise.resolve();
+  };
+  /**
+   * @param {Record&lt;string, unknown&gt; | ((previous: Record&lt;string, unknown&gt; | null) =&gt; Record&lt;string, unknown&gt;)} next
+   * @returns {Promise&lt;void&gt;}
+   */
+  const setWidgetState = async (next) =&gt; {
+    const nextState = typeof next === &quot;function&quot; ? next(state) : next;
+    if (
+      nextState == null ||
+      typeof nextState !== &quot;object&quot; ||
+      isArray(nextState)
+    ) {
+      throw new TypeError(&quot;Widget state must be a JSON object&quot;);
+    }
+    const inputState = stringify(
+      nextState,
+      (_key, /** @type {unknown} */ value) =&gt; {
+        if (
+          typeof value === &quot;undefined&quot; ||
+          typeof value === &quot;function&quot; ||
+          typeof value === &quot;symbol&quot; ||
+          (typeof value === &quot;number&quot; &amp;&amp; !Number.isFinite(value))
+        ) {
+          throw new TypeError(&quot;Widget state must be a JSON object&quot;);
+        }
+        return value;
+      },
+    );
+    const parsedState = parse(inputState);
+    if (
+      parsedState == null ||
+      typeof parsedState !== &quot;object&quot; ||
+      isArray(parsedState)
+    ) {
+      throw new TypeError(&quot;Widget state must be a JSON object&quot;);
+    }
+    const storedState = {
+      modelContent: null,
+      privateContent: null,
+      ...parsedState,
+    };
+    const serializedState = stringify(storedState);
+    if (encode(serializedState).length &gt; 16 * 1024) {
+      throw new TypeError(
+        &quot;Widget state must be a JSON object of at most 16 KiB&quot;,
+      );
+    }
+    if (
+      hasOwn(storedState, &quot;imageIds&quot;) &amp;&amp;
+      (!isArray(storedState.imageIds) ||
+        storedState.imageIds.some(
+          (/** @type {unknown} */ id) =&gt; typeof id !== &quot;string&quot;,
+        ))
+    ) {
+      throw new TypeError(&quot;Widget state imageIds must be an array of strings&quot;);
+    }
+    if (storedState.imageIds?.length &gt; 0) {
+      throw Object.assign(
+        new TypeError(&quot;Visualization state does not support image attachments&quot;),
+        { code: -32602, data: { code: &quot;images_unsupported&quot; } },
+      );
+    }
+    state = storedState;
+    globalThis.openai.widgetState = state;
+    globalThis.dispatchEvent(
+      new CustomEvent(&quot;openai:set_globals&quot;, {
+        detail: { globals: { widgetState: state } },
+      }),
+    );
+    if (statePersistence === &quot;none&quot;) {
+      throw persistenceError();
+    }
+    const id = ++nextStateRequestId;
+    return new Promise((resolve, reject) =&gt; {
+      const timeout = globalThis.setTimeout(() =&gt; {
+        pendingStateWrites.delete(id);
+        reject(persistenceError());
+      }, 30_000);
+      pendingStateWrites.set(id, { resolve, reject, timeout, serializedState });
+      postToHost(&quot;widget-state-write&quot;, { id, state: serializedState });
+    });
+  };
+  const syncTheme = () =&gt; {
+    const theme = mediaQuery.matches ? &quot;dark&quot; : &quot;light&quot;;
+    root.dataset.theme = theme;
+    globalThis.openai = {
+      ...globalThis.openai,
+      openExternal,
+      sendFollowUpMessage,
+      setWidgetState,
+      theme,
+      visualizationStyleVariables: {},
+      visualizationTheme: theme,
+      widgetState: state,
+      statePersistence,
+      stateModelContext: &quot;none&quot;,
+    };
+    globalThis.dispatchEvent(
+      new CustomEvent(&quot;openai:set_globals&quot;, {
+        detail: { globals: globalThis.openai },
+      }),
+    );
+  };
+  const sendHeight = () =&gt; {
+    postToHost(&quot;height&quot;, {
+      height: Math.ceil(
+        Math.max(
+          document.body.scrollHeight,
+          document.body.getBoundingClientRect().height,
+        ),
+      ),
+    });
+  };
+
+  globalThis.addEventListener(
+    &quot;message&quot;,
+    (event) =&gt; {
+      const data = apply(getMessageData, event, []);
+      const ports = apply(getMessagePorts, event, []);
+      const source = apply(getMessageSource, event, []);
+      if (
+        hostPort != null ||
+        source !== parentWindow ||
+        typeof data !== &quot;object&quot; ||
+        data?.type !== &quot;codex-visualization-initialize&quot; ||
+        !isArray(ports) ||
+        ports.length !== 1
+      ) {
+        return;
+      }
+      apply(stopMessagePropagation, event, []);
+      const nextHostPort = ports[0];
+      try {
+        apply(addHostMessageListener, nextHostPort, [
+          &quot;message&quot;,
+          (event) =&gt; {
+            const data = apply(getMessageData, event, []);
+            if (typeof data === &quot;object&quot; &amp;&amp; data?.type === &quot;measure&quot;) {
+              sendHeight();
+            } else if (
+              typeof data === &quot;object&quot; &amp;&amp;
+              data?.type === &quot;widget-state-result&quot;
+            ) {
+              /** @type {unknown} */
+              const id = data.id;
+              if (typeof id !== &quot;number&quot;) {
+                return;
+              }
+              const pending = pendingStateWrites.get(id);
+              if (pending != null) {
+                pendingStateWrites.delete(id);
+                globalThis.clearTimeout(pending.timeout);
+                if (data.ok === true) {
+                  pending.resolve();
+                } else {
+                  pending.reject(persistenceError());
+                }
+              }
+            }
+          },
+        ]);
+        apply(startHostPort, nextHostPort, []);
+      } catch {
+        return;
+      }
+      hostPort = nextHostPort;
+      for (const [id, { serializedState }] of pendingStateWrites) {
+        postToHost(&quot;widget-state-write&quot;, { id, state: serializedState });
+      }
+      sendHeight();
+    },
+    { capture: true },
+  );
+  document.currentScript?.remove();
+  mediaQuery.addEventListener(&quot;change&quot;, syncTheme);
+  globalThis.addEventListener(&quot;click&quot;, (event) =&gt; {
+    if (event.defaultPrevented) {
+      return;
+    }
+    let element = null;
+    if (event.target instanceof globalThis.Element) {
+      element = event.target;
+    } else if (event.target instanceof globalThis.Node) {
+      element = event.target.parentElement;
+    }
+    const link = element?.closest(&quot;a[href]&quot;);
+    const href = link?.getAttribute(&quot;href&quot;);
+    if (href == null) {
+      return;
+    }
+    if (href.startsWith(&quot;#&quot;)) {
+      let id;
+      try {
+        id = decodeURIComponent(href.slice(1));
+      } catch {
+        return;
+      }
+      const target = id.length === 0 ? root : document.getElementById(id);
+      if (
+        target == null ||
+        globalThis.navigator.userActivation?.isActive !== true
+      ) {
+        return;
+      }
+      event.preventDefault();
+      postToHost(&quot;scroll-to&quot;, {
+        top: target.getBoundingClientRect().top + globalThis.scrollY,
+      });
+      return;
+    }
+    event.preventDefault();
+    openExternal({ href });
+  });
+  new ResizeObserver(sendHeight).observe(document.body);
+  syncTheme();
+})();
+&lt;/script&gt;
+&lt;div id=&quot;dt-work-queue&quot; aria-label=&quot;Die Tracker assigned work queue concept&quot;&gt;
+  &lt;style&gt;
+    #dt-work-queue { --wq-bg:light-dark(#f5f7fa,#0d0f14); --wq-panel:light-dark(#fff,#171a21); --wq-soft:light-dark(#f0f3f7,#20242e); --wq-text:light-dark(#192631,#e9edf3); --wq-muted:light-dark(#586775,#a5b0c0); --wq-line:light-dark(#dce2e9,#303744); --wq-brand:light-dark(#1f6fb0,#70b5ee); --wq-onbrand:light-dark(#fff,#101923); --wq-brandfill:light-dark(#e8f2fb,#213447); --wq-red:light-dark(#b8323a,#ff9a9f); --wq-redfill:light-dark(#fcebec,#3c242d); --wq-amber:light-dark(#86570c,#f1c777); --wq-amberfill:light-dark(#fff3d9,#383024); --wq-green:light-dark(#207454,#8bd6b4); --wq-greenfill:light-dark(#e8f5ee,#20372d); font:14px/1.5 Inter,Segoe UI,Arial,sans-serif; color:var(--wq-text); background:var(--wq-bg); border:1px solid var(--wq-line); border-radius:12px; overflow:hidden; width:100%; box-sizing:border-box; }
+    #dt-work-queue * { box-sizing:border-box; }
+    #dt-work-queue button,#dt-work-queue input,#dt-work-queue select,#dt-work-queue textarea { font:inherit; }
+    #dt-work-queue button { cursor:pointer; }
+    #dt-work-queue button:disabled { cursor:not-allowed; opacity:.6; }
+    #dt-work-queue [hidden] { display:none!important; }
+    #dt-work-queue h1,#dt-work-queue h2,#dt-work-queue h3,#dt-work-queue p { margin:0; }
+    #dt-work-queue h1 { font-size:25px; letter-spacing:-.7px; font-weight:650; }
+    #dt-work-queue h2 { font-size:19px; font-weight:600; letter-spacing:-.3px; }
+    #dt-work-queue h3 { font-size:14px; font-weight:600; }
+    #dt-work-queue .wq-layout { display:grid; grid-template-columns:174px minmax(0,1fr); min-height:730px; }
+    #dt-work-queue .wq-side { background:var(--wq-panel); border-right:1px solid var(--wq-line); padding:22px 12px; display:flex; flex-direction:column; gap:22px; }
+    #dt-work-queue .wq-logo { display:flex; gap:9px; align-items:center; font-size:15px; font-weight:650; padding:0 5px; }
+    #dt-work-queue .wq-mark { display:grid; place-items:center; border-radius:8px; width:31px; height:31px; background:var(--wq-brand); color:var(--wq-onbrand); }
+    #dt-work-queue .wq-side small { color:var(--wq-muted); font-size:11px; font-weight:400; display:block; }
+    #dt-work-queue .wq-nav { display:flex; flex-direction:column; gap:5px; }
+    #dt-work-queue .wq-nav-item { display:flex; align-items:center; gap:9px; padding:10px 11px; border:0; border-radius:7px; color:var(--wq-muted); background:transparent; text-align:left; }
+    #dt-work-queue .wq-nav-item.wq-active { background:var(--wq-brandfill); color:var(--wq-brand); font-weight:600; }
+    #dt-work-queue .wq-nav-item.wq-static { font-size:13px; }
+    #dt-work-queue .wq-nav-label { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--wq-muted); margin:14px 11px 6px; }
+    #dt-work-queue .wq-profile { display:flex; gap:9px; align-items:center; border-top:1px solid var(--wq-line); padding-top:16px; margin-top:auto; }
+    #dt-work-queue .wq-avatar { display:inline-grid; place-items:center; width:27px; height:27px; border-radius:50%; color:var(--wq-brand); background:var(--wq-brandfill); font-size:11px; font-weight:600; flex-shrink:0; }
+    #dt-work-queue .wq-main { min-width:0; position:relative; }
+    #dt-work-queue .wq-top { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:15px 24px; border-bottom:1px solid var(--wq-line); background:var(--wq-panel); font-size:12px; color:var(--wq-muted); }
+    #dt-work-queue .wq-demo { padding:3px 8px; border-radius:5px; background:var(--wq-soft); color:var(--wq-muted); font-size:11px; white-space:nowrap; }
+    #dt-work-queue .wq-content { padding:23px 24px; }
+    #dt-work-queue .wq-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    #dt-work-queue .wq-sub { color:var(--wq-muted); font-size:12px; margin-top:5px; }
+    #dt-work-queue .wq-button { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--wq-line); border-radius:7px; padding:8px 11px; color:var(--wq-text); background:var(--wq-panel); font-size:12px; font-weight:500; }
+    #dt-work-queue .wq-button:hover { background:var(--wq-soft); }
+    #dt-work-queue .wq-button.wq-primary { background:var(--wq-brand); border-color:var(--wq-brand); color:var(--wq-onbrand); }
+    #dt-work-queue .wq-button.wq-primary:hover { filter:brightness(.95); }
+    #dt-work-queue .wq-tabs { display:flex; gap:22px; border-bottom:1px solid var(--wq-line); margin-bottom:18px; }
+    #dt-work-queue .wq-tab { border:0; border-bottom:2px solid transparent; padding:0 0 12px; background:transparent; color:var(--wq-muted); font-size:13px; white-space:nowrap; }
+    #dt-work-queue .wq-tab[aria-pressed=true] { color:var(--wq-brand); border-bottom-color:var(--wq-brand); font-weight:600; }
+    #dt-work-queue .wq-count { display:inline-block; border-radius:5px; padding:0 5px; margin-left:4px; font-size:11px; font-variant-numeric:tabular-nums; background:var(--wq-soft); color:var(--wq-muted); }
+    #dt-work-queue .wq-buckets { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin-bottom:18px; }
+    #dt-work-queue .wq-bucket { padding:10px 11px; border:1px solid var(--wq-line); border-radius:8px; background:var(--wq-panel); color:var(--wq-muted); text-align:left; }
+    #dt-work-queue .wq-bucket strong { font-size:23px; line-height:1.35; color:var(--wq-text); font-weight:600; display:block; font-variant-numeric:tabular-nums; }
+    #dt-work-queue .wq-bucket span { font-size:11px; white-space:nowrap; }
+    #dt-work-queue .wq-bucket[aria-pressed=true] { background:var(--wq-brandfill); border-color:var(--wq-brand); }
+    #dt-work-queue .wq-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+    #dt-work-queue .wq-search { flex:1; display:flex; gap:7px; align-items:center; border:1px solid var(--wq-line); background:var(--wq-panel); border-radius:7px; padding:7px 10px; min-width:170px; }
+    #dt-work-queue .wq-search input { border:0; outline-offset:3px; background:transparent; color:var(--wq-text); width:100%; font-size:12px; }
+    #dt-work-queue select,#dt-work-queue input[type=date],#dt-work-queue input[type=number],#dt-work-queue input[type=time],#dt-work-queue textarea { border:1px solid var(--wq-line); background:var(--wq-panel); color:var(--wq-text); border-radius:6px; padding:8px; min-width:0; }
+    #dt-work-queue .wq-toolbar select { font-size:12px; }
+    #dt-work-queue .wq-list-head { display:flex; justify-content:space-between; gap:10px; color:var(--wq-muted); font-size:11px; padding:0 1px 8px; }
+    #dt-work-queue .wq-table-wrap { overflow-x:auto; border:1px solid var(--wq-line); border-radius:8px; background:var(--wq-panel); }
+    #dt-work-queue table { border-collapse:collapse; width:100%; min-width:535px; }
+    #dt-work-queue th { text-align:left; padding:10px 11px; background:var(--wq-soft); color:var(--wq-muted); font-weight:500; font-size:11px; }
+    #dt-work-queue td { padding:14px 11px; vertical-align:middle; border-top:1px solid var(--wq-line); font-size:12px; }
+    #dt-work-queue .wq-row:hover { background:var(--wq-soft); }
+    #dt-work-queue .wq-row.wq-selected { background:var(--wq-brandfill); }
+    #dt-work-queue .wq-die { background:transparent; color:var(--wq-brand); border:0; padding:0; font-weight:600; white-space:nowrap; font-size:12px; }
+    #dt-work-queue .wq-meta { font-size:11px; color:var(--wq-muted); margin-top:4px; display:block; }
+    #dt-work-queue .wq-owner { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+    #dt-work-queue .wq-pill { display:inline-flex; align-items:center; gap:4px; padding:3px 6px; border-radius:5px; font-size:10px; font-weight:500; background:var(--wq-soft); color:var(--wq-muted); white-space:nowrap; }
+    #dt-work-queue .wq-pill.overdue { background:var(--wq-redfill); color:var(--wq-red); }
+    #dt-work-queue .wq-pill.today,#dt-work-queue .wq-pill.setup { background:var(--wq-amberfill); color:var(--wq-amber); }
+    #dt-work-queue .wq-pill.upcoming { background:var(--wq-greenfill); color:var(--wq-green); }
+    #dt-work-queue .wq-footnote { font-size:11px; color:var(--wq-muted); padding:12px 0 0; }
+    #dt-work-queue .wq-empty { text-align:center; padding:52px 20px; }
+    #dt-work-queue .wq-empty h3 { margin-bottom:5px; }
+    #dt-work-queue .wq-empty p { color:var(--wq-muted); font-size:12px; }
+    #dt-work-queue .wq-detail { margin-top:18px; border:1px solid var(--wq-line); border-radius:9px; background:var(--wq-panel); }
+    #dt-work-queue .wq-detail-top { padding:17px 19px; display:flex; align-items:flex-start; gap:10px; justify-content:space-between; border-bottom:1px solid var(--wq-line); }
+    #dt-work-queue .wq-detail-grid { padding:19px; display:grid; grid-template-columns:1.1fr 1fr; gap:26px; }
+    #dt-work-queue .wq-fields { display:flex; flex-direction:column; gap:12px; }
+    #dt-work-queue .wq-fields label,#dt-work-queue .wq-rule-fields label { display:flex; flex-direction:column; gap:5px; color:var(--wq-muted); font-size:12px; }
+    #dt-work-queue .wq-two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    #dt-work-queue .wq-fields textarea { resize:vertical; min-height:62px; }
+    #dt-work-queue .wq-info { color:var(--wq-muted); background:var(--wq-soft); border-radius:7px; padding:10px 12px; font-size:11px; }
+    #dt-work-queue .wq-info.wq-alert { color:var(--wq-amber); background:var(--wq-amberfill); }
+    #dt-work-queue .wq-history { list-style:none; padding:0; margin:12px 0 16px; }
+    #dt-work-queue .wq-history li { border-left:1px solid var(--wq-line); padding:0 0 15px 14px; font-size:12px; position:relative; }
+    #dt-work-queue .wq-history li:before { content:&#x27;&#x27;; position:absolute; height:7px; width:7px; background:var(--wq-muted); border-radius:50%; left:-4px; top:6px; }
+    #dt-work-queue .wq-error { color:var(--wq-red); font-size:12px; }
+    #dt-work-queue .wq-rules-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    #dt-work-queue .wq-settings-panel { background:var(--wq-panel); border:1px solid var(--wq-line); border-radius:9px; padding:18px; }
+    #dt-work-queue .wq-settings-panel h3 { margin-bottom:15px; }
+    #dt-work-queue .wq-rule-fields { display:flex; flex-direction:column; gap:14px; }
+    #dt-work-queue .wq-days { display:flex; gap:4px; flex-wrap:wrap; }
+    #dt-work-queue .wq-day { border:1px solid var(--wq-line); background:var(--wq-panel); color:var(--wq-muted); padding:6px; border-radius:5px; font-size:11px; }
+    #dt-work-queue .wq-day[aria-pressed=true] { background:var(--wq-brandfill); color:var(--wq-brand); border-color:var(--wq-brand); }
+    #dt-work-queue .wq-calendar-preview { border-top:1px solid var(--wq-line); margin-top:16px; padding-top:14px; }
+    #dt-work-queue .wq-preview-date { font-size:21px; font-weight:600; margin:5px 0; }
+    #dt-work-queue .wq-inline-label { display:flex; gap:8px; align-items:center; font-size:12px; color:var(--wq-muted); }
+    #dt-work-queue .wq-rule-summary { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--wq-line); font-size:12px; gap:10px; }
+    #dt-work-queue .wq-section-space { margin-top:18px; }
+    #dt-work-queue .wq-toast { margin:12px 24px 20px; border-radius:7px; background:var(--wq-greenfill); color:var(--wq-green); padding:10px 13px; font-size:12px; }
+    #dt-work-queue .wq-record { border:1px solid var(--wq-line); padding:20px; border-radius:9px; background:var(--wq-panel); }
+    #dt-work-queue .wq-record dl { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:18px 0; }
+    #dt-work-queue .wq-record dt { color:var(--wq-muted); font-size:11px; }
+    #dt-work-queue .wq-record dd { margin:3px 0 0; }
+    #dt-work-queue .wq-compact td { padding-top:9px; padding-bottom:9px; }
+    #dt-work-queue .wq-without-sidebar { grid-template-columns:minmax(0,1fr); }
+    #dt-work-queue .wq-without-sidebar .wq-side { display:none; }
+    #dt-work-queue svg { flex-shrink:0; }
+    @media(max-width:800px) { #dt-work-queue .wq-layout { grid-template-columns:1fr; } #dt-work-queue .wq-side { display:none; } }
+    @media(max-width:550px) { #dt-work-queue .wq-content { padding:18px 13px; } #dt-work-queue .wq-top { padding:12px 13px; } #dt-work-queue .wq-buckets { grid-template-columns:repeat(3,1fr); } #dt-work-queue .wq-detail-grid,#dt-work-queue .wq-rules-grid { grid-template-columns:1fr; } #dt-work-queue .wq-tabs { gap:17px; } #dt-work-queue input,#dt-work-queue select,#dt-work-queue textarea { font-size:16px!important; } #dt-work-queue .wq-two { grid-template-columns:1fr; } #dt-work-queue .wq-title-row { gap:14px; } #dt-work-queue .wq-button { min-height:40px; } }
+    @media(prefers-reduced-motion:no-preference) { #dt-work-queue .wq-button,#dt-work-queue .wq-bucket { transition:background .15s; } }
+  &lt;/style&gt;
+  &lt;div class=&quot;wq-layout&quot; id=&quot;wq-layout&quot;&gt;
+    &lt;aside class=&quot;wq-side&quot; aria-label=&quot;Application navigation&quot;&gt;
+      &lt;div class=&quot;wq-logo&quot;&gt;&lt;span class=&quot;wq-mark&quot;&gt;&lt;i data-lucide=&quot;layers&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;span&gt;Die Tracker&lt;small&gt;Ordering system&lt;/small&gt;&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;wq-nav&quot;&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;&lt;i data-lucide=&quot;layout-dashboard&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Dashboard&lt;/span&gt;
+        &lt;button class=&quot;wq-nav-item wq-active&quot; type=&quot;button&quot; id=&quot;wq-nav-queue&quot;&gt;&lt;i data-lucide=&quot;list-checks&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Work queue&lt;/button&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;&lt;i data-lucide=&quot;package&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Orders&lt;/span&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;&lt;i data-lucide=&quot;copy&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Backup requests&lt;/span&gt;
+        &lt;div class=&quot;wq-nav-label&quot;&gt;Process flow&lt;/div&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;Design &amp;amp; simulation&lt;/span&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;Purchasing&lt;/span&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;Sample followup&lt;/span&gt;
+        &lt;div class=&quot;wq-nav-label&quot;&gt;Quality&lt;/div&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;&lt;i data-lucide=&quot;clipboard-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;QD tracker&lt;/span&gt;
+        &lt;span class=&quot;wq-nav-item wq-static&quot;&gt;&lt;i data-lucide=&quot;chart-no-axes-combined&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Analytics&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;wq-profile&quot;&gt;&lt;span class=&quot;wq-avatar&quot;&gt;AR&lt;/span&gt;&lt;span&gt;Aisha Rahman&lt;small&gt;Queue coordinator · demo&lt;/small&gt;&lt;/span&gt;&lt;/div&gt;
+    &lt;/aside&gt;
+    &lt;main class=&quot;wq-main&quot;&gt;
+      &lt;div class=&quot;wq-top&quot;&gt;&lt;span&gt;Operations &lt;span aria-hidden=&quot;true&quot;&gt;/&lt;/span&gt; &lt;strong id=&quot;wq-breadcrumb&quot;&gt;Work queue&lt;/strong&gt;&lt;/span&gt;&lt;span class=&quot;wq-demo&quot;&gt;Concept · sample data&lt;/span&gt;&lt;/div&gt;
+      &lt;section class=&quot;wq-content&quot; id=&quot;wq-queue-view&quot; aria-label=&quot;Assigned work queue&quot;&gt;
+        &lt;div class=&quot;wq-title-row&quot;&gt;&lt;div&gt;&lt;h1&gt;Work queue&lt;/h1&gt;&lt;p class=&quot;wq-sub&quot;&gt;Monday, 21 September 2026 · 10:30 GST&lt;/p&gt;&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button&quot; id=&quot;wq-open-rules&quot;&gt;&lt;i data-lucide=&quot;sliders-horizontal&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Deadline rules&lt;/button&gt;&lt;/div&gt;
+        &lt;div class=&quot;wq-tabs&quot; aria-label=&quot;Work queue scope&quot;&gt;
+          &lt;button type=&quot;button&quot; class=&quot;wq-tab&quot; data-scope=&quot;mine&quot; aria-pressed=&quot;true&quot;&gt;My work &lt;span class=&quot;wq-count&quot; id=&quot;wq-count-mine&quot;&gt;5&lt;/span&gt;&lt;/button&gt;
+          &lt;button type=&quot;button&quot; class=&quot;wq-tab&quot; data-scope=&quot;team&quot; aria-pressed=&quot;false&quot;&gt;Team &lt;span class=&quot;wq-count&quot; id=&quot;wq-count-team&quot;&gt;9&lt;/span&gt;&lt;/button&gt;
+          &lt;button type=&quot;button&quot; class=&quot;wq-tab&quot; data-scope=&quot;unassigned&quot; aria-pressed=&quot;false&quot;&gt;Unassigned &lt;span class=&quot;wq-count&quot; id=&quot;wq-count-unassigned&quot;&gt;2&lt;/span&gt;&lt;/button&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;wq-buckets&quot; id=&quot;wq-buckets&quot; aria-label=&quot;Deadline filters&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;wq-toolbar&quot;&gt;&lt;label class=&quot;wq-search&quot;&gt;&lt;i data-lucide=&quot;search&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;input id=&quot;wq-search&quot; type=&quot;search&quot; aria-label=&quot;Search die, supplier or work item&quot; placeholder=&quot;Search die, supplier or work item&quot;&gt;&lt;/label&gt;&lt;select id=&quot;wq-plant&quot; aria-label=&quot;Filter by plant&quot;&gt;&lt;option value=&quot;all&quot;&gt;All plants&lt;/option&gt;&lt;option&gt;GEX 1&lt;/option&gt;&lt;option&gt;GEX 2&lt;/option&gt;&lt;/select&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button&quot; id=&quot;wq-clear&quot; hidden&gt;Clear filters&lt;/button&gt;&lt;/div&gt;
+        &lt;div class=&quot;wq-list-head&quot;&gt;&lt;span id=&quot;wq-showing&quot; role=&quot;status&quot; aria-live=&quot;polite&quot;&gt;5 work items&lt;/span&gt;&lt;span&gt;Deadline first · highest urgency next&lt;/span&gt;&lt;/div&gt;
+        &lt;div class=&quot;wq-table-wrap&quot;&gt;&lt;table aria-label=&quot;Work items&quot;&gt;&lt;thead&gt;&lt;tr&gt;&lt;th scope=&quot;col&quot;&gt;Die / plant&lt;/th&gt;&lt;th scope=&quot;col&quot;&gt;Next action&lt;/th&gt;&lt;th scope=&quot;col&quot;&gt;Owner&lt;/th&gt;&lt;th scope=&quot;col&quot;&gt;Deadline&lt;/th&gt;&lt;th scope=&quot;col&quot;&gt;&lt;span aria-label=&quot;Open item&quot;&gt;&amp;nbsp;&lt;/span&gt;&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;&lt;tbody id=&quot;wq-rows&quot;&gt;&lt;/tbody&gt;&lt;/table&gt;&lt;div class=&quot;wq-empty&quot; id=&quot;wq-empty&quot; hidden&gt;&lt;h3&gt;No work items in this view&lt;/h3&gt;&lt;p&gt;Try another scope or clear the filters.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+        &lt;p class=&quot;wq-footnote&quot;&gt;All deadlines use the item’s plant calendar. Paused items keep their deadline history.&lt;/p&gt;
+        &lt;section class=&quot;wq-detail&quot; id=&quot;wq-detail&quot; aria-label=&quot;Selected work item&quot; hidden&gt;&lt;/section&gt;
+      &lt;/section&gt;
+      &lt;section class=&quot;wq-content&quot; id=&quot;wq-rules-view&quot; aria-label=&quot;Deadline rules&quot; hidden&gt;
+        &lt;div class=&quot;wq-title-row&quot;&gt;&lt;div&gt;&lt;h1&gt;Deadline rules&lt;/h1&gt;&lt;p class=&quot;wq-sub&quot;&gt;GEX 1 · proposed defaults&lt;/p&gt;&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button&quot; id=&quot;wq-back&quot;&gt;&lt;i data-lucide=&quot;arrow-left&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Work queue&lt;/button&gt;&lt;/div&gt;
+        &lt;div class=&quot;wq-rules-grid&quot;&gt;
+          &lt;section class=&quot;wq-settings-panel&quot;&gt;&lt;h3&gt;Plant calendar&lt;/h3&gt;&lt;div class=&quot;wq-rule-fields&quot;&gt;&lt;label&gt;Timezone&lt;output class=&quot;wq-info&quot; id=&quot;wq-timezone&quot;&gt;Asia/Dubai · GST (UTC+04:00)&lt;/output&gt;&lt;/label&gt;&lt;div&gt;&lt;p class=&quot;wq-sub&quot; style=&quot;margin:0 0 7px&quot;&gt;Working days&lt;/p&gt;&lt;div class=&quot;wq-days&quot; id=&quot;wq-days&quot;&gt;&lt;/div&gt;&lt;/div&gt;&lt;label&gt;Deadline cutoff&lt;input type=&quot;time&quot; id=&quot;wq-cutoff&quot; value=&quot;17:00&quot;&gt;&lt;/label&gt;&lt;label class=&quot;wq-inline-label&quot; style=&quot;flex-direction:row;align-items:center&quot;&gt;&lt;input type=&quot;checkbox&quot; id=&quot;wq-holiday&quot;&gt;23 Sep · example plant closure&lt;/label&gt;&lt;/div&gt;&lt;div class=&quot;wq-calendar-preview&quot;&gt;&lt;span class=&quot;wq-sub&quot;&gt;New item enters Monday, 21 Sep&lt;/span&gt;&lt;div class=&quot;wq-preview-date&quot; id=&quot;wq-preview-date&quot;&gt;Thu, 24 Sep · 17:00&lt;/div&gt;&lt;span class=&quot;wq-sub&quot; id=&quot;wq-preview-note&quot;&gt;3 working days after entry&lt;/span&gt;&lt;/div&gt;&lt;/section&gt;
+          &lt;section class=&quot;wq-settings-panel&quot;&gt;&lt;h3&gt;Stage ownership &amp;amp; target&lt;/h3&gt;&lt;div class=&quot;wq-rule-fields&quot;&gt;&lt;label&gt;Stage&lt;select id=&quot;wq-rule-stage&quot;&gt;&lt;option value=&quot;design&quot;&gt;Awaiting design&lt;/option&gt;&lt;option value=&quot;approval&quot;&gt;Design approval&lt;/option&gt;&lt;option value=&quot;sample&quot;&gt;Sample submission&lt;/option&gt;&lt;option value=&quot;pr&quot;&gt;Pending PR&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;div class=&quot;wq-two&quot;&gt;&lt;label&gt;Target days&lt;input type=&quot;number&quot; min=&quot;1&quot; max=&quot;90&quot; step=&quot;1&quot; id=&quot;wq-rule-days&quot; value=&quot;3&quot;&gt;&lt;/label&gt;&lt;label&gt;Count&lt;select id=&quot;wq-rule-unit&quot;&gt;&lt;option value=&quot;working&quot;&gt;Working days&lt;/option&gt;&lt;option value=&quot;calendar&quot;&gt;Calendar days&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;label&gt;Default owner&lt;select id=&quot;wq-rule-owner&quot;&gt;&lt;option&gt;Aisha Rahman&lt;/option&gt;&lt;option&gt;Omar Khalid&lt;/option&gt;&lt;option&gt;Priya Nair&lt;/option&gt;&lt;option value=&quot;&quot;&gt;Unassigned&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label&gt;Escalation contact&lt;select id=&quot;wq-escalation-owner&quot;&gt;&lt;option&gt;Omar Khalid&lt;/option&gt;&lt;option&gt;Priya Nair&lt;/option&gt;&lt;option&gt;Aisha Rahman&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;/section&gt;
+        &lt;/div&gt;
+        &lt;section class=&quot;wq-settings-panel wq-section-space&quot;&gt;&lt;h3&gt;Follow-up rules&lt;/h3&gt;&lt;div class=&quot;wq-rule-summary&quot;&gt;&lt;span&gt;Owner reminder&lt;/span&gt;&lt;strong&gt;On the due date · 08:00&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;wq-rule-summary&quot;&gt;&lt;span&gt;Escalation contact&lt;/span&gt;&lt;strong&gt;Next working day after overdue · 08:00&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;wq-rule-summary&quot;&gt;&lt;span&gt;Supplier chasing&lt;/span&gt;&lt;strong&gt;Existing design / FOC reminders&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;wq-rule-summary&quot;&gt;&lt;span&gt;Existing work items&lt;/span&gt;&lt;strong&gt;Keep their current deadline&lt;/strong&gt;&lt;/div&gt;&lt;p class=&quot;wq-info wq-section-space&quot;&gt;Rule changes apply to new stage entries. Changing open items requires a separate impact preview and a reason.&lt;/p&gt;&lt;/section&gt;
+        &lt;div class=&quot;wq-title-row wq-section-space&quot;&gt;&lt;span class=&quot;wq-error&quot; role=&quot;alert&quot; id=&quot;wq-rule-error&quot;&gt;&lt;/span&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button wq-primary&quot; id=&quot;wq-save-rules&quot;&gt;Save rules for new items&lt;/button&gt;&lt;/div&gt;
+      &lt;/section&gt;
+      &lt;section class=&quot;wq-content&quot; id=&quot;wq-source-view&quot; aria-label=&quot;Existing workflow handoff&quot; hidden&gt;&lt;/section&gt;
+      &lt;div class=&quot;wq-toast&quot; id=&quot;wq-toast&quot; role=&quot;status&quot; aria-live=&quot;polite&quot; hidden&gt;&lt;/div&gt;
+    &lt;/main&gt;
+  &lt;/div&gt;
+  &lt;script&gt;
+    (() =&gt; {
+      const root = document.getElementById(&#x27;dt-work-queue&#x27;);
+      const q = s =&gt; root.querySelector(s);
+      const qa = s =&gt; Array.from(root.querySelectorAll(s));
+      const demoToday = &#x27;2026-09-21&#x27;;
+      const people = [&#x27;Aisha Rahman&#x27;,&#x27;Omar Khalid&#x27;,&#x27;Priya Nair&#x27;];
+      const baseItems = [
+        {id:1042,die:&#x27;30601-201&#x27;,plant:&#x27;GEX 1&#x27;,supplier:&#x27;PDTMC&#x27;,stage:&#x27;Design approval&#x27;,action:&#x27;Open design approval&#x27;,owner:people[0],due:&#x27;2026-09-19&#x27;,entered:&#x27;2026-09-18&#x27;,target:1,urgency:&#x27;Top urgent&#x27;,state:&#x27;open&#x27;,breached:true,source:&#x27;Order DO-260184&#x27;,history:[&#x27;Deadline passed · 19 Sep, 17:00&#x27;,&#x27;Assigned to Aisha · 18 Sep, 09:15&#x27;,&#x27;Design received · 18 Sep, 09:12&#x27;]},
+        {id:1043,die:&#x27;29834-302&#x27;,plant:&#x27;GEX 2&#x27;,supplier:&#x27;Phoenix&#x27;,stage:&#x27;Sample submission&#x27;,action:&#x27;Open sample followup&#x27;,owner:people[0],due:&#x27;2026-09-18&#x27;,entered:&#x27;2026-09-10&#x27;,target:7,urgency:&#x27;Urgent&#x27;,state:&#x27;open&#x27;,breached:true,source:&#x27;Sample from order DO-260162&#x27;,waiting:&#x27;Waiting for press slot&#x27;,history:[&#x27;Waiting for press slot · 19 Sep, 11:40&#x27;,&#x27;Deadline passed · 18 Sep, 17:00&#x27;,&#x27;Die received · 10 Sep, 08:20&#x27;]},
+        {id:1044,die:&#x27;30450-102&#x27;,plant:&#x27;GEX 1&#x27;,supplier:&#x27;PDTMC&#x27;,stage:&#x27;QD approval&#x27;,action:&#x27;Open QD approval&#x27;,owner:people[0],due:&#x27;2026-09-21&#x27;,entered:&#x27;2026-09-18&#x27;,target:2,urgency:&#x27;Normal&#x27;,state:&#x27;open&#x27;,locked:true,source:&#x27;QD 2026PD-17&#x27;,history:[&#x27;Sent for approval · 18 Sep, 14:10&#x27;,&#x27;Approval owner from QD · 18 Sep, 14:10&#x27;]},
+        {id:1045,die:&#x27;31204-101&#x27;,plant:&#x27;GEX 1&#x27;,supplier:&#x27;Phoenix&#x27;,stage:&#x27;In manufacturing&#x27;,action:&#x27;Open manufacturing order&#x27;,owner:people[0],due:&#x27;2026-09-24&#x27;,entered:&#x27;2026-09-17&#x27;,target:null,urgency:&#x27;Normal&#x27;,state:&#x27;open&#x27;,eta:true,source:&#x27;Order DO-260193&#x27;,history:[&#x27;Supplier ETA recorded · 18 Sep, 13:00&#x27;,&#x27;Sent to EMS · 17 Sep, 10:45&#x27;]},
+        {id:1046,die:&#x27;29680-204&#x27;,plant:&#x27;GEX 2&#x27;,supplier:&#x27;PDTMC&#x27;,stage:&#x27;Simulation&#x27;,action:&#x27;Open simulation&#x27;,owner:people[0],due:&#x27;2026-09-22&#x27;,entered:&#x27;2026-09-19&#x27;,target:2,urgency:&#x27;Normal&#x27;,state:&#x27;paused&#x27;,pauseReason:&#x27;Customer reviewing revised dimensions&#x27;,source:&#x27;Order DO-260180&#x27;,history:[&#x27;Paused: customer review · 21 Sep, 09:00&#x27;,&#x27;Assigned to Aisha · 19 Sep, 12:00&#x27;]},
+        {id:1047,die:&#x27;30882-101&#x27;,plant:&#x27;GEX 1&#x27;,supplier:&#x27;Phoenix&#x27;,stage:&#x27;Awaiting design&#x27;,action:&#x27;Open design followup&#x27;,owner:&#x27;&#x27;,due:&#x27;2026-09-21&#x27;,entered:&#x27;2026-09-17&#x27;,target:3,urgency:&#x27;Urgent&#x27;,state:&#x27;open&#x27;,source:&#x27;Order DO-260201&#x27;,history:[&#x27;No eligible default owner · 17 Sep, 10:05&#x27;,&#x27;Order placed · 17 Sep, 10:05&#x27;]},
+        {id:1048,die:&#x27;30560-202&#x27;,plant:&#x27;GEX 2&#x27;,supplier:&#x27;PDTMC&#x27;,stage:&#x27;In manufacturing&#x27;,action:&#x27;Open manufacturing order&#x27;,owner:&#x27;&#x27;,due:&#x27;&#x27;,entered:&#x27;2026-09-16&#x27;,target:null,eta:true,urgency:&#x27;Normal&#x27;,state:&#x27;open&#x27;,source:&#x27;Order DO-260175&#x27;,history:[&#x27;Supplier ETA is missing · 16 Sep, 15:00&#x27;,&#x27;Sent to EMS · 16 Sep, 15:00&#x27;]},
+        {id:1049,die:&#x27;30082-301&#x27;,plant:&#x27;GEX 2&#x27;,supplier:&#x27;Phoenix&#x27;,stage:&#x27;Pending PR&#x27;,action:&#x27;Open PR entry&#x27;,owner:people[1],due:&#x27;2026-09-22&#x27;,entered:&#x27;2026-09-21&#x27;,target:1,urgency:&#x27;Normal&#x27;,state:&#x27;open&#x27;,source:&#x27;Order DO-260198&#x27;,history:[&#x27;Design approved · 21 Sep, 08:40&#x27;]},
+        {id:1050,die:&#x27;30719-101&#x27;,plant:&#x27;GEX 1&#x27;,supplier:&#x27;PDTMC&#x27;,stage:&#x27;FOC replacement receipt&#x27;,action:&#x27;Open FOC rounds&#x27;,owner:people[2],due:&#x27;2026-09-19&#x27;,entered:&#x27;2026-09-15&#x27;,target:null,eta:true,urgency:&#x27;Urgent&#x27;,state:&#x27;open&#x27;,breached:true,source:&#x27;QD 2026PD-12 · round 2&#x27;,history:[&#x27;Replacement ETA passed · 19 Sep, 17:00&#x27;,&#x27;Supplier confirmed replacement · 15 Sep, 11:20&#x27;]}
+      ];
+      const clone = x =&gt; JSON.parse(JSON.stringify(x));
+      const state = {scope:&#x27;mine&#x27;,bucket:&#x27;all&#x27;,plant:&#x27;all&#x27;,search:&#x27;&#x27;,selected:null,view:&#x27;queue&#x27;,items:clone(baseItems)};
+      const design = {compact:false,sidebar:true};
+      const ruleState = {days:[1,2,3,4,5,6],cutoff:&#x27;17:00&#x27;,holiday:false,stage:&#x27;design&#x27;,target:3,unit:&#x27;working&#x27;,owner:people[0],escalationOwner:people[1]};
+      const rulePresets = {design:{target:3,unit:&#x27;working&#x27;,owner:people[0],escalationOwner:people[1]},approval:{target:1,unit:&#x27;working&#x27;,owner:people[0],escalationOwner:people[1]},sample:{target:7,unit:&#x27;working&#x27;,owner:people[2],escalationOwner:people[1]},pr:{target:1,unit:&#x27;working&#x27;,owner:people[1],escalationOwner:people[2]}};
+      const bucketLabels = {overdue:&#x27;Overdue&#x27;,today:&#x27;Due today&#x27;,upcoming:&#x27;Upcoming&#x27;,setup:&#x27;Needs setup&#x27;,paused:&#x27;Paused&#x27;};
+      const escape = v =&gt; String(v??&#x27;&#x27;).replace(/[&amp;&lt;&gt;&quot;&#x27;]/g,c=&gt;({&#x27;&amp;&#x27;:&#x27;&amp;amp;&#x27;,&#x27;&lt;&#x27;:&#x27;&amp;lt;&#x27;,&#x27;&gt;&#x27;:&#x27;&amp;gt;&#x27;,&#x27;&quot;&#x27;:&#x27;&amp;quot;&#x27;,&quot;&#x27;&quot;:&#x27;&amp;#39;&#x27;}[c]));
+      const dateText = date =&gt; date ? new Date(date+&#x27;T12:00:00Z&#x27;).toLocaleDateString(&#x27;en-GB&#x27;,{day:&#x27;numeric&#x27;,month:&#x27;short&#x27;,timeZone:&#x27;UTC&#x27;}) : &#x27;No deadline&#x27;;
+      const initials = name =&gt; name.split(&#x27; &#x27;).map(x=&gt;x[0]).join(&#x27;&#x27;);
+      const bucket = item =&gt; item.state===&#x27;paused&#x27; ? &#x27;paused&#x27; : !item.due ? &#x27;setup&#x27; : item.due&lt;demoToday ? &#x27;overdue&#x27; : item.due===demoToday ? &#x27;today&#x27; : &#x27;upcoming&#x27;;
+      const scopeItems = scope =&gt; state.items.filter(item=&gt;scope===&#x27;team&#x27;||(scope===&#x27;mine&#x27;?item.owner===people[0]:!item.owner));
+      function applySaved(snapshot) {
+        const p=snapshot?.privateContent;
+        if(!p || p.version!==1)return;
+        if([&#x27;mine&#x27;,&#x27;team&#x27;,&#x27;unassigned&#x27;].includes(p.scope))state.scope=p.scope;
+        if([&#x27;all&#x27;,...Object.keys(bucketLabels)].includes(p.bucket))state.bucket=p.bucket;
+        if([&#x27;all&#x27;,&#x27;GEX 1&#x27;,&#x27;GEX 2&#x27;].includes(p.plant))state.plant=p.plant;
+        state.search=typeof p.search===&#x27;string&#x27;?p.search.slice(0,100):&#x27;&#x27;;
+        if(Array.isArray(p.items)&amp;&amp;p.items.length===baseItems.length&amp;&amp;p.items.every((x,i)=&gt;x.id===baseItems[i].id))state.items=p.items;
+        if(p.rules&amp;&amp;Array.isArray(p.rules.days)&amp;&amp;p.rules.days.every(d=&gt;Number.isInteger(d)&amp;&amp;d&gt;=0&amp;&amp;d&lt;7))Object.assign(ruleState,p.rules);
+        if(p.design&amp;&amp;typeof p.design.compact===&#x27;boolean&#x27;)Object.assign(design,p.design);
+        if(p.rulePresets)Object.keys(rulePresets).forEach(k=&gt;{if(p.rulePresets[k])Object.assign(rulePresets[k],p.rulePresets[k]);});
+      }
+      applySaved(window.openai?.widgetState);
+      function persist() {
+        if(!window.openai?.setWidgetState)return;
+        const rememberedItems=state.items.map(item=&gt;({...item,history:item.history.slice(0,4).map(h=&gt;h.slice(0,180)),pauseReason:(item.pauseReason||&#x27;&#x27;).slice(0,180)}));
+        window.openai.setWidgetState({modelContent:{feature:&#x27;Assigned work queue&#x27;,scope:state.scope,selectedItem:state.selected,calendar:ruleState.days,ruleTarget:ruleState.target,ruleUnit:ruleState.unit,design},privateContent:{version:1,scope:state.scope,bucket:state.bucket,plant:state.plant,search:state.search,items:rememberedItems,rules:ruleState,rulePresets,design}}).catch(()=&gt;{});
+      }
+      function toast(message) { q(&#x27;#wq-toast&#x27;).textContent=message;q(&#x27;#wq-toast&#x27;).hidden=false; }
+      function iconRefresh() { if(globalThis.lucide)globalThis.lucide.createIcons({attrs:{width:16,height:16}}); }
+      function render() {
+        q(&#x27;#wq-layout&#x27;).classList.toggle(&#x27;wq-without-sidebar&#x27;,!design.sidebar);
+        root.classList.toggle(&#x27;wq-compact&#x27;,design.compact);
+        [&#x27;mine&#x27;,&#x27;team&#x27;,&#x27;unassigned&#x27;].forEach(s=&gt;q(&#x27;#wq-count-&#x27;+s).textContent=scopeItems(s).length);
+        qa(&#x27;[data-scope]&#x27;).forEach(b=&gt;b.setAttribute(&#x27;aria-pressed&#x27;,String(b.dataset.scope===state.scope)));
+        const scoped=scopeItems(state.scope).filter(x=&gt;(state.plant===&#x27;all&#x27;||x.plant===state.plant)&amp;&amp;(!state.search||[x.die,x.stage,x.supplier,x.source,x.owner].join(&#x27; &#x27;).toLowerCase().includes(state.search.toLowerCase())));
+        q(&#x27;#wq-buckets&#x27;).innerHTML=Object.entries(bucketLabels).map(([key,label])=&gt;&#x27;&lt;button type=&quot;button&quot; class=&quot;wq-bucket&quot; data-bucket=&quot;&#x27;+key+&#x27;&quot; aria-pressed=&quot;&#x27;+(key===state.bucket)+&#x27;&quot;&gt;&lt;strong&gt;&#x27;+scoped.filter(x=&gt;bucket(x)===key).length+&#x27;&lt;/strong&gt;&lt;span&gt;&#x27;+label+&#x27;&lt;/span&gt;&lt;/button&gt;&#x27;).join(&#x27;&#x27;);
+        const ranking={overdue:0,today:1,setup:2,upcoming:3,paused:4};
+        const rows=scoped.filter(x=&gt;state.bucket===&#x27;all&#x27;||bucket(x)===state.bucket).sort((a,b)=&gt;(ranking[bucket(a)]-ranking[bucket(b)])||(a.due||&#x27;9999&#x27;).localeCompare(b.due||&#x27;9999&#x27;)||([&#x27;Top urgent&#x27;,&#x27;Urgent&#x27;,&#x27;Normal&#x27;].indexOf(a.urgency)-[&#x27;Top urgent&#x27;,&#x27;Urgent&#x27;,&#x27;Normal&#x27;].indexOf(b.urgency))||a.id-b.id);
+        q(&#x27;#wq-search&#x27;).value=state.search;q(&#x27;#wq-plant&#x27;).value=state.plant;
+        q(&#x27;#wq-showing&#x27;).textContent=rows.length+&#x27; work item&#x27;+(rows.length===1?&#x27;&#x27;:&#x27;s&#x27;)+(state.bucket===&#x27;all&#x27;?&#x27;&#x27;:&#x27; · &#x27;+bucketLabels[state.bucket]);
+        q(&#x27;#wq-clear&#x27;).hidden=state.bucket===&#x27;all&#x27;&amp;&amp;state.plant===&#x27;all&#x27;&amp;&amp;!state.search;
+        q(&#x27;#wq-rows&#x27;).innerHTML=rows.map(item=&gt;&#x27;&lt;tr class=&quot;wq-row &#x27;+(state.selected===item.id?&#x27;wq-selected&#x27;:&#x27;&#x27;)+&#x27;&quot;&gt;&lt;td&gt;&lt;button class=&quot;wq-die&quot; type=&quot;button&quot; data-open=&quot;&#x27;+item.id+&#x27;&quot;&gt;&#x27;+escape(item.die)+&#x27;&lt;/button&gt;&lt;span class=&quot;wq-meta&quot;&gt;&#x27;+escape(item.plant)+&#x27;&lt;/span&gt;&lt;/td&gt;&lt;td&gt;&#x27;+escape(item.stage)+&#x27;&lt;span class=&quot;wq-meta&quot;&gt;&#x27;+escape(item.waiting||item.source)+&#x27;&lt;/span&gt;&#x27;+(item.urgency===&#x27;Top urgent&#x27;?&#x27;&lt;span class=&quot;wq-pill overdue&quot;&gt;Top urgent&lt;/span&gt;&#x27;:&#x27;&#x27;)+&#x27;&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;wq-owner&quot;&gt;&#x27;+(item.owner?&#x27;&lt;span class=&quot;wq-avatar&quot;&gt;&#x27;+initials(item.owner)+&#x27;&lt;/span&gt;&#x27;+escape(item.owner.split(&#x27; &#x27;)[0]):&#x27;&lt;span class=&quot;wq-pill setup&quot;&gt;Unassigned&lt;/span&gt;&#x27;)+&#x27;&lt;/span&gt;&#x27;+(item.locked?&#x27;&lt;span class=&quot;wq-meta&quot;&gt;QD approver&lt;/span&gt;&#x27;:&#x27;&#x27;)+&#x27;&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;wq-pill &#x27;+bucket(item)+&#x27;&quot;&gt;&#x27;+bucketLabels[bucket(item)]+&#x27;&lt;/span&gt;&lt;span class=&quot;wq-meta&quot;&gt;&#x27;+dateText(item.due)+(item.due?&#x27; · 17:00&#x27;:&#x27; · add ETA&#x27;)+&#x27;&lt;/span&gt;&lt;/td&gt;&lt;td&gt;&lt;button class=&quot;wq-button&quot; type=&quot;button&quot; data-open=&quot;&#x27;+item.id+&#x27;&quot; aria-label=&quot;Open &#x27;+escape(item.die)+&#x27;&quot;&gt;Open&lt;/button&gt;&lt;/td&gt;&lt;/tr&gt;&#x27;).join(&#x27;&#x27;);
+        q(&#x27;#wq-empty&#x27;).hidden=rows.length&gt;0;
+        if(state.selected)renderDetail();else q(&#x27;#wq-detail&#x27;).hidden=true;
+        iconRefresh();
+      }
+      function renderDetail() {
+        const item=state.items.find(x=&gt;x.id===state.selected); if(!item)return;
+        q(&#x27;#wq-detail&#x27;).hidden=false;
+        q(&#x27;#wq-detail&#x27;).innerHTML=&#x27;&lt;div class=&quot;wq-detail-top&quot;&gt;&lt;div&gt;&lt;span class=&quot;wq-sub&quot;&gt;WQ-&#x27;+item.id+&#x27; · &#x27;+escape(item.plant)+&#x27;&lt;/span&gt;&lt;h2&gt;&#x27;+escape(item.die)+&#x27; &lt;span class=&quot;wq-pill &#x27;+bucket(item)+&#x27;&quot;&gt;&#x27;+bucketLabels[bucket(item)]+&#x27;&lt;/span&gt;&lt;/h2&gt;&lt;p class=&quot;wq-sub&quot;&gt;&#x27;+escape(item.stage)+&#x27; · &#x27;+escape(item.supplier)+&#x27;&lt;/p&gt;&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button&quot; id=&quot;wq-close-detail&quot; aria-label=&quot;Close work item&quot;&gt;Close&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;wq-detail-grid&quot;&gt;&lt;div class=&quot;wq-fields&quot;&gt;&lt;label&gt;Owner&lt;select id=&quot;wq-edit-owner&quot; &#x27;+(item.locked?&#x27;disabled&#x27;:&#x27;&#x27;)+&#x27;&gt;&lt;option value=&quot;&quot;&gt;Unassigned&lt;/option&gt;&#x27;+people.map(p=&gt;&#x27;&lt;option &#x27;+(p===item.owner?&#x27;selected&#x27;:&#x27;&#x27;)+&#x27;&gt;&#x27;+p+&#x27;&lt;/option&gt;&#x27;).join(&#x27;&#x27;)+&#x27;&lt;/select&gt;&lt;/label&gt;&#x27;+(item.locked?&#x27;&lt;p class=&quot;wq-info&quot;&gt;Assigned through the QD approval workflow. Changing queue ownership cannot change who may approve.&lt;/p&gt;&#x27;:&#x27;&#x27;)+&#x27;&lt;div class=&quot;wq-two&quot;&gt;&lt;label&gt;Due date&lt;input type=&quot;date&quot; id=&quot;wq-edit-due&quot; value=&quot;&#x27;+escape(item.due)+&#x27;&quot; &#x27;+(item.eta?&#x27;disabled&#x27;:&#x27;&#x27;)+&#x27;&gt;&lt;/label&gt;&lt;label&gt;Work status&lt;select id=&quot;wq-edit-state&quot; &#x27;+(item.locked?&#x27;disabled&#x27;:&#x27;&#x27;)+&#x27;&gt;&lt;option value=&quot;open&quot; &#x27;+(item.state===&#x27;open&#x27;?&#x27;selected&#x27;:&#x27;&#x27;)+&#x27;&gt;Active&lt;/option&gt;&lt;option value=&quot;paused&quot; &#x27;+(item.state===&#x27;paused&#x27;?&#x27;selected&#x27;:&#x27;&#x27;)+&#x27;&gt;Paused&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;p class=&quot;wq-info&quot;&gt;&#x27;+(item.eta?&#x27;Deadline follows the supplier ETA. Update the ETA in the source workflow.&#x27;:(item.target+&#x27; working day&#x27;+(item.target===1?&#x27;&#x27;:&#x27;s&#x27;)+&#x27; after &#x27;+dateText(item.entered)+&#x27; · Mon–Sat · 17:00 GST.&#x27;))+(item.originalDue?&#x27; Original deadline: &#x27;+dateText(item.originalDue)+&#x27;.&#x27;:&#x27;&#x27;)+&#x27;&lt;/p&gt;&#x27;+(item.breached?&#x27;&lt;p class=&quot;wq-info wq-alert&quot;&gt;An earlier deadline breach stays in the history even if this item is paused or extended.&lt;/p&gt;&#x27;:&#x27;&#x27;)+(item.pauseReason?&#x27;&lt;p class=&quot;wq-info&quot;&gt;Pause reason: &#x27;+escape(item.pauseReason)+&#x27;&lt;/p&gt;&#x27;:&#x27;&#x27;)+&#x27;&lt;label&gt;Reason or follow-up note&lt;textarea id=&quot;wq-edit-reason&quot; placeholder=&quot;Required when changing a deadline or pausing&quot;&gt;&lt;/textarea&gt;&lt;/label&gt;&lt;div class=&quot;wq-error&quot; role=&quot;alert&quot; id=&quot;wq-detail-error&quot;&gt;&lt;/div&gt;&lt;div style=&quot;display:flex;gap:8px;flex-wrap:wrap&quot;&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button wq-primary&quot; id=&quot;wq-save-item&quot;&gt;Save changes&lt;/button&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button&quot; id=&quot;wq-snooze&quot;&gt;Snooze reminder&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;&lt;h3&gt;Activity&lt;/h3&gt;&lt;ol class=&quot;wq-history&quot;&gt;&#x27;+item.history.map(h=&gt;&#x27;&lt;li&gt;&#x27;+escape(h)+&#x27;&lt;/li&gt;&#x27;).join(&#x27;&#x27;)+&#x27;&lt;/ol&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button wq-primary&quot; id=&quot;wq-open-source&quot;&gt;&#x27;+escape(item.action)+&#x27; &lt;i data-lucide=&quot;arrow-up-right&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;&lt;p class=&quot;wq-sub&quot;&gt;&#x27;+escape(item.source)+&#x27;&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;&#x27;;
+        iconRefresh();
+      }
+      function changeView(view) {
+        state.view=view;
+        q(&#x27;#wq-queue-view&#x27;).hidden=view!==&#x27;queue&#x27;;q(&#x27;#wq-rules-view&#x27;).hidden=view!==&#x27;rules&#x27;;q(&#x27;#wq-source-view&#x27;).hidden=view!==&#x27;source&#x27;;
+        q(&#x27;#wq-breadcrumb&#x27;).textContent=view===&#x27;rules&#x27;?&#x27;Deadline rules&#x27;:view===&#x27;source&#x27;?&#x27;Workflow record&#x27;:&#x27;Work queue&#x27;;
+        q(&#x27;#wq-toast&#x27;).hidden=true;
+        if(view===&#x27;rules&#x27;)renderRules();
+      }
+      function renderRules() {
+        q(&#x27;#wq-days&#x27;).innerHTML=[&#x27;Sun&#x27;,&#x27;Mon&#x27;,&#x27;Tue&#x27;,&#x27;Wed&#x27;,&#x27;Thu&#x27;,&#x27;Fri&#x27;,&#x27;Sat&#x27;].map((day,i)=&gt;&#x27;&lt;button class=&quot;wq-day&quot; type=&quot;button&quot; data-day=&quot;&#x27;+i+&#x27;&quot; aria-pressed=&quot;&#x27;+ruleState.days.includes(i)+&#x27;&quot;&gt;&#x27;+day+&#x27;&lt;/button&gt;&#x27;).join(&#x27;&#x27;);
+        q(&#x27;#wq-cutoff&#x27;).value=ruleState.cutoff;q(&#x27;#wq-holiday&#x27;).checked=ruleState.holiday;q(&#x27;#wq-rule-stage&#x27;).value=ruleState.stage;q(&#x27;#wq-rule-days&#x27;).value=ruleState.target;q(&#x27;#wq-rule-unit&#x27;).value=ruleState.unit;q(&#x27;#wq-rule-owner&#x27;).value=ruleState.owner;q(&#x27;#wq-escalation-owner&#x27;).value=ruleState.escalationOwner;
+        const valid=Number.isInteger(ruleState.target)&amp;&amp;ruleState.target&gt;=1&amp;&amp;ruleState.target&lt;=90&amp;&amp;/^\d{2}:\d{2}$/.test(ruleState.cutoff)&amp;&amp;(ruleState.unit===&#x27;calendar&#x27;||ruleState.days.length&gt;0);
+        q(&#x27;#wq-rule-error&#x27;).textContent=valid?&#x27;&#x27;:&#x27;Choose at least one working day, a cutoff time, and a whole target from 1 to 90.&#x27;;
+        q(&#x27;#wq-save-rules&#x27;).disabled=!valid;
+        if(!valid){q(&#x27;#wq-preview-date&#x27;).textContent=&#x27;Complete the rule&#x27;;q(&#x27;#wq-preview-note&#x27;).textContent=&#x27;&#x27;;return;}
+        let d=new Date(demoToday+&#x27;T12:00:00Z&#x27;),remaining=ruleState.target;
+        while(remaining&gt;0){d.setUTCDate(d.getUTCDate()+1);const iso=d.toISOString().slice(0,10);if(ruleState.unit===&#x27;calendar&#x27;||(ruleState.days.includes(d.getUTCDay())&amp;&amp;!(ruleState.holiday&amp;&amp;iso===&#x27;2026-09-23&#x27;)))remaining--;}
+        q(&#x27;#wq-preview-date&#x27;).textContent=d.toLocaleDateString(&#x27;en-GB&#x27;,{weekday:&#x27;short&#x27;,day:&#x27;numeric&#x27;,month:&#x27;short&#x27;,timeZone:&#x27;UTC&#x27;})+&#x27; · &#x27;+ruleState.cutoff;
+        q(&#x27;#wq-preview-note&#x27;).textContent=ruleState.target+&#x27; &#x27;+ruleState.unit+&#x27; day&#x27;+(ruleState.target===1?&#x27;&#x27;:&#x27;s&#x27;)+&#x27; after entry&#x27;+(ruleState.holiday&amp;&amp;ruleState.unit===&#x27;working&#x27;?&#x27; · closure excluded&#x27;:&#x27;&#x27;);
+      }
+      function openSource() {
+        const item=state.items.find(x=&gt;x.id===state.selected);if(!item)return;
+        changeView(&#x27;source&#x27;);
+        q(&#x27;#wq-source-view&#x27;).innerHTML=&#x27;&lt;div class=&quot;wq-title-row&quot;&gt;&lt;div&gt;&lt;h1&gt;&#x27;+escape(item.stage)+&#x27;&lt;/h1&gt;&lt;p class=&quot;wq-sub&quot;&gt;Existing workflow · concept handoff&lt;/p&gt;&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;wq-button&quot; id=&quot;wq-return-queue&quot;&gt;Back to work queue&lt;/button&gt;&lt;/div&gt;&lt;section class=&quot;wq-record&quot;&gt;&lt;span class=&quot;wq-pill&quot;&gt;&#x27;+escape(item.source)+&#x27;&lt;/span&gt;&lt;h2 style=&quot;margin-top:10px&quot;&gt;&#x27;+escape(item.die)+&#x27;&lt;/h2&gt;&lt;dl&gt;&lt;div&gt;&lt;dt&gt;Plant&lt;/dt&gt;&lt;dd&gt;&#x27;+escape(item.plant)+&#x27;&lt;/dd&gt;&lt;/div&gt;&lt;div&gt;&lt;dt&gt;Supplier&lt;/dt&gt;&lt;dd&gt;&#x27;+escape(item.supplier)+&#x27;&lt;/dd&gt;&lt;/div&gt;&lt;div&gt;&lt;dt&gt;Current stage&lt;/dt&gt;&lt;dd&gt;&#x27;+escape(item.stage)+&#x27;&lt;/dd&gt;&lt;/div&gt;&lt;div&gt;&lt;dt&gt;Owner&lt;/dt&gt;&lt;dd&gt;&#x27;+escape(item.owner||&#x27;Unassigned&#x27;)+&#x27;&lt;/dd&gt;&lt;/div&gt;&lt;/dl&gt;&lt;p class=&quot;wq-info&quot;&gt;&#x27;+(item.locked?&#x27;The existing QD approval form opens here with its named approver and document checks.&#x27;:&#x27;The existing &#x27;+escape(item.stage.toLowerCase())+&#x27; form opens here with this record selected.&#x27;)+&#x27; Saving its workflow action will update this work item and create the next stage item when required.&lt;/p&gt;&lt;p class=&quot;wq-sub&quot; style=&quot;margin-top:14px&quot;&gt;This concept demonstrates navigation only. No workflow records are changed.&lt;/p&gt;&lt;/section&gt;&#x27;;
+      }
+      root.addEventListener(&#x27;click&#x27;,event=&gt;{
+        const b=event.target.closest(&#x27;button&#x27;);if(!b||!root.contains(b))return;
+        if(b.dataset.scope){state.scope=b.dataset.scope;state.selected=null;render();persist();}
+        if(b.dataset.bucket){state.bucket=state.bucket===b.dataset.bucket?&#x27;all&#x27;:b.dataset.bucket;state.selected=null;render();persist();}
+        if(b.dataset.open){state.selected=Number(b.dataset.open);render();persist();q(&#x27;#wq-detail&#x27;).scrollIntoView({block:&#x27;nearest&#x27;});}
+        if(b.dataset.day!==undefined){const day=Number(b.dataset.day);ruleState.days=ruleState.days.includes(day)?ruleState.days.filter(x=&gt;x!==day):[...ruleState.days,day].sort();renderRules();persist();}
+        if(b.id===&#x27;wq-open-rules&#x27;){changeView(&#x27;rules&#x27;);persist();}
+        if([&#x27;wq-back&#x27;,&#x27;wq-nav-queue&#x27;,&#x27;wq-return-queue&#x27;].includes(b.id)){changeView(&#x27;queue&#x27;);render();}
+        if(b.id===&#x27;wq-clear&#x27;){state.bucket=&#x27;all&#x27;;state.plant=&#x27;all&#x27;;state.search=&#x27;&#x27;;state.selected=null;render();persist();}
+        if(b.id===&#x27;wq-close-detail&#x27;){state.selected=null;render();persist();}
+        if(b.id===&#x27;wq-open-source&#x27;)openSource();
+        if(b.id===&#x27;wq-save-rules&#x27;){rulePresets[ruleState.stage]={target:ruleState.target,unit:ruleState.unit,owner:ruleState.owner,escalationOwner:ruleState.escalationOwner};toast(&#x27;Rules saved in this concept for new items. Existing deadlines are unchanged.&#x27;);persist();}
+        if(b.id===&#x27;wq-snooze&#x27;){const item=state.items.find(x=&gt;x.id===state.selected);item.history.unshift(&#x27;Reminder snoozed until 22 Sep, 08:00 · deadline unchanged&#x27;);renderDetail();toast(&#x27;Your reminder is snoozed until tomorrow at 08:00. The deadline and team escalations stay active.&#x27;);persist();}
+        if(b.id===&#x27;wq-save-item&#x27;){
+          const item=state.items.find(x=&gt;x.id===state.selected),owner=q(&#x27;#wq-edit-owner&#x27;).value,due=q(&#x27;#wq-edit-due&#x27;).value,nextState=q(&#x27;#wq-edit-state&#x27;).value,reason=q(&#x27;#wq-edit-reason&#x27;).value.trim().slice(0,300);
+          const dateChanged=due!==item.due,statusChanged=nextState!==item.state;
+          if((dateChanged||statusChanged)&amp;&amp;!reason){q(&#x27;#wq-detail-error&#x27;).textContent=&#x27;Add a reason for changing the deadline or work status.&#x27;;return;}
+          if(!item.eta&amp;&amp;!due){q(&#x27;#wq-detail-error&#x27;).textContent=&#x27;Choose a valid due date.&#x27;;return;}
+          if(dateChanged){item.originalDue=item.originalDue||item.due;item.history.unshift(&#x27;Deadline changed: &#x27;+dateText(item.due)+&#x27; → &#x27;+dateText(due)+&#x27; · &#x27;+reason);item.due=due;}
+          if(owner!==item.owner){item.history.unshift(&#x27;Assigned to &#x27;+(owner||&#x27;Unassigned&#x27;)+&#x27; by Aisha · 21 Sep, 10:30&#x27;);item.owner=owner;}
+          if(statusChanged){item.history.unshift((nextState===&#x27;paused&#x27;?&#x27;Paused: &#x27;:&#x27;Resumed (0 whole working days elapsed): &#x27;)+reason);item.state=nextState;item.pauseReason=nextState===&#x27;paused&#x27;?reason:&#x27;&#x27;;}
+          if(reason&amp;&amp;!dateChanged&amp;&amp;!statusChanged)item.history.unshift(&#x27;Aisha · &#x27;+reason+&#x27; · 21 Sep, 10:30&#x27;);
+          if(item.due&amp;&amp;item.due&lt;demoToday)item.breached=true;
+          render();toast(&#x27;Work item updated. Assignment and deadline history retained.&#x27;);persist();
+        }
+      });
+      q(&#x27;#wq-search&#x27;).addEventListener(&#x27;input&#x27;,event=&gt;{state.search=event.target.value;state.selected=null;render();persist();});
+      q(&#x27;#wq-plant&#x27;).addEventListener(&#x27;change&#x27;,event=&gt;{state.plant=event.target.value;state.selected=null;render();persist();});
+      [&#x27;cutoff&#x27;,&#x27;holiday&#x27;,&#x27;rule-stage&#x27;,&#x27;rule-days&#x27;,&#x27;rule-unit&#x27;,&#x27;rule-owner&#x27;,&#x27;escalation-owner&#x27;].forEach(key=&gt;q(&#x27;#wq-&#x27;+key).addEventListener([&#x27;cutoff&#x27;,&#x27;rule-days&#x27;].includes(key)?&#x27;input&#x27;:&#x27;change&#x27;,event=&gt;{
+        if(key===&#x27;cutoff&#x27;)ruleState.cutoff=event.target.value;
+        if(key===&#x27;holiday&#x27;)ruleState.holiday=event.target.checked;
+        if(key===&#x27;rule-stage&#x27;){ruleState.stage=event.target.value;Object.assign(ruleState,rulePresets[ruleState.stage]);}
+        if(key===&#x27;rule-days&#x27;)ruleState.target=Number(event.target.value);
+        if(key===&#x27;rule-unit&#x27;)ruleState.unit=event.target.value;
+        if(key===&#x27;rule-owner&#x27;)ruleState.owner=event.target.value;
+        if(key===&#x27;escalation-owner&#x27;)ruleState.escalationOwner=event.target.value;
+        renderRules();persist();
+      }));
+      window.addEventListener(&#x27;openai:set_globals&#x27;,event=&gt;{if(event.detail?.globals?.widgetState){applySaved(event.detail.globals.widgetState);render();if(state.view===&#x27;rules&#x27;)renderRules();}});
+      render();
+      if(globalThis.Tweak){const tweak=new globalThis.Tweak({container:root,onChange:()=&gt;{render();persist();}});tweak.addToggle(design,&#x27;compact&#x27;,{label:&#x27;Compact rows&#x27;});tweak.addToggle(design,&#x27;sidebar&#x27;,{label:&#x27;Show application sidebar&#x27;});}
+    })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+  let lastPointerWasTouch = false;
+  let pinnedByTouch = false;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    pinnedByTouch = false;
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handlePointer = (event) =&gt; {
+    lastPointerWasTouch =
+      event.type === &quot;pointerdown&quot; &amp;&amp; event.pointerType === &quot;touch&quot;;
+  };
+  const handleTouchClick = (event) =&gt; {
+    const isTouch = event.pointerType === &quot;touch&quot; || lastPointerWasTouch;
+    lastPointerWasTouch = false;
+    if (!isTouch || event.detail === 0) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (
+      trigger == null ||
+      !trigger.isConnected ||
+      getContent(trigger).length === 0 ||
+      (pinnedByTouch &amp;&amp; activeTrigger === trigger)
+    ) {
+      if (pinnedByTouch) {
+        closeTooltip();
+      }
+      return;
+    }
+    openTooltip(trigger);
+    pinnedByTouch = activeTrigger === trigger;
+    window.setTimeout(() =&gt; {
+      if (activeTrigger === trigger &amp;&amp; !trigger.isConnected) {
+        closeTooltip(false);
+      }
+    }, 0);
+  };
+  const handleLeave = (event) =&gt; {
+    if (pinnedByTouch) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    lastPointerWasTouch = false;
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    lastPointerWasTouch = false;
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerdown&quot;, handlePointer);
+    document.removeEventListener(&quot;pointercancel&quot;, handlePointer);
+    document.removeEventListener(&quot;click&quot;, handleTouchClick);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerdown&quot;, handlePointer);
+  document.addEventListener(&quot;pointercancel&quot;, handlePointer);
+  document.addEventListener(&quot;click&quot;, handleTouchClick);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-tabs&quot;&gt;
+(() =&gt; {
+  const selector = &#x27;.nav[role=&quot;tablist&quot;] [role=&quot;tab&quot;]&#x27;;
+  const disabled = &#x27;:disabled,[aria-disabled=&quot;true&quot;]&#x27;;
+  const selectTab = (selected) =&gt; {
+    const panelId = selected.getAttribute(&quot;aria-controls&quot;);
+    for (const tab of selected.closest(&#x27;[role=&quot;tablist&quot;]&#x27;).querySelectorAll(&#x27;[role=&quot;tab&quot;]&#x27;)) {
+      const active = tab === selected;
+      tab.classList.toggle(&quot;active&quot;, active);
+      tab.setAttribute(&quot;aria-selected&quot;, String(active));
+      const id = tab.getAttribute(&quot;aria-controls&quot;);
+      const panel = id &amp;&amp; document.getElementById(id);
+      if (panel != null) {
+        panel.hidden = id !== panelId;
+        if (!panel.hidden &amp;&amp; selected.id) {
+          panel.setAttribute(&quot;aria-labelledby&quot;, selected.id);
+        }
+      }
+    }
+  };
+  const interact = (event) =&gt; {
+    const tab = event.target?.closest?.(selector);
+    if (event.defaultPrevented || tab == null || tab.matches(disabled)) {
+      return;
+    }
+    if (event.type === &quot;click&quot;) {
+      selectTab(tab);
+      return;
+    }
+    const tabs = Array.from(
+      tab.closest(&#x27;[role=&quot;tablist&quot;]&#x27;).querySelectorAll(&#x27;[role=&quot;tab&quot;]&#x27;),
+    ).filter((candidate) =&gt; !candidate.matches(disabled));
+    const current = tabs.indexOf(tab);
+    let next;
+    if (event.key === &quot;ArrowRight&quot; || event.key === &quot;ArrowDown&quot;) {
+      next = (current + 1) % tabs.length;
+    } else if (event.key === &quot;ArrowLeft&quot; || event.key === &quot;ArrowUp&quot;) {
+      next = (current + tabs.length - 1) % tabs.length;
+    } else if (event.key === &quot;Home&quot;) {
+      next = 0;
+    } else if (event.key === &quot;End&quot;) {
+      next = tabs.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    tabs[next].focus();
+    selectTab(tabs[next]);
+  };
+
+  for (const list of document.querySelectorAll(&#x27;.nav[role=&quot;tablist&quot;]&#x27;)) {
+    const selected =
+      list.querySelector(&#x27;[role=&quot;tab&quot;][aria-selected=&quot;true&quot;]&#x27;) ??
+      list.querySelector(&#x27;[role=&quot;tab&quot;].active&#x27;) ??
+      list.querySelector(&#x27;[role=&quot;tab&quot;]&#x27;);
+    if (selected != null) {
+      selectTab(selected);
+    }
+  }
+  document.addEventListener(&quot;click&quot;, interact);
+  document.addEventListener(&quot;keydown&quot;, interact);
+  window.addEventListener(&quot;pagehide&quot;, () =&gt; {
+    document.removeEventListener(&quot;click&quot;, interact);
+    document.removeEventListener(&quot;keydown&quot;, interact);
+  }, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+<script>(() => {
+  const frame = document.getElementById("codex-visualization");
+  if (!(frame instanceof HTMLIFrameElement)) {
+    return;
+  }
+  let viewportHeight = globalThis.innerHeight;
+  const storageKey = `codex:visualization-widget-state-v2:${JSON.stringify([
+    globalThis.location.pathname,
+    globalThis.location.search,
+  ])}`;
+  const parseState = (serializedState) => {
+    if (
+      typeof serializedState !== "string" ||
+      new TextEncoder().encode(serializedState).length > 16 * 1024
+    ) {
+      throw new TypeError(
+        "Widget state must be a JSON object of at most 16 KiB",
+      );
+    }
+    /** @type {unknown} */
+    const state = JSON.parse(serializedState);
+    if (
+      state == null ||
+      typeof state !== "object" ||
+      Array.isArray(state) ||
+      ("imageIds" in state &&
+        (!Array.isArray(state.imageIds) || state.imageIds.length > 0))
+    ) {
+      throw new TypeError("Widget state must be a JSON object");
+    }
+    const storedState = { modelContent: null, privateContent: null, ...state };
+    const canonicalState = JSON.stringify(
+      storedState,
+      (_key, /** @type {unknown} */ value) => {
+        if (typeof value === "number" && !Number.isFinite(value)) {
+          throw new TypeError("Widget state must contain finite numbers");
+        }
+        return value;
+      },
+    );
+    if (new TextEncoder().encode(canonicalState).length > 16 * 1024) {
+      throw new TypeError(
+        "Widget state must be a JSON object of at most 16 KiB",
+      );
+    }
+    return storedState;
+  };
+  let storage = null;
+  let state = null;
+  try {
+    const localStorage = globalThis.localStorage;
+    const probeKey = `${storageKey}:probe`;
+    localStorage.setItem(probeKey, "1");
+    localStorage.removeItem(probeKey);
+    storage = localStorage;
+    const savedState = storage.getItem(storageKey);
+    if (savedState != null) {
+      try {
+        state = parseState(savedState);
+      } catch {
+        // Invalid saved state does not disable future writes.
+      }
+    }
+  } catch {
+    storage = null;
+  }
+  const initialGlobals = {
+    widgetState: state,
+    statePersistence: storage == null ? "none" : "local",
+  };
+
+  const channel = new MessageChannel();
+  channel.port1.addEventListener("message", (event) => {
+    const data = event.data;
+    if (typeof data !== "object" || data == null) {
+      return;
+    }
+    if (data.type === "widget-state-write") {
+      if (!Number.isSafeInteger(data.id) || data.id <= 0) {
+        return;
+      }
+      let ok = false;
+      try {
+        if (storage != null) {
+          const state = parseState(data.state);
+          storage.setItem(storageKey, JSON.stringify(state));
+          ok = true;
+        }
+      } catch {
+        // Storage denial, quota limits, and invalid state return a failed receipt.
+      }
+      channel.port1.postMessage({
+        type: "widget-state-result",
+        id: data.id,
+        ok,
+      });
+      return;
+    }
+    if (data.type === "height") {
+      const height = data.height;
+      if (
+        typeof height === "number" &&
+        Number.isFinite(height) &&
+        height >= 0 &&
+        height <= 10_000
+      ) {
+        frame.style.height = Math.ceil(height) + "px";
+      }
+      return;
+    }
+    if (data.type === "scroll-to") {
+      const top = data.top;
+      if (
+        typeof top === "number" &&
+        Number.isFinite(top) &&
+        top >= 0 &&
+        globalThis.navigator.userActivation?.isActive === true
+      ) {
+        globalThis.scrollTo({
+          top: Math.ceil(
+            globalThis.scrollY + frame.getBoundingClientRect().top + top,
+          ),
+        });
+      }
+      return;
+    }
+    if (data.type === "open-external") {
+      const rawHref = data.href;
+      if (typeof rawHref !== "string") {
+        return;
+      }
+      let href;
+      try {
+        const url = new URL(rawHref, document.baseURI);
+        if (url.protocol !== "https:") {
+          return;
+        }
+        href = url.href;
+      } catch {
+        return;
+      }
+      if (globalThis.navigator.userActivation?.isActive === true) {
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.rel = "noopener noreferrer";
+        anchor.target = "_blank";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      return;
+    }
+    if (data.type === "follow-up") {
+      const prompt = data.prompt;
+      if (
+        typeof prompt !== "string" ||
+        globalThis.navigator.userActivation?.isActive !== true
+      ) {
+        return;
+      }
+      const title = data.title;
+      globalThis.prompt(typeof title === "string" ? title : prompt, prompt);
+    }
+  });
+  channel.port1.start();
+  const srcdoc = frame.dataset.srcdoc;
+  if (srcdoc == null) {
+    return;
+  }
+  globalThis.addEventListener("resize", () => {
+    const height = Number.parseFloat(frame.style.height);
+    if (!Number.isFinite(height) || height <= viewportHeight) {
+      frame.style.removeProperty("height");
+    }
+    viewportHeight = globalThis.innerHeight;
+    channel.port1.postMessage({ type: "measure" });
+  });
+  frame.addEventListener(
+    "load",
+    () => {
+      frame.contentWindow?.postMessage(
+        { type: "codex-visualization-initialize" },
+        "*",
+        [channel.port2],
+      );
+    },
+    { once: true },
+  );
+  // Match the trusted bootstrap element, not the same text in an authored title.
+  frame.srcdoc = srcdoc.replace(
+    '<script type="application/json" id="codex-visualization-widget-state">__CODEX_VISUALIZATION_WIDGET_STATE__<\/script>',
+    () =>
+      '<script type="application/json" id="codex-visualization-widget-state">' +
+      JSON.stringify(initialGlobals).replaceAll("<", "\\u003c") +
+      "<\/script>",
+  );
+  delete frame.dataset.srcdoc;
+})();
+</script>
+</body>
+</html>

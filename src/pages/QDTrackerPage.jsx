@@ -71,7 +71,7 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
   );
 };
 
-export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = null, focusQdId = null, onFocusHandled }) {
+export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = null, focusQdId = null, focusQdRecord = null, onFocusHandled }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, foc: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
@@ -192,7 +192,7 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
   // (react-hooks/set-state-in-effect). Closing the drawer clears both, or the
   // fallback would immediately reopen it.
   const openId = selectedId ?? focusQdId ?? null;
-  const selected = data.qds.find(q => q.id === openId) || null;
+  const selected = data.qds.find(q => q.id === openId) || (focusQdRecord?.id === openId ? focusQdRecord : null);
 
   // The approval queue is polled independently of this register, so a
   // notification can name a QD submitted since the page last loaded. Without

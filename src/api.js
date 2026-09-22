@@ -58,8 +58,9 @@ const nonApiErrorMessage = (status) => {
 // or "Current password is incorrect" inside the change-password modal.
 const CREDENTIAL_ENDPOINTS = ['/auth/login', '/auth/change-password'];
 
-// API request helper
-const apiRequest = async (endpoint, options = {}) => {
+// API request helper. Exported so feature clients (workQueueAPI) share one
+// set of error, 401 and proxy-page handling instead of each growing its own.
+export const apiRequest = async (endpoint, options = {}) => {
     const token = getToken();
     const { isMultipart, ...fetchOptions } = options;
     const headers = {
@@ -89,7 +90,11 @@ const apiRequest = async (endpoint, options = {}) => {
             logout();
             window.location.reload();
         }
-        throw new Error(data?.detail || data?.error || nonApiErrorMessage(response.status));
+        const error = new Error(data?.detail || data?.error || nonApiErrorMessage(response.status));
+        // Callers branch on these: a 409 means "reload, someone changed it".
+        error.status = response.status;
+        error.data = data;
+        throw error;
     }
 
     // A body that parsed is returned as-is, including a literal `null` — that is

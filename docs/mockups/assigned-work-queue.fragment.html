@@ -1,0 +1,291 @@
+<div id="dt-work-queue" aria-label="Die Tracker assigned work queue concept">
+  <style>
+    #dt-work-queue { --wq-bg:light-dark(#f5f7fa,#0d0f14); --wq-panel:light-dark(#fff,#171a21); --wq-soft:light-dark(#f0f3f7,#20242e); --wq-text:light-dark(#192631,#e9edf3); --wq-muted:light-dark(#586775,#a5b0c0); --wq-line:light-dark(#dce2e9,#303744); --wq-brand:light-dark(#1f6fb0,#70b5ee); --wq-onbrand:light-dark(#fff,#101923); --wq-brandfill:light-dark(#e8f2fb,#213447); --wq-red:light-dark(#b8323a,#ff9a9f); --wq-redfill:light-dark(#fcebec,#3c242d); --wq-amber:light-dark(#86570c,#f1c777); --wq-amberfill:light-dark(#fff3d9,#383024); --wq-green:light-dark(#207454,#8bd6b4); --wq-greenfill:light-dark(#e8f5ee,#20372d); font:14px/1.5 Inter,Segoe UI,Arial,sans-serif; color:var(--wq-text); background:var(--wq-bg); border:1px solid var(--wq-line); border-radius:12px; overflow:hidden; width:100%; box-sizing:border-box; }
+    #dt-work-queue * { box-sizing:border-box; }
+    #dt-work-queue button,#dt-work-queue input,#dt-work-queue select,#dt-work-queue textarea { font:inherit; }
+    #dt-work-queue button { cursor:pointer; }
+    #dt-work-queue button:disabled { cursor:not-allowed; opacity:.6; }
+    #dt-work-queue [hidden] { display:none!important; }
+    #dt-work-queue h1,#dt-work-queue h2,#dt-work-queue h3,#dt-work-queue p { margin:0; }
+    #dt-work-queue h1 { font-size:25px; letter-spacing:-.7px; font-weight:650; }
+    #dt-work-queue h2 { font-size:19px; font-weight:600; letter-spacing:-.3px; }
+    #dt-work-queue h3 { font-size:14px; font-weight:600; }
+    #dt-work-queue .wq-layout { display:grid; grid-template-columns:174px minmax(0,1fr); min-height:730px; }
+    #dt-work-queue .wq-side { background:var(--wq-panel); border-right:1px solid var(--wq-line); padding:22px 12px; display:flex; flex-direction:column; gap:22px; }
+    #dt-work-queue .wq-logo { display:flex; gap:9px; align-items:center; font-size:15px; font-weight:650; padding:0 5px; }
+    #dt-work-queue .wq-mark { display:grid; place-items:center; border-radius:8px; width:31px; height:31px; background:var(--wq-brand); color:var(--wq-onbrand); }
+    #dt-work-queue .wq-side small { color:var(--wq-muted); font-size:11px; font-weight:400; display:block; }
+    #dt-work-queue .wq-nav { display:flex; flex-direction:column; gap:5px; }
+    #dt-work-queue .wq-nav-item { display:flex; align-items:center; gap:9px; padding:10px 11px; border:0; border-radius:7px; color:var(--wq-muted); background:transparent; text-align:left; }
+    #dt-work-queue .wq-nav-item.wq-active { background:var(--wq-brandfill); color:var(--wq-brand); font-weight:600; }
+    #dt-work-queue .wq-nav-item.wq-static { font-size:13px; }
+    #dt-work-queue .wq-nav-label { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--wq-muted); margin:14px 11px 6px; }
+    #dt-work-queue .wq-profile { display:flex; gap:9px; align-items:center; border-top:1px solid var(--wq-line); padding-top:16px; margin-top:auto; }
+    #dt-work-queue .wq-avatar { display:inline-grid; place-items:center; width:27px; height:27px; border-radius:50%; color:var(--wq-brand); background:var(--wq-brandfill); font-size:11px; font-weight:600; flex-shrink:0; }
+    #dt-work-queue .wq-main { min-width:0; position:relative; }
+    #dt-work-queue .wq-top { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:15px 24px; border-bottom:1px solid var(--wq-line); background:var(--wq-panel); font-size:12px; color:var(--wq-muted); }
+    #dt-work-queue .wq-demo { padding:3px 8px; border-radius:5px; background:var(--wq-soft); color:var(--wq-muted); font-size:11px; white-space:nowrap; }
+    #dt-work-queue .wq-content { padding:23px 24px; }
+    #dt-work-queue .wq-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    #dt-work-queue .wq-sub { color:var(--wq-muted); font-size:12px; margin-top:5px; }
+    #dt-work-queue .wq-button { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--wq-line); border-radius:7px; padding:8px 11px; color:var(--wq-text); background:var(--wq-panel); font-size:12px; font-weight:500; }
+    #dt-work-queue .wq-button:hover { background:var(--wq-soft); }
+    #dt-work-queue .wq-button.wq-primary { background:var(--wq-brand); border-color:var(--wq-brand); color:var(--wq-onbrand); }
+    #dt-work-queue .wq-button.wq-primary:hover { filter:brightness(.95); }
+    #dt-work-queue .wq-tabs { display:flex; gap:22px; border-bottom:1px solid var(--wq-line); margin-bottom:18px; }
+    #dt-work-queue .wq-tab { border:0; border-bottom:2px solid transparent; padding:0 0 12px; background:transparent; color:var(--wq-muted); font-size:13px; white-space:nowrap; }
+    #dt-work-queue .wq-tab[aria-pressed=true] { color:var(--wq-brand); border-bottom-color:var(--wq-brand); font-weight:600; }
+    #dt-work-queue .wq-count { display:inline-block; border-radius:5px; padding:0 5px; margin-left:4px; font-size:11px; font-variant-numeric:tabular-nums; background:var(--wq-soft); color:var(--wq-muted); }
+    #dt-work-queue .wq-buckets { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin-bottom:18px; }
+    #dt-work-queue .wq-bucket { padding:10px 11px; border:1px solid var(--wq-line); border-radius:8px; background:var(--wq-panel); color:var(--wq-muted); text-align:left; }
+    #dt-work-queue .wq-bucket strong { font-size:23px; line-height:1.35; color:var(--wq-text); font-weight:600; display:block; font-variant-numeric:tabular-nums; }
+    #dt-work-queue .wq-bucket span { font-size:11px; white-space:nowrap; }
+    #dt-work-queue .wq-bucket[aria-pressed=true] { background:var(--wq-brandfill); border-color:var(--wq-brand); }
+    #dt-work-queue .wq-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+    #dt-work-queue .wq-search { flex:1; display:flex; gap:7px; align-items:center; border:1px solid var(--wq-line); background:var(--wq-panel); border-radius:7px; padding:7px 10px; min-width:170px; }
+    #dt-work-queue .wq-search input { border:0; outline-offset:3px; background:transparent; color:var(--wq-text); width:100%; font-size:12px; }
+    #dt-work-queue select,#dt-work-queue input[type=date],#dt-work-queue input[type=number],#dt-work-queue input[type=time],#dt-work-queue textarea { border:1px solid var(--wq-line); background:var(--wq-panel); color:var(--wq-text); border-radius:6px; padding:8px; min-width:0; }
+    #dt-work-queue .wq-toolbar select { font-size:12px; }
+    #dt-work-queue .wq-list-head { display:flex; justify-content:space-between; gap:10px; color:var(--wq-muted); font-size:11px; padding:0 1px 8px; }
+    #dt-work-queue .wq-table-wrap { overflow-x:auto; border:1px solid var(--wq-line); border-radius:8px; background:var(--wq-panel); }
+    #dt-work-queue table { border-collapse:collapse; width:100%; min-width:535px; }
+    #dt-work-queue th { text-align:left; padding:10px 11px; background:var(--wq-soft); color:var(--wq-muted); font-weight:500; font-size:11px; }
+    #dt-work-queue td { padding:14px 11px; vertical-align:middle; border-top:1px solid var(--wq-line); font-size:12px; }
+    #dt-work-queue .wq-row:hover { background:var(--wq-soft); }
+    #dt-work-queue .wq-row.wq-selected { background:var(--wq-brandfill); }
+    #dt-work-queue .wq-die { background:transparent; color:var(--wq-brand); border:0; padding:0; font-weight:600; white-space:nowrap; font-size:12px; }
+    #dt-work-queue .wq-meta { font-size:11px; color:var(--wq-muted); margin-top:4px; display:block; }
+    #dt-work-queue .wq-owner { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+    #dt-work-queue .wq-pill { display:inline-flex; align-items:center; gap:4px; padding:3px 6px; border-radius:5px; font-size:10px; font-weight:500; background:var(--wq-soft); color:var(--wq-muted); white-space:nowrap; }
+    #dt-work-queue .wq-pill.overdue { background:var(--wq-redfill); color:var(--wq-red); }
+    #dt-work-queue .wq-pill.today,#dt-work-queue .wq-pill.setup { background:var(--wq-amberfill); color:var(--wq-amber); }
+    #dt-work-queue .wq-pill.upcoming { background:var(--wq-greenfill); color:var(--wq-green); }
+    #dt-work-queue .wq-footnote { font-size:11px; color:var(--wq-muted); padding:12px 0 0; }
+    #dt-work-queue .wq-empty { text-align:center; padding:52px 20px; }
+    #dt-work-queue .wq-empty h3 { margin-bottom:5px; }
+    #dt-work-queue .wq-empty p { color:var(--wq-muted); font-size:12px; }
+    #dt-work-queue .wq-detail { margin-top:18px; border:1px solid var(--wq-line); border-radius:9px; background:var(--wq-panel); }
+    #dt-work-queue .wq-detail-top { padding:17px 19px; display:flex; align-items:flex-start; gap:10px; justify-content:space-between; border-bottom:1px solid var(--wq-line); }
+    #dt-work-queue .wq-detail-grid { padding:19px; display:grid; grid-template-columns:1.1fr 1fr; gap:26px; }
+    #dt-work-queue .wq-fields { display:flex; flex-direction:column; gap:12px; }
+    #dt-work-queue .wq-fields label,#dt-work-queue .wq-rule-fields label { display:flex; flex-direction:column; gap:5px; color:var(--wq-muted); font-size:12px; }
+    #dt-work-queue .wq-two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    #dt-work-queue .wq-fields textarea { resize:vertical; min-height:62px; }
+    #dt-work-queue .wq-info { color:var(--wq-muted); background:var(--wq-soft); border-radius:7px; padding:10px 12px; font-size:11px; }
+    #dt-work-queue .wq-info.wq-alert { color:var(--wq-amber); background:var(--wq-amberfill); }
+    #dt-work-queue .wq-history { list-style:none; padding:0; margin:12px 0 16px; }
+    #dt-work-queue .wq-history li { border-left:1px solid var(--wq-line); padding:0 0 15px 14px; font-size:12px; position:relative; }
+    #dt-work-queue .wq-history li:before { content:''; position:absolute; height:7px; width:7px; background:var(--wq-muted); border-radius:50%; left:-4px; top:6px; }
+    #dt-work-queue .wq-error { color:var(--wq-red); font-size:12px; }
+    #dt-work-queue .wq-rules-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    #dt-work-queue .wq-settings-panel { background:var(--wq-panel); border:1px solid var(--wq-line); border-radius:9px; padding:18px; }
+    #dt-work-queue .wq-settings-panel h3 { margin-bottom:15px; }
+    #dt-work-queue .wq-rule-fields { display:flex; flex-direction:column; gap:14px; }
+    #dt-work-queue .wq-days { display:flex; gap:4px; flex-wrap:wrap; }
+    #dt-work-queue .wq-day { border:1px solid var(--wq-line); background:var(--wq-panel); color:var(--wq-muted); padding:6px; border-radius:5px; font-size:11px; }
+    #dt-work-queue .wq-day[aria-pressed=true] { background:var(--wq-brandfill); color:var(--wq-brand); border-color:var(--wq-brand); }
+    #dt-work-queue .wq-calendar-preview { border-top:1px solid var(--wq-line); margin-top:16px; padding-top:14px; }
+    #dt-work-queue .wq-preview-date { font-size:21px; font-weight:600; margin:5px 0; }
+    #dt-work-queue .wq-inline-label { display:flex; gap:8px; align-items:center; font-size:12px; color:var(--wq-muted); }
+    #dt-work-queue .wq-rule-summary { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--wq-line); font-size:12px; gap:10px; }
+    #dt-work-queue .wq-section-space { margin-top:18px; }
+    #dt-work-queue .wq-toast { margin:12px 24px 20px; border-radius:7px; background:var(--wq-greenfill); color:var(--wq-green); padding:10px 13px; font-size:12px; }
+    #dt-work-queue .wq-record { border:1px solid var(--wq-line); padding:20px; border-radius:9px; background:var(--wq-panel); }
+    #dt-work-queue .wq-record dl { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:18px 0; }
+    #dt-work-queue .wq-record dt { color:var(--wq-muted); font-size:11px; }
+    #dt-work-queue .wq-record dd { margin:3px 0 0; }
+    #dt-work-queue .wq-compact td { padding-top:9px; padding-bottom:9px; }
+    #dt-work-queue .wq-without-sidebar { grid-template-columns:minmax(0,1fr); }
+    #dt-work-queue .wq-without-sidebar .wq-side { display:none; }
+    #dt-work-queue svg { flex-shrink:0; }
+    @media(max-width:800px) { #dt-work-queue .wq-layout { grid-template-columns:1fr; } #dt-work-queue .wq-side { display:none; } }
+    @media(max-width:550px) { #dt-work-queue .wq-content { padding:18px 13px; } #dt-work-queue .wq-top { padding:12px 13px; } #dt-work-queue .wq-buckets { grid-template-columns:repeat(3,1fr); } #dt-work-queue .wq-detail-grid,#dt-work-queue .wq-rules-grid { grid-template-columns:1fr; } #dt-work-queue .wq-tabs { gap:17px; } #dt-work-queue input,#dt-work-queue select,#dt-work-queue textarea { font-size:16px!important; } #dt-work-queue .wq-two { grid-template-columns:1fr; } #dt-work-queue .wq-title-row { gap:14px; } #dt-work-queue .wq-button { min-height:40px; } }
+    @media(prefers-reduced-motion:no-preference) { #dt-work-queue .wq-button,#dt-work-queue .wq-bucket { transition:background .15s; } }
+  </style>
+  <div class="wq-layout" id="wq-layout">
+    <aside class="wq-side" aria-label="Application navigation">
+      <div class="wq-logo"><span class="wq-mark"><i data-lucide="layers" aria-hidden="true"></i></span><span>Die Tracker<small>Ordering system</small></span></div>
+      <div class="wq-nav">
+        <span class="wq-nav-item wq-static"><i data-lucide="layout-dashboard" aria-hidden="true"></i>Dashboard</span>
+        <button class="wq-nav-item wq-active" type="button" id="wq-nav-queue"><i data-lucide="list-checks" aria-hidden="true"></i>Work queue</button>
+        <span class="wq-nav-item wq-static"><i data-lucide="package" aria-hidden="true"></i>Orders</span>
+        <span class="wq-nav-item wq-static"><i data-lucide="copy" aria-hidden="true"></i>Backup requests</span>
+        <div class="wq-nav-label">Process flow</div>
+        <span class="wq-nav-item wq-static">Design &amp; simulation</span>
+        <span class="wq-nav-item wq-static">Purchasing</span>
+        <span class="wq-nav-item wq-static">Sample followup</span>
+        <div class="wq-nav-label">Quality</div>
+        <span class="wq-nav-item wq-static"><i data-lucide="clipboard-check" aria-hidden="true"></i>QD tracker</span>
+        <span class="wq-nav-item wq-static"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Analytics</span>
+      </div>
+      <div class="wq-profile"><span class="wq-avatar">AR</span><span>Aisha Rahman<small>Queue coordinator · demo</small></span></div>
+    </aside>
+    <main class="wq-main">
+      <div class="wq-top"><span>Operations <span aria-hidden="true">/</span> <strong id="wq-breadcrumb">Work queue</strong></span><span class="wq-demo">Concept · sample data</span></div>
+      <section class="wq-content" id="wq-queue-view" aria-label="Assigned work queue">
+        <div class="wq-title-row"><div><h1>Work queue</h1><p class="wq-sub">Monday, 21 September 2026 · 10:30 GST</p></div><button type="button" class="wq-button" id="wq-open-rules"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Deadline rules</button></div>
+        <div class="wq-tabs" aria-label="Work queue scope">
+          <button type="button" class="wq-tab" data-scope="mine" aria-pressed="true">My work <span class="wq-count" id="wq-count-mine">5</span></button>
+          <button type="button" class="wq-tab" data-scope="team" aria-pressed="false">Team <span class="wq-count" id="wq-count-team">9</span></button>
+          <button type="button" class="wq-tab" data-scope="unassigned" aria-pressed="false">Unassigned <span class="wq-count" id="wq-count-unassigned">2</span></button>
+        </div>
+        <div class="wq-buckets" id="wq-buckets" aria-label="Deadline filters"></div>
+        <div class="wq-toolbar"><label class="wq-search"><i data-lucide="search" aria-hidden="true"></i><input id="wq-search" type="search" aria-label="Search die, supplier or work item" placeholder="Search die, supplier or work item"></label><select id="wq-plant" aria-label="Filter by plant"><option value="all">All plants</option><option>GEX 1</option><option>GEX 2</option></select><button type="button" class="wq-button" id="wq-clear" hidden>Clear filters</button></div>
+        <div class="wq-list-head"><span id="wq-showing" role="status" aria-live="polite">5 work items</span><span>Deadline first · highest urgency next</span></div>
+        <div class="wq-table-wrap"><table aria-label="Work items"><thead><tr><th scope="col">Die / plant</th><th scope="col">Next action</th><th scope="col">Owner</th><th scope="col">Deadline</th><th scope="col"><span aria-label="Open item">&nbsp;</span></th></tr></thead><tbody id="wq-rows"></tbody></table><div class="wq-empty" id="wq-empty" hidden><h3>No work items in this view</h3><p>Try another scope or clear the filters.</p></div></div>
+        <p class="wq-footnote">All deadlines use the item’s plant calendar. Paused items keep their deadline history.</p>
+        <section class="wq-detail" id="wq-detail" aria-label="Selected work item" hidden></section>
+      </section>
+      <section class="wq-content" id="wq-rules-view" aria-label="Deadline rules" hidden>
+        <div class="wq-title-row"><div><h1>Deadline rules</h1><p class="wq-sub">GEX 1 · proposed defaults</p></div><button type="button" class="wq-button" id="wq-back"><i data-lucide="arrow-left" aria-hidden="true"></i>Work queue</button></div>
+        <div class="wq-rules-grid">
+          <section class="wq-settings-panel"><h3>Plant calendar</h3><div class="wq-rule-fields"><label>Timezone<output class="wq-info" id="wq-timezone">Asia/Dubai · GST (UTC+04:00)</output></label><div><p class="wq-sub" style="margin:0 0 7px">Working days</p><div class="wq-days" id="wq-days"></div></div><label>Deadline cutoff<input type="time" id="wq-cutoff" value="17:00"></label><label class="wq-inline-label" style="flex-direction:row;align-items:center"><input type="checkbox" id="wq-holiday">23 Sep · example plant closure</label></div><div class="wq-calendar-preview"><span class="wq-sub">New item enters Monday, 21 Sep</span><div class="wq-preview-date" id="wq-preview-date">Thu, 24 Sep · 17:00</div><span class="wq-sub" id="wq-preview-note">3 working days after entry</span></div></section>
+          <section class="wq-settings-panel"><h3>Stage ownership &amp; target</h3><div class="wq-rule-fields"><label>Stage<select id="wq-rule-stage"><option value="design">Awaiting design</option><option value="approval">Design approval</option><option value="sample">Sample submission</option><option value="pr">Pending PR</option></select></label><div class="wq-two"><label>Target days<input type="number" min="1" max="90" step="1" id="wq-rule-days" value="3"></label><label>Count<select id="wq-rule-unit"><option value="working">Working days</option><option value="calendar">Calendar days</option></select></label></div><label>Default owner<select id="wq-rule-owner"><option>Aisha Rahman</option><option>Omar Khalid</option><option>Priya Nair</option><option value="">Unassigned</option></select></label><label>Escalation contact<select id="wq-escalation-owner"><option>Omar Khalid</option><option>Priya Nair</option><option>Aisha Rahman</option></select></label></div></section>
+        </div>
+        <section class="wq-settings-panel wq-section-space"><h3>Follow-up rules</h3><div class="wq-rule-summary"><span>Owner reminder</span><strong>On the due date · 08:00</strong></div><div class="wq-rule-summary"><span>Escalation contact</span><strong>Next working day after overdue · 08:00</strong></div><div class="wq-rule-summary"><span>Supplier chasing</span><strong>Existing design / FOC reminders</strong></div><div class="wq-rule-summary"><span>Existing work items</span><strong>Keep their current deadline</strong></div><p class="wq-info wq-section-space">Rule changes apply to new stage entries. Changing open items requires a separate impact preview and a reason.</p></section>
+        <div class="wq-title-row wq-section-space"><span class="wq-error" role="alert" id="wq-rule-error"></span><button type="button" class="wq-button wq-primary" id="wq-save-rules">Save rules for new items</button></div>
+      </section>
+      <section class="wq-content" id="wq-source-view" aria-label="Existing workflow handoff" hidden></section>
+      <div class="wq-toast" id="wq-toast" role="status" aria-live="polite" hidden></div>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('dt-work-queue');
+      const q = s => root.querySelector(s);
+      const qa = s => Array.from(root.querySelectorAll(s));
+      const demoToday = '2026-09-21';
+      const people = ['Aisha Rahman','Omar Khalid','Priya Nair'];
+      const baseItems = [
+        {id:1042,die:'30601-201',plant:'GEX 1',supplier:'PDTMC',stage:'Design approval',action:'Open design approval',owner:people[0],due:'2026-09-19',entered:'2026-09-18',target:1,urgency:'Top urgent',state:'open',breached:true,source:'Order DO-260184',history:['Deadline passed · 19 Sep, 17:00','Assigned to Aisha · 18 Sep, 09:15','Design received · 18 Sep, 09:12']},
+        {id:1043,die:'29834-302',plant:'GEX 2',supplier:'Phoenix',stage:'Sample submission',action:'Open sample followup',owner:people[0],due:'2026-09-18',entered:'2026-09-10',target:7,urgency:'Urgent',state:'open',breached:true,source:'Sample from order DO-260162',waiting:'Waiting for press slot',history:['Waiting for press slot · 19 Sep, 11:40','Deadline passed · 18 Sep, 17:00','Die received · 10 Sep, 08:20']},
+        {id:1044,die:'30450-102',plant:'GEX 1',supplier:'PDTMC',stage:'QD approval',action:'Open QD approval',owner:people[0],due:'2026-09-21',entered:'2026-09-18',target:2,urgency:'Normal',state:'open',locked:true,source:'QD 2026PD-17',history:['Sent for approval · 18 Sep, 14:10','Approval owner from QD · 18 Sep, 14:10']},
+        {id:1045,die:'31204-101',plant:'GEX 1',supplier:'Phoenix',stage:'In manufacturing',action:'Open manufacturing order',owner:people[0],due:'2026-09-24',entered:'2026-09-17',target:null,urgency:'Normal',state:'open',eta:true,source:'Order DO-260193',history:['Supplier ETA recorded · 18 Sep, 13:00','Sent to EMS · 17 Sep, 10:45']},
+        {id:1046,die:'29680-204',plant:'GEX 2',supplier:'PDTMC',stage:'Simulation',action:'Open simulation',owner:people[0],due:'2026-09-22',entered:'2026-09-19',target:2,urgency:'Normal',state:'paused',pauseReason:'Customer reviewing revised dimensions',source:'Order DO-260180',history:['Paused: customer review · 21 Sep, 09:00','Assigned to Aisha · 19 Sep, 12:00']},
+        {id:1047,die:'30882-101',plant:'GEX 1',supplier:'Phoenix',stage:'Awaiting design',action:'Open design followup',owner:'',due:'2026-09-21',entered:'2026-09-17',target:3,urgency:'Urgent',state:'open',source:'Order DO-260201',history:['No eligible default owner · 17 Sep, 10:05','Order placed · 17 Sep, 10:05']},
+        {id:1048,die:'30560-202',plant:'GEX 2',supplier:'PDTMC',stage:'In manufacturing',action:'Open manufacturing order',owner:'',due:'',entered:'2026-09-16',target:null,eta:true,urgency:'Normal',state:'open',source:'Order DO-260175',history:['Supplier ETA is missing · 16 Sep, 15:00','Sent to EMS · 16 Sep, 15:00']},
+        {id:1049,die:'30082-301',plant:'GEX 2',supplier:'Phoenix',stage:'Pending PR',action:'Open PR entry',owner:people[1],due:'2026-09-22',entered:'2026-09-21',target:1,urgency:'Normal',state:'open',source:'Order DO-260198',history:['Design approved · 21 Sep, 08:40']},
+        {id:1050,die:'30719-101',plant:'GEX 1',supplier:'PDTMC',stage:'FOC replacement receipt',action:'Open FOC rounds',owner:people[2],due:'2026-09-19',entered:'2026-09-15',target:null,eta:true,urgency:'Urgent',state:'open',breached:true,source:'QD 2026PD-12 · round 2',history:['Replacement ETA passed · 19 Sep, 17:00','Supplier confirmed replacement · 15 Sep, 11:20']}
+      ];
+      const clone = x => JSON.parse(JSON.stringify(x));
+      const state = {scope:'mine',bucket:'all',plant:'all',search:'',selected:null,view:'queue',items:clone(baseItems)};
+      const design = {compact:false,sidebar:true};
+      const ruleState = {days:[1,2,3,4,5,6],cutoff:'17:00',holiday:false,stage:'design',target:3,unit:'working',owner:people[0],escalationOwner:people[1]};
+      const rulePresets = {design:{target:3,unit:'working',owner:people[0],escalationOwner:people[1]},approval:{target:1,unit:'working',owner:people[0],escalationOwner:people[1]},sample:{target:7,unit:'working',owner:people[2],escalationOwner:people[1]},pr:{target:1,unit:'working',owner:people[1],escalationOwner:people[2]}};
+      const bucketLabels = {overdue:'Overdue',today:'Due today',upcoming:'Upcoming',setup:'Needs setup',paused:'Paused'};
+      const escape = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const dateText = date => date ? new Date(date+'T12:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'}) : 'No deadline';
+      const initials = name => name.split(' ').map(x=>x[0]).join('');
+      const bucket = item => item.state==='paused' ? 'paused' : !item.due ? 'setup' : item.due<demoToday ? 'overdue' : item.due===demoToday ? 'today' : 'upcoming';
+      const scopeItems = scope => state.items.filter(item=>scope==='team'||(scope==='mine'?item.owner===people[0]:!item.owner));
+      function applySaved(snapshot) {
+        const p=snapshot?.privateContent;
+        if(!p || p.version!==1)return;
+        if(['mine','team','unassigned'].includes(p.scope))state.scope=p.scope;
+        if(['all',...Object.keys(bucketLabels)].includes(p.bucket))state.bucket=p.bucket;
+        if(['all','GEX 1','GEX 2'].includes(p.plant))state.plant=p.plant;
+        state.search=typeof p.search==='string'?p.search.slice(0,100):'';
+        if(Array.isArray(p.items)&&p.items.length===baseItems.length&&p.items.every((x,i)=>x.id===baseItems[i].id))state.items=p.items;
+        if(p.rules&&Array.isArray(p.rules.days)&&p.rules.days.every(d=>Number.isInteger(d)&&d>=0&&d<7))Object.assign(ruleState,p.rules);
+        if(p.design&&typeof p.design.compact==='boolean')Object.assign(design,p.design);
+        if(p.rulePresets)Object.keys(rulePresets).forEach(k=>{if(p.rulePresets[k])Object.assign(rulePresets[k],p.rulePresets[k]);});
+      }
+      applySaved(window.openai?.widgetState);
+      function persist() {
+        if(!window.openai?.setWidgetState)return;
+        const rememberedItems=state.items.map(item=>({...item,history:item.history.slice(0,4).map(h=>h.slice(0,180)),pauseReason:(item.pauseReason||'').slice(0,180)}));
+        window.openai.setWidgetState({modelContent:{feature:'Assigned work queue',scope:state.scope,selectedItem:state.selected,calendar:ruleState.days,ruleTarget:ruleState.target,ruleUnit:ruleState.unit,design},privateContent:{version:1,scope:state.scope,bucket:state.bucket,plant:state.plant,search:state.search,items:rememberedItems,rules:ruleState,rulePresets,design}}).catch(()=>{});
+      }
+      function toast(message) { q('#wq-toast').textContent=message;q('#wq-toast').hidden=false; }
+      function iconRefresh() { if(globalThis.lucide)globalThis.lucide.createIcons({attrs:{width:16,height:16}}); }
+      function render() {
+        q('#wq-layout').classList.toggle('wq-without-sidebar',!design.sidebar);
+        root.classList.toggle('wq-compact',design.compact);
+        ['mine','team','unassigned'].forEach(s=>q('#wq-count-'+s).textContent=scopeItems(s).length);
+        qa('[data-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scope===state.scope)));
+        const scoped=scopeItems(state.scope).filter(x=>(state.plant==='all'||x.plant===state.plant)&&(!state.search||[x.die,x.stage,x.supplier,x.source,x.owner].join(' ').toLowerCase().includes(state.search.toLowerCase())));
+        q('#wq-buckets').innerHTML=Object.entries(bucketLabels).map(([key,label])=>'<button type="button" class="wq-bucket" data-bucket="'+key+'" aria-pressed="'+(key===state.bucket)+'"><strong>'+scoped.filter(x=>bucket(x)===key).length+'</strong><span>'+label+'</span></button>').join('');
+        const ranking={overdue:0,today:1,setup:2,upcoming:3,paused:4};
+        const rows=scoped.filter(x=>state.bucket==='all'||bucket(x)===state.bucket).sort((a,b)=>(ranking[bucket(a)]-ranking[bucket(b)])||(a.due||'9999').localeCompare(b.due||'9999')||(['Top urgent','Urgent','Normal'].indexOf(a.urgency)-['Top urgent','Urgent','Normal'].indexOf(b.urgency))||a.id-b.id);
+        q('#wq-search').value=state.search;q('#wq-plant').value=state.plant;
+        q('#wq-showing').textContent=rows.length+' work item'+(rows.length===1?'':'s')+(state.bucket==='all'?'':' · '+bucketLabels[state.bucket]);
+        q('#wq-clear').hidden=state.bucket==='all'&&state.plant==='all'&&!state.search;
+        q('#wq-rows').innerHTML=rows.map(item=>'<tr class="wq-row '+(state.selected===item.id?'wq-selected':'')+'"><td><button class="wq-die" type="button" data-open="'+item.id+'">'+escape(item.die)+'</button><span class="wq-meta">'+escape(item.plant)+'</span></td><td>'+escape(item.stage)+'<span class="wq-meta">'+escape(item.waiting||item.source)+'</span>'+(item.urgency==='Top urgent'?'<span class="wq-pill overdue">Top urgent</span>':'')+'</td><td><span class="wq-owner">'+(item.owner?'<span class="wq-avatar">'+initials(item.owner)+'</span>'+escape(item.owner.split(' ')[0]):'<span class="wq-pill setup">Unassigned</span>')+'</span>'+(item.locked?'<span class="wq-meta">QD approver</span>':'')+'</td><td><span class="wq-pill '+bucket(item)+'">'+bucketLabels[bucket(item)]+'</span><span class="wq-meta">'+dateText(item.due)+(item.due?' · 17:00':' · add ETA')+'</span></td><td><button class="wq-button" type="button" data-open="'+item.id+'" aria-label="Open '+escape(item.die)+'">Open</button></td></tr>').join('');
+        q('#wq-empty').hidden=rows.length>0;
+        if(state.selected)renderDetail();else q('#wq-detail').hidden=true;
+        iconRefresh();
+      }
+      function renderDetail() {
+        const item=state.items.find(x=>x.id===state.selected); if(!item)return;
+        q('#wq-detail').hidden=false;
+        q('#wq-detail').innerHTML='<div class="wq-detail-top"><div><span class="wq-sub">WQ-'+item.id+' · '+escape(item.plant)+'</span><h2>'+escape(item.die)+' <span class="wq-pill '+bucket(item)+'">'+bucketLabels[bucket(item)]+'</span></h2><p class="wq-sub">'+escape(item.stage)+' · '+escape(item.supplier)+'</p></div><button type="button" class="wq-button" id="wq-close-detail" aria-label="Close work item">Close</button></div><div class="wq-detail-grid"><div class="wq-fields"><label>Owner<select id="wq-edit-owner" '+(item.locked?'disabled':'')+'><option value="">Unassigned</option>'+people.map(p=>'<option '+(p===item.owner?'selected':'')+'>'+p+'</option>').join('')+'</select></label>'+(item.locked?'<p class="wq-info">Assigned through the QD approval workflow. Changing queue ownership cannot change who may approve.</p>':'')+'<div class="wq-two"><label>Due date<input type="date" id="wq-edit-due" value="'+escape(item.due)+'" '+(item.eta?'disabled':'')+'></label><label>Work status<select id="wq-edit-state" '+(item.locked?'disabled':'')+'><option value="open" '+(item.state==='open'?'selected':'')+'>Active</option><option value="paused" '+(item.state==='paused'?'selected':'')+'>Paused</option></select></label></div><p class="wq-info">'+(item.eta?'Deadline follows the supplier ETA. Update the ETA in the source workflow.':(item.target+' working day'+(item.target===1?'':'s')+' after '+dateText(item.entered)+' · Mon–Sat · 17:00 GST.'))+(item.originalDue?' Original deadline: '+dateText(item.originalDue)+'.':'')+'</p>'+(item.breached?'<p class="wq-info wq-alert">An earlier deadline breach stays in the history even if this item is paused or extended.</p>':'')+(item.pauseReason?'<p class="wq-info">Pause reason: '+escape(item.pauseReason)+'</p>':'')+'<label>Reason or follow-up note<textarea id="wq-edit-reason" placeholder="Required when changing a deadline or pausing"></textarea></label><div class="wq-error" role="alert" id="wq-detail-error"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="wq-button wq-primary" id="wq-save-item">Save changes</button><button type="button" class="wq-button" id="wq-snooze">Snooze reminder</button></div></div><div><h3>Activity</h3><ol class="wq-history">'+item.history.map(h=>'<li>'+escape(h)+'</li>').join('')+'</ol><button type="button" class="wq-button wq-primary" id="wq-open-source">'+escape(item.action)+' <i data-lucide="arrow-up-right" aria-hidden="true"></i></button><p class="wq-sub">'+escape(item.source)+'</p></div></div>';
+        iconRefresh();
+      }
+      function changeView(view) {
+        state.view=view;
+        q('#wq-queue-view').hidden=view!=='queue';q('#wq-rules-view').hidden=view!=='rules';q('#wq-source-view').hidden=view!=='source';
+        q('#wq-breadcrumb').textContent=view==='rules'?'Deadline rules':view==='source'?'Workflow record':'Work queue';
+        q('#wq-toast').hidden=true;
+        if(view==='rules')renderRules();
+      }
+      function renderRules() {
+        q('#wq-days').innerHTML=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day,i)=>'<button class="wq-day" type="button" data-day="'+i+'" aria-pressed="'+ruleState.days.includes(i)+'">'+day+'</button>').join('');
+        q('#wq-cutoff').value=ruleState.cutoff;q('#wq-holiday').checked=ruleState.holiday;q('#wq-rule-stage').value=ruleState.stage;q('#wq-rule-days').value=ruleState.target;q('#wq-rule-unit').value=ruleState.unit;q('#wq-rule-owner').value=ruleState.owner;q('#wq-escalation-owner').value=ruleState.escalationOwner;
+        const valid=Number.isInteger(ruleState.target)&&ruleState.target>=1&&ruleState.target<=90&&/^\d{2}:\d{2}$/.test(ruleState.cutoff)&&(ruleState.unit==='calendar'||ruleState.days.length>0);
+        q('#wq-rule-error').textContent=valid?'':'Choose at least one working day, a cutoff time, and a whole target from 1 to 90.';
+        q('#wq-save-rules').disabled=!valid;
+        if(!valid){q('#wq-preview-date').textContent='Complete the rule';q('#wq-preview-note').textContent='';return;}
+        let d=new Date(demoToday+'T12:00:00Z'),remaining=ruleState.target;
+        while(remaining>0){d.setUTCDate(d.getUTCDate()+1);const iso=d.toISOString().slice(0,10);if(ruleState.unit==='calendar'||(ruleState.days.includes(d.getUTCDay())&&!(ruleState.holiday&&iso==='2026-09-23')))remaining--;}
+        q('#wq-preview-date').textContent=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'})+' · '+ruleState.cutoff;
+        q('#wq-preview-note').textContent=ruleState.target+' '+ruleState.unit+' day'+(ruleState.target===1?'':'s')+' after entry'+(ruleState.holiday&&ruleState.unit==='working'?' · closure excluded':'');
+      }
+      function openSource() {
+        const item=state.items.find(x=>x.id===state.selected);if(!item)return;
+        changeView('source');
+        q('#wq-source-view').innerHTML='<div class="wq-title-row"><div><h1>'+escape(item.stage)+'</h1><p class="wq-sub">Existing workflow · concept handoff</p></div><button type="button" class="wq-button" id="wq-return-queue">Back to work queue</button></div><section class="wq-record"><span class="wq-pill">'+escape(item.source)+'</span><h2 style="margin-top:10px">'+escape(item.die)+'</h2><dl><div><dt>Plant</dt><dd>'+escape(item.plant)+'</dd></div><div><dt>Supplier</dt><dd>'+escape(item.supplier)+'</dd></div><div><dt>Current stage</dt><dd>'+escape(item.stage)+'</dd></div><div><dt>Owner</dt><dd>'+escape(item.owner||'Unassigned')+'</dd></div></dl><p class="wq-info">'+(item.locked?'The existing QD approval form opens here with its named approver and document checks.':'The existing '+escape(item.stage.toLowerCase())+' form opens here with this record selected.')+' Saving its workflow action will update this work item and create the next stage item when required.</p><p class="wq-sub" style="margin-top:14px">This concept demonstrates navigation only. No workflow records are changed.</p></section>';
+      }
+      root.addEventListener('click',event=>{
+        const b=event.target.closest('button');if(!b||!root.contains(b))return;
+        if(b.dataset.scope){state.scope=b.dataset.scope;state.selected=null;render();persist();}
+        if(b.dataset.bucket){state.bucket=state.bucket===b.dataset.bucket?'all':b.dataset.bucket;state.selected=null;render();persist();}
+        if(b.dataset.open){state.selected=Number(b.dataset.open);render();persist();q('#wq-detail').scrollIntoView({block:'nearest'});}
+        if(b.dataset.day!==undefined){const day=Number(b.dataset.day);ruleState.days=ruleState.days.includes(day)?ruleState.days.filter(x=>x!==day):[...ruleState.days,day].sort();renderRules();persist();}
+        if(b.id==='wq-open-rules'){changeView('rules');persist();}
+        if(['wq-back','wq-nav-queue','wq-return-queue'].includes(b.id)){changeView('queue');render();}
+        if(b.id==='wq-clear'){state.bucket='all';state.plant='all';state.search='';state.selected=null;render();persist();}
+        if(b.id==='wq-close-detail'){state.selected=null;render();persist();}
+        if(b.id==='wq-open-source')openSource();
+        if(b.id==='wq-save-rules'){rulePresets[ruleState.stage]={target:ruleState.target,unit:ruleState.unit,owner:ruleState.owner,escalationOwner:ruleState.escalationOwner};toast('Rules saved in this concept for new items. Existing deadlines are unchanged.');persist();}
+        if(b.id==='wq-snooze'){const item=state.items.find(x=>x.id===state.selected);item.history.unshift('Reminder snoozed until 22 Sep, 08:00 · deadline unchanged');renderDetail();toast('Your reminder is snoozed until tomorrow at 08:00. The deadline and team escalations stay active.');persist();}
+        if(b.id==='wq-save-item'){
+          const item=state.items.find(x=>x.id===state.selected),owner=q('#wq-edit-owner').value,due=q('#wq-edit-due').value,nextState=q('#wq-edit-state').value,reason=q('#wq-edit-reason').value.trim().slice(0,300);
+          const dateChanged=due!==item.due,statusChanged=nextState!==item.state;
+          if((dateChanged||statusChanged)&&!reason){q('#wq-detail-error').textContent='Add a reason for changing the deadline or work status.';return;}
+          if(!item.eta&&!due){q('#wq-detail-error').textContent='Choose a valid due date.';return;}
+          if(dateChanged){item.originalDue=item.originalDue||item.due;item.history.unshift('Deadline changed: '+dateText(item.due)+' → '+dateText(due)+' · '+reason);item.due=due;}
+          if(owner!==item.owner){item.history.unshift('Assigned to '+(owner||'Unassigned')+' by Aisha · 21 Sep, 10:30');item.owner=owner;}
+          if(statusChanged){item.history.unshift((nextState==='paused'?'Paused: ':'Resumed (0 whole working days elapsed): ')+reason);item.state=nextState;item.pauseReason=nextState==='paused'?reason:'';}
+          if(reason&&!dateChanged&&!statusChanged)item.history.unshift('Aisha · '+reason+' · 21 Sep, 10:30');
+          if(item.due&&item.due<demoToday)item.breached=true;
+          render();toast('Work item updated. Assignment and deadline history retained.');persist();
+        }
+      });
+      q('#wq-search').addEventListener('input',event=>{state.search=event.target.value;state.selected=null;render();persist();});
+      q('#wq-plant').addEventListener('change',event=>{state.plant=event.target.value;state.selected=null;render();persist();});
+      ['cutoff','holiday','rule-stage','rule-days','rule-unit','rule-owner','escalation-owner'].forEach(key=>q('#wq-'+key).addEventListener(['cutoff','rule-days'].includes(key)?'input':'change',event=>{
+        if(key==='cutoff')ruleState.cutoff=event.target.value;
+        if(key==='holiday')ruleState.holiday=event.target.checked;
+        if(key==='rule-stage'){ruleState.stage=event.target.value;Object.assign(ruleState,rulePresets[ruleState.stage]);}
+        if(key==='rule-days')ruleState.target=Number(event.target.value);
+        if(key==='rule-unit')ruleState.unit=event.target.value;
+        if(key==='rule-owner')ruleState.owner=event.target.value;
+        if(key==='escalation-owner')ruleState.escalationOwner=event.target.value;
+        renderRules();persist();
+      }));
+      window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState){applySaved(event.detail.globals.widgetState);render();if(state.view==='rules')renderRules();}});
+      render();
+      if(globalThis.Tweak){const tweak=new globalThis.Tweak({container:root,onChange:()=>{render();persist();}});tweak.addToggle(design,'compact',{label:'Compact rows'});tweak.addToggle(design,'sidebar',{label:'Show application sidebar'});}
+    })();
+  </script>
+</div>

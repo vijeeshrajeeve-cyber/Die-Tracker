@@ -1331,6 +1331,8 @@ const initializeDatabase = async () => {
     }
 
 
+    await require('./services/workQueueSchema.cjs').initializeWorkQueue(client);
+    await require('./services/workQueueExtraSchema.cjs').initializeWorkQueueExtraSchema(client);
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);

@@ -76,6 +76,7 @@ const STAGE_HINT = {
 const SORT_HINT = { received: 'Newest received first', plant: 'Grouped by plant' };
 
 export default function SampleFollowupPage({
+  focusId = null, onFocusHandled,
   sampleFollowups,
   sfPlantFilter, setSfPlantFilter,
   searchTerm, setSearchTerm,
@@ -118,7 +119,7 @@ export default function SampleFollowupPage({
 
   // The pane keeps showing the die it was showing even after a stamp moves it
   // to another stage; it only falls back when that die has left the scope.
-  const selected = scoped.find(r => r.id === selectedId) || stageRows[0] || scoped[0] || null;
+  const selected = enriched.find(r => r.id === focusId) || scoped.find(r => r.id === selectedId) || stageRows[0] || scoped[0] || null;
 
   const plantCounts = new Map();
   for (const row of enriched) {
@@ -129,11 +130,13 @@ export default function SampleFollowupPage({
   if (sfPlantFilter !== 'All' && !plantCounts.has(sfPlantFilter)) plants.push(sfPlantFilter);
 
   const selectStage = (next) => {
+    onFocusHandled?.();
     setStage(next);
     setSelectedId(bandsOf(next)[0]?.rows[0]?.id ?? null);
   };
 
   const selectRow = (sf) => {
+    onFocusHandled?.();
     setShowSampleFollowupForm(false);
     setEditingSampleFollowup(null);
     setSelectedId(sf.id);

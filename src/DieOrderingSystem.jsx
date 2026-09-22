@@ -10,6 +10,7 @@ const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
 import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
+import { workQueueAPI } from './workQueueAPI';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
@@ -40,6 +41,7 @@ import FreezeDesignModal from './components/FreezeDesignModal';
 // and none of it is needed to show the login screen or the register. They load
 // the first time someone actually opens them.
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const WorkQueuePage = lazy(() => import('./pages/WorkQueuePage'));
 // Dashboard is the landing tab, but it is still behind the login screen — and
 // it is the only other thing pulling in recharts.
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -1970,6 +1972,38 @@ export default function DieOrderingSystem() {
 
   // Which QD a notification asked us to open, handed to the QD Tracker once.
   const [focusQdId, setFocusQdId] = useState(null);
+  const [focusQdRecord, setFocusQdRecord] = useState(null);
+  const [focusSampleId, setFocusSampleId] = useState(null);
+
+  const openQueueSource = async (_action, item) => {
+    const { kind, record, source_action: action } = await workQueueAPI.source(item.id);
+    if (kind === 'qd') {
+      setFocusQdRecord(record);
+      setFocusQdId(record.id);
+      setActiveTab('qd-tracker');
+      return;
+    }
+    setSearchTerm(kind === 'sample' ? record.profile || '' : record['DIE NO'] || '');
+    if (kind === 'sample') {
+      setSampleFollowupsStandalone(previous => [...previous.filter(row => row.id !== record.id), record]);
+      setSfPlantFilter('All');
+      setFocusSampleId(`sf-${record.id}`);
+      setActiveTab('flow-sample-followup');
+    } else {
+      // Fetching by ID keeps deep links independent of the register's 5000-row cap.
+      setData(previous => [...previous.filter(row => row.id !== record.id), record]);
+      if (action.tab === 'flow-sample-followup' && hasPageAccess(action.tab)) {
+        setSfPlantFilter('All');
+        setFocusSampleId(`order-${record.id}`);
+        setActiveTab(action.tab);
+      } else if (hasPageAccess(action.tab)) {
+        setActiveTab(action.tab);
+      } else {
+        if (hasPageAccess('orders')) setActiveTab('orders');
+        setSelectedOrder(record);
+      }
+    }
+  };
 
   // Redirect if user lands on a restricted tab
   useEffect(() => {
@@ -3098,6 +3132,10 @@ export default function DieOrderingSystem() {
             </Suspense>
           )}
 
+          {activeTab === 'work-queue' && hasPageAccess('work-queue') && (
+            <WorkQueuePage theme={theme} user={user} onOpenSource={openQueueSource} />
+          )}
+
           {activeTab === 'orders' && hasPageAccess('orders') && (
             <OrdersPage
               theme={theme} user={user}
@@ -3140,6 +3178,7 @@ export default function DieOrderingSystem() {
           {/* Sample Followup Page */}
           {activeTab === 'flow-sample-followup' && hasPageAccess('flow-sample-followup') && (
             <SampleFollowupPage
+              focusId={focusSampleId} onFocusHandled={() => setFocusSampleId(null)}
               sampleFollowups={sampleFollowups}
               sfStatusFilter={sfStatusFilter} setSfStatusFilter={setSfStatusFilter}
               sfPlantFilter={sfPlantFilter} setSfPlantFilter={setSfPlantFilter}
@@ -3184,7 +3223,8 @@ export default function DieOrderingSystem() {
               onCompose={(prefill) => setShowEmailCompose(prefill || {})}
               qdQueue={qdQueue}
               focusQdId={focusQdId}
-              onFocusHandled={() => setFocusQdId(null)}
+              focusQdRecord={focusQdRecord}
+              onFocusHandled={() => { setFocusQdId(null); setFocusQdRecord(null); }}
             />
           )}
 

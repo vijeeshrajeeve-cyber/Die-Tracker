@@ -78,6 +78,7 @@ const userIdValidation = [
 
 // Valid page IDs for validation
 const VALID_PAGE_IDS = [
+    'work-queue',
     'dashboard', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'analytics',
     'process-flow', // backward compat: old users may still have this
     'flow-pending-order', 'flow-awaiting-design', 'flow-simulation',

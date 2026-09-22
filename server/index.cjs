@@ -34,6 +34,8 @@ const autoBackupService = require('./services/autoBackup.cjs');
 const frozenDesignsRouter = require('./routes/frozen-designs.cjs');
 const qualityDiscrepanciesRouter = require('./routes/quality-discrepancies.cjs');
 const signaturesRouter = require('./routes/signatures.cjs');
+const { createWorkQueueRouter } = require('./routes/work-queue.cjs');
+const { scheduleWorkQueueNotifications } = require('./services/workQueueNotifications.cjs');
 
 
 const app = express();
@@ -81,6 +83,7 @@ app.use('/api/email', emailRouter);
 
 // Protected routes
 app.use('/api/users', authMiddleware, adminMiddleware, usersRouter);
+app.use('/api/work-queue', authMiddleware, createWorkQueueRouter(pool));
 app.use('/api/orders', authMiddleware, pageAccessMiddleware([
     'dashboard',
     'orders',
@@ -197,6 +200,7 @@ const startServer = async () => {
             throw dbErr;
         }
 
+        if (process.env.DISABLE_SCHEDULED_JOBS !== 'true') {
         // Start scheduled Excel backup every 5 hours (configurable via BACKUP_INTERVAL_HOURS)
         autoBackupService.scheduleAutoBackup();
 
@@ -209,6 +213,8 @@ const startServer = async () => {
 
         // Daily summary of the previous day's activity (runs when enabled in settings)
         dailySummaryService.scheduleDailySummary();
+        scheduleWorkQueueNotifications(pool);
+        require('./services/workQueueSync.cjs').scheduleWorkQueueMaintenance(pool);
 
         // Start IMAP poller if receive is enabled in config
         emailService.getEmailConfig().then(config => {
@@ -216,6 +222,7 @@ const startServer = async () => {
                 emailService.startImapPoller();
             }
         }).catch(() => {});
+        }
 
         app.listen(PORT, HOST, () => {
             console.log(`Die Ordering API Server running at http://${HOST}:${PORT}`);
