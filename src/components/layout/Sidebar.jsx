@@ -15,6 +15,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
 
     const allTabs = [
         { id: 'dashboard', label: 'Dashboard', icon: TrendingUp, pageId: 'dashboard' },
+        { id: 'work-queue', label: 'Work Queue', icon: ClipboardList, pageId: 'work-queue' },
         { id: 'orders', label: 'Orders', icon: Package, pageId: 'orders' },
         { id: 'backup-requests', label: 'Backup Die Requests', icon: ClipboardList, pageId: 'backup-requests' },
         { id: 'frozen-designs', label: 'Frozen Designs', icon: Snowflake, pageId: 'frozen-designs' },
@@ -31,8 +32,8 @@ const Sidebar = ({ activeTab, setActiveTab, user, theme, collapsed, setCollapsed
     const mainTabs = allTabs.filter(tab => hasAccess(tab.pageId));
 
     // Split tabs: before and after the process-flow insertion point
-    const topTabs = mainTabs.filter(t => ['dashboard', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'email-inbox'].includes(t.id));
-    const bottomTabs = mainTabs.filter(t => !['dashboard', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'email-inbox'].includes(t.id));
+    const topTabs = mainTabs.filter(t => ['dashboard', 'work-queue', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'email-inbox'].includes(t.id));
+    const bottomTabs = mainTabs.filter(t => !['dashboard', 'work-queue', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'email-inbox'].includes(t.id));
 
     // Filter flow tabs by individual access
     const accessibleFlowTabs = PROCESS_FLOW_TABS.filter(tab => hasAccess(tab.id));

@@ -305,9 +305,9 @@ async function listBilletParameters(client, qdIds) {
   return map;
 }
 
-async function listQDs(client) {
+async function listQDs(client, id = null) {
   const { rows } = await client.query(
-    `SELECT * FROM quality_discrepancies ORDER BY raised_date DESC, id DESC`
+    `SELECT * FROM quality_discrepancies WHERE ($1::integer IS NULL OR id=$1) ORDER BY raised_date DESC, id DESC`, [id]
   );
   const ids = rows.map((r) => r.id);
   let files = [];

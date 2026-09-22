@@ -161,6 +161,7 @@ export const WORKFLOW_STEPS = {
 
 export const CONTROLLABLE_PAGES = [
   { id: 'dashboard', label: 'Dashboard' },
+  { id: 'work-queue', label: 'Work Queue' },
   { id: 'orders', label: 'Orders' },
   { id: 'backup-requests', label: 'Backup Die Requests' },
   { id: 'frozen-designs', label: 'Frozen Designs' },

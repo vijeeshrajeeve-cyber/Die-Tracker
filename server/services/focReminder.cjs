@@ -283,7 +283,16 @@ async function sendInternalFocReminder() {
         await assertSendable();
 
         const idleDays = Number(settings.foc_idle_days) || 3;
-        const [overdue, idle] = await Promise.all([overdueReceipts(), idleReceipts(idleDays)]);
+        const [overdueRows, idleRows] = await Promise.all([overdueReceipts(), idleReceipts(idleDays)]);
+        // Once owned queue reminders cover a deadline, omit that item from the
+        // older internal digest. Supplier chasers above remain independent.
+        const managed = new Set((await pool.query(`SELECT i.source_id FROM work_queue_items i
+          JOIN work_queue_config c ON c.id=1 WHERE c.notifications_enabled
+          AND i.source_kind='qd' AND i.stage_key IN ('foc_receipt','foc_trial') AND i.state='active'
+          AND i.owner_id IS NOT NULL AND work_queue_owner_allowed(i.owner_id,i.stage_key,i.source_kind)
+          AND i.setup_reason IS NULL AND i.due_at>=c.notifications_go_live_at`)).rows.map(row=>row.source_id));
+        const overdue=overdueRows.filter(row=>!managed.has(row.id));
+        const idle=idleRows.filter(row=>!managed.has(row.id));
 
         // Nothing outstanding is good news, not a reason for a daily email.
         if (!overdue.length && !idle.length) {
