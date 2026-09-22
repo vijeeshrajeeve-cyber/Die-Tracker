@@ -342,6 +342,17 @@ const authMiddleware = async (req, res, next) => {
             return res.status(401).json({ error: 'User not found' });
         }
 
+        // A temporary password (new account or admin reset) opens nothing but
+        // the password change itself. /auth/change-password and /auth/me check
+        // the token on their own, so they stay reachable; everything behind
+        // this middleware waits. Enforced here, not only by the UI's modal.
+        if (currentUser.password_must_change) {
+            return res.status(403).json({
+                error: 'You need to change your password before continuing. Use Change password in the account menu, or sign in again.',
+                code: 'PASSWORD_CHANGE_REQUIRED'
+            });
+        }
+
         req.user = {
             id: currentUser.id,
             username: currentUser.username,
