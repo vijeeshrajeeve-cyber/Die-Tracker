@@ -129,7 +129,7 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
         // Admins always get full access (null)
         const storedPageAccess = role === 'admin' ? null : (page_access ? JSON.stringify(page_access) : null);
 
-        const passwordHash = bcrypt.hashSync(password, 12);
+        const passwordHash = await bcrypt.hash(password, 12);
         const result = await pool.query(
             'INSERT INTO users (username, password_hash, email, full_name, phone, role, password_must_change, page_access) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
             [username, passwordHash, normalizeEmail(email), blankToNull(full_name), blankToNull(phone), role, true, storedPageAccess]
@@ -280,7 +280,7 @@ router.post('/:id/reset-password', userIdValidation, resetPasswordValidation, ha
             return res.status(404).json({ error: 'User not found' });
         }
 
-        const passwordHash = bcrypt.hashSync(password, 12);
+        const passwordHash = await bcrypt.hash(password, 12);
         await pool.query(
             `UPDATE users SET
                 password_hash = $1,

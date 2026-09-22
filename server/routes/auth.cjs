@@ -129,7 +129,7 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
             return res.status(423).json({ error: lockStatus.message });
         }
 
-        const validPassword = bcrypt.compareSync(password, user.password_hash);
+        const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
             const attempts = await recordFailedAttempt(user.id);
             const remaining = MAX_FAILED_ATTEMPTS - attempts;
@@ -209,18 +209,18 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
         }
 
         // Verify current password
-        const validPassword = bcrypt.compareSync(currentPassword, user.password_hash);
+        const validPassword = await bcrypt.compare(currentPassword, user.password_hash);
         if (!validPassword) {
             return res.status(401).json({ error: 'Current password is incorrect' });
         }
 
         // Ensure new password is different from old
-        if (bcrypt.compareSync(newPassword, user.password_hash)) {
+        if (await bcrypt.compare(newPassword, user.password_hash)) {
             return res.status(400).json({ error: 'New password must be different from current password' });
         }
 
         // Hash new password and update
-        const newPasswordHash = bcrypt.hashSync(newPassword, 12);
+        const newPasswordHash = await bcrypt.hash(newPassword, 12);
         await pool.query(
             'UPDATE users SET password_hash = $1, password_must_change = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             [newPasswordHash, decoded.id]
