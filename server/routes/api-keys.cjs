@@ -47,7 +47,7 @@ router.post('/',
             const rawKey = 'doa_' + crypto.randomBytes(32).toString('hex');
 
             // Hash the key for storage
-            const keyHash = bcrypt.hashSync(rawKey, 10);
+            const keyHash = await bcrypt.hash(rawKey, 10);
 
             const result = await pool.query(
                 'INSERT INTO api_keys (key_hash, name, created_by) VALUES ($1, $2, $3) RETURNING id, name, created_at',
