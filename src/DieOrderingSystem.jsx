@@ -1919,6 +1919,10 @@ export default function DieOrderingSystem() {
     // Left set, it would stop the next sign-in on this tab from loading data.
     setForcePasswordChange(false);
     setShowPasswordChangeModal(false);
+    // The next person to sign in on this tab starts on the Dashboard, not on
+    // whatever page the last one left open. An admin who signed out on Users
+    // left the next non-admin with full page access on a blank page.
+    setActiveTab('dashboard');
     setUser(null);
     setData([]);
     setUsers([]);
