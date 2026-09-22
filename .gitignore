@@ -67,3 +67,7 @@ pi_analysis_output.txt
 # Impeccable design-hook cache (shared config.json IS tracked)
 .impeccable/hook.cache.json
 .impeccable/config.local.json
+
+# Python bytecode cache (die_order_template.py is kept as the layout reference)
+__pycache__/
+*.pyc
