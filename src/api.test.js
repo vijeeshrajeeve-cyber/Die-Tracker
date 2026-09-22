@@ -38,6 +38,18 @@ test('an empty body still yields a readable object', async () => {
   assert.deepEqual(await frozenDesignsAPI.match(KEY), {});
 });
 
+// Callers branch on the status, e.g. a 409 means "someone else changed this,
+// reload" rather than a plain failure. The message alone cannot tell them that.
+test('a failed request carries its HTTP status and parsed body', async () => {
+  respondWith(JSON.stringify({ error: 'This item changed.', version: 4 }), 409);
+  await assert.rejects(frozenDesignsAPI.match(KEY), (error) => {
+    assert.equal(error.message, 'This item changed.');
+    assert.equal(error.status, 409);
+    assert.deepEqual(error.data, { error: 'This item changed.', version: 4 });
+    return true;
+  });
+});
+
 // A plant's full die list is ~45,000 rows — one JSON body would be ~36MB and
 // nginx answers with a bare 413 ("Those files are too large to upload in one
 // go"). The import has to go up in batches, and only the first may clear the

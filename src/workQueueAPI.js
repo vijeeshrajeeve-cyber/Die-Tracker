@@ -1,25 +1,6 @@
-import { logout } from './api';
+import { apiRequest } from './api.js';
 
-const BASE = `${import.meta.env?.VITE_API_URL || '/api'}/work-queue`;
-
-async function request(path, options = {}) {
-  const token = localStorage.getItem('token');
-  const response = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-  const raw = await response.text();
-  let data;
-  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
-  if (!response.ok) {
-    const error = new Error(data.detail || data.error || `The request could not be completed (${response.status}). Please try again.`);
-    error.status = response.status;
-    error.data = data;
-    if (response.status === 401) { logout(); window.location.reload(); }
-    throw error;
-  }
-  return data;
-}
+const request = (path, options) => apiRequest(`/work-queue${path}`, options);
 
 const query = values => {
   const params = new URLSearchParams();
