@@ -5,6 +5,7 @@ import { BRAND } from '../../utils/brand';
 import { inputStyle, cardStyle } from './settingsStyles';
 import ToggleButton from './ToggleButton';
 import DailySummarySettings from './DailySummarySettings';
+import DeliveryChaserSettings from './DeliveryChaserSettings';
 
 const EmailSettings = ({ theme }) => {
     const [config, setConfig] = useState({
@@ -533,6 +534,9 @@ const EmailSettings = ({ theme }) => {
 
             {/* Daily Summary Report */}
             <DailySummarySettings theme={theme} showToast={showToast} />
+
+            {/* Die Delivery Chaser */}
+            <DeliveryChaserSettings theme={theme} showToast={showToast} />
 
             {/* SMTP/IMAP Configuration */}
             <div style={cardStyle(theme)}>
