@@ -4,6 +4,7 @@ const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
 const { todayLocal } = require('../services/dates.cjs');
+const { planEtaChange, insertEtaEvent, DeliveryRuleError } = require('../services/deliveryFollowup.cjs');
 
 const router = express.Router();
 
@@ -84,6 +85,71 @@ const autoUpdateBackupRequests = async (dieNo, orderedDate) => {
         console.error('Auto-update backup requests error:', error);
     }
 };
+
+// Reads the stored ETA under a row lock and decides what the incoming one
+// means. { plan: null } when the body leaves ETA alone or nothing changes;
+// null when the order does not exist. Throws DeliveryRuleError for a move
+// without a cause.
+async function lockEtaPlan(client, id, body) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'ETA')) return { plan: null };
+    const { rows } = await client.query('SELECT eta FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows.length) return null;
+    return { plan: planEtaChange(rows[0].eta, body['ETA'], body['ETA Change']) };
+}
+
+// The client-written change entries both update routes accept.
+async function insertChangeLog(db, id, entries, user) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+        if (!entry || !entry.field) continue;
+        const changedAt = entry.date ? new Date(entry.date) : new Date();
+        await db.query(
+            `INSERT INTO order_changes
+              (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [
+                id,
+                user?.id || null,
+                user?.username || entry.changedBy || null,
+                isNaN(changedAt) ? new Date() : changedAt,
+                String(entry.field),
+                entry.oldValue != null ? String(entry.oldValue) : null,
+                entry.newValue != null ? String(entry.newValue) : null,
+                entry.reason || null,
+                entry.stage || null,
+            ]
+        );
+    }
+}
+
+// Runs one order update in a transaction with its ETA event and change log.
+// Resolves to null on success, or to the HTTP answer to send instead, so each
+// route keeps its own success message.
+async function updateWithEta(id, body, user, runUpdate) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const eta = await lockEtaPlan(client, id, body);
+        if (!eta) {
+            await client.query('ROLLBACK');
+            return { status: 404, json: { error: 'Order not found' } };
+        }
+        const result = await runUpdate(client);
+        if (result.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return { status: 404, json: { error: 'Order not found' } };
+        }
+        if (eta.plan) await insertEtaEvent(client, id, eta.plan, user);
+        await insertChangeLog(client, id, body['Change Log'], user);
+        await client.query('COMMIT');
+        return null;
+    } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        if (error instanceof DeliveryRuleError) return { status: 400, json: { error: error.message, code: error.code } };
+        throw error;
+    } finally {
+        client.release();
+    }
+}
 
 // Validation error handler
 const handleValidationErrors = (req, res, next) => {
@@ -328,36 +394,11 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
         }
 
         params.push(id);
-        const result = await pool.query(
+        const refused = await updateWithEta(id, body, req.user, (client) => client.query(
             `UPDATE die_orders SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`,
             params
-        );
-
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-        }
-
-        const newEntries = Array.isArray(body['Change Log']) ? body['Change Log'] : [];
-        for (const entry of newEntries) {
-            if (!entry || !entry.field) continue;
-            const changedAt = entry.date ? new Date(entry.date) : new Date();
-            await pool.query(
-                `INSERT INTO order_changes
-                  (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-                [
-                    id,
-                    req.user?.id || null,
-                    req.user?.username || entry.changedBy || null,
-                    isNaN(changedAt) ? new Date() : changedAt,
-                    String(entry.field),
-                    entry.oldValue != null ? String(entry.oldValue) : null,
-                    entry.newValue != null ? String(entry.newValue) : null,
-                    entry.reason || null,
-                    entry.stage || null,
-                ]
-            );
-        }
+        ));
+        if (refused) return res.status(refused.status).json(refused.json);
 
         await autoUpdateBackupRequests(body['DIE NO'], body['Ordered date']);
 
@@ -374,7 +415,7 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
         const { id } = req.params;
         const order = req.body;
 
-        const result = await pool.query(`
+        const refused = await updateWithEta(id, order, req.user, (client) => client.query(`
             UPDATE die_orders SET
                 plant = $1, order_no = $2, die_no = $3, type = $4, die_size = $5,
                 die_requested_date = $6, ordered_date = $7, shipment_type = $8,
@@ -437,34 +478,8 @@ router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, a
             sanitizeString(order['frozenDesignOverrideReason']),
             sanitizeString(order['frozenDesignOverrideNote']),
             id,
-        ]);
-
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-        }
-
-        // Insert new change entries into order_changes
-        const newEntries = Array.isArray(order['Change Log']) ? order['Change Log'] : [];
-        for (const entry of newEntries) {
-            if (!entry || !entry.field) continue;
-            const changedAt = entry.date ? new Date(entry.date) : new Date();
-            await pool.query(
-                `INSERT INTO order_changes
-                  (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-                [
-                    id,
-                    req.user?.id || null,
-                    req.user?.username || entry.changedBy || null,
-                    isNaN(changedAt) ? new Date() : changedAt,
-                    String(entry.field),
-                    entry.oldValue != null ? String(entry.oldValue) : null,
-                    entry.newValue != null ? String(entry.newValue) : null,
-                    entry.reason || null,
-                    entry.stage || null,
-                ]
-            );
-        }
+        ]));
+        if (refused) return res.status(refused.status).json(refused.json);
 
         await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
 
