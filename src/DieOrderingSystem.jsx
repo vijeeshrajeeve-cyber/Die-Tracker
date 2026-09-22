@@ -1601,11 +1601,13 @@ export default function DieOrderingSystem() {
   const [profileImporting, setProfileImporting] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  // A reload in the middle of a forced change must come back into it on the
+  // first render, before anything asks the server for data it will refuse.
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(() => Boolean(checkLoggedIn() && getUser()?.passwordMustChange));
   // Opened from the user menu: every user needs to manage their own QD-form
   // signature, and the Settings page is behind page access most of them lack.
   const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [forcePasswordChange, setForcePasswordChange] = useState(false);
+  const [forcePasswordChange, setForcePasswordChange] = useState(() => Boolean(checkLoggedIn() && getUser()?.passwordMustChange));
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
   const [backupRequests, setBackupRequests] = useState([]);
   const [apiKeys, setApiKeys] = useState([]);
@@ -1857,8 +1859,11 @@ export default function DieOrderingSystem() {
   }, [user]);
 
   // Check auth on mount and fetch data
+  // The server refuses every data request until a temporary password is
+  // changed, so nothing loads while the forced change is open. Clearing
+  // forcePasswordChange after a successful change re-runs this and loads the app.
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && !forcePasswordChange) {
       fetchOrders();
       fetchUsers();
       fetchSuppliers();
@@ -1871,15 +1876,8 @@ export default function DieOrderingSystem() {
       fetchPlantBudgets();
       fetchProfileMeta();
       fetchEmailTemplates();
-
-      // Check if password change is required (persisted in localStorage)
-      const currentUser = getUser();
-      if (currentUser?.passwordMustChange) {
-        setForcePasswordChange(true);
-        setShowPasswordChangeModal(true);
-      }
     }
-  }, [isLoggedIn, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchSampleTrials, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
+  }, [isLoggedIn, forcePasswordChange, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchSampleTrials, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -1920,6 +1918,9 @@ export default function DieOrderingSystem() {
   const handleLogout = () => {
     apiLogout();
     setIsLoggedIn(false);
+    // Left set, it would stop the next sign-in on this tab from loading data.
+    setForcePasswordChange(false);
+    setShowPasswordChangeModal(false);
     setUser(null);
     setData([]);
     setUsers([]);
@@ -1968,7 +1969,7 @@ export default function DieOrderingSystem() {
 
   // Polled only for users who can actually reach the QD Tracker — the endpoint
   // is gated on that page, so anyone else would just collect 403s.
-  const qdQueue = useQdQueue(isLoggedIn && hasPageAccess('qd-tracker'));
+  const qdQueue = useQdQueue(isLoggedIn && !forcePasswordChange && hasPageAccess('qd-tracker'));
 
   // Which QD a notification asked us to open, handed to the QD Tracker once.
   const [focusQdId, setFocusQdId] = useState(null);
@@ -3115,6 +3116,10 @@ export default function DieOrderingSystem() {
 
         <main id="main-content" tabIndex={-1} style={styles.main}>
 
+          {/* Pages that load their own data on mount would be refused while a
+              temporary password is pending, and would not retry after. Mount
+              none of them until the change is done. Closed before </main>. */}
+          {!forcePasswordChange && <>
 
           {activeTab === 'dashboard' && hasPageAccess('dashboard') && (
             <Suspense fallback={<ChunkFallback theme={theme} />}>
@@ -3288,6 +3293,7 @@ export default function DieOrderingSystem() {
               handleDeleteUser={handleDeleteUser}
             />
           )}
+          </>}
         </main>
 
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} currentUser={user} canEdit={activeTab === 'orders'} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
