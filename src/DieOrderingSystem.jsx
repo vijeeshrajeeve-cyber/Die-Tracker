@@ -26,6 +26,8 @@ import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
 
 import FlowPage from './pages/FlowPage';
+import EtaCauseDialog from './components/delivery/EtaCauseDialog';
+import { needsCause } from './utils/deliveryFollowup';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -42,6 +44,9 @@ import FreezeDesignModal from './components/FreezeDesignModal';
 // the first time someone actually opens them.
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const WorkQueuePage = lazy(() => import('./pages/WorkQueuePage'));
+// Loaded on first visit like the Work Queue: the follow-up drawer and its
+// rules are only needed on this one page.
+const InManufacturingPage = lazy(() => import('./pages/InManufacturingPage'));
 // Dashboard is the landing tab, but it is still behind the login screen — and
 // it is the only other thing pulling in recharts.
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -943,6 +948,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [viewingFile, setViewingFile] = useState(null); // { file, type, notes, signature }
   const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
   const [pendingStatusLog, setPendingStatusLog] = useState(null);
+  const [etaCausePrompt, setEtaCausePrompt] = useState(false);
   const [presses, setPresses] = useState([]);
   const [showFreeze, setShowFreeze] = useState(false);
   const [freezeToast, setFreezeToast] = useState('');
@@ -1069,7 +1075,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     setStatusReasonModal({ show: false, newStatus: '', oldStatus: '', reason: '' });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (etaChange) => {
+    // onClick passes an event; only a real answer from the cause dialog counts.
+    const change = etaChange && etaChange.cause ? etaChange : null;
+    if (!change && needsCause(order.ETA, editedOrder.ETA)) {
+      setEtaCausePrompt(true);
+      return;
+    }
     setIsSaving(true);
     try {
       // Date columns stored as DATE in the DB. Only include a date field in the
@@ -1092,6 +1104,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         }
       }
       if (pendingStatusLog) patch['Change Log'] = [pendingStatusLog];
+      if (change) patch['ETA Change'] = change;
 
       await ordersAPI.patch(order.id, patch);
       const updatedOrder = {
@@ -1407,6 +1420,16 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: '#0891B2', color: 'white', padding: '10px 20px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 600, zIndex: 2100, boxShadow: '0 6px 20px rgba(8,145,178,0.5)' }}>
           {freezeToast}
         </div>
+      )}
+
+      {etaCausePrompt && (
+        <EtaCauseDialog
+          theme={theme}
+          fromEta={order.ETA}
+          toEta={editedOrder.ETA}
+          onCancel={() => setEtaCausePrompt(false)}
+          onConfirm={(c) => { setEtaCausePrompt(false); handleSave(c); }}
+        />
       )}
 
       {/* Status Change Reason Modal */}
@@ -3168,15 +3191,25 @@ export default function DieOrderingSystem() {
           )}
 
           {/* Process Flow Pages */}
-          {activeTab.startsWith('flow-') && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
+          {activeTab === 'flow-completed' && hasPageAccess(activeTab) && (
+            <Suspense fallback={<ChunkFallback theme={theme} />}>
+              <InManufacturingPage
+                data={data} searchTerm={searchTerm} setSearchTerm={setSearchTerm} theme={theme}
+                correctors={correctors} correctorsError={correctorsError}
+                setSelectedOrder={setSelectedOrder} setRevisionHistoryOrder={setRevisionHistoryOrder}
+                setData={setData} setToast={setToast} setActiveTab={setActiveTab}
+              />
+            </Suspense>
+          )}
+
+          {activeTab.startsWith('flow-') && activeTab !== 'flow-completed' && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
             <FlowPage
               data={data} activeTab={activeTab} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               sortConfig={sortConfig} handleSort={handleSort} suppliers={suppliers} theme={theme}
-              correctors={correctors} correctorsError={correctorsError}
               setSelectedOrder={setSelectedOrder} setShowAddOrderModal={setShowAddOrderModal}
               setRevisionOrder={setRevisionOrder} setChangelogOrder={setChangelogOrder}
               setRevisionHistoryOrder={setRevisionHistoryOrder}
-              setData={setData} setToast={setToast} setActiveTab={setActiveTab}
+              setData={setData} setToast={setToast}
               handleInlineFieldSave={handleInlineFieldSave} handleSizeChange={handleSizeChange}
               handleMandrelsChange={handleMandrelsChange} handlePRNumberChange={handlePRNumberChange}
               handleCavityChange={handleCavityChange}

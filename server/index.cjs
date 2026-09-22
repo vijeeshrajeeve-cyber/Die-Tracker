@@ -35,6 +35,7 @@ const frozenDesignsRouter = require('./routes/frozen-designs.cjs');
 const qualityDiscrepanciesRouter = require('./routes/quality-discrepancies.cjs');
 const signaturesRouter = require('./routes/signatures.cjs');
 const { createWorkQueueRouter } = require('./routes/work-queue.cjs');
+const deliveryFollowupsRouter = require('./routes/delivery-followups.cjs');
 const { scheduleWorkQueueNotifications } = require('./services/workQueueNotifications.cjs');
 
 
@@ -115,6 +116,8 @@ app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-samp
 // Same page-access key: trials are part of the Sample Followup page, so anyone
 // who can see the page can see its trials.
 app.use('/api/sample-trials', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleTrialsRouter);
+// The follow-up belongs to the In Manufacturing page, so it shares its key.
+app.use('/api/delivery-followups', authMiddleware, pageAccessMiddleware('flow-completed'), deliveryFollowupsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
 app.use('/api/existing-data', existingDataRouter);
 app.use('/api/auto-backups', authMiddleware, adminMiddleware, autoBackupsRouter);
@@ -213,6 +216,9 @@ const startServer = async () => {
 
         // Daily summary of the previous day's activity (runs when enabled in settings)
         dailySummaryService.scheduleDailySummary();
+
+        // Die delivery chaser: overdue and no-ETA dies out to each supplier
+        require('./services/deliveryChaser.cjs').scheduleDeliveryChasers();
         scheduleWorkQueueNotifications(pool);
         require('./services/workQueueSync.cjs').scheduleWorkQueueMaintenance(pool);
 

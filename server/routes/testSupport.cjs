@@ -11,7 +11,7 @@ function installFakeDb(query) {
   const fake = new Module(dbPath);
   fake.filename = dbPath;
   fake.loaded = true;
-  fake.exports = { pool: { query } };
+  fake.exports = { pool: { query, connect: async () => ({ query, release() {} }) } };
   require.cache[dbPath] = fake;
 }
 
@@ -25,10 +25,11 @@ function listen(app) {
   });
 }
 
-// POST when there is a body, GET otherwise; always parses the JSON answer.
-async function request(base, path, { token, body } = {}) {
+// POST when there is a body, GET otherwise, unless a method is given; always
+// parses the JSON answer.
+async function request(base, path, { token, body, method } = {}) {
   const response = await fetch(`${base}${path}`, {
-    method: body ? 'POST' : 'GET',
+    method: method || (body ? 'POST' : 'GET'),
     headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
     body: body && JSON.stringify(body),
   });

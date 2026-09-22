@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, X, Snowflake } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, Snowflake } from 'lucide-react';
 import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
 import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
-import CorrectorSelect from '../components/ui/CorrectorSelect';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 import { todayLocal } from '../utils/today.js';
-import { skipTrialAllowed, skipTrialDefault, buildReceivancePatch } from '../utils/dieReceivance';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
 // are recorded on the revision row via the complete-stage endpoint.
@@ -21,18 +19,13 @@ const FLOW_TABS = [
   { id: 'flow-pending-pr', status: 'PENDING FOR PR' },
   { id: 'flow-oracle-entry', status: 'PENDING FOR ORACLE ENTRY' },
   { id: 'flow-design-ems', status: 'PENDING FOR DESIGN TO EMS' },
-  { id: 'flow-completed', status: 'DONE' },
+  // In Manufacturing (DONE) has its own page: InManufacturingPage.
 ];
 
 const isSimulationEnabled = (value) => {
   if (value === true || value === 1) return true;
   if (typeof value === 'string') return /^(true|1|yes|ok|required)$/i.test(value.trim());
   return false;
-};
-
-const hasDieReceivedDate = (order) => {
-  const d = order?.['Die Received Date'];
-  return d != null && String(d).trim() !== '';
 };
 
 const parseDieSize = (dieSize) => {
@@ -55,7 +48,6 @@ const getStageEntryDate = (order) => {
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
     case 'PENDING FOR DESIGN TO EMS': return order['Oracle Entry'];
-    case 'DONE': return order['Design to EMS Date'];
     default: return null;
   }
 };
@@ -78,15 +70,12 @@ const DaysBadge = ({ order }) => {
 
 export default function FlowPage({
   data, activeTab, searchTerm, setSearchTerm, sortConfig, handleSort, suppliers, theme,
-  correctors, correctorsError,
   setSelectedOrder, setShowAddOrderModal, setRevisionOrder, setChangelogOrder,
   setRevisionHistoryOrder,
-  setData, setToast, setActiveTab,
+  setData, setToast,
   handleInlineFieldSave, handleSizeChange, handleMandrelsChange, handlePRNumberChange, copyForERP,
   handleCavityChange,
 }) {
-  const [dieReceivanceOrder, setDieReceivanceOrder] = useState(null);
-  const [dieReceivanceForm, setDieReceivanceForm] = useState({ die_received_date: '', corrector: '', skip_trial: false });
   const [cavityEdit, setCavityEdit] = useState(null);
   const [cavityReason, setCavityReason] = useState('');
   const [frozenMap, setFrozenMap] = useState({}); // orderId -> { id, frozen_at, files_count }
@@ -114,10 +103,7 @@ export default function FlowPage({
   const config = STATUS_CONFIG[currentFlow.status] || { color: '#6B7280', label: currentFlow.status };
   const StatusIcon = config.icon || Package;
 
-  const flowOrders = data.filter(o => {
-    if (currentFlow.status === 'DONE') return o.STATUS === 'DONE' && !hasDieReceivedDate(o);
-    return o.STATUS === currentFlow.status;
-  });
+  const flowOrders = data.filter(o => o.STATUS === currentFlow.status);
 
   const workflow = WORKFLOW_STEPS[currentFlow.status];
 
@@ -190,7 +176,6 @@ export default function FlowPage({
   const isPendingOrder = currentFlow.status === 'PENDING FOR ORDERING';
   const isSimOrApproval = currentFlow.status === 'UNDER SIMULATION' || currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
   const isPR = currentFlow.status === 'PENDING FOR PR';
-  const isDone = currentFlow.status === 'DONE';
   const isDesignApproval = currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
   const isOracleEntry = currentFlow.status === 'PENDING FOR ORACLE ENTRY';
 
@@ -258,7 +243,6 @@ export default function FlowPage({
                     </>
                   )}
                   {workflow && workflow.nextStatus && <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Complete</th>}
-                  {isDone && <th scope="col" style={{ ...styles.th, textAlign: 'center' }}>Confirm Receivance</th>}
                 </tr>
               </thead>
               <tbody>
@@ -401,13 +385,6 @@ export default function FlowPage({
                         </div>
                       </td>
                     )}
-                    {isDone && (
-                      <td style={{ ...styles.td, textAlign: 'center' }}>
-                        <button onClick={(e) => { e.stopPropagation(); setDieReceivanceOrder(order); setDieReceivanceForm({ die_received_date: todayLocal(), corrector: '', skip_trial: skipTrialDefault(order.TYPE) }); }} style={{ padding: '6px 14px', background: 'rgba(8,145,178,0.15)', border: '1px solid rgba(8,145,178,0.4)', borderRadius: '8px', cursor: 'pointer', color: '#0891B2', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }} title="Confirm Die Receivance" onMouseEnter={(e) => { e.currentTarget.style.background = '#0891B2'; e.currentTarget.style.color = 'white'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(8,145,178,0.15)'; e.currentTarget.style.color = '#0891B2'; }}>
-                          <Package size={16} /> Confirm
-                        </button>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
@@ -423,89 +400,6 @@ export default function FlowPage({
           </div>
         )}
       </div>
-
-      {dieReceivanceOrder && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '90%', maxWidth: '480px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>Confirm Die Receivance</h2>
-                <DieAttentionLabels order={dieReceivanceOrder} dense />
-                <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Die No: <strong style={{ color: theme.text, fontFamily: 'monospace' }}>{dieReceivanceOrder['DIE NO']}</strong></p>
-              </div>
-              <button onClick={() => setDieReceivanceOrder(null)} style={{ padding: '8px', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={20} /></button>
-            </div>
-            <div style={{ background: `rgba(8,145,178,0.08)`, borderRadius: '12px', padding: '12px 16px', marginBottom: '1.5rem', border: '1px solid rgba(8,145,178,0.2)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
-                <div><span style={{ color: theme.textDim }}>Supplier:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder.Supplier}</strong></div>
-                <div><span style={{ color: theme.textDim }}>Plant:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder.Plant}</strong></div>
-                <div><span style={{ color: theme.textDim }}>Type:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder.TYPE === 'N' ? 'New' : dieReceivanceOrder.TYPE === 'B' ? 'Backup' : dieReceivanceOrder.TYPE}</strong></div>
-                <div><span style={{ color: theme.textDim }}>Size:</span> <strong style={{ color: theme.text }}>{dieReceivanceOrder['Die Size'] || '—'}</strong></div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }} htmlFor="flowpage-die-received-date">Die Received Date *</label>
-                <input id="flowpage-die-received-date" type="date" value={dieReceivanceForm.die_received_date} onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, die_received_date: e.target.value })} style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }} htmlFor="flowpage-assign-corrector">Assign Corrector *</label>
-                <CorrectorSelect
-                  id="flowpage-assign-corrector"
-                  value={dieReceivanceForm.corrector}
-                  onChange={(v) => setDieReceivanceForm({ ...dieReceivanceForm, corrector: v })}
-                  correctors={correctors}
-                  loadError={correctorsError}
-                  plant={dieReceivanceOrder?.Plant}
-                  style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
-                />
-              </div>
-              {skipTrialAllowed(dieReceivanceOrder.TYPE) && (
-                <label htmlFor="flowpage-skip-trial" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', cursor: 'pointer' }}>
-                  <input
-                    id="flowpage-skip-trial"
-                    type="checkbox"
-                    checked={!!dieReceivanceForm.skip_trial}
-                    onChange={(e) => setDieReceivanceForm({ ...dieReceivanceForm, skip_trial: e.target.checked })}
-                    style={{ marginTop: '2px', accentColor: '#22C55E' }}
-                  />
-                  <span>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>Skip trial</span>
-                    <span style={{ display: 'block', fontSize: '0.75rem', color: theme.textMuted, marginTop: '2px' }}>Sample marked submitted and approved on the received date, with no trials.</span>
-                  </span>
-                </label>
-              )}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${theme.border || '#334155'}` }}>
-              <button onClick={() => setDieReceivanceOrder(null)} style={{ padding: '10px 20px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '10px', color: theme.textMuted, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
-              <button
-                onClick={async () => {
-                  if (!dieReceivanceForm.die_received_date) { setToast({ message: 'Please enter the die received date', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
-                  if (!dieReceivanceForm.corrector.trim()) { setToast({ message: 'Please assign a corrector', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
-                  try {
-                    const { patch } = buildReceivancePatch({ order: dieReceivanceOrder, form: dieReceivanceForm, skipTrial: dieReceivanceForm.skip_trial });
-                    await ordersAPI.patch(dieReceivanceOrder.id, patch);
-                    setData(prev => prev.map(o => o.id === dieReceivanceOrder.id ? {
-                      ...o, ...patch, changeCount: (o.changeCount || 0) + 1,
-                    } : o));
-                    const skipped = 'Submission Date' in patch;
-                    setDieReceivanceOrder(null);
-                    setToast({ message: `Die ${dieReceivanceOrder['DIE NO']} confirmed${skipped ? ', trial skipped' : ''} & moved to Sample Followup`, type: 'success' });
-                    setActiveTab('flow-sample-followup');
-                    setTimeout(() => setToast(null), 3000);
-                  } catch (error) {
-                    setToast({ message: 'Failed to confirm: ' + error.message, type: 'error' });
-                    setTimeout(() => setToast(null), 5000);
-                  }
-                }}
-                style={{ padding: '10px 24px', background: '#0891B2', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', boxShadow: '0 4px 12px rgba(8,145,178,0.4)', display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <CheckCircle size={18} /> Confirm Receivance
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {cavityEdit && (
         <div
