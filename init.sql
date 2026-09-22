@@ -601,4 +601,45 @@ CREATE TABLE IF NOT EXISTS daily_report_ledger (
 CREATE INDEX IF NOT EXISTS idx_daily_report_ledger_reported_on
     ON daily_report_ledger(reported_on);
 
+-- Die delivery follow-up. One row per delivery chaser email sent: what the
+-- every-N-days rule counts from. The chaser's settings are delivery_chaser_*
+-- columns on reminder_settings, which db.cjs creates on boot.
+CREATE TABLE IF NOT EXISTS die_delivery_chasers (
+    id            SERIAL PRIMARY KEY,
+    supplier      TEXT NOT NULL,
+    recipients    TEXT NOT NULL,
+    cc            TEXT,
+    overdue_count INTEGER NOT NULL DEFAULT 0,
+    no_eta_count  INTEGER NOT NULL DEFAULT 0,
+    sent_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_die_delivery_chasers_supplier
+    ON die_delivery_chasers(supplier, sent_at DESC);
+
+-- A die's delivery timeline. eta_revised keeps the date it replaced, so the
+-- original ETA and every slip survive later edits.
+CREATE TABLE IF NOT EXISTS die_delivery_events (
+    id              SERIAL PRIMARY KEY,
+    order_id        INTEGER NOT NULL REFERENCES die_orders(id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL CHECK (kind IN ('eta_set', 'eta_revised', 'contact', 'chaser_sent')),
+    eta_before      DATE,
+    eta_after       DATE,
+    cause           TEXT CHECK (cause IS NULL OR cause IN ('supplier_delay', 'our_change', 'logistics', 'other')),
+    channel         TEXT CHECK (channel IS NULL OR channel IN ('email', 'phone', 'whatsapp', 'meeting', 'other')),
+    contact_date    DATE,
+    note            TEXT,
+    chaser_id       INTEGER REFERENCES die_delivery_chasers(id) ON DELETE SET NULL,
+    created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by_name TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT die_delivery_events_kind_fields CHECK (
+        (kind = 'eta_set'     AND eta_before IS NULL AND eta_after IS NOT NULL) OR
+        (kind = 'eta_revised' AND eta_before IS NOT NULL AND cause IS NOT NULL) OR
+        (kind = 'contact'     AND channel IS NOT NULL AND contact_date IS NOT NULL) OR
+        (kind = 'chaser_sent')
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_die_delivery_events_order
+    ON die_delivery_events(order_id, created_at DESC);
+
 -- Note: Admin user is created by the application on startup with proper bcrypt hashing
