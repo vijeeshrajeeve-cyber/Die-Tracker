@@ -285,6 +285,16 @@ export const suppliersAPI = {
     },
 };
 
+// Die delivery follow-up (In Manufacturing page)
+export const deliveryFollowupsAPI = {
+    getSummaries: async () => apiRequest('/delivery-followups'),
+    getEvents: async (orderId) => apiRequest(`/delivery-followups/${orderId}/events`),
+    log: async (orderId, payload) => apiRequest(`/delivery-followups/${orderId}`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    }),
+};
+
 // Presses API
 export const pressesAPI = {
     getAll: async () => apiRequest('/presses'),
@@ -721,6 +731,19 @@ export const emailAPI = {
         }
         return response.blob();
     },
+
+    getDeliveryChaserSettings: async () => apiRequest('/email/delivery-chaser-settings'),
+
+    updateDeliveryChaserSettings: async (settings) => apiRequest('/email/delivery-chaser-settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+    }),
+
+    // Mails every supplier that is due now. The every-N-days rule still applies.
+    runDeliveryChaserNow: async () => apiRequest('/email/delivery-chaser-settings/run-now', { method: 'POST' }),
+
+    // Sends nothing: the emails the next run would send.
+    previewDeliveryChaser: async () => apiRequest('/email/delivery-chaser-preview'),
 };
 
 // Sample Followups API
