@@ -121,11 +121,12 @@ they are. Same tab id (`flow-completed`), sidebar entry and page permission. The
 dialog moves out of `FlowPage` into `DieReceivanceModal` unchanged.
 
 - **Summary strip**: Overdue · Due in 7 days · Later · No ETA, each a filter (click again for All).
-- **Columns**: Die No, Order, Plant, Type, Diameter, Thickness, Cav, Supplier, **ETA** (original
-  struck through beside it when revised), **ETA status** chip ("12d overdue" red,
+- **Columns**: Die No (opens the order), Order, Plant, Type, Size, Cav, Supplier, **ETA**
+  (original struck through above it when revised), **ETA status** chip ("12d overdue" red,
   "Due today" / "Due in 3d" amber, date neutral, "No ETA" grey), **Slips** (count, days slipped
-  on hover), **Last follow-up** (date · channel, or "Never"), Days in stage, View, Rev,
-  **Follow up**, Confirm.
+  on hover), **Last follow-up** (date · channel, or "Never"), Days in manufacturing, Rev,
+  **Follow up**, Confirm. Size is one column (not Diameter + Thickness) and the separate View
+  column goes, to make room for the four new ones.
 - **Default order**: most overdue first, then soonest due, then Later, then No ETA. Clicking
   a column header still sorts.
 - **Follow-up drawer**: die facts; ETA block (original, current, slips); the log form (date,
@@ -157,8 +158,8 @@ day at or after `delivery_chaser_time`, guarded by `delivery_chaser_last_run`).
   N = 7 weekly).
 - **Recipients**: `suppliers.contact_email` (matched on trimmed, case-insensitive name), CC
   `delivery_chaser_cc`. Suppliers without an email are skipped and named in the run result.
-- **Email**: two tables — *Past the ETA you gave* (die, profile, plant, ETA, days overdue,
-  times revised) and *ETA not yet given* (die, profile, plant, days in manufacturing) — asking
+- **Email**: two tables — *Past the ETA you gave* (die, order no, plant, ETA, days overdue,
+  times revised) and *ETA not yet given* (die, order no, plant, days in manufacturing) — asking
   for a dispatch date or ETA. Same HTML conventions and signature as the FOC chaser.
 - **After a send succeeds**: one transaction writes the `die_delivery_chasers` row and a
   `chaser_sent` event per listed die. A failed send writes nothing, so it is retried next run.
