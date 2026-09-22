@@ -26,6 +26,8 @@ import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
 
 import FlowPage from './pages/FlowPage';
+import EtaCauseDialog from './components/delivery/EtaCauseDialog';
+import { needsCause } from './utils/deliveryFollowup';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -946,6 +948,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [viewingFile, setViewingFile] = useState(null); // { file, type, notes, signature }
   const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
   const [pendingStatusLog, setPendingStatusLog] = useState(null);
+  const [etaCausePrompt, setEtaCausePrompt] = useState(false);
   const [presses, setPresses] = useState([]);
   const [showFreeze, setShowFreeze] = useState(false);
   const [freezeToast, setFreezeToast] = useState('');
@@ -1072,7 +1075,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     setStatusReasonModal({ show: false, newStatus: '', oldStatus: '', reason: '' });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (etaChange) => {
+    // onClick passes an event; only a real answer from the cause dialog counts.
+    const change = etaChange && etaChange.cause ? etaChange : null;
+    if (!change && needsCause(order.ETA, editedOrder.ETA)) {
+      setEtaCausePrompt(true);
+      return;
+    }
     setIsSaving(true);
     try {
       // Date columns stored as DATE in the DB. Only include a date field in the
@@ -1095,6 +1104,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         }
       }
       if (pendingStatusLog) patch['Change Log'] = [pendingStatusLog];
+      if (change) patch['ETA Change'] = change;
 
       await ordersAPI.patch(order.id, patch);
       const updatedOrder = {
@@ -1410,6 +1420,16 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: '#0891B2', color: 'white', padding: '10px 20px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 600, zIndex: 2100, boxShadow: '0 6px 20px rgba(8,145,178,0.5)' }}>
           {freezeToast}
         </div>
+      )}
+
+      {etaCausePrompt && (
+        <EtaCauseDialog
+          theme={theme}
+          fromEta={order.ETA}
+          toEta={editedOrder.ETA}
+          onCancel={() => setEtaCausePrompt(false)}
+          onConfirm={(c) => { setEtaCausePrompt(false); handleSave(c); }}
+        />
       )}
 
       {/* Status Change Reason Modal */}
