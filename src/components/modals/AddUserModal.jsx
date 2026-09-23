@@ -34,6 +34,32 @@ const ROLE_CONFIG = {
   },
 };
 
+// Custom checkbox. Declared out here, not inside the modal, so React keeps the
+// same button between renders and a keyboard user keeps focus on it.
+const Checkbox = ({ theme, checked, onChange, color = '#0EA5E9', disabled = false }) => (
+  <button
+    type="button"
+    onClick={disabled ? undefined : onChange}
+    style={{
+      width: '22px', height: '22px', borderRadius: '6px', border: 'none',
+      background: checked ? color : 'transparent',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: disabled ? 'default' : 'pointer',
+      transition: 'all 0.2s',
+      flexShrink: 0,
+      outline: checked ? 'none' : `2px solid ${theme.cardBorder}`,
+      outlineOffset: '-2px',
+      opacity: disabled ? 0.6 : 1,
+    }}
+  >
+    {checked && (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    )}
+  </button>
+);
+
 const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser = null }) => {
   const dialogRef = useDialog({ open: true, onClose });
   const isEdit = mode === 'edit';
@@ -47,9 +73,10 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
         phone: initialUser.phone || '',
         role: initialUser.role || 'user',
         pageAccess: initialUser.page_access ?? null,
+        canEditOrderDetails: !!initialUser.can_edit_order_details,
       };
     }
-    return { username: '', password: '', fullName: '', email: '', phone: '', role: 'user', pageAccess: null };
+    return { username: '', password: '', fullName: '', email: '', phone: '', role: 'user', pageAccess: null, canEditOrderDetails: false };
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -90,37 +117,18 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
     setNewUser({ ...newUser, pageAccess: updated.length === CONTROLLABLE_PAGES.length ? null : updated });
   };
 
+  // Admins can always edit orders; the switch is only for everyone else.
+  const toggleOrderEdit = () => {
+    if (newUser.role === 'admin') return;
+    setNewUser((prev) => ({ ...prev, canEditOrderDetails: !prev.canEditOrderDetails }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit(newUser);
   };
 
   const roleConfig = ROLE_CONFIG[newUser.role] || ROLE_CONFIG.user;
-
-  // Custom checkbox component
-  const Checkbox = ({ checked, onChange, color = '#0EA5E9', disabled = false }) => (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onChange}
-      style={{
-        width: '22px', height: '22px', borderRadius: '6px', border: 'none',
-        background: checked ? color : 'transparent',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: disabled ? 'default' : 'pointer',
-        transition: 'all 0.2s',
-        flexShrink: 0,
-        outline: checked ? 'none' : `2px solid ${theme.cardBorder}`,
-        outlineOffset: '-2px',
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      {checked && (
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      )}
-    </button>
-  );
 
   return (
     <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
@@ -525,7 +533,7 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
                           onMouseEnter={e => { if (newUser.role !== 'admin') e.currentTarget.style.background = theme.inputBg; }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                         >
-                          <Checkbox
+                          <Checkbox theme={theme}
                             checked={checked}
                             onChange={() => togglePage(page.id)}
                             disabled={newUser.role === 'admin'}
@@ -554,7 +562,7 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
                       onMouseEnter={e => { if (newUser.role !== 'admin') e.currentTarget.style.background = theme.inputBg; }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     >
-                      <Checkbox
+                      <Checkbox theme={theme}
                         checked={allFlowChecked}
                         onChange={toggleAllFlow}
                         color={someFlowChecked ? '#0EA5E9' : '#0EA5E9'}
@@ -587,7 +595,7 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
                             onMouseEnter={e => { if (newUser.role !== 'admin') e.currentTarget.style.background = theme.inputBg; }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                           >
-                            <Checkbox
+                            <Checkbox theme={theme}
                               checked={checked}
                               onChange={() => togglePage(page.id)}
                               color="#0EA5E9"
@@ -608,6 +616,44 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
                   }}>
                     Uncheck pages to restrict access. If everything stays enabled, the user effectively gets full workspace access.
                   </p>
+                </div>
+
+                {/* Permissions */}
+                <div>
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 700, color: theme.textMuted,
+                    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px',
+                  }}>
+                    Permissions
+                  </div>
+                  {/* The Checkbox gets no onChange: its click bubbles to this row,
+                      which is the one place the switch flips. */}
+                  <div
+                    onClick={toggleOrderEdit}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: '12px',
+                      padding: '10px 12px', borderRadius: '10px',
+                      cursor: newUser.role === 'admin' ? 'default' : 'pointer',
+                    }}
+                    onMouseEnter={e => { if (newUser.role !== 'admin') e.currentTarget.style.background = theme.inputBg; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Checkbox theme={theme}
+                      checked={newUser.role === 'admin' || newUser.canEditOrderDetails}
+                      color="#F59E0B"
+                      disabled={newUser.role === 'admin'}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500, color: theme.text }}>
+                        Can edit order details
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: theme.textDim, lineHeight: 1.4 }}>
+                        {newUser.role === 'admin'
+                          ? 'Admins can always edit.'
+                          : 'Opens Edit in the Order Details drawer. A reason is required when changing existing values.'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

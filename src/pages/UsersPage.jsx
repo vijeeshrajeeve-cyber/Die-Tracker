@@ -54,7 +54,12 @@ export default function UsersPage({
                         <td style={{ ...td, fontWeight: 600, color: theme.text }}>{u.username}</td>
                         {/* No address means QD notifications cannot reach them. */}
                         <td style={td}>{u.email || <span style={{ color: theme.textDim, fontStyle: 'italic' }}>not set</span>}</td>
-                        <td style={td}><span style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, background: u.role === 'admin' ? '#3B82F620' : '#64748B20', color: u.role === 'admin' ? '#3B82F6' : '#94A3B8' }}>{u.role}</span></td>
+                        <td style={td}>
+                          <span style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, background: u.role === 'admin' ? '#3B82F620' : '#64748B20', color: u.role === 'admin' ? '#3B82F6' : '#94A3B8' }}>{u.role}</span>
+                          {u.role !== 'admin' && u.can_edit_order_details && (
+                            <span title="Can edit order details" style={{ marginLeft: '6px', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600, background: '#F59E0B20', color: '#F59E0B' }}>Edits orders</span>
+                          )}
+                        </td>
                         <td style={td}>
                           {u.role === 'admin' ? (
                             <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: '#10B98120', color: '#10B981' }}>All Pages</span>
@@ -109,7 +114,7 @@ export default function UsersPage({
                   onClose={() => setShowAddUser(false)}
                   onSubmit={async (userData) => {
                     try {
-                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess, userData.email, userData.fullName, userData.phone);
+                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess, userData.email, userData.fullName, userData.phone, userData.role === 'admin' ? false : userData.canEditOrderDetails);
                       setShowAddUser(false);
                       fetchUsers();
                     } catch (error) {
@@ -135,6 +140,7 @@ export default function UsersPage({
                         fullName: userData.fullName ?? '',
                         phone: userData.phone ?? '',
                         pageAccess: userData.role === 'admin' ? null : userData.pageAccess,
+                        canEditOrderDetails: userData.role === 'admin' ? false : !!userData.canEditOrderDetails,
                       });
                       setEditingUser(null);
                       fetchUsers();
