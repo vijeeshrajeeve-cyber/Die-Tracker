@@ -160,7 +160,7 @@ router.get('/files/:fileId', async (req, res) => {
     if (r.rowCount === 0) return res.status(404).json({ error: 'File not found' });
     const root = store.getRoot();
     const abs = path.resolve(root, r.rows[0].stored_path);
-    if (!abs.startsWith(path.resolve(root))) return res.status(400).json({ error: 'Invalid path' });
+    if (!store.isInsideRoot(root, abs)) return res.status(400).json({ error: 'Invalid path' });
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'File missing on disk' });
     res.download(abs, r.rows[0].original_name);
   } catch (e) {

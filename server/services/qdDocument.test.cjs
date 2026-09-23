@@ -8,7 +8,12 @@ const path = require('node:path');
 // qdStorage reads QD_FILES_ROOT at call time; point it at a scratch dir.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qd-doc-'));
 process.env.QD_FILES_ROOT = root;
-after(() => fs.rmSync(root, { recursive: true, force: true }));
+// A look-alike sibling: its path starts with the root's, but it is not inside it.
+const sibling = `${root}-evil`;
+after(() => {
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(sibling, { recursive: true, force: true });
+});
 
 const { buildQdPdfBytes } = require('./qdDocument.cjs');
 
@@ -48,6 +53,13 @@ test('an imported QD whose original is missing fails rather than redrawing', asy
   await assert.rejects(buildQdPdfBytes(fakePool({ row: ROW, files: [] }), 7), /Original QD form missing for QD 2026PH-04/);
   const gone = { ...ORIGINAL_FILE, stored_path: '2026PH-04/7/gone.pdf' };
   await assert.rejects(buildQdPdfBytes(fakePool({ row: ROW, files: [gone] }), 7), /Original QD form missing/);
+});
+
+test('an imported QD whose original sits in a sibling of the root is treated as missing', async () => {
+  fs.mkdirSync(sibling, { recursive: true });
+  fs.writeFileSync(path.join(sibling, 'old.pdf'), '%PDF-1.4\n% not ours\n');
+  const outside = { ...ORIGINAL_FILE, stored_path: path.join('..', path.basename(sibling), 'old.pdf') };
+  await assert.rejects(buildQdPdfBytes(fakePool({ row: ROW, files: [outside] }), 7), /Original QD form missing/);
 });
 
 test('a QD raised in the app is still drawn from its record', async () => {

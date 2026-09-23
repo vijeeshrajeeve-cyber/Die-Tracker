@@ -31,15 +31,25 @@ function sanitizeFilename(name) {
   return base || 'file';
 }
 
+// Leading dots go too, so a segment of '..' (an imported QD No is only checked
+// for being present) cannot climb out of the storage root.
 function sanitizeSegment(value) {
-  return String(value == null ? '' : value).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || '_';
+  return String(value == null ? '' : value).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+|_+$/g, '') || '_';
+}
+
+function isInsideRoot(root, p) {
+  return path.resolve(p).startsWith(path.resolve(root) + path.sep);
 }
 
 function buildStoredPath(root, { qdNo, qdId, fileName }) {
-  return path.join(root, sanitizeSegment(qdNo), sanitizeSegment(qdId), sanitizeFilename(fileName));
+  const dest = path.join(root, sanitizeSegment(qdNo), sanitizeSegment(qdId), sanitizeFilename(fileName));
+  // Callers mkdir and move to this path, and the import route unlinks it on
+  // rollback, so refuse before it is ever handed out.
+  if (!isInsideRoot(root, dest)) throw new Error('Refusing to store a file outside the storage root');
+  return dest;
 }
 
 module.exports = {
   ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
-  getRoot, getTmpDir, isAllowedExtension, sanitizeFilename, sanitizeSegment, buildStoredPath,
+  getRoot, getTmpDir, isAllowedExtension, sanitizeFilename, sanitizeSegment, isInsideRoot, buildStoredPath,
 };

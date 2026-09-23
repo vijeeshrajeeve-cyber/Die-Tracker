@@ -14,6 +14,7 @@ const {
     displayValue, validateReason, canEditOrderDetails, fromRow, columnValue,
 } = require('../services/orderDetailEdits.cjs');
 const orderFiles = require('../services/orderFiles.cjs');
+const { adminMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
 
@@ -745,8 +746,9 @@ router.put('/:id', requireOrderEditor, orderIdValidation, orderValidation, handl
     }
 });
 
-// Delete order
-router.delete('/:id', orderIdValidation, handleValidationErrors, async (req, res) => {
+// Delete order. Admins only: the Orders page hides the button from everyone
+// else, and this stops a direct API call.
+router.delete('/:id', adminMiddleware, orderIdValidation, handleValidationErrors, async (req, res) => {
     try {
         const { id } = req.params;
 

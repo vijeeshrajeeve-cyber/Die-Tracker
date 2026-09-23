@@ -1,4 +1,8 @@
 'use strict';
+// orders.cjs loads auth.cjs for adminMiddleware, and auth.cjs warns when this
+// is unset.
+process.env.JWT_SECRET = 'orders-test-secret-that-is-at-least-32-characters';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');

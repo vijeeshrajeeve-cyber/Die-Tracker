@@ -31,6 +31,20 @@ test('buildStoredPath cannot be escaped by a traversal filename', () => {
   assert.equal(path.resolve(out).startsWith(root), true);
 });
 
+test('buildStoredPath keeps segments of exactly ".." under the root', () => {
+  const root = path.resolve('/srv/qd');
+  const out = s.buildStoredPath(root, { qdNo: '..', qdId: '..', fileName: 'a.pdf' });
+  assert.equal(path.resolve(out).startsWith(root + path.sep), true, out);
+});
+
+test('isInsideRoot accepts paths under the root, rejects escapes and look-alike siblings', () => {
+  const root = path.resolve('/srv/qd');
+  assert.equal(s.isInsideRoot(root, path.join(root, 'a', 'a.pdf')), true);
+  assert.equal(s.isInsideRoot(root, path.join(root, '..', 'a.pdf')), false);
+  assert.equal(s.isInsideRoot(root, `${root}-evil${path.sep}a.pdf`), false);
+  assert.equal(s.isInsideRoot(root, root), false);
+});
+
 test('getTmpDir sits directly under the storage root (same filesystem)', () => {
   assert.equal(s.getTmpDir(), path.join(s.getRoot(), '.uploads-tmp'));
 });

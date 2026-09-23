@@ -1,4 +1,8 @@
 'use strict';
+// orders.cjs loads auth.cjs for adminMiddleware, and auth.cjs warns when this
+// is unset.
+process.env.JWT_SECRET = 'orders-test-secret-that-is-at-least-32-characters';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
@@ -18,6 +22,7 @@ installFakeDb(async (sql, params = []) => {
   if (/^INSERT INTO die_delivery_events/.test(q)) return { rows: [{ id: 1 }] };
   if (/^INSERT INTO order_changes/.test(q)) return { rows: [] };
   if (/^UPDATE backup_die_requests/.test(q)) return { rows: [] };
+  if (/^DELETE FROM die_orders WHERE id = \$1/.test(q)) return { rows: [], rowCount: storedEta === undefined ? 0 : 1 };
   throw new Error(`orders test: unexpected query ${q}`);
 });
 
@@ -102,4 +107,28 @@ test('the generic PATCH stays open to the step-by-step pages', async () => {
   currentUser = { id: 9, username: 'viewer', role: 'user', canEditOrderDetails: false };
   const { status } = await request(base, '/api/orders/7', { method: 'PATCH', body: { Remark: 'checked' } });
   assert.equal(status, 200);
+});
+
+const ADMIN = { id: 1, username: 'admin', role: 'admin', canEditOrderDetails: true };
+const remove = () => request(base, '/api/orders/7', { method: 'DELETE' });
+
+test('DELETE is refused for a non-admin, even one who can edit order details', async () => {
+  const { status, body } = await remove();
+  assert.equal(status, 403);
+  assert.equal(body.error, 'Admin access required');
+  assert.equal(log.length, 0, 'no query issued');
+});
+
+test('an admin can still delete an order', async () => {
+  currentUser = ADMIN;
+  const { status } = await remove();
+  assert.equal(status, 200);
+  assert.deepEqual(log.map(({ q, params }) => [q, params]), [['DELETE FROM die_orders WHERE id = $1', ['7']]]);
+});
+
+test('an admin deleting an unknown order gets a 404', async () => {
+  currentUser = ADMIN;
+  storedEta = undefined;
+  const { status } = await remove();
+  assert.equal(status, 404);
 });

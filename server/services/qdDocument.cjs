@@ -17,7 +17,7 @@ async function readOriginalForm(row, files) {
   const root = path.resolve(store.getRoot());
   const abs = original ? path.resolve(root, original.stored_path) : null;
   const missing = () => new Error(`Original QD form missing for QD ${row.qd_no || row.id}`);
-  if (!abs || !abs.startsWith(root)) throw missing();
+  if (!abs || !store.isInsideRoot(root, abs)) throw missing();
   try {
     return await fsp.readFile(abs);
   } catch {
@@ -49,7 +49,7 @@ async function buildQdPdfBytes(pool, qdId) {
   for (const f of filesRes.rows) {
     if (!/(png|jpe?g|webp)$/i.test(f.original_name)) continue;
     const abs = path.resolve(root, f.stored_path);
-    if (!abs.startsWith(root)) continue;
+    if (!store.isInsideRoot(root, abs)) continue;
     try { fileBytes.set(f.id, await fsp.readFile(abs)); } catch { /* skip */ }
   }
   let logoBytes = null;
