@@ -24,6 +24,11 @@ test('pdfPathsFromFiles drops paths that escape the root', () => {
   assert.deepEqual(pdfPathsFromFiles(files, root), []);
 });
 
+test('pdfPathsFromFiles drops paths into a sibling that shares the root prefix', () => {
+  const files = [{ original_name: 'evil.pdf', stored_path: '../fz-evil/evil.pdf' }];
+  assert.deepEqual(pdfPathsFromFiles(files, root), []);
+});
+
 test('pdfPathsFromFiles handles empty/missing input', () => {
   assert.deepEqual(pdfPathsFromFiles([], root), []);
   assert.deepEqual(pdfPathsFromFiles(undefined, root), []);

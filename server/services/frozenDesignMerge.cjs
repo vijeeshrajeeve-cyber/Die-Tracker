@@ -2,15 +2,15 @@
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
+const { isInsideRoot } = require('./frozenDesignStorage.cjs');
 
 // Pure: from frozen_design_files rows, resolve absolute paths of the PDF files only.
 // Non-PDF attachments (DWG/STEP/images) are skipped — they can't be merged into a PDF.
 function pdfPathsFromFiles(files, root) {
-  const base = path.resolve(root);
   return (files || [])
     .filter((f) => /\.pdf$/i.test(f.original_name || f.stored_path || ''))
     .map((f) => path.resolve(root, f.stored_path))
-    .filter((p) => p.startsWith(base)); // guard against path escape
+    .filter((p) => isInsideRoot(root, p)); // guard against path escape
 }
 
 // Append the pages of each PDF at pdfPaths onto the base PDF buffer. Missing or
