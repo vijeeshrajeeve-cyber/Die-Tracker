@@ -191,7 +191,7 @@ function ChangeLogModal({ order, onClose, theme }) {
                                             </span>
                                             <span style={{ color: theme?.textMuted || '#94A3B8' }}>→</span>
                                             <span style={{ fontSize: '0.9rem', color: '#10B981', fontWeight: 600, fontFamily: 'monospace' }}>
-                                                {entry.new_value}
+                                                {entry.new_value || 'N/A'}
                                             </span>
                                         </div>
 
