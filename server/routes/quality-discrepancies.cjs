@@ -789,7 +789,7 @@ router.delete('/:id/files/:fileId', async (req, res) => {
     try {
       const root = path.resolve(store.getRoot());
       const abs = path.resolve(root, fr.rows[0].stored_path);
-      if (abs.startsWith(root)) await fsp.unlink(abs);
+      if (store.isInsideRoot(root, abs)) await fsp.unlink(abs);
     } catch { /* the DB row is gone; a stray file on disk is harmless */ }
     await qd.addActivity(pool, {
       qdId: req.params.id, actor: actorFor(req),
@@ -827,7 +827,7 @@ router.delete('/:id/import', adminMiddleware, async (req, res) => {
   const root = path.resolve(store.getRoot());
   for (const rel of storedPaths) {
     const abs = path.resolve(root, rel);
-    if (abs.startsWith(root)) await fsp.unlink(abs).catch(() => {});
+    if (store.isInsideRoot(root, abs)) await fsp.unlink(abs).catch(() => {});
   }
   res.json({ message: 'Import undone' });
 });
@@ -839,7 +839,7 @@ router.get('/files/:fileId', async (req, res) => {
     if (r.rowCount === 0) return res.status(404).json({ error: 'File not found' });
     const root = path.resolve(store.getRoot());
     const abs = path.resolve(root, r.rows[0].stored_path);
-    if (!abs.startsWith(root)) return res.status(400).json({ error: 'Invalid path' });
+    if (!store.isInsideRoot(root, abs)) return res.status(400).json({ error: 'Invalid path' });
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'File missing on disk' });
     res.download(abs, r.rows[0].original_name);
   } catch (e) {
