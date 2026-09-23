@@ -31,12 +31,18 @@ function sanitizeFilename(name) {
   return base || 'file';
 }
 
+// Leading dots go too, so a segment of '..' (profile and press come straight
+// from the request body) cannot climb out of the storage root.
 function sanitizeSegment(value) {
-  return String(value == null ? '' : value).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || '_';
+  return String(value == null ? '' : value).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+|_+$/g, '') || '_';
+}
+
+function isInsideRoot(root, p) {
+  return path.resolve(p).startsWith(path.resolve(root) + path.sep);
 }
 
 function buildStoredPath(root, { profile, press, cavity, frozenDesignId, fileName }) {
-  return path.join(
+  const dest = path.join(
     root,
     sanitizeSegment(profile),
     sanitizeSegment(press),
@@ -44,6 +50,9 @@ function buildStoredPath(root, { profile, press, cavity, frozenDesignId, fileNam
     sanitizeSegment(frozenDesignId),
     sanitizeFilename(fileName)
   );
+  // Callers mkdir and move to this path, so refuse rather than write elsewhere.
+  if (!isInsideRoot(root, dest)) throw new Error('Refusing to store a file outside the storage root');
+  return dest;
 }
 
 module.exports = {
@@ -54,5 +63,6 @@ module.exports = {
   isAllowedExtension,
   sanitizeFilename,
   sanitizeSegment,
+  isInsideRoot,
   buildStoredPath,
 };

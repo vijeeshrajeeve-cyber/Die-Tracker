@@ -25,6 +25,20 @@ test('buildStoredPath composes root/profile/press/cavity/id/name', () => {
   assert.equal(out, path.join(root, '14752', 'PRESS_4', '2', '9', 'd.pdf'));
 });
 
+test('buildStoredPath keeps segments of exactly ".." under the root', () => {
+  const root = path.resolve('/srv/fz');
+  const out = s.buildStoredPath(root, { profile: '..', press: '..', cavity: '..', frozenDesignId: '..', fileName: 'd.pdf' });
+  assert.equal(path.resolve(out).startsWith(root + path.sep), true, out);
+});
+
+test('isInsideRoot accepts paths under the root, rejects escapes and look-alike siblings', () => {
+  const root = path.resolve('/srv/fz');
+  assert.equal(s.isInsideRoot(root, path.join(root, 'a', 'd.pdf')), true);
+  assert.equal(s.isInsideRoot(root, path.join(root, '..', 'd.pdf')), false);
+  assert.equal(s.isInsideRoot(root, `${root}-evil${path.sep}d.pdf`), false);
+  assert.equal(s.isInsideRoot(root, root), false);
+});
+
 test('MAX_FILE_BYTES is 100 MB', () => {
   assert.equal(s.MAX_FILE_BYTES, 100 * 1024 * 1024);
 });
