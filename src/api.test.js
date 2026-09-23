@@ -213,6 +213,43 @@ test('patchDetails sends only the fields, the reason and any ETA cause', async (
   assert.deepEqual(JSON.parse(seen.options.body), { fields: { Supplier: 'BETA' }, reason: 'Re-quoted' });
 });
 
+test('uploadFile posts the PDF and the reason to the slot as multipart', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ file: { id: 31 } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  };
+  const file = new File(['%PDF-1.4'], 'rev B.pdf', { type: 'application/pdf' });
+  const res = await ordersAPI.uploadFile(7, 'design_pdf', file, 'Supplier sent rev B');
+  assert.equal(res.file.id, 31);
+  assert.match(seen.url, /\/orders\/7\/files\/design_pdf$/);
+  assert.equal(seen.options.method, 'POST');
+  assert.equal(seen.options.body.get('file').name, 'rev B.pdf');
+  assert.equal(seen.options.body.get('reason'), 'Supplier sent rev B');
+  assert.equal(seen.options.headers['Content-Type'], undefined);
+
+  await ordersAPI.uploadFile(7, 'die_order_form', file, '');
+  assert.equal(seen.options.body.has('reason'), false);
+});
+
+test('listFiles and fileBlob read the order\'s attachments', async () => {
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(url);
+    return url.endsWith('/files')
+      ? new Response(JSON.stringify({ files: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      : new Response('%PDF-1.4', { status: 200, headers: { 'Content-Type': 'application/pdf' } });
+  };
+  assert.deepEqual(await ordersAPI.listFiles(7), { files: [] });
+  const blob = await ordersAPI.fileBlob(7, 31);
+  assert.equal(await blob.text(), '%PDF-1.4');
+  assert.match(urls[0], /\/orders\/7\/files$/);
+  assert.match(urls[1], /\/orders\/7\/files\/31$/);
+
+  globalThis.fetch = async () => new Response('', { status: 404 });
+  await assert.rejects(ordersAPI.fileBlob(7, 31), /HTTP 404/);
+});
+
 test('a refused order save carries the server code for the drawer to branch on', async () => {
   respondWith(JSON.stringify({ error: 'You do not have permission to edit order details', code: 'ORDER_EDIT_FORBIDDEN' }), 403);
   await assert.rejects(ordersAPI.patchDetails(7, { fields: { Supplier: 'BETA' } }), (error) => {

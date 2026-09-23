@@ -3,6 +3,7 @@ import { ClipboardCheck } from 'lucide-react';
 import useDialog from '../../hooks/useDialog';
 import { CAUSES, needsCause, normalizeEta } from '../../utils/deliveryFollowup';
 import { changeNeedsReason, displayValue, fieldLabel, fieldType, REASON_MAX } from '../../utils/orderDetailEdits';
+import { fileChangeNeedsReason } from '../../utils/orderFiles';
 import { formatDate } from '../../utils/helpers';
 
 // A value as the drawer shows it: dates formatted, blanks as a dash.
@@ -14,18 +15,30 @@ function shown(field, value) {
   return text;
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 // Opened by Save in the Order Details drawer. Lists every change, requires a
-// reason when an existing value is changed or cleared, and asks for the
-// delivery cause when a set ETA moves. The server checks all of it again.
-export default function OrderEditReviewDialog({ theme, dieNo, changes, fromEta, toEta, saving, error, onCancel, onConfirm }) {
+// reason when an existing value is changed or cleared or a file is replaced,
+// and asks for the delivery cause when a set ETA moves. The server checks all
+// of it again.
+export default function OrderEditReviewDialog({ theme, dieNo, changes, fileChanges = [], fromEta, toEta, saving, error, onCancel, onConfirm }) {
   const titleId = useId();
   const dialogRef = useDialog({ open: true, onClose: onCancel, closeOnEscape: !saving });
   const [reason, setReason] = useState('');
   const [cause, setCause] = useState('');
   const [causeNote, setCauseNote] = useState('');
 
-  const withReason = changes.filter(changeNeedsReason);
-  const withoutReason = changes.filter((c) => !changeNeedsReason(c));
+  const rows = [
+    ...changes.map((c) => ({
+      key: c.field, label: fieldLabel(c.field), before: shown(c.field, c.before), after: shown(c.field, c.after),
+      needsReason: changeNeedsReason(c),
+    })),
+    ...fileChanges.map((c) => ({
+      key: c.slot, label: c.label, before: c.before || '—', after: c.after, needsReason: fileChangeNeedsReason(c),
+    })),
+  ];
+  const withReason = rows.filter((r) => r.needsReason);
+  const withoutReason = rows.filter((r) => !r.needsReason);
   const reasonRequired = withReason.length > 0;
   const etaMoved = changes.some((c) => c.field === 'ETA') && needsCause(fromEta, toEta);
   const causeReady = !etaMoved || (!!cause && (cause !== 'other' || !!causeNote.trim()));
@@ -39,11 +52,11 @@ export default function OrderEditReviewDialog({ theme, dieNo, changes, fromEta, 
     <section>
       <h4 style={heading}>{title}</h4>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {list.map((c) => (
-          <li key={c.field} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: `1px solid ${border}`, fontSize: '0.84rem' }}>
-            <span style={{ color: theme?.textDim || '#64748B' }}>{fieldLabel(c.field)}</span>
-            <span style={{ color: theme?.text || '#F1F5F9', textAlign: 'right' }}>
-              {shown(c.field, c.before)} <span aria-hidden="true">→</span> <strong>{shown(c.field, c.after)}</strong>
+        {list.map((r) => (
+          <li key={r.key} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: `1px solid ${border}`, fontSize: '0.84rem' }}>
+            <span style={{ color: theme?.textDim || '#64748B', flexShrink: 0 }}>{r.label}</span>
+            <span style={{ color: theme?.text || '#F1F5F9', textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>
+              {r.before} <span aria-hidden="true">→</span> <strong>{r.after}</strong>
             </span>
           </li>
         ))}
@@ -62,7 +75,10 @@ export default function OrderEditReviewDialog({ theme, dieNo, changes, fromEta, 
           <div>
             <h3 id={titleId} style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: theme?.text || '#F1F5F9' }}>Save changes to {dieNo}</h3>
             <p style={{ margin: 0, fontSize: '0.78rem', color: theme?.textDim || '#64748B' }}>
-              {changes.length} field{changes.length === 1 ? '' : 's'} changed
+              {[
+                changes.length > 0 && `${plural(changes.length, 'field')} changed`,
+                fileChanges.length > 0 && `${plural(fileChanges.length, 'file')} to upload`,
+              ].filter(Boolean).join(' · ')}
             </p>
           </div>
         </div>

@@ -27,6 +27,7 @@ import usePIImport from './hooks/usePIImport';
 
 import FlowPage from './pages/FlowPage';
 import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
+import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
@@ -945,8 +946,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
-  const [viewingFile, setViewingFile] = useState(null); // { file, type, notes, signature }
-  const [review, setReview] = useState(null); // { changes } while Review changes is open
+  const [viewingFile, setViewingFile] = useState(null); // { file, name } open in the PDF viewer
+  const [files, setFiles] = useState({}); // the stored file per attachment slot
+  const [staged, setStaged] = useState({}); // files picked in edit mode, uploaded on Save
+  const [openingFile, setOpeningFile] = useState(null); // slot whose stored file is being fetched
+  // { changes, fileChanges, saved } while Review changes is open. `saved` holds
+  // what already went through, so a retry after a failed upload sends only the rest.
+  const [review, setReview] = useState(null);
   const [reviewError, setReviewError] = useState('');
   // Set when the server refuses a save because an admin switched the permission off.
   const [editRevoked, setEditRevoked] = useState(false);
@@ -984,19 +990,48 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     });
     setIsEditing(false);
     setReview(null);
+    setStaged({});
   }, [order.id]);
 
-  const handleFileChange = (field, file) => {
-    setEditedOrder(prev => ({ ...prev, [field]: file }));
+  useEffect(() => {
+    let cancelled = false;
+    setFiles({});
+    ordersAPI.listFiles(order.id)
+      .then((res) => { if (!cancelled) setFiles(bySlot(res.files)); })
+      .catch((err) => console.error('Failed to load order files:', err));
+    return () => { cancelled = true; };
+  }, [order.id]);
+
+  // A picked file is only held here; Save uploads it through Review changes.
+  const pickFile = (slot, file) => {
+    if (!file) return;
+    const problem = orderFileProblem(file);
+    if (problem) {
+      dialogs.notify(problem, 'error');
+      return;
+    }
+    setStaged((prev) => ({ ...prev, [slot]: file }));
   };
 
-  const handleViewerSave = (data) => {
-    // Save notes/signature back to the editedOrder state
-    setEditedOrder(prev => ({
-      ...prev,
-      [`${viewingFile.type}Notes`]: data.notes,
-      [`${viewingFile.type}Signature`]: data.signature
-    }));
+  const unstageFile = (slot) => {
+    setStaged((prev) => {
+      const next = { ...prev };
+      delete next[slot];
+      return next;
+    });
+  };
+
+  const openStoredFile = async (slot) => {
+    const stored = files[slot];
+    setOpeningFile(slot);
+    try {
+      const blob = await ordersAPI.fileBlob(order.id, stored.id);
+      setViewingFile({ file: new File([blob], stored.original_name, { type: 'application/pdf' }), name: stored.original_name });
+    } catch (error) {
+      dialogs.notify(error.message, 'error');
+    } finally {
+      setOpeningFile(null);
+    }
   };
 
   if (!order) return null;
@@ -1063,33 +1098,71 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
       dialogs.notify(error.message, 'error');
       return;
     }
-    if (changes.length === 0) {
+    const fileChanges = planFileChanges(files, staged);
+    if (changes.length === 0 && fileChanges.length === 0) {
       setIsEditing(false);
       return;
     }
     setReviewError('');
-    setReview({ changes });
+    setReview({ changes, fileChanges, saved: null });
   };
 
+  // Everything went through: leave edit mode and hand the saved order back.
+  const finishSave = (saved) => {
+    setReview(null);
+    setIsEditing(false);
+    setStaged({});
+    if (onUpdate) onUpdate({ ...order, ...saved.order, changeCount: (order.changeCount || 0) + saved.logged });
+  };
+
+  // The values go first in one request, then each file. A file that fails
+  // stays in the dialog on its own, so Save retries just that file.
   const confirmSave = async ({ reason, etaChange }) => {
-    const fields = Object.fromEntries(review.changes.map((c) => [c.field, editedOrder[c.field]]));
     setIsSaving(true);
     setReviewError('');
+    let saved = review.saved || { order: {}, logged: 0 };
+    let uploading = null;
     try {
-      const saved = await ordersAPI.patchDetails(order.id, { fields, reason, etaChange });
-      setReview(null);
-      setIsEditing(false);
-      if (onUpdate) onUpdate({ ...order, ...saved.order, changeCount: (order.changeCount || 0) + saved.logged });
+      if (review.changes.length > 0) {
+        const fields = Object.fromEntries(review.changes.map((c) => [c.field, editedOrder[c.field]]));
+        const result = await ordersAPI.patchDetails(order.id, { fields, reason, etaChange });
+        saved = { order: result.order, logged: saved.logged + result.logged };
+        const done = saved;
+        setReview((r) => ({ ...r, changes: [], saved: done }));
+      }
+      for (const change of review.fileChanges) {
+        uploading = change;
+        await ordersAPI.uploadFile(order.id, change.slot, staged[change.slot], reason);
+        saved = { ...saved, logged: saved.logged + 1 };
+        const done = saved;
+        setReview((r) => ({ ...r, fileChanges: r.fileChanges.filter((c) => c.slot !== change.slot), saved: done }));
+      }
+      finishSave(saved);
     } catch (error) {
       if (error.data?.code === 'ORDER_EDIT_FORBIDDEN') {
         setEditRevoked(true);
         handleCancel();
         dialogs.notify('You no longer have permission to edit order details', 'error');
+      } else if (uploading && saved.logged > 0) {
+        setReviewError(`Your other changes are saved, but the ${uploading.label} did not upload: ${error.message}`);
       } else {
         setReviewError(error.message);
       }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Closing Review changes after part of the save went through still hands
+  // that part back; the file that failed is not uploaded.
+  const cancelReview = () => {
+    if (isSaving) return;
+    if (review.saved) {
+      const skipped = review.fileChanges.map((c) => c.label);
+      finishSave(review.saved);
+      dialogs.notify(`Saved. The ${skipped.join(' and ')} ${skipped.length === 1 ? 'was' : 'were'} not uploaded.`, 'error');
+    } else {
+      setReview(null);
     }
   };
 
@@ -1101,6 +1174,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     });
     setIsEditing(false);
     setReview(null);
+    setStaged({});
   };
 
   const inputStyle = {
@@ -1162,52 +1236,72 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     </div>
   );
 
-  const FileRow = ({ label, field, value, notesField, signatureField }) => (
-    <div style={{ marginBottom: '16px' }}>
-      <label style={{ display: 'block', fontSize: '0.8rem', color: theme?.textDim || '#64748B', marginBottom: '4px' }}>{label}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        {isEditing ? (
+  // One attachment slot: the stored file opens in the viewer; in edit mode a
+  // picker holds a new PDF until Save.
+  const FileRow = ({ slot }) => {
+    const label = ORDER_FILE_SLOTS[slot];
+    const stored = files[slot];
+    const picked = staged[slot];
+    const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+    const iconButton = { padding: '8px', display: 'flex', borderRadius: '8px', border: 'none', cursor: 'pointer', flexShrink: 0 };
+    return (
+      <div style={{ marginBottom: '16px', minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: '0.8rem', color: theme?.textDim || '#64748B', marginBottom: '4px' }}>{label}</span>
+        {stored ? (
+          <button
+            type="button"
+            onClick={() => openStoredFile(slot)}
+            disabled={openingFile === slot}
+            title={`Open ${stored.original_name}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '100%', padding: 0, color: '#3B82F6', background: 'transparent', border: 'none', cursor: openingFile === slot ? 'wait' : 'pointer', fontSize: '0.875rem' }}
+          >
+            <FileText size={16} style={{ flexShrink: 0 }} />
+            <span style={ellipsis}>{openingFile === slot ? 'Opening…' : stored.original_name}</span>
+          </button>
+        ) : !isEditing && (
+          <span style={{ fontSize: '0.875rem', color: theme?.textMuted || '#64748B', fontStyle: 'italic' }}>No document attached</span>
+        )}
+        {isEditing && (
           <>
-            <label style={{
-              flex: 1, cursor: 'pointer', background: theme?.cardBg, border: `1px dashed ${theme?.cardBorder}`,
-              borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', gap: '8px',
-              color: theme?.textDim, fontSize: '0.8rem'
-            }}>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={(e) => e.target.files[0] && handleFileChange(field, e.target.files[0])}
-                style={{ display: 'none' }}
-              />
-              <Upload size={16} />
-              {value ? (value.name || 'File selected') : 'Upload PDF'}
-            </label>
-            {value && (
-              <button
-                onClick={() => setViewingFile({ file: value, type: field, notes: editedOrder[notesField] || '', signature: editedOrder[signatureField] })}
-                style={{ padding: '8px', background: '#3B82F6', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
-                title="View & Sign"
-              >
-                <Eye size={16} />
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: stored ? '8px' : 0 }}>
+              <label style={{
+                flex: 1, minWidth: 0, cursor: 'pointer', background: theme?.cardBg, border: `1px dashed ${picked ? '#10B981' : theme?.cardBorder}`,
+                borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', gap: '8px',
+                color: picked ? theme?.text : theme?.textDim, fontSize: '0.8rem'
+              }}>
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  aria-label={`${stored ? 'Replace' : 'Upload'} ${label}`}
+                  onChange={(e) => { pickFile(slot, e.target.files[0]); e.target.value = ''; }}
+                  style={{ display: 'none' }}
+                />
+                <Upload size={16} style={{ flexShrink: 0 }} />
+                <span style={ellipsis}>{picked ? picked.name : (stored ? 'Replace PDF' : 'Upload PDF')}</span>
+              </label>
+              {picked && (
+                <>
+                  <button type="button" onClick={() => setViewingFile({ file: picked, name: picked.name })}
+                    title="View" aria-label={`View ${picked.name}`} style={{ ...iconButton, background: '#3B82F6', color: 'white' }}>
+                    <Eye size={16} />
+                  </button>
+                  <button type="button" onClick={() => unstageFile(slot)}
+                    title="Don't upload" aria-label={`Don't upload ${picked.name}`} style={{ ...iconButton, background: 'transparent', color: theme?.textDim || '#64748B', border: `1px solid ${theme?.cardBorder || '#334155'}` }}>
+                    <X size={16} />
+                  </button>
+                </>
+              )}
+            </div>
+            {picked && (
+              <span style={{ display: 'block', marginTop: '4px', fontSize: '0.75rem', color: theme?.textDim || '#64748B' }}>
+                {stored ? 'Replaces the current file on Save' : 'Uploads on Save'}
+              </span>
             )}
           </>
-        ) : (
-          value ? (
-            <button
-              onClick={() => setViewingFile({ file: value, type: field, notes: editedOrder[notesField] || '', signature: editedOrder[signatureField] })}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3B82F6', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.9rem' }}
-            >
-              <FileText size={16} /> View Document
-              {(editedOrder[signatureField]) && <span style={{ fontSize: '0.7rem', background: '#10B981', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>Signed</span>}
-            </button>
-          ) : (
-            <span style={{ fontSize: '0.875rem', color: theme?.textMuted || '#64748B', fontStyle: 'italic' }}>No document attached</span>
-          )
         )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const statusOptions = Object.keys(STATUS_CONFIG);
   const typeOptions = ['N', 'B', 'T', 'C', 'H'];
@@ -1337,8 +1431,8 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
             <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Attachments</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-              {FileRow({ label: 'Die Order Form', field: 'dieOrderFile', value: editedOrder.dieOrderFile, notesField: 'dieOrderFileNotes', signatureField: 'dieOrderFileSignature' })}
-              {FileRow({ label: 'Die Design PDF', field: 'designFile', value: editedOrder.designFile, notesField: 'designFileNotes', signatureField: 'designFileSignature' })}
+              {FileRow({ slot: 'die_order_form' })}
+              {FileRow({ slot: 'design_pdf' })}
             </div>
           </div>
 
@@ -1372,9 +1466,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
       {viewingFile && (
         <PDFViewer
           file={viewingFile.file}
-          initialNotes={viewingFile.notes}
-          initialSignature={viewingFile.signature}
-          onSave={handleViewerSave}
+          name={viewingFile.name}
           onClose={() => setViewingFile(null)}
         />
       )}
@@ -1402,11 +1494,12 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           theme={theme}
           dieNo={currentOrder['DIE NO']}
           changes={review.changes}
+          fileChanges={review.fileChanges}
           fromEta={order.ETA}
           toEta={editedOrder.ETA}
           saving={isSaving}
           error={reviewError}
-          onCancel={() => { if (!isSaving) setReview(null); }}
+          onCancel={cancelReview}
           onConfirm={confirmSave}
         />
       )}

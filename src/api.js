@@ -276,6 +276,31 @@ export const ordersAPI = {
         });
     },
 
+    // The drawer's attachments: the current file per slot (Die Order Form,
+    // Die Design PDF).
+    listFiles: async (id) => {
+        return apiRequest(`/orders/${id}/files`);
+    },
+
+    // Editors only. The server needs `reason` when the slot already has a file.
+    uploadFile: async (id, slot, file, reason) => {
+        const form = new FormData();
+        if (reason) form.append('reason', reason);
+        form.append('file', file);
+        return apiRequest(`/orders/${id}/files/${slot}`, { method: 'POST', body: form, isMultipart: true });
+    },
+
+    // A stored file's bytes for the in-app viewer. The route needs the Bearer
+    // header, so the viewer cannot point an <iframe> straight at it.
+    fileBlob: async (id, fileId) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/orders/${id}/files/${fileId}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Could not open the file (HTTP ${response.status})`);
+        return response.blob();
+    },
+
     delete: async (id) => {
         return apiRequest(`/orders/${id}`, {
             method: 'DELETE',
