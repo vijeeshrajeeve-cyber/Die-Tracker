@@ -39,6 +39,11 @@ so nobody can later tell who changed what, or why.
   therefore applies on that user's next request, with no sign-out.
 - Sign-in, `/auth/me` and the password-change responses include `canEditOrderDetails`, so the
   client knows whether to offer **Edit**.
+- The client keeps the user that sign-in returned in `localStorage` and never re-reads it, so
+  a switch changed after sign-in would not show until the next sign-in. The app therefore
+  re-reads `/auth/me` once on load. It replaces the stored user only when `role`,
+  `pageAccess` or `canEditOrderDetails` differ, because a new user object re-runs every data
+  loader (`fetchUsers` depends on `user`). A granted switch then shows after a page reload.
 - `server/routes/users.cjs` (admin-only) returns `can_edit_order_details` in the user list and
   accepts it on create and on update. It is stored as `false` for admins, whose access comes
   from the role.
@@ -50,12 +55,16 @@ section below Page access with one switch, **Can edit order details**, and the h
 in the Order Details drawer. A reason is required when changing existing values." For the
 Admin role the switch shows on and disabled.
 
+The Users table shows a small **Edits orders** badge next to the role of every non-admin who
+has the switch on, so an admin can see at a glance who can edit.
+
 ## The drawer
 
 - `canEdit` becomes `activeTab === 'orders' && canEditOrderDetails(user)`. The drawer stays
   read-only on every other tab, exactly as today.
-- A user without the permission sees the drawer read-only, with a small **View only · ask an
-  admin for edit access** label where **Edit** would be.
+- On the Orders tab, a user without the permission sees the drawer read-only, with a small
+  **View only · ask an admin for edit access** label where **Edit** would be. Other tabs show
+  no label, because the drawer is read-only there for everyone.
 - **Freeze / Final Design** is unchanged. It is governed by the Frozen Designs page access, not
   by this permission.
 - The attachment upload boxes (Die Order Form, Die Design PDF) are unchanged. Files picked there
@@ -73,11 +82,12 @@ Admin role the switch shows on and disabled.
      so. **Save** stays disabled until it has non-blank text. Otherwise it is optional.
    - **ETA cause.** When the ETA moves off a date it already had (`needsCause` from
      `src/utils/deliveryFollowup.js`), the cause picker (cause + note, `other` needs a note)
-     appears inside this dialog. The standalone `EtaCauseDialog` is no longer used by the
-     drawer; it stays for the delivery drawer.
+     appears inside this dialog. The drawer was the only user of the standalone
+     `src/components/delivery/EtaCauseDialog.jsx`, so that file is deleted.
 3. Confirming sends `PATCH /api/orders/:id/details` with only the changed fields.
 4. On success the drawer shows the order the server returns and adds the number of logged
-   fields to `changeCount`.
+   fields to `changeCount`. The change-log view shows a cleared value's new value as `N/A`,
+   the same way it already shows an empty old value.
 5. On 403 `ORDER_EDIT_FORBIDDEN` the drawer shows "You no longer have permission to edit order
    details", drops the edits and returns to view-only. On 400 the server's message is shown
    and the dialog stays open, so nothing is lost.
@@ -164,7 +174,9 @@ the same input differently, following the `src/utils/trials.test.js` pattern.
    `changed_at = now()`.
 9. Commit. When `Ordered date` was filled, run the existing `autoUpdateBackupRequests` with the
    stored `die_no`, as the generic PATCH does today.
-10. Answer 200 with `{ order: presentOrder(row), logged: n }`.
+10. Answer 200 with `{ order, logged: n }`, where `order` is `presentOrder` of the updated row
+    without `changeCount`. The row has no change count, so the client adds `logged` to the
+    count it already holds.
 
 **`PUT /api/orders/:id`** (full replace) gets the same 403 check. Nothing in the app calls it
 (`ordersAPI.update` has no callers), but today it can rewrite a whole order.
