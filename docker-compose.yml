@@ -66,10 +66,12 @@ services:
       TZ: ${TZ:-Asia/Dubai}
       FROZEN_DESIGNS_ROOT: /app/storage/frozen-designs
       QD_FILES_ROOT: /app/storage/qd-files
+      ORDER_FILES_ROOT: /app/storage/order-files
     volumes:
       - order_backups:/app/backups
       - frozen_designs_data:/app/storage/frozen-designs
       - qd_files_data:/app/storage/qd-files
+      - order_files_data:/app/storage/order-files
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -179,6 +181,8 @@ volumes:
   frozen_designs_data:
     driver: local
   qd_files_data:
+    driver: local
+  order_files_data:
     driver: local
 
 networks:

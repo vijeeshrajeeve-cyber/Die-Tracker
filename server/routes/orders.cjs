@@ -1,5 +1,9 @@
 const { presentOrder } = require('../services/orderPresentation.cjs');
 const express = require('express');
+const fs = require('fs');
+const fsp = require('fs/promises');
+const path = require('path');
+const multer = require('multer');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
@@ -9,6 +13,7 @@ const {
     EDITABLE_FIELDS, OrderEditError, planChanges, needsReason, changeNeedsReason,
     displayValue, validateReason, canEditOrderDetails, fromRow, columnValue,
 } = require('../services/orderDetailEdits.cjs');
+const orderFiles = require('../services/orderFiles.cjs');
 const { adminMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -176,6 +181,63 @@ const requireOrderEditor = (req, res, next) => {
     }
     next();
 };
+
+// Keep the temp dir on the same filesystem as the final storage so moving the
+// file into place is an intra-device rename (avoids EXDEV across the Docker volume).
+const orderFileUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const dir = orderFiles.getTmpDir();
+            fs.mkdir(dir, { recursive: true }, (err) => cb(err, dir));
+        },
+    }),
+    limits: { fileSize: orderFiles.MAX_FILE_BYTES, files: 1 },
+    fileFilter: (req, file, cb) => {
+        if (orderFiles.isAllowedExtension(file.originalname)) return cb(null, true);
+        cb(new Error('Attach the file as a PDF'));
+    },
+});
+
+// Multer surfaces rejections (wrong type, oversize) as errors. These are client
+// mistakes, so answer 400 with a message the drawer can show.
+const acceptOrderFile = (req, res, next) => {
+    orderFileUpload.single('file')(req, res, (err) => {
+        if (!err) return next();
+        const message = err.code === 'LIMIT_FILE_SIZE'
+            ? `File too large (max ${Math.round(orderFiles.MAX_FILE_BYTES / 1024 / 1024)} MB)`
+            : err.message;
+        return res.status(400).json({ error: message });
+    });
+};
+
+// Answers before multer runs, so a bad slot never reaches the disk.
+const knownFileSlot = (req, res, next) => {
+    if (!Object.prototype.hasOwnProperty.call(orderFiles.SLOTS, req.params.slot)) {
+        return res.status(404).json({ error: 'Unknown attachment' });
+    }
+    next();
+};
+
+async function moveIntoPlace(src, dest) {
+    try {
+        await fsp.rename(src, dest);
+    } catch (e) {
+        if (e.code === 'EXDEV') {
+            await fsp.copyFile(src, dest);
+            await fsp.unlink(src);
+        } else {
+            throw e;
+        }
+    }
+}
+
+// Absolute path of a stored order file, or null when the stored path points
+// outside the storage root.
+function orderFilePath(storedPath) {
+    const root = path.resolve(orderFiles.getRoot());
+    const abs = path.resolve(root, storedPath);
+    return orderFiles.isInsideRoot(root, abs) ? abs : null;
+}
 
 // The saved row carries no change count, so the client adds `logged` to its own.
 const presentSaved = (row) => {
@@ -500,6 +562,109 @@ router.patch('/:id/details', requireOrderEditor, orderIdValidation, handleValida
     }
 });
 
+// The drawer's current attachments. Anyone who can open the order may see them.
+router.get('/:id/files', orderIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT f.id, f.slot, f.original_name, f.size_bytes, f.uploaded_at, u.username AS uploaded_by
+            FROM die_order_files f
+            LEFT JOIN users u ON u.id = f.uploaded_by
+            WHERE f.order_id = $1 AND f.replaced_at IS NULL
+            ORDER BY f.slot
+        `, [req.params.id]);
+        res.json({ files: result.rows });
+    } catch (error) {
+        console.error('List order files error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Attach a PDF to one of the drawer's slots (multipart, field "file", optional
+// "reason"). Editors only, checked before multer so a refused upload never
+// reaches the disk. Replacing a file needs a reason, like changing a value; the
+// old file is kept and marked replaced, and the change is logged.
+router.post('/:id/files/:slot', requireOrderEditor, orderIdValidation, handleValidationErrors, knownFileSlot, acceptOrderFile, async (req, res) => {
+    const { id, slot } = req.params;
+    const file = req.file;
+    const discardTemp = () => (file ? fsp.unlink(file.path).catch(() => {}) : null);
+    if (!file) return res.status(400).json({ error: 'Choose a PDF to upload' });
+    let reason;
+    try {
+        reason = validateReason(req.body?.reason);
+    } catch (error) {
+        await discardTemp();
+        return res.status(400).json({ error: error.message, code: error.code });
+    }
+
+    const client = await pool.connect();
+    let dest = null;
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query('SELECT id, die_no, status FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+        if (rows.length === 0) {
+            await client.query('ROLLBACK');
+            await discardTemp();
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        const order = rows[0];
+        const existing = await client.query(
+            'SELECT id, original_name FROM die_order_files WHERE order_id = $1 AND slot = $2 AND replaced_at IS NULL FOR UPDATE',
+            [id, slot]
+        );
+        const current = existing.rows[0] || null;
+        const entry = orderFiles.planUpload({ slot, current, fileName: file.originalname, reason });
+
+        const root = orderFiles.getRoot();
+        dest = orderFiles.buildStoredPath(root, {
+            dieNo: order.die_no, orderId: order.id, slot, stamp: Date.now(), fileName: file.originalname,
+        });
+        await fsp.mkdir(path.dirname(dest), { recursive: true });
+        await moveIntoPlace(file.path, dest);
+
+        if (current) await client.query('UPDATE die_order_files SET replaced_at = CURRENT_TIMESTAMP WHERE id = $1', [current.id]);
+        const inserted = await client.query(
+            `INSERT INTO die_order_files (order_id, slot, original_name, stored_path, mime_type, size_bytes, uploaded_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING id, slot, original_name, size_bytes, uploaded_at`,
+            [id, slot, file.originalname, path.relative(root, dest), file.mimetype, file.size, req.user?.id || null]
+        );
+        await insertChangeLog(client, id, [{ ...entry, stage: order.status }], req.user);
+        await client.query('COMMIT');
+        res.status(201).json({ file: { ...inserted.rows[0], uploaded_by: req.user?.username || null } });
+    } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        // A refused upload leaves nothing on disk: neither the moved file nor the temp one.
+        if (dest) await fsp.unlink(dest).catch(() => {});
+        await discardTemp();
+        if (error instanceof OrderEditError) {
+            return res.status(400).json({ error: error.message, code: error.code, ...(error.fields && { fields: error.fields }) });
+        }
+        console.error('Upload order file error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        client.release();
+    }
+});
+
+// Download one stored file, only through the order it belongs to.
+router.get('/:id/files/:fileId', orderIdValidation, param('fileId').isInt({ min: 1 }).withMessage('Invalid file ID'),
+    handleValidationErrors, async (req, res) => {
+        try {
+            const result = await pool.query(
+                'SELECT stored_path, original_name FROM die_order_files WHERE id = $1 AND order_id = $2',
+                [req.params.fileId, req.params.id]
+            );
+            if (result.rows.length === 0) return res.status(404).json({ error: 'File not found' });
+            const abs = orderFilePath(result.rows[0].stored_path);
+            if (!abs) return res.status(400).json({ error: 'Invalid path' });
+            if (!fs.existsSync(abs)) return res.status(404).json({ error: 'File missing on disk' });
+            res.download(abs, result.rows[0].original_name);
+        } catch (error) {
+            console.error('Download order file error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
 // Update order (full replace — used by Order Detail Modal save)
 router.put('/:id', requireOrderEditor, orderIdValidation, orderValidation, handleValidationErrors, async (req, res) => {
     try {
@@ -587,10 +752,18 @@ router.delete('/:id', adminMiddleware, orderIdValidation, handleValidationErrors
     try {
         const { id } = req.params;
 
+        const files = await pool.query('SELECT stored_path FROM die_order_files WHERE order_id = $1', [id]);
         const result = await pool.query('DELETE FROM die_orders WHERE id = $1', [id]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // The file rows went with the order (ON DELETE CASCADE); their files go
+        // only now the rows are gone for good.
+        for (const { stored_path: storedPath } of files.rows) {
+            const abs = orderFilePath(storedPath);
+            if (abs) await fsp.unlink(abs).catch(() => {});
         }
 
         res.json({ message: 'Order deleted successfully' });

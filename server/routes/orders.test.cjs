@@ -22,6 +22,7 @@ installFakeDb(async (sql, params = []) => {
   if (/^INSERT INTO die_delivery_events/.test(q)) return { rows: [{ id: 1 }] };
   if (/^INSERT INTO order_changes/.test(q)) return { rows: [] };
   if (/^UPDATE backup_die_requests/.test(q)) return { rows: [] };
+  if (/^SELECT stored_path FROM die_order_files WHERE order_id = \$1/.test(q)) return { rows: [] };
   if (/^DELETE FROM die_orders WHERE id = \$1/.test(q)) return { rows: [], rowCount: storedEta === undefined ? 0 : 1 };
   throw new Error(`orders test: unexpected query ${q}`);
 });
@@ -123,7 +124,10 @@ test('an admin can still delete an order', async () => {
   currentUser = ADMIN;
   const { status } = await remove();
   assert.equal(status, 200);
-  assert.deepEqual(log.map(({ q, params }) => [q, params]), [['DELETE FROM die_orders WHERE id = $1', ['7']]]);
+  assert.deepEqual(log.map(({ q, params }) => [q, params]), [
+    ['SELECT stored_path FROM die_order_files WHERE order_id = $1', ['7']],
+    ['DELETE FROM die_orders WHERE id = $1', ['7']],
+  ]);
 });
 
 test('an admin deleting an unknown order gets a 404', async () => {

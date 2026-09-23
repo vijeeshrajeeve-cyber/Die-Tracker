@@ -198,6 +198,23 @@ CREATE TABLE IF NOT EXISTS frozen_design_files (
     uploaded_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Order Details drawer attachments (Die Order Form, Die Design PDF).
+-- A replaced file keeps its row with replaced_at set; one current per slot.
+CREATE TABLE IF NOT EXISTS die_order_files (
+    id SERIAL PRIMARY KEY,
+    order_id      INTEGER NOT NULL REFERENCES die_orders(id) ON DELETE CASCADE,
+    slot          TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    stored_path   TEXT NOT NULL,
+    mime_type     TEXT,
+    size_bytes    BIGINT,
+    uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    uploaded_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    replaced_at   TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_current_order_file
+    ON die_order_files (order_id, slot) WHERE replaced_at IS NULL;
+
 ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_id INTEGER REFERENCES frozen_designs(id);
 ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_action TEXT;
 ALTER TABLE die_orders          ADD COLUMN IF NOT EXISTS frozen_design_override_reason TEXT;
