@@ -1,4 +1,8 @@
 'use strict';
+// orders.cjs loads auth.cjs for adminMiddleware, and auth.cjs warns when this
+// is unset.
+process.env.JWT_SECRET = 'orders-test-secret-that-is-at-least-32-characters';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -223,6 +227,7 @@ test('deleting an order removes its stored files from disk', async () => {
     { order_id: 7, stored_path: path.join('a', '1_d.pdf') },
     { order_id: 8, stored_path: path.join('a', '2_keep.pdf') },
   ];
+  currentUser = { ...EDITOR, role: 'admin' }; // deleting an order is admin-only
   const { status } = await request(base, '/api/orders/7', { method: 'DELETE' });
   assert.equal(status, 200);
   assert.deepEqual(filesOnDisk(), ['a/2_keep.pdf']);
