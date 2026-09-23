@@ -120,6 +120,16 @@ export const authAPI = {
         return apiRequest('/auth/me');
     },
 
+    // Re-read the signed-in user, so a permission an admin changed since
+    // sign-in (page access, editing order details) is picked up on reload.
+    refreshUser: async () => {
+        const data = await apiRequest('/auth/me');
+        if (!data?.user) return null;
+        const user = { ...getUser(), ...data.user };
+        setUser(user);
+        return user;
+    },
+
     changePassword: async (currentPassword, newPassword) => {
         const data = await apiRequest('/auth/change-password', {
             method: 'POST',
@@ -144,10 +154,13 @@ export const usersAPI = {
 
     // email is optional but is where QD notifications (e.g. a QD sent back to
     // this user) are delivered — without it they get none.
-    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null) => {
+    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null, canEditOrderDetails = false) => {
         return apiRequest('/users', {
             method: 'POST',
-            body: JSON.stringify({ username, password, role, page_access: pageAccess, email, full_name: fullName, phone }),
+            body: JSON.stringify({
+                username, password, role, page_access: pageAccess, email, full_name: fullName, phone,
+                can_edit_order_details: canEditOrderDetails,
+            }),
         });
     },
 
@@ -164,7 +177,7 @@ export const usersAPI = {
         });
     },
 
-    update: async (id, { username, role, pageAccess, email, fullName, phone } = {}) => {
+    update: async (id, { username, role, pageAccess, email, fullName, phone, canEditOrderDetails } = {}) => {
         const body = {};
         if (username !== undefined) body.username = username;
         if (role !== undefined) body.role = role;
@@ -172,6 +185,7 @@ export const usersAPI = {
         if (email !== undefined) body.email = email; // '' clears the address
         if (fullName !== undefined) body.full_name = fullName;
         if (phone !== undefined) body.phone = phone;
+        if (canEditOrderDetails !== undefined) body.can_edit_order_details = canEditOrderDetails;
         return apiRequest(`/users/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(body),
@@ -249,6 +263,16 @@ export const ordersAPI = {
         return apiRequest(`/orders/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(fields),
+        });
+    },
+
+    // Save from the Order Details drawer. Editors only: the server works out
+    // what changed and needs `reason` when an existing value is changed or
+    // cleared, and `etaChange` ({ cause, note }) when a set ETA moves.
+    patchDetails: async (id, { fields, reason, etaChange } = {}) => {
+        return apiRequest(`/orders/${id}/details`, {
+            method: 'PATCH',
+            body: JSON.stringify({ fields, reason, etaChange }),
         });
     },
 
