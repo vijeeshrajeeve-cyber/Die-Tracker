@@ -113,7 +113,7 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
         const { username, password } = req.body;
 
         const result = await pool.query(
-            'SELECT id, username, full_name, email, phone, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access FROM users WHERE username = $1',
+            'SELECT id, username, full_name, email, phone, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access, can_edit_order_details FROM users WHERE username = $1',
             [username]
         );
         const user = result.rows[0];
@@ -173,7 +173,8 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
                 phone: user.phone || '',
                 role: user.role,
                 passwordMustChange: user.password_must_change,
-                pageAccess
+                pageAccess,
+                canEditOrderDetails: !!user.can_edit_order_details
             }
         });
     } catch (error) {
@@ -248,7 +249,8 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
                 username: user.username,
                 role: user.role,
                 passwordMustChange: false,
-                pageAccess: cpPageAccess
+                pageAccess: cpPageAccess,
+                canEditOrderDetails: !!user.can_edit_order_details
             }
         });
     } catch (error) {
@@ -269,7 +271,7 @@ router.get('/me', async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         const result = await pool.query(
-            'SELECT id, username, full_name, email, phone, role, password_must_change, page_access, created_at FROM users WHERE id = $1',
+            'SELECT id, username, full_name, email, phone, role, password_must_change, page_access, can_edit_order_details, created_at FROM users WHERE id = $1',
             [decoded.id]
         );
         const user = result.rows[0];
@@ -288,6 +290,7 @@ router.get('/me', async (req, res) => {
                 role: user.role,
                 passwordMustChange: user.password_must_change,
                 pageAccess: parsePageAccess(user.page_access),
+                canEditOrderDetails: !!user.can_edit_order_details,
                 createdAt: user.created_at
             }
         });
@@ -333,7 +336,7 @@ const authMiddleware = async (req, res, next) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         const result = await pool.query(
-            'SELECT id, username, role, password_must_change, page_access FROM users WHERE id = $1',
+            'SELECT id, username, role, password_must_change, page_access, can_edit_order_details FROM users WHERE id = $1',
             [decoded.id]
         );
         const currentUser = result.rows[0];
@@ -358,7 +361,9 @@ const authMiddleware = async (req, res, next) => {
             username: currentUser.username,
             role: currentUser.role,
             passwordMustChange: currentUser.password_must_change,
-            pageAccess: parsePageAccess(currentUser.page_access)
+            pageAccess: parsePageAccess(currentUser.page_access),
+            // Re-read on every request, so switching it off applies at once.
+            canEditOrderDetails: !!currentUser.can_edit_order_details
         };
         next();
     } catch (error) {

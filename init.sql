@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
     failed_login_attempts INTEGER DEFAULT 0,
     locked_until TIMESTAMP,
     page_access TEXT DEFAULT NULL,
+    -- Who may edit an order from the Order Details drawer (admins always can).
+    can_edit_order_details BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

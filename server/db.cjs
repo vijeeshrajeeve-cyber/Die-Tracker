@@ -113,6 +113,11 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='page_access') THEN
           ALTER TABLE users ADD COLUMN page_access TEXT DEFAULT NULL;
         END IF;
+        -- Who may edit an order from the Order Details drawer. Admins always
+        -- can; everyone else needs an admin to switch this on.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='can_edit_order_details') THEN
+          ALTER TABLE users ADD COLUMN can_edit_order_details BOOLEAN NOT NULL DEFAULT false;
+        END IF;
       END $$;
 
       -- Suppliers table
