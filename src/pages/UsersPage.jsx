@@ -57,7 +57,7 @@ export default function UsersPage({
                         <td style={td}>
                           <span style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, background: u.role === 'admin' ? '#3B82F620' : '#64748B20', color: u.role === 'admin' ? '#3B82F6' : '#94A3B8' }}>{u.role}</span>
                           {u.role !== 'admin' && u.can_edit_order_details && (
-                            <span title="Can edit order details" style={{ marginLeft: '6px', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600, background: '#F59E0B20', color: '#F59E0B' }}>Edits orders</span>
+                            <span title="Can edit order details" style={{ display: 'inline-block', marginLeft: '6px', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600, whiteSpace: 'nowrap', background: '#F59E0B20', color: '#F59E0B' }}>Edits orders</span>
                           )}
                         </td>
                         <td style={td}>
