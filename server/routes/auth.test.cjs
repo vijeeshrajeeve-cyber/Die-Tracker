@@ -14,12 +14,19 @@ const { installFakeDb, listen, request } = require('./testSupport.cjs');
 // Only the queries these tests need are answered.
 const users = new Map();
 const byName = (name) => [...users.values()].find((u) => u.username === name);
+// Answer with only the columns the query names, as Postgres would, so a
+// column left out of a SELECT is missing here too.
+const pick = (sql, row) => {
+  const cols = sql.match(/^SELECT (.+?) FROM users/s)[1].trim();
+  if (cols === '*') return row;
+  return Object.fromEntries(cols.split(',').map((c) => c.trim()).map((c) => [c, row[c]]));
+};
 installFakeDb(async (sql, params) => {
   if (/FROM users WHERE id = \$1/.test(sql)) {
-    return { rows: users.has(params[0]) ? [users.get(params[0])] : [] };
+    return { rows: users.has(params[0]) ? [pick(sql, users.get(params[0]))] : [] };
   }
   if (/FROM users WHERE username = \$1/.test(sql)) {
-    return { rows: byName(params[0]) ? [byName(params[0])] : [] };
+    return { rows: byName(params[0]) ? [pick(sql, byName(params[0]))] : [] };
   }
   if (/^UPDATE users SET password_hash = \$1, password_must_change = false/.test(sql)) {
     Object.assign(users.get(params[1]), { password_hash: params[0], password_must_change: false });
@@ -43,6 +50,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
 app.get('/api/orders', authMiddleware, (req, res) => res.json({ orders: [], user: req.user.username }));
+app.get('/api/whoami', authMiddleware, (req, res) => res.json(req.user));
 
 let base;
 let close;
@@ -50,12 +58,12 @@ test.before(async () => { ({ base, close } = await listen(app)); });
 test.after(() => close());
 
 let nextId = 1;
-const addUser = ({ mustChange, password = 'Temp-pass-1' }) => {
+const addUser = ({ mustChange, password = 'Temp-pass-1', canEdit = false }) => {
   const id = nextId++;
   users.set(id, {
     id, username: `user${id}`, role: 'user', page_access: null,
     password_hash: bcrypt.hashSync(password, 4), password_must_change: mustChange,
-    failed_login_attempts: 0, locked_until: null,
+    failed_login_attempts: 0, locked_until: null, can_edit_order_details: canEdit,
   });
   // The token deliberately says nothing about the pending change: the server
   // has to read it from the database, not trust what the client holds.
@@ -138,4 +146,29 @@ test('after a change the new password signs in and the old one does not', async 
 
   assert.equal((await signIn(username, 'New-pass-22')).status, 200);
   assert.equal((await signIn(username, 'Temp-pass-1')).status, 401);
+});
+
+test('sign-in and the profile say whether the user may edit order details', async () => {
+  const { username, token } = addUser({ mustChange: false, password: 'Right-pass-1', canEdit: true });
+  const signedIn = await signIn(username, 'Right-pass-1');
+  assert.equal(signedIn.body.user.canEditOrderDetails, true);
+  const me = await request(base, '/api/auth/me', { token });
+  assert.equal(me.body.user.canEditOrderDetails, true);
+});
+
+test('the permission is read from the database on every request', async () => {
+  const { token } = addUser({ mustChange: false });
+  const { id } = jwt.decode(token);
+  assert.equal((await request(base, '/api/whoami', { token })).body.canEditOrderDetails, false);
+  users.get(id).can_edit_order_details = true;
+  assert.equal((await request(base, '/api/whoami', { token })).body.canEditOrderDetails, true);
+});
+
+test('a password change keeps the permission in the user it returns', async () => {
+  const { token } = addUser({ mustChange: true, password: 'Temp-pass-1', canEdit: true });
+  const changed = await request(base, '/api/auth/change-password', {
+    token, body: { currentPassword: 'Temp-pass-1', newPassword: 'New-pass-22' },
+  });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.user.canEditOrderDetails, true);
 });

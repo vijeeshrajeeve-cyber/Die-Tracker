@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useId, lazy, Suspense } from 'react';
-import { Search, Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake, ClipboardCheck, CornerUpLeft } from 'lucide-react';
+import { Search, Package, Clock, CheckCircle, AlertTriangle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake, ClipboardCheck, CornerUpLeft } from 'lucide-react';
 import Papa from 'papaparse';
 
 // `xlsx` is ~800 KB and is only reachable from the spreadsheet import and the
@@ -26,8 +26,8 @@ import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
 
 import FlowPage from './pages/FlowPage';
-import EtaCauseDialog from './components/delivery/EtaCauseDialog';
-import { needsCause } from './utils/deliveryFollowup';
+import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
+import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -941,14 +941,15 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], currentUser, canEdit = true, onViewRevisions }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], canEdit = true, showViewOnly = false, onViewRevisions }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
   const [viewingFile, setViewingFile] = useState(null); // { file, type, notes, signature }
-  const [statusReasonModal, setStatusReasonModal] = useState({ show: false, newStatus: '', oldStatus: '', reason: '' });
-  const [pendingStatusLog, setPendingStatusLog] = useState(null);
-  const [etaCausePrompt, setEtaCausePrompt] = useState(false);
+  const [review, setReview] = useState(null); // { changes } while Review changes is open
+  const [reviewError, setReviewError] = useState('');
+  // Set when the server refuses a save because an admin switched the permission off.
+  const [editRevoked, setEditRevoked] = useState(false);
   const [presses, setPresses] = useState([]);
   const [showFreeze, setShowFreeze] = useState(false);
   const [freezeToast, setFreezeToast] = useState('');
@@ -982,7 +983,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
       specialFollowUp: !!(order.specialFollowUp === true || order.specialFollowUp === 1),
     });
     setIsEditing(false);
-    setPendingStatusLog(null);
+    setReview(null);
   }, [order.id]);
 
   const handleFileChange = (field, file) => {
@@ -1033,11 +1034,6 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   };
 
   const handleFieldChange = (field, value) => {
-    if (field === 'STATUS' && (value === 'CANCELLED' || value === 'HOLD')) {
-      const oldStatus = editedOrder.STATUS || order.STATUS;
-      setStatusReasonModal({ show: true, newStatus: value, oldStatus, reason: '' });
-      return;
-    }
     setEditedOrder(prev => {
       const updated = { ...prev, [field]: value };
       // Clear the selected press if it no longer belongs to the chosen plant
@@ -1055,69 +1051,43 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     });
   };
 
-  const handleStatusReasonConfirm = () => {
-    const { newStatus, oldStatus, reason } = statusReasonModal;
-    const now = new Date();
-    const logEntry = {
-      // date and time must agree: toTimeString() is local, so reading the day
-      // from toISOString() logged a 1am change as yesterday at 01:00.
-      date: todayLocal(now),
-      time: now.toTimeString().split(' ')[0],
-      field: 'STATUS',
-      oldValue: oldStatus,
-      newValue: newStatus,
-      reason: reason.trim(),
-      changedBy: currentUser?.username || 'unknown',
-      stage: oldStatus,
-    };
-    setPendingStatusLog(logEntry);
-    setEditedOrder(prev => ({ ...prev, STATUS: newStatus }));
-    setStatusReasonModal({ show: false, newStatus: '', oldStatus: '', reason: '' });
-  };
-
-  const handleSave = async (etaChange) => {
-    // onClick passes an event; only a real answer from the cause dialog counts.
-    const change = etaChange && etaChange.cause ? etaChange : null;
-    if (!change && needsCause(order.ETA, editedOrder.ETA)) {
-      setEtaCausePrompt(true);
+  // Save opens Review changes with what really changed; nothing changed means
+  // nothing to send. A value the server would refuse is reported here first.
+  // Only changed fields are sent, so a date another workflow step set after
+  // this drawer opened is never overwritten with the drawer's stale copy.
+  const handleSave = () => {
+    let changes;
+    try {
+      changes = planChanges(order, pickEditable(editedOrder));
+    } catch (error) {
+      dialogs.notify(error.message, 'error');
       return;
     }
-    setIsSaving(true);
-    try {
-      // Date columns stored as DATE in the DB. Only include a date field in the
-      // PATCH if the user explicitly changed it. If the edited value is null/empty
-      // AND the original was also null/empty, skip it — that way another workflow
-      // step that set the date after this modal was opened won't be overwritten.
-      const DATE_FIELDS = new Set([
-        'Die Requested Date', 'Ordered date', 'Design Received Date',
-        '3D Model Received Date', 'Design Approved Date', 'Die Received Date',
-        'Submission Date', 'Sample Approval Date', 'Design to EMS Date',
-      ]);
-      const isEmpty = (v) => v === null || v === undefined || v === '';
-      const patch = {};
-      for (const [field, value] of Object.entries(editedOrder)) {
-        if (DATE_FIELDS.has(field) && isEmpty(value)) {
-          // Only include a null/empty date if the user explicitly cleared a previously-set date
-          if (!isEmpty(order[field])) patch[field] = value;
-        } else {
-          patch[field] = value;
-        }
-      }
-      if (pendingStatusLog) patch['Change Log'] = [pendingStatusLog];
-      if (change) patch['ETA Change'] = change;
-
-      await ordersAPI.patch(order.id, patch);
-      const updatedOrder = {
-        ...order,
-        ...editedOrder,
-        'Change Log': pendingStatusLog ? [pendingStatusLog] : [],
-        changeCount: (order.changeCount || 0) + (pendingStatusLog ? 1 : 0),
-      };
-      if (onUpdate) onUpdate(updatedOrder);
+    if (changes.length === 0) {
       setIsEditing(false);
-      setPendingStatusLog(null);
+      return;
+    }
+    setReviewError('');
+    setReview({ changes });
+  };
+
+  const confirmSave = async ({ reason, etaChange }) => {
+    const fields = Object.fromEntries(review.changes.map((c) => [c.field, editedOrder[c.field]]));
+    setIsSaving(true);
+    setReviewError('');
+    try {
+      const saved = await ordersAPI.patchDetails(order.id, { fields, reason, etaChange });
+      setReview(null);
+      setIsEditing(false);
+      if (onUpdate) onUpdate({ ...order, ...saved.order, changeCount: (order.changeCount || 0) + saved.logged });
     } catch (error) {
-      dialogs.notify('Failed to save: ' + error.message, 'error');
+      if (error.data?.code === 'ORDER_EDIT_FORBIDDEN') {
+        setEditRevoked(true);
+        handleCancel();
+        dialogs.notify('You no longer have permission to edit order details', 'error');
+      } else {
+        setReviewError(error.message);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -1130,7 +1100,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
       specialFollowUp: !!(order.specialFollowUp === true || order.specialFollowUp === 1),
     });
     setIsEditing(false);
-    setPendingStatusLog(null);
+    setReview(null);
   };
 
   const inputStyle = {
@@ -1382,7 +1352,12 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                 <button onClick={() => setShowFreeze(true)} style={{ padding: '9px 18px', background: 'transparent', color: '#38BDF8', border: '1px solid #38BDF8', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Snowflake size={15} /> Freeze / Final Design
                 </button>
-                {canEdit && <button onClick={() => setIsEditing(true)} style={{ padding: '9px 22px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>Edit</button>}
+                {canEdit && !editRevoked && <button onClick={() => setIsEditing(true)} style={{ padding: '9px 22px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>Edit</button>}
+                {(showViewOnly || (canEdit && editRevoked)) && (
+                  <span style={{ alignSelf: 'center', fontSize: '0.78rem', color: theme?.textDim || '#64748B' }}>
+                    View only · ask an admin for edit access
+                  </span>
+                )}
               </>
             ) : (
               <>
@@ -1422,63 +1397,18 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         </div>
       )}
 
-      {etaCausePrompt && (
-        <EtaCauseDialog
+      {review && (
+        <OrderEditReviewDialog
           theme={theme}
+          dieNo={currentOrder['DIE NO']}
+          changes={review.changes}
           fromEta={order.ETA}
           toEta={editedOrder.ETA}
-          onCancel={() => setEtaCausePrompt(false)}
-          onConfirm={(c) => { setEtaCausePrompt(false); handleSave(c); }}
+          saving={isSaving}
+          error={reviewError}
+          onCancel={() => { if (!isSaving) setReview(null); }}
+          onConfirm={confirmSave}
         />
-      )}
-
-      {/* Status Change Reason Modal */}
-      {statusReasonModal.show && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }} onClick={e => e.stopPropagation()}>
-          <div style={{ background: theme?.cardBg || '#1E293B', borderRadius: '16px', width: '100%', maxWidth: '440px', border: `1px solid ${theme?.cardBorder || '#334155'}`, overflow: 'hidden' }}>
-            {/* Header */}
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}`, background: statusReasonModal.newStatus === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(75,85,99,0.15)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#4B5563', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <XCircle size={18} color="white" />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: theme?.text || '#F1F5F9' }}>Reason Required</h3>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: theme?.textDim || '#64748B' }}>
-                    Status → <strong style={{ color: statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#9CA3AF' }}>{statusReasonModal.newStatus}</strong>
-                  </p>
-                </div>
-              </div>
-            </div>
-            {/* Body */}
-            <div style={{ padding: '1.25rem 1.5rem' }}>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: theme?.textDim || '#64748B' }}>
-                Changing from <strong style={{ color: theme?.text || '#F1F5F9' }}>{statusReasonModal.oldStatus}</strong> to <strong style={{ color: statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#9CA3AF' }}>{statusReasonModal.newStatus}</strong>. Please provide a reason — this will be recorded in the order's change log.
-              </p>
-              <textarea
-                autoFocus
-                rows={4}
-                placeholder="Enter reason..."
-                value={statusReasonModal.reason}
-                onChange={(e) => setStatusReasonModal(prev => ({ ...prev, reason: e.target.value }))}
-                style={{ width: '100%', padding: '10px 12px', background: theme?.inputBg || '#0F172A', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', color: theme?.text || '#F1F5F9', fontSize: '0.875rem', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-            {/* Footer */}
-            <div style={{ padding: '0 1.5rem 1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => setStatusReasonModal({ show: false, newStatus: '', oldStatus: '', reason: '' })} style={{ padding: '8px 18px', background: 'transparent', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', color: theme?.textDim || '#64748B', fontSize: '0.875rem', cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button
-                disabled={!statusReasonModal.reason.trim()}
-                onClick={handleStatusReasonConfirm}
-                style={{ padding: '8px 18px', background: statusReasonModal.reason.trim() ? (statusReasonModal.newStatus === 'CANCELLED' ? '#EF4444' : '#4B5563') : '#334155', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.875rem', cursor: statusReasonModal.reason.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -1901,6 +1831,29 @@ export default function DieOrderingSystem() {
       fetchEmailTemplates();
     }
   }, [isLoggedIn, forcePasswordChange, fetchOrders, fetchUsers, fetchSuppliers, fetchPlants, fetchCorrectors, fetchBackupRequests, fetchSampleFollowups, fetchSampleTrials, fetchPlantBudgets, fetchProfileMeta, fetchEmailTemplates]);
+
+  // The stored user is whatever sign-in returned. Re-read it once on load so a
+  // permission an admin changed since then shows after a reload. Only a real
+  // permission change replaces it: a new user object re-runs every loader
+  // above, because fetchUsers depends on it.
+  useEffect(() => {
+    if (!isLoggedIn || forcePasswordChange) return undefined;
+    let cancelled = false;
+    authAPI.refreshUser()
+      .then((fresh) => {
+        if (cancelled || !fresh) return;
+        setUser((prev) => (
+          prev
+          && prev.role === fresh.role
+          && prev.canEditOrderDetails === fresh.canEditOrderDetails
+          && JSON.stringify(prev.pageAccess) === JSON.stringify(fresh.pageAccess)
+            ? prev
+            : fresh
+        ));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isLoggedIn, forcePasswordChange]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -3333,7 +3286,7 @@ export default function DieOrderingSystem() {
           </>}
         </main>
 
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} currentUser={user} canEdit={activeTab === 'orders'} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (
           <Suspense fallback={<ChunkFallback theme={theme} />}>

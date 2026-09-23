@@ -13,6 +13,9 @@ const blankToNull = (v) => {
 };
 const normalizeEmail = blankToNull;
 
+// Accepts what express-validator's isBoolean lets through.
+const toFlag = (v) => v === true || v === 'true' || v === 1 || v === '1';
+
 // Validation error handler
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
@@ -46,6 +49,9 @@ const createUserValidation = [
     body('email')
         .optional({ values: 'falsy' })
         .isEmail().withMessage('Enter a valid email address'),
+    body('can_edit_order_details')
+        .optional()
+        .isBoolean().withMessage('can_edit_order_details must be true or false'),
 ];
 
 const updateUserValidation = [
@@ -60,6 +66,9 @@ const updateUserValidation = [
     body('role')
         .optional()
         .isIn(['admin', 'user', 'die_designer', 'simulation_engineer']).withMessage('Role must be "admin", "user", "die_designer", or "simulation_engineer"'),
+    body('can_edit_order_details')
+        .optional()
+        .isBoolean().withMessage('can_edit_order_details must be true or false'),
 ];
 
 const resetPasswordValidation = [
@@ -91,7 +100,7 @@ const VALID_PAGE_IDS = [
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, full_name, email, phone, role, page_access, created_at FROM users ORDER BY created_at DESC'
+            'SELECT id, username, full_name, email, phone, role, page_access, can_edit_order_details, created_at FROM users ORDER BY created_at DESC'
         );
         res.json({
             users: result.rows.map(u => ({
@@ -108,7 +117,7 @@ router.get('/', async (req, res) => {
 // Create new user (admin only)
 router.post('/', createUserValidation, handleValidationErrors, async (req, res) => {
     try {
-        const { username, password, email, full_name, phone, role = 'user', page_access } = req.body;
+        const { username, password, email, full_name, phone, role = 'user', page_access, can_edit_order_details } = req.body;
 
         // Validate page_access if provided
         if (page_access != null) {
@@ -128,11 +137,13 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
 
         // Admins always get full access (null)
         const storedPageAccess = role === 'admin' ? null : (page_access ? JSON.stringify(page_access) : null);
+        // Admins edit orders through their role; the switch is for everyone else.
+        const canEditOrders = role !== 'admin' && toFlag(can_edit_order_details);
 
         const passwordHash = await bcrypt.hash(password, 12);
         const result = await pool.query(
-            'INSERT INTO users (username, password_hash, email, full_name, phone, role, password_must_change, page_access) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-            [username, passwordHash, normalizeEmail(email), blankToNull(full_name), blankToNull(phone), role, true, storedPageAccess]
+            'INSERT INTO users (username, password_hash, email, full_name, phone, role, password_must_change, page_access, can_edit_order_details) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+            [username, passwordHash, normalizeEmail(email), blankToNull(full_name), blankToNull(phone), role, true, storedPageAccess, canEditOrders]
         );
 
         res.status(201).json({
@@ -143,6 +154,7 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
                 full_name: blankToNull(full_name),
                 phone: blankToNull(phone),
                 role,
+                can_edit_order_details: canEditOrders,
                 page_access: storedPageAccess ? JSON.parse(storedPageAccess) : null
             }
         });
@@ -193,7 +205,7 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
     try {
         const { id } = req.params;
         const userId = parseInt(id, 10);
-        const { username, email, full_name, phone, role, page_access } = req.body;
+        const { username, email, full_name, phone, role, page_access, can_edit_order_details } = req.body;
 
         if (page_access != null) {
             if (!Array.isArray(page_access) || !page_access.every(p => VALID_PAGE_IDS.includes(p))) {
@@ -243,6 +255,12 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
         if (role === 'admin' && storedPageAccess === undefined) {
             fields.push(`page_access = $${idx++}`); values.push(null);
         }
+        // Admins edit orders through their role, so the switch is kept off for them.
+        if (nextRole === 'admin') {
+            fields.push(`can_edit_order_details = $${idx++}`); values.push(false);
+        } else if (can_edit_order_details !== undefined) {
+            fields.push(`can_edit_order_details = $${idx++}`); values.push(toFlag(can_edit_order_details));
+        }
         fields.push('updated_at = CURRENT_TIMESTAMP');
 
         if (fields.length === 1) {
@@ -251,7 +269,7 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
 
         values.push(userId);
         const result = await pool.query(
-            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, username, full_name, email, phone, role, page_access, created_at`,
+            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, username, full_name, email, phone, role, page_access, can_edit_order_details, created_at`,
             values
         );
 

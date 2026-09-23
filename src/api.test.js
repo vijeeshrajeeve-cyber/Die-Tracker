@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI } = await import('./api.js');
+const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -198,4 +198,58 @@ test('qdNoExists and undoImport hit their endpoints', async () => {
   await qualityDiscrepanciesAPI.undoImport(61);
   assert.match(urls[0], /^GET .*\/quality-discrepancies\/exists\?qdNo=2026PH-04$/);
   assert.match(urls[1], /^DELETE .*\/quality-discrepancies\/61\/import$/);
+});
+
+test('patchDetails sends only the fields, the reason and any ETA cause', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ order: { id: 7 }, logged: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const res = await ordersAPI.patchDetails(7, { fields: { Supplier: 'BETA' }, reason: 'Re-quoted' });
+  assert.equal(res.logged, 1);
+  assert.match(seen.url, /\/orders\/7\/details$/);
+  assert.equal(seen.options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(seen.options.body), { fields: { Supplier: 'BETA' }, reason: 'Re-quoted' });
+});
+
+test('a refused order save carries the server code for the drawer to branch on', async () => {
+  respondWith(JSON.stringify({ error: 'You do not have permission to edit order details', code: 'ORDER_EDIT_FORBIDDEN' }), 403);
+  await assert.rejects(ordersAPI.patchDetails(7, { fields: { Supplier: 'BETA' } }), (error) => {
+    assert.equal(error.status, 403);
+    assert.equal(error.data.code, 'ORDER_EDIT_FORBIDDEN');
+    return true;
+  });
+});
+
+test('the users API sends the order details switch on create and update', async () => {
+  const bodies = [];
+  globalThis.fetch = async (url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ user: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  await usersAPI.create('ravi', 'Start-pass-1', 'user', null, null, null, null, true);
+  await usersAPI.update(7, { canEditOrderDetails: false });
+  await usersAPI.update(7, { email: '' });
+  assert.equal(bodies[0].can_edit_order_details, true);
+  assert.deepEqual(bodies[1], { can_edit_order_details: false });
+  assert.equal('can_edit_order_details' in bodies[2], false);
+});
+
+test('refreshUser stores the latest profile over the one sign-in saved', async () => {
+  const saved = {};
+  const original = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => (key === 'user' ? JSON.stringify({ id: 3, username: 'ravi', canEditOrderDetails: false }) : null),
+    setItem: (key, value) => { saved[key] = value; },
+    removeItem: () => {},
+  };
+  try {
+    respondWith(JSON.stringify({ user: { id: 3, username: 'ravi', role: 'user', canEditOrderDetails: true } }));
+    const user = await authAPI.refreshUser();
+    assert.equal(user.canEditOrderDetails, true);
+    assert.equal(JSON.parse(saved.user).canEditOrderDetails, true);
+  } finally {
+    globalThis.localStorage = original;
+  }
 });

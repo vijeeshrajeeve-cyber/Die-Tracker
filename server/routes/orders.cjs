@@ -5,6 +5,10 @@ const { pool } = require('../db.cjs');
 const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
 const { todayLocal } = require('../services/dates.cjs');
 const { planEtaChange, insertEtaEvent, DeliveryRuleError } = require('../services/deliveryFollowup.cjs');
+const {
+    EDITABLE_FIELDS, OrderEditError, planChanges, needsReason, changeNeedsReason,
+    displayValue, validateReason, canEditOrderDetails, fromRow, columnValue,
+} = require('../services/orderDetailEdits.cjs');
 
 const router = express.Router();
 
@@ -161,6 +165,22 @@ const handleValidationErrors = (req, res, next) => {
         });
     }
     next();
+};
+
+// Only admins, and the people an admin switched on, may edit an order's
+// values directly. The step-by-step pages use PATCH /:id and stay open.
+const requireOrderEditor = (req, res, next) => {
+    if (!canEditOrderDetails(req.user)) {
+        return res.status(403).json({ error: 'You do not have permission to edit order details', code: 'ORDER_EDIT_FORBIDDEN' });
+    }
+    next();
+};
+
+// The saved row carries no change count, so the client adds `logged` to its own.
+const presentSaved = (row) => {
+    const order = presentOrder(row);
+    delete order.changeCount;
+    return order;
 };
 
 // Order validation rules
@@ -409,8 +429,78 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
     }
 });
 
+// Save from the Order Details drawer. Editors only. The server diffs the
+// incoming fields against the locked row, asks for a reason when an existing
+// value is changed or cleared, and logs every changed field with the old value
+// read from the database, never from the client.
+router.patch('/:id/details', requireOrderEditor, orderIdValidation, handleValidationErrors, async (req, res) => {
+    const { id } = req.params;
+    const { fields, etaChange } = req.body || {};
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) {
+        return res.status(400).json({ error: 'Nothing to save' });
+    }
+    let reason;
+    try {
+        reason = validateReason(req.body.reason);
+    } catch (error) {
+        return res.status(400).json({ error: error.message, code: error.code });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query('SELECT * FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+        if (rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        const stored = rows[0];
+        const changes = planChanges(fromRow(stored), fields);
+        if (changes.length === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ order: presentSaved(stored), logged: 0 });
+        }
+        if (needsReason(changes) && !reason) {
+            throw new OrderEditError('Give a reason for changing existing values', 'REASON_REQUIRED',
+                changes.filter(changeNeedsReason).map((c) => c.field));
+        }
+        const eta = changes.find((c) => c.field === 'ETA');
+        const etaPlan = eta ? planEtaChange(stored.eta, eta.after, etaChange) : null;
+
+        const sets = changes.map((c, i) => `${EDITABLE_FIELDS[c.field].col} = $${i + 1}`);
+        const values = [...changes.map((c) => columnValue(c.field, c.after)), id];
+        const updated = await client.query(
+            `UPDATE die_orders SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length} RETURNING *`,
+            values
+        );
+        if (etaPlan) await insertEtaEvent(client, id, etaPlan, req.user);
+        await insertChangeLog(client, id, changes.map((c) => ({
+            field: c.field,
+            oldValue: displayValue(c.field, c.before),
+            newValue: displayValue(c.field, c.after),
+            reason,
+            stage: stored.status,
+        })), req.user);
+        await client.query('COMMIT');
+
+        const ordered = changes.find((c) => c.field === 'Ordered date' && c.after);
+        if (ordered) await autoUpdateBackupRequests(stored.die_no, ordered.after);
+
+        res.json({ order: presentSaved(updated.rows[0]), logged: changes.length });
+    } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        if (error instanceof OrderEditError || error instanceof DeliveryRuleError) {
+            return res.status(400).json({ error: error.message, code: error.code, ...(error.fields && { fields: error.fields }) });
+        }
+        console.error('Save order details error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        client.release();
+    }
+});
+
 // Update order (full replace — used by Order Detail Modal save)
-router.put('/:id', orderIdValidation, orderValidation, handleValidationErrors, async (req, res) => {
+router.put('/:id', requireOrderEditor, orderIdValidation, orderValidation, handleValidationErrors, async (req, res) => {
     try {
         const { id } = req.params;
         const order = req.body;
