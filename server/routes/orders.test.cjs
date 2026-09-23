@@ -24,14 +24,16 @@ installFakeDb(async (sql, params = []) => {
 const ordersRouter = require('./orders.cjs');
 const app = express();
 app.use(express.json());
-app.use((req, res, next) => { req.user = { id: 5, username: 'planner' }; next(); });
+const EDITOR = { id: 5, username: 'planner', role: 'user', canEditOrderDetails: true };
+let currentUser = EDITOR;
+app.use((req, res, next) => { req.user = currentUser; next(); });
 app.use('/api/orders', ordersRouter);
 
 let base;
 let close;
 test.before(async () => { ({ base, close } = await listen(app)); });
 test.after(() => close());
-test.beforeEach(() => { log = []; storedEta = '2026-10-01'; });
+test.beforeEach(() => { log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
 
 const kinds = () => log.map(({ q }) => q.split(/\s+/).slice(0, 3).join(' '));
 const events = () => log.filter(({ q }) => q.startsWith('INSERT INTO die_delivery_events'));
@@ -86,4 +88,18 @@ test('PUT enforces the same rule', async () => {
   const ok = await request(base, '/api/orders/7', { method: 'PUT', body: { ETA: '2026-10-20', 'ETA Change': { cause: 'our_change' } } });
   assert.equal(ok.status, 200);
   assert.equal(events()[0].params[1], 'eta_revised');
+});
+
+test('PUT is refused for someone without the order details switch', async () => {
+  currentUser = { id: 9, username: 'viewer', role: 'user', canEditOrderDetails: false };
+  const { status, body } = await request(base, '/api/orders/7', { method: 'PUT', body: { ETA: '2026-10-20' } });
+  assert.equal(status, 403);
+  assert.equal(body.code, 'ORDER_EDIT_FORBIDDEN');
+  assert.equal(log.length, 0);
+});
+
+test('the generic PATCH stays open to the step-by-step pages', async () => {
+  currentUser = { id: 9, username: 'viewer', role: 'user', canEditOrderDetails: false };
+  const { status } = await request(base, '/api/orders/7', { method: 'PATCH', body: { Remark: 'checked' } });
+  assert.equal(status, 200);
 });
