@@ -91,9 +91,10 @@ UI reads `month`; accepted.
 - `PDFImportModal.jsx`: builds existing rows with `mergeExistingForPreview`, renders the
   "Will fill" line and disabled inputs, and on Import passes new orders and planned fills
   separately.
-- `usePIImport.js`: `handlePIImport` accepts `options.fills` (the planned items) and
-  `options.canFill`; creates new orders as today, then runs `applyPdfFills`, refreshes orders
-  once, and shows the summary toast.
+- `usePIImport.js`: `handlePIImport` accepts `options.pdfFills = { items, canFill, complete }`
+  (the planned fills, the user's permission, and how many existing dies had nothing to fill);
+  creates new orders as today, then runs `applyPdfFills`, refreshes orders once, and shows the
+  summary toast.
 - `DieOrderingSystem.jsx`: passes `canEditOrderDetails(user)` to the modal.
 
 ## Testing
