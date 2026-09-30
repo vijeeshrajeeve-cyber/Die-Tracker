@@ -167,3 +167,9 @@ export function pickEditable(order) {
 
 export const fieldLabel = (field) => FIELD_LABELS[field] || field;
 export const fieldType = (field) => (hasOwn(EDITABLE_FIELDS, field) ? EDITABLE_FIELDS[field].type : undefined);
+
+// True when the drawer counts this value as empty, so setting it is a fill.
+export function isBlankValue(field, value) {
+  const { type } = EDITABLE_FIELDS[field];
+  return isEmpty(type, canonical(type, value));
+}

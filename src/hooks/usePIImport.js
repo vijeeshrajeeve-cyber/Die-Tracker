@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { extractProfileFromDie, ordersAPI, profilesAPI } from '../api';
+import { applyPdfFills, fillSummary, FILL_NEEDS_PERMISSION } from '../utils/pdfImportFills';
 
 export default function usePIImport({
   fetchOrders,
@@ -86,7 +87,9 @@ export default function usePIImport({
     //   touch the customer name) — used by PI import, which must not change customer data.
     // restrictUpdateFields: when set, only these fields are sent on an UPDATE, leaving every
     //   other field on the existing order untouched. New orders always get the full payload.
-    const { resolveCustomers = true, restrictUpdateFields = null } = options;
+    // pdfFills: PDF import only — { items, canFill, complete }. Existing dies are not in
+    //   importData; their planned blank fills are saved through the drawer route instead.
+    const { resolveCustomers = true, restrictUpdateFields = null, pdfFills = null } = options;
     try {
       const records = importData.map(r => ({ ...r }));
       if (resolveCustomers) {
@@ -118,8 +121,25 @@ export default function usePIImport({
         }
       }
 
+      let fillResult = null;
+      if (pdfFills) {
+        fillResult = pdfFills.canFill
+          ? await applyPdfFills(pdfFills.items, ordersAPI.patchDetails)
+          : { filled: 0, failed: pdfFills.items.map(({ dieNo }) => ({ dieNo, cause: FILL_NEEDS_PERMISSION })) };
+      }
+
       await fetchOrders();
       setCurrentPage(1);
+
+      if (fillResult) {
+        const notFilled = fillResult.failed.length > 0;
+        setToast({
+          message: fillSummary({ created, filled: fillResult.filled, complete: pdfFills.complete, failed: fillResult.failed }),
+          type: notFilled ? 'warning' : 'success',
+        });
+        setTimeout(() => setToast(null), notFilled ? 10000 : 5000);
+        return;
+      }
 
       const messages = [];
       if (created > 0) messages.push(`${created} new order(s) created`);
