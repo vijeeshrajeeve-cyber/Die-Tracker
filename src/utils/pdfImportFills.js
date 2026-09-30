@@ -54,3 +54,36 @@ export function planPdfFills(existing, row) {
   }
   return { fields, labels: Object.keys(fields).map(fieldLabel) };
 }
+
+function fillFailureCause(error) {
+  if (error?.data?.code === 'REASON_REQUIRED') return 'changed since preview';
+  if (error?.status === 403) return FILL_NEEDS_PERMISSION;
+  return error?.message || 'save failed';
+}
+
+// Saves each planned fill on its own through the drawer route (`patchDetails` is
+// ordersAPI.patchDetails); one refusal or error never stops the rest.
+export async function applyPdfFills(items, patchDetails) {
+  let filled = 0;
+  const failed = [];
+  for (const { id, dieNo, fields } of items) {
+    try {
+      await patchDetails(id, { fields });
+      filled += 1;
+    } catch (error) {
+      failed.push({ dieNo, cause: fillFailureCause(error) });
+    }
+  }
+  return { filled, failed };
+}
+
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+export function fillSummary({ created = 0, filled = 0, complete = 0, failed = [] }) {
+  const parts = [];
+  if (created) parts.push(`${count(created, 'new order', 'new orders')} created`);
+  if (filled) parts.push(`${count(filled, 'existing order', 'existing orders')} filled`);
+  if (complete) parts.push(`${complete} already complete`);
+  if (failed.length) parts.push(`${failed.length} not filled (${failed.map((f) => `${f.dieNo}: ${f.cause}`).join('; ')})`);
+  return `PDF import: ${parts.join(', ') || 'nothing to change'}`;
+}
