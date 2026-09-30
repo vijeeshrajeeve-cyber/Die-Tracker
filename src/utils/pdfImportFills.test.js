@@ -109,3 +109,17 @@ test('the summary counts each outcome and names the dies not filled', () => {
   assert.equal(fillSummary({ created: 1, filled: 1, complete: 0, failed: [] }), 'PDF import: 1 new order created, 1 existing order filled');
   assert.equal(fillSummary({ created: 0, filled: 0, complete: 3, failed: [] }), 'PDF import: 3 already complete');
 });
+
+test('type and mandrels are not on the PDF, so a value carried from another die never fills them', () => {
+  // An insert's row is copied from its die's row, which carries the die's own type and mandrels.
+  const insert = { ...EXISTING, TYPE: null, 'Mandrels per Cavity': 0, 'Total Mandrels': 0 };
+  const carried = { ...PARSED, TYPE: 'B', 'Mandrels per Cavity': 4, 'Total Mandrels': 8 };
+  const row = mergeExistingForPreview(insert, carried, FROM_PDF);
+  assert.equal(row.TYPE, null);
+  assert.equal(row['Mandrels per Cavity'], 0);
+  assert.equal(row['Total Mandrels'], 0);
+  const { fields } = planPdfFills(insert, row);
+  for (const field of ['TYPE', 'Mandrels per Cavity', 'Total Mandrels']) assert.equal(field in fields, false, field);
+  // A value the user picks in the preview still fills the blank.
+  assert.equal(planPdfFills(insert, { ...row, TYPE: 'N' }).fields.TYPE, 'N');
+});

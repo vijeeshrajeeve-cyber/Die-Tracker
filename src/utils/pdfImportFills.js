@@ -28,13 +28,19 @@ function isPlaceholder(field, value, { plantFromPdf, shipmentFromTable }) {
   return false;
 }
 
+// Not on the PDF: only a pick in the preview may fill these. The parser copies an
+// insert's row from its die's row, so what arrives here can be another order's value.
+const PREVIEW_ONLY = new Set(['TYPE', 'Mandrels per Cavity', 'Total Mandrels']);
+
 // The preview row for a die that already has an order: the order's value where
 // it has one, otherwise what the PDF read (a placeholder shows as empty).
 export function mergeExistingForPreview(existing, row, { plantFromPdf = false, shipmentFromTable = false } = {}) {
   const merged = { ...row };
   for (const field of FILLABLE_FIELDS) {
     if (!isBlankValue(field, existing[field])) merged[field] = existing[field];
-    else if (isPlaceholder(field, row[field], { plantFromPdf, shipmentFromTable })) merged[field] = emptyOf(field);
+    else if (PREVIEW_ONLY.has(field) || isPlaceholder(field, row[field], { plantFromPdf, shipmentFromTable })) {
+      merged[field] = emptyOf(field);
+    }
   }
   return merged;
 }

@@ -42,6 +42,10 @@ Existing inserts/bolsters found by the import (sub-orders) have the same problem
 - **Placeholders are not values**: Supplier `UNKNOWN`, Die Size `N/A`, a Plant not derived from
   the PDF's press, and `Type of shipment` when the supplier is not in the supplier table.
   A placeholder never fills anything. A value the user picks in the preview is a real value.
+- **Preview-only fields**: `TYPE`, `Mandrels per Cavity` and `Total Mandrels` are not on the PDF.
+  On an existing die they always start from that order's own value and fill only from a pick
+  in the preview. (The parser copies an insert's row from its die's row, so otherwise the
+  die's type and mandrels would fill the insert's blanks. Found by the end-to-end harness.)
 
 ## Design
 
