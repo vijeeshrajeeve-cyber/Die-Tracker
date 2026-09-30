@@ -5,6 +5,8 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 import { parseDateDMY, formatDate } from '../../utils/helpers';
 import { extractBolsterInsertNos } from '../../utils/pdfImportFields';
+import { isBlankValue } from '../../utils/orderDetailEdits';
+import { mergeExistingForPreview, planPdfFills } from '../../utils/pdfImportFills';
 
 import useDialog from '../../hooks/useDialog';
 // Configure PDF.js worker (Vite-compatible approach)
@@ -35,7 +37,7 @@ const parseSimulationFlag = (value) => {
 };
 
 // PDF Import Modal Component
-const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [], theme = {} }) => {
+const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [], canFillExisting = false, theme = {} }) => {
   const dialogRef = useDialog({ open: true, onClose });
   const [dragActive, setDragActive] = useState(false);
   const [errors, setErrors] = useState([]);
@@ -679,7 +681,14 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       _cavity: cavity,
     };
 
-    const orders = [mainOrder];
+    // A die that already has an order: show the order's values and let the PDF
+    // fill only its blanks (planned at import time from this row).
+    const fillFlags = { plantFromPdf: !!plantFromPress, shipmentFromTable: !!supplierRecord };
+    const withExisting = (row, existing) => (existing
+      ? { ...mergeExistingForPreview(existing, row, fillFlags), _existing: existing }
+      : row);
+
+    const orders = [withExisting(mainOrder, existingOrder)];
 
     // ── Create additional orders for Bolster/Insert with Size ──
     // If Bolster No. or Insert No. has a Size value that is not "old" or blank,
@@ -708,7 +717,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
         subOrder.Remark = note;
         subOrder._reorderNote = note;
       }
-      return subOrder;
+      return withExisting(subOrder, existingSub);
     };
 
     // Helper: check if a size value is valid (not blank, not "old")
@@ -794,17 +803,23 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
     if (preview?.orders?.length > 0) {
       setImporting(true);
       try {
-        // Strip internal display-only fields before importing
-        const cleanOrders = preview.orders.map((order) => {
+        // Existing dies never go through the generic update: only their blank fields are filled.
+        // New orders have their display-only fields stripped before importing.
+        const newOrders = preview.orders.filter((order) => !order._existing).map((order) => {
           const cleanOrder = { ...order };
           delete cleanOrder._urgency;
           delete cleanOrder._componentType;
           delete cleanOrder._isRevision;
           delete cleanOrder._cavity;
           delete cleanOrder._reorderNote;
+          delete cleanOrder._existing;
           return cleanOrder;
         });
-        await onImportRecords(cleanOrders);
+        const planned = preview.orders
+          .filter((order) => order._existing)
+          .map((order) => ({ id: order.id, dieNo: order['DIE NO'], fields: planPdfFills(order._existing, order).fields }));
+        const items = planned.filter((p) => Object.keys(p.fields).length > 0);
+        await onImportRecords(newOrders, { pdfFills: { items, canFill: canFillExisting, complete: planned.length - items.length } });
         onClose();
       } catch (err) {
         console.error('PDF Import failed:', err);
@@ -814,6 +829,23 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       }
     }
   };
+
+  // Why an existing die's field can't be edited in the preview, or null when it can.
+  const lockReason = (order, field) => {
+    if (!order._existing) return null;
+    if (!canFillExisting) return 'Needs Order Details permission';
+    return isBlankValue(field, order._existing[field]) ? null : 'Already set — change it in Order Details';
+  };
+
+  // The line under an existing die: what the import will fill, if anything.
+  const fillNote = (order) => {
+    const { labels } = planPdfFills(order._existing, order);
+    if (labels.length === 0) return { text: 'Already complete — nothing to change', active: false };
+    if (!canFillExisting) return { text: 'Not changed — needs Order Details permission', active: false };
+    return { text: `Will fill: ${labels.join(', ')}`, active: true };
+  };
+
+  const lockedStyle = (locked) => (locked ? { opacity: 0.55, cursor: 'not-allowed' } : {});
 
   return (
     <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}
@@ -902,9 +934,12 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                   <p style={{ fontSize: '0.8rem', color: theme.textMuted }}>
                     Found {preview.orders.length} die order{preview.orders.length !== 1 ? 's' : ''}
                   </p>
-                  {preview.orders.some(o => o.isExisting) && (
+                  {preview.orders.some(o => o._existing) && (
                     <p style={{ fontSize: '0.75rem', color: '#F59E0B', marginTop: '4px' }}>
-                      {preview.orders.filter(o => o.isExisting).length} order(s) already exist and will be updated
+                      {preview.orders.filter(o => o._existing).length} order(s) already exist
+                      {canFillExisting
+                        ? ' — only their blank fields are filled; values already set are kept'
+                        : ' and will not be changed — filling their blanks needs Order Details permission'}
                     </p>
                   )}
                   {preview.orders.some(o => o._reorderNote) && (
@@ -944,7 +979,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <span>{order['DIE NO']}</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                {order.isExisting && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', borderRadius: '4px' }}>UPDATE</span>}
+                                {order.isExisting && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', borderRadius: '4px' }}>EXISTING</span>}
                                 {order._urgency && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(239,68,68,0.2)', color: '#EF4444', borderRadius: '4px' }}>{order._urgency}</span>}
                                 {order._componentType === 'DIE PLATE ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(59,130,246,0.2)', color: '#3B82F6', borderRadius: '4px' }}>DIE PLATE ONLY</span>}
                                 {order._componentType === 'INSERT MANDREL ONLY' && <span style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(139,92,246,0.2)', color: '#8B5CF6', borderRadius: '4px' }}>INSERT MANDREL ONLY</span>}
@@ -955,6 +990,14 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               {order._reorderNote && (
                                 <span style={{ fontSize: '0.65rem', color: '#FB923C', fontFamily: 'inherit', whiteSpace: 'normal', maxWidth: '220px' }}>{order._reorderNote}</span>
                               )}
+                              {order._existing && (() => {
+                                const note = fillNote(order);
+                                return (
+                                  <span style={{ fontSize: '0.65rem', color: note.active ? '#F59E0B' : theme.textMuted, fontFamily: 'inherit', whiteSpace: 'normal', maxWidth: '220px' }}>
+                                    {note.text}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td style={{ padding: '10px 12px', color: theme.text }}>{order['Die Size']}</td>
@@ -964,7 +1007,9 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               aria-label={`Plant for die ${order['DIE NO'] || index + 1}`}
                               value={order.Plant || ''}
                               onChange={(e) => handleEditOrder(index, 'Plant', e.target.value || null)}
-                              style={{ background: theme.inputBg, border: 'none', borderRadius: '4px', padding: '4px 8px', color: theme.text, fontSize: '0.8rem' }}
+                              disabled={!!lockReason(order, 'Plant')}
+                              title={lockReason(order, 'Plant') || undefined}
+                              style={{ background: theme.inputBg, border: 'none', borderRadius: '4px', padding: '4px 8px', color: theme.text, fontSize: '0.8rem', ...lockedStyle(!!lockReason(order, 'Plant')) }}
                             >
                               <option value="">--</option>
                               <option value="GEX 1">GEX 1</option>
@@ -976,7 +1021,9 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               aria-label={`Type for die ${order['DIE NO'] || index + 1}`}
                               value={order.TYPE || ''}
                               onChange={(e) => handleEditOrder(index, 'TYPE', e.target.value || null)}
-                              style={{ background: theme.inputBg, border: 'none', borderRadius: '4px', padding: '4px 8px', color: theme.text, fontSize: '0.8rem' }}
+                              disabled={!!lockReason(order, 'TYPE')}
+                              title={lockReason(order, 'TYPE') || undefined}
+                              style={{ background: theme.inputBg, border: 'none', borderRadius: '4px', padding: '4px 8px', color: theme.text, fontSize: '0.8rem', ...lockedStyle(!!lockReason(order, 'TYPE')) }}
                             >
                               <option value="">--</option>
                               <option value="N">N - New</option>
@@ -997,10 +1044,12 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                                 handleEditOrder(index, {
                                   'Cavity': cav,
                                   _cavity: cav,
-                                  'Total Mandrels': mpc * (cav || 1),
+                                  ...(!lockReason(order, 'Total Mandrels') && { 'Total Mandrels': mpc * (cav || 1) }),
                                 });
                               }}
-                              style={{ width: '50px', padding: '4px 6px', background: theme.inputBg, border: 'none', borderRadius: '4px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                              disabled={!!lockReason(order, 'Cavity')}
+                              title={lockReason(order, 'Cavity') || undefined}
+                              style={{ width: '50px', padding: '4px 6px', background: theme.inputBg, border: 'none', borderRadius: '4px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', ...lockedStyle(!!lockReason(order, 'Cavity')) }}
                             />
                           </td>
                           <td style={{ padding: '10px 12px' }}>
@@ -1013,10 +1062,12 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                                 const cavities = order['Cavity'] || order._cavity || 1;
                                 handleEditOrder(index, {
                                   'Mandrels per Cavity': mpc,
-                                  'Total Mandrels': mpc * cavities,
+                                  ...(!lockReason(order, 'Total Mandrels') && { 'Total Mandrels': mpc * cavities }),
                                 });
                               }}
-                              style={{ width: '50px', padding: '4px 6px', background: theme.inputBg, border: 'none', borderRadius: '4px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }}
+                              disabled={!!lockReason(order, 'Mandrels per Cavity')}
+                              title={lockReason(order, 'Mandrels per Cavity') || undefined}
+                              style={{ width: '50px', padding: '4px 6px', background: theme.inputBg, border: 'none', borderRadius: '4px', color: theme.text, fontSize: '0.8rem', textAlign: 'center', ...lockedStyle(!!lockReason(order, 'Mandrels per Cavity')) }}
                             />
                           </td>
                           <td style={{ padding: '10px 12px', color: theme.text, fontFamily: 'monospace' }}>{order['Total Mandrels'] || 0}</td>
@@ -1026,7 +1077,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                               background: order['Type of shipment'] === 'AIR' ? 'rgba(14,165,233,0.2)' : 'rgba(16,185,129,0.2)',
                               color: order['Type of shipment'] === 'AIR' ? '#0EA5E9' : '#10B981',
                             }}>
-                              {order['Type of shipment']}
+                              {order['Type of shipment'] || '—'}
                             </span>
                           </td>
                           <td style={{ padding: '10px 12px', color: theme.text, fontSize: '0.8rem' }}>{formatDate(order['Die Requested Date'])}</td>

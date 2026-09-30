@@ -3383,7 +3383,7 @@ export default function DieOrderingSystem() {
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (
           <Suspense fallback={<ChunkFallback theme={theme} />}>
-            <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} theme={theme} />
+            <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} canFillExisting={canEditOrderDetails(user)} theme={theme} />
           </Suspense>
         )}
         {showPIImportModal && (
