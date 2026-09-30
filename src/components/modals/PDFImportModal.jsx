@@ -4,6 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 import { parseDateDMY, formatDate } from '../../utils/helpers';
+import { extractBolsterInsertNos } from '../../utils/pdfImportFields';
 
 import useDialog from '../../hooks/useDialog';
 // Configure PDF.js worker (Vite-compatible approach)
@@ -276,25 +277,8 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
 
         // BOLSTER NO. / INSERT NO. extraction (Format A)
         if ((upperLine.includes('BOLSTER') || upperLine.includes('INSERT')) && !bolsterNo && !insertNo) {
-          // Extract Bolster No. value
-          // NOTE: separator can be comma (e.g. "BOLSTER No,") — include ',' in the set.
-          // Also guard against capturing the next label word (e.g. "INSERT") when the
-          // bolster column is empty and the INSERT label immediately follows.
-          const bolsterMatch = lineText.match(/BOLSTER\s*(?:No\.?|NO\.?)\s*[-:.,]?\s*([A-Za-z0-9-]+)/i);
-          if (
-            bolsterMatch &&
-            bolsterMatch[1] !== '-' &&
-            // Reject known label words that appear when bolster value is blank
-            !/^(INSERT|BOLSTER|SIZE|SOLID|HOLLOW|NO|YES|OK|PRESS|DATE|SUPPLIER|REQUESTED|MODE|FINISH|CAV)$/i.test(bolsterMatch[1])
-          ) {
-            bolsterNo = bolsterMatch[1].trim();
-          }
-          // Extract Insert No. value
-          // NOTE: separator can be comma (e.g. "INSERT No,") — include ',' in the set.
-          const insertMatch = lineText.match(/INSERT\s*(?:No\.?|NO\.?)\s*[-:.,]?\s*([A-Za-z0-9-]+)/i);
-          if (insertMatch && insertMatch[1] !== '-') {
-            insertNo = insertMatch[1].trim();
-          }
+          // Separators vary ("No. -", "No, -"); a blank column yields null, never the next label.
+          ({ bolsterNo, insertNo } = extractBolsterInsertNos(lineText));
           // Check surrounding lines for values (may be on next line)
           if (!bolsterNo && !insertNo && i + 1 < lines.length) {
             const nextText = lines[i + 1].text.trim();
