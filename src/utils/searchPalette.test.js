@@ -46,5 +46,5 @@ test('isAbort recognises a cancelled fetch only', () => {
 test('shortcutLabel shows ⌘K on Mac and Ctrl K elsewhere', () => {
   assert.equal(shortcutLabel('MacIntel'), '⌘K');
   assert.equal(shortcutLabel('Win32'), 'Ctrl K');
-  assert.equal(shortcutLabel(undefined), 'Ctrl K');
+  assert.equal(shortcutLabel(''), 'Ctrl K');
 });

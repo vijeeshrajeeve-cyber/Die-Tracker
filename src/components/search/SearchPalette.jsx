@@ -24,16 +24,20 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState('');
   const listRef = useRef(null);
+  const inputRef = useRef(null);
+  // An Enter pressed before the results for the typed query have arrived.
+  const pendingEnter = useRef(false);
 
-  // Fresh palette every time it opens.
-  useEffect(() => {
-    if (!open) return;
-    setQuery(''); setResults(null); setStatus('idle'); setActive(-1); setOpening(false); setOpenError('');
-  }, [open]);
+  // The palette is mounted fresh on every open (see DieOrderingSystem), so state
+  // starts clean. Focus the input directly rather than waiting for useDialog's
+  // requestAnimationFrame; declared after useDialog so its effect has already
+  // recorded the trigger to restore focus to.
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   // Debounced search; aborting the previous request keeps a slow, older
   // answer from replacing a newer one.
   useEffect(() => {
+    pendingEnter.current = false;
     if (!open || !shouldSearch(query)) { setResults(null); setActive(-1); setStatus('idle'); return undefined; }
     const controller = new AbortController();
     // Drop the previous query's rows so nothing stale is selectable while loading.
@@ -74,10 +78,23 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
     }
   };
 
+  // Enter typed ahead of the answer opens the top result once it lands; an
+  // empty or failed answer drops it.
+  useEffect(() => {
+    if (!pendingEnter.current || (status !== 'done' && status !== 'error')) return;
+    pendingEnter.current = false;
+    if (status === 'done' && flat[0]) choose(flat[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, flat]);
+
   const onKeyDown = (event) => {
     if (event.key === 'ArrowDown') { event.preventDefault(); setActive((i) => moveIndex(i, 1, flat.length)); }
     else if (event.key === 'ArrowUp') { event.preventDefault(); setActive((i) => moveIndex(i, -1, flat.length)); }
-    else if (event.key === 'Enter') { event.preventDefault(); choose(flat[active]); }
+    else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (flat[active]) choose(flat[active]);
+      else if (shouldSearch(query) && status !== 'done' && status !== 'error') pendingEnter.current = true;
+    }
   };
 
   if (!open) return null;
@@ -97,7 +114,7 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
         <h2 id={titleId} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Search</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}` }}>
           <Search size={18} style={{ color: theme.textDim, flexShrink: 0 }} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
+          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
             role="combobox" aria-expanded={flat.length > 0} aria-controls={`${titleId}-list`}
             aria-activedescendant={active >= 0 ? `${titleId}-opt-${active}` : undefined}
             aria-label="Search die orders and QDs" placeholder="Search die no, order no, QD no, supplier…"

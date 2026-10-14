@@ -2059,6 +2059,9 @@ export default function DieOrderingSystem() {
     const onKeyDown = (event) => {
       if (!isSearchShortcut(event)) return;
       event.preventDefault(); // otherwise Chrome focuses its own address bar search
+      // Another dialog (QD drawer, Work Queue, a modal) is on screen: a palette
+      // opened now would mount beneath it yet take its keyboard.
+      if (document.body.dataset.dialogOpen) return;
       setShowSearch(true);
     };
     document.addEventListener('keydown', onKeyDown);
@@ -3414,8 +3417,10 @@ export default function DieOrderingSystem() {
         </main>
 
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
-        <SearchPalette open={showSearch && !forcePasswordChange} onClose={() => setShowSearch(false)} theme={theme}
-          onOpenOrder={openSearchOrder} onOpenQd={openSearchQd} />
+        {showSearch && !forcePasswordChange && (
+          <SearchPalette open onClose={() => setShowSearch(false)} theme={theme}
+            onOpenOrder={openSearchOrder} onOpenQd={openSearchQd} />
+        )}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (
           <Suspense fallback={<ChunkFallback theme={theme} />}>
