@@ -7,6 +7,7 @@ import ExistingDataPage from './ExistingDataPage';
 import SupplierTargetsCard from '../components/settings/SupplierTargetsCard';
 import CorrectorsCard from '../components/settings/CorrectorsCard';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
+import useDialog from '../hooks/useDialog';
 
 export default function SettingsPage({
   theme, setToast,
@@ -31,6 +32,8 @@ export default function SettingsPage({
   const [backups, setBackups] = useState([]);
   const [backupsLoading, setBackupsLoading] = useState(false);
   const [backupRunning, setBackupRunning] = useState(false);
+  const addPlantDialogRef = useDialog({ open: showAddPlant, onClose: () => setShowAddPlant(false) });
+  const addSupplierDialogRef = useDialog({ open: showAddSupplier, onClose: () => setShowAddSupplier(false) });
 
   // QD Approvers & Purchase settings
   const me = getUser();
@@ -1011,8 +1014,8 @@ export default function SettingsPage({
               {/* Add Plant Modal */}
               {showAddPlant && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowAddPlant(false)}>
-                  <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '400px', border: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New Plant</h3>
+                  <div ref={addPlantDialogRef} role="dialog" aria-modal="true" aria-labelledby="settings-add-plant-title" style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '400px', border: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
+                    <h3 id="settings-add-plant-title" style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New Plant</h3>
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-plant-name">Plant Name</label>
                       <input id="settingspage-plant-name" type="text" value={newPlantName} onChange={(e) => setNewPlantName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter plant name (e.g., EXT 3)" />
@@ -1028,8 +1031,8 @@ export default function SettingsPage({
               {/* Add Supplier Modal */}
               {showAddSupplier && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowAddSupplier(false)}>
-                  <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '400px', border: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New Supplier</h3>
+                  <div ref={addSupplierDialogRef} role="dialog" aria-modal="true" aria-labelledby="settings-add-supplier-title" style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '400px', border: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
+                    <h3 id="settings-add-supplier-title" style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: theme.text }}>Add New Supplier</h3>
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={{ display: 'block', fontSize: '0.875rem', color: theme.textMuted, marginBottom: '0.5rem' }} htmlFor="settingspage-supplier-name">Supplier Name</label>
                       <input id="settingspage-supplier-name" type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} style={{ width: '100%', padding: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '8px', color: theme.text }} placeholder="Enter supplier name" />

@@ -286,7 +286,7 @@ const TopBar = ({
                             borderRadius: '16px', padding: '8px', minWidth: '200px',
                             boxShadow: '0 10px 40px rgba(0,0,0,0.2)', zIndex: 1000
                         }}>
-                            <button onClick={onChangePassword} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>
+                            <button onClick={() => { setShowUserMenu(false); onChangePassword(); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>
                                 <Key size={16} /> Change Password
                             </button>
                             <button onClick={() => { setShowUserMenu(false); onManageSignature?.(); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>
