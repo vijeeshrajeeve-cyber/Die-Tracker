@@ -2071,7 +2071,7 @@ export default function DieOrderingSystem() {
   const openSearchOrder = (result) => {
     const order = { ...result };
     delete order.matchedField;
-    setData(previous => [...previous.filter(row => row.id !== order.id), order]);
+    setData(previous => previous.some(row => row.id === order.id) ? previous.map(row => row.id === order.id ? order : row) : [...previous, order]);
     setSelectedOrder(order);
   };
 
@@ -3198,7 +3198,7 @@ export default function DieOrderingSystem() {
 
       <div style={styles.mainContent}>
         <TopBar
-          onOpenSearch={() => setShowSearch(true)}
+          onOpenSearch={forcePasswordChange ? undefined : () => setShowSearch(true)}
           user={user}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -3414,7 +3414,7 @@ export default function DieOrderingSystem() {
         </main>
 
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
-        <SearchPalette open={showSearch} onClose={() => setShowSearch(false)} theme={theme}
+        <SearchPalette open={showSearch && !forcePasswordChange} onClose={() => setShowSearch(false)} theme={theme}
           onOpenOrder={openSearchOrder} onOpenQd={openSearchQd} />
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (
