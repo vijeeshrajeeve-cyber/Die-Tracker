@@ -34,13 +34,21 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
   // Debounced search; aborting the previous request keeps a slow, older
   // answer from replacing a newer one.
   useEffect(() => {
-    if (!open || !shouldSearch(query)) { setResults(null); setStatus('idle'); return undefined; }
+    if (!open || !shouldSearch(query)) { setResults(null); setActive(-1); setStatus('idle'); return undefined; }
     const controller = new AbortController();
+    // Drop the previous query's rows so nothing stale is selectable while loading.
+    setResults(null);
+    setActive(-1);
     setStatus('loading');
     const timer = setTimeout(() => {
       searchAPI.query(query.trim(), { signal: controller.signal })
         .then((body) => { setResults(body); setStatus('done'); setActive(flattenResults(body).length ? 0 : -1); })
-        .catch((error) => { if (!isAbort(error)) setStatus('error'); });
+        .catch((error) => {
+          if (isAbort(error)) return;
+          setResults(null);
+          setActive(-1);
+          setStatus('error');
+        });
     }, DEBOUNCE_MS);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [open, query]);
@@ -89,7 +97,7 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
         <h2 id={titleId} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Search</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}` }}>
           <Search size={18} style={{ color: theme.textDim, flexShrink: 0 }} />
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
             role="combobox" aria-expanded={flat.length > 0} aria-controls={`${titleId}-list`}
             aria-activedescendant={active >= 0 ? `${titleId}-opt-${active}` : undefined}
             aria-label="Search die orders and QDs" placeholder="Search die no, order no, QD no, supplier…"
