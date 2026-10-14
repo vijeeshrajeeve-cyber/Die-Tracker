@@ -69,6 +69,14 @@ A group the user may not access is omitted entirely (not returned empty).
 - **Item shape:** `id, qd_no, die_no, supplier, plant, status, approval_state,
   raised_date, matchedField`.
 
+### `GET /api/search/qd/:id`
+
+Returns one full QD (the `listQDs` record plus `can_approve` and
+`assigned_approver_name`), the same record the Work Queue fetches. The palette
+calls it when a QD result is opened and passes it to the QD Tracker as
+`focusQdRecord`, so drafts and QDs outside the tracker's current list still open.
+`403` without QD access; `404` when missing or someone else's Draft.
+
 ### Ranking (pure function, `server/services/search.cjs`)
 
 Within each group, sort by:
@@ -111,8 +119,9 @@ total comes from a `COUNT(*)` with the same predicate.
 - **Order:** `setSelectedOrder(item)` — the existing `OrderDetailModal` opens in
   place on the current page. Editability is unchanged: edit only on the Orders
   tab for users with the edit permission, view-only elsewhere.
-- **QD:** `setFocusQdId(item.id)` and switch `activeTab` to the QD Tracker — the
-  same path the Work Queue uses today.
+- **QD:** fetch `/api/search/qd/:id`, then `setFocusQdRecord(record)`,
+  `setFocusQdId(record.id)` and switch `activeTab` to the QD Tracker — the same
+  path the Work Queue uses today.
 - The palette closes after a result is opened.
 
 ### API client
