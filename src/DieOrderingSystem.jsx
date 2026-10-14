@@ -12,6 +12,7 @@ import SearchPalette from './components/search/SearchPalette';
 import { isSearchShortcut } from './utils/searchPalette';
 import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, searchAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
+import LoginPage from './pages/LoginPage';
 import { workQueueAPI } from './workQueueAPI';
 import TopBar from './components/layout/TopBar';
 
@@ -1964,6 +1965,7 @@ export default function DieOrderingSystem() {
   // Login handler
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (loginLoading) return;
     setLoginError('');
     setLoginLoading(true);
     try {
@@ -1979,6 +1981,7 @@ export default function DieOrderingSystem() {
         setShowPasswordChangeModal(true);
       }
     } catch (error) {
+      setLoginForm((current) => ({ ...current, password: '' }));
       setLoginError(error.message || 'Login failed');
     } finally {
       setLoginLoading(false);
@@ -2762,109 +2765,18 @@ export default function DieOrderingSystem() {
     pipelineItem: { background: theme.cardBg, borderRadius: '6px', padding: '12px', marginBottom: '8px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm, width: 'calc(100% - 2px)', overflow: 'hidden', transition: 'all 0.15s ease' },
   };
 
-  // Login Screen
+  // Keep authentication and the forced password-change flow in the shell.
   if (!isLoggedIn) {
     return (
-      <div style={{
-        ...styles.app,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundImage: 'url(/login-bg.jpg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        position: 'relative'
-      }}>
-        {/* Dark overlay for better readability */}
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(2px)'
-        }} />
-        <div style={{ background: '#1E293B', borderRadius: '20px', padding: '2.5rem', width: '100%', maxWidth: '400px', border: '1px solid #334155', position: 'relative', zIndex: 1 }}>
-          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <div style={{
-              margin: '0 auto 1rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: '64px',
-              padding: '0 0.25rem',
-            }}>
-              <img
-                src="/company-logo.png"
-                alt="Company logo"
-                style={{
-                  display: 'block',
-                  maxHeight: '72px',
-                  maxWidth: 'min(260px, 100%)',
-                  width: 'auto',
-                  height: 'auto',
-                  objectFit: 'contain',
-                  objectPosition: 'center',
-                }}
-              />
-            </div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, background: 'linear-gradient(135deg, #60A5FA, #A78BFA)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Die Ordering System</h1>
-            <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '0.5rem' }}>Sign in to continue</p>
-          </div>
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }} htmlFor="dieorderingsystem-username">Username</label>
-              <input id="dieorderingsystem-username" type="text" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} style={{ width: '100%', padding: '12px 16px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#F1F5F9', fontSize: '0.875rem' }} placeholder="Enter username" required />
-            </div>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }} htmlFor="dieorderingsystem-password">Password</label>
-              <div style={{ position: 'relative' }}>
-                <input id="dieorderingsystem-password"
-                  type={loginPasswordVisible ? 'text' : 'password'}
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '12px 44px 12px 16px',
-                    background: '#0F172A',
-                    border: '1px solid #334155',
-                    borderRadius: '10px',
-                    color: '#F1F5F9',
-                    fontSize: '0.875rem',
-                    boxSizing: 'border-box',
-                  }}
-                  placeholder="Enter password"
-                  autoComplete="current-password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setLoginPasswordVisible((v) => !v)}
-                  aria-label={loginPasswordVisible ? 'Hide password' : 'Show password'}
-                  style={{
-                    position: 'absolute',
-                    right: 8,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    padding: 6,
-                    background: 'transparent',
-                    border: 'none',
-                    borderRadius: 8,
-                    color: '#64748B',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {loginPasswordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-            {loginError && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(244,63,94,0.1)', color: '#F43F5E', padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.875rem' }}><AlertTriangle size={16} />{loginError}</div>}
-            <button type="submit" disabled={loginLoading} style={{ width: '100%', padding: '12px', background: loginLoading ? '#475569' : BRAND.navy, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: loginLoading ? 'not-allowed' : 'pointer' }}>{loginLoading ? 'Signing in...' : 'Sign In'}</button>
-          </form>
-        </div>
-      </div>
+      <LoginPage
+        form={loginForm}
+        setForm={setLoginForm}
+        passwordVisible={loginPasswordVisible}
+        setPasswordVisible={setLoginPasswordVisible}
+        error={loginError}
+        loading={loginLoading}
+        onSubmit={handleLogin}
+      />
     );
   }
 
