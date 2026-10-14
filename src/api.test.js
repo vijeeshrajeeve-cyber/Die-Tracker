@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -289,4 +289,21 @@ test('refreshUser stores the latest profile over the one sign-in saved', async (
   } finally {
     globalThis.localStorage = original;
   }
+});
+
+test('searchAPI.query encodes the query and passes the abort signal through', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => { seen = { url, options }; return new Response('{"orders":{"items":[],"total":0}}', { status: 200 }); };
+  const controller = new AbortController();
+  const body = await searchAPI.query('QD-25/031 & 50%', { signal: controller.signal });
+  assert.equal(seen.url, '/api/search?q=QD-25%2F031%20%26%2050%25');
+  assert.equal(seen.options.signal, controller.signal);
+  assert.deepEqual(body, { orders: { items: [], total: 0 } });
+});
+
+test('searchAPI.qd fetches one QD by id', async () => {
+  let seenUrl;
+  globalThis.fetch = async (url) => { seenUrl = url; return new Response('{"id":5}', { status: 200 }); };
+  assert.equal((await searchAPI.qd(5)).id, 5);
+  assert.equal(seenUrl, '/api/search/qd/5');
 });

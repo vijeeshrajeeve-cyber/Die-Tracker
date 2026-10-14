@@ -1107,6 +1107,13 @@ export const qualityDiscrepanciesAPI = {
     },
 };
 
+// Universal search (Ctrl+K palette). The signal lets the palette cancel a
+// query the user has already typed past.
+export const searchAPI = {
+    query: (q, { signal } = {}) => apiRequest(`/search?q=${encodeURIComponent(q)}`, { signal }),
+    qd: (id) => apiRequest(`/search/qd/${encodeURIComponent(id)}`),
+};
+
 // Plant Budgets API
 export const plantBudgetsAPI = {
     getAll: async () => {
