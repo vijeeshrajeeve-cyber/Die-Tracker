@@ -611,7 +611,7 @@ export const backupRequestsAPI = {
                 const j = await response.json();
                 if (j?.error) errMsg = j.error;
                 if (j?.detail) errMsg += `: ${j.detail}`;
-            } catch (_) { /* response wasn't JSON */ }
+            } catch { /* response wasn't JSON */ }
             throw new Error(errMsg);
         }
         const data = await response.json();
