@@ -8,7 +8,9 @@ import Papa from 'papaparse';
 let xlsxPromise = null;
 const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import SearchPalette from './components/search/SearchPalette';
+import { isSearchShortcut } from './utils/searchPalette';
+import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, searchAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import { workQueueAPI } from './workQueueAPI';
 import TopBar from './components/layout/TopBar';
@@ -2049,6 +2051,37 @@ export default function DieOrderingSystem() {
   const [focusQdRecord, setFocusQdRecord] = useState(null);
   const [focusSampleId, setFocusSampleId] = useState(null);
 
+  // Universal search (Ctrl+K). Separate from the top-bar box, which still
+  // filters the current page.
+  const [showSearch, setShowSearch] = useState(false);
+  useEffect(() => {
+    if (!isLoggedIn || forcePasswordChange) return undefined;
+    const onKeyDown = (event) => {
+      if (!isSearchShortcut(event)) return;
+      event.preventDefault(); // otherwise Chrome focuses its own address bar search
+      setShowSearch(true);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isLoggedIn, forcePasswordChange]);
+
+  // Upserted into `data` (like openQueueSource) so an order past the register's
+  // 5000-row cap still opens, and OrderDetailModal's onUpdate finds it.
+  // matchedField is search metadata and stays out of the register.
+  const openSearchOrder = (result) => {
+    const order = { ...result };
+    delete order.matchedField;
+    setData(previous => [...previous.filter(row => row.id !== order.id), order]);
+    setSelectedOrder(order);
+  };
+
+  const openSearchQd = async (item) => {
+    const record = await searchAPI.qd(item.id);
+    setFocusQdRecord(record);
+    setFocusQdId(record.id);
+    setActiveTab('qd-tracker');
+  };
+
   const openQueueSource = async (_action, item) => {
     const { kind, record, source_action: action } = await workQueueAPI.source(item.id);
     if (kind === 'qd') {
@@ -3165,6 +3198,7 @@ export default function DieOrderingSystem() {
 
       <div style={styles.mainContent}>
         <TopBar
+          onOpenSearch={() => setShowSearch(true)}
           user={user}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -3380,6 +3414,8 @@ export default function DieOrderingSystem() {
         </main>
 
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        <SearchPalette open={showSearch} onClose={() => setShowSearch(false)} theme={theme}
+          onOpenOrder={openSearchOrder} onOpenQd={openSearchQd} />
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (
           <Suspense fallback={<ChunkFallback theme={theme} />}>

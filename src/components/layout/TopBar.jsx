@@ -2,6 +2,7 @@ import React from 'react';
 import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, Menu, AlignJustify, PenTool } from 'lucide-react';
 import useDismissable from '../../hooks/useDismissable';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
+import { shortcutLabel } from '../../utils/searchPalette';
 
 const TopBar = ({
     user,
@@ -23,7 +24,8 @@ const TopBar = ({
     qdQueueCount = 0, // QDs awaiting this user's approval or rework, in the badge
     onLogout,
     onChangePassword,
-    onManageSignature
+    onManageSignature,
+    onOpenSearch
 }) => {
 
     // Notification logic replicated/moved here for counter
@@ -132,6 +134,15 @@ const TopBar = ({
                         }}
                     />
                 </div>
+                {onOpenSearch && (
+                    <button type="button" onClick={onOpenSearch} aria-label="Search all die orders and QDs"
+                        title="Search all die orders and QDs"
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '50px', color: theme.textMuted, fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <Search size={16} />
+                        Search all
+                        <kbd style={{ fontSize: '0.75rem', border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', padding: '1px 6px' }}>{shortcutLabel()}</kbd>
+                    </button>
+                )}
             </div>
 
             {/* Right side interactions */}
