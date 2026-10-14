@@ -7,6 +7,7 @@ import {
 } from './settingsStyles';
 import ToggleSwitch from './ToggleSwitch';
 import DesignReminderSettings from './DesignReminderSettings';
+import OrderingReminderSettings from './OrderingReminderSettings';
 import FocReminderSettings from './FocReminderSettings';
 import DailySummarySettings from './DailySummarySettings';
 import DeliveryChaserSettings from './DeliveryChaserSettings';
@@ -317,6 +318,7 @@ const EmailSettings = ({ theme }) => {
                     borderRadius: '16px', overflow: 'hidden', boxShadow: theme.shadowMd
                 }}>
                     <DesignReminderSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                    <OrderingReminderSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <FocReminderSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <DeliveryChaserSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <DailySummarySettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />

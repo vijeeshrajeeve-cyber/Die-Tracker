@@ -853,6 +853,14 @@ const initializeDatabase = async () => {
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS delivery_chaser_no_eta_days   INTEGER DEFAULT 7;
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS delivery_chaser_cc            TEXT DEFAULT '';
 
+      -- Ordering reminder: PENDING FOR ORDERING dies older than days (from the Die
+      -- Requested Date) go to the Purchasing team, one email per plant. Recipients
+      -- come from the Ordering Reminder email template.
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS ordering_reminder_enabled  BOOLEAN DEFAULT false;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS ordering_reminder_days     INTEGER DEFAULT 2;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS ordering_reminder_time     TEXT DEFAULT '08:00';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS ordering_reminder_last_run DATE;
+
       -- Which (order, stage) pairs have already appeared in a report that was
       -- emailed. A stage reports exactly once: the primary key is what stops a
       -- back-dated entry being counted twice, and its absence is what lets a

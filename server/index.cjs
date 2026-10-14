@@ -210,6 +210,9 @@ const startServer = async () => {
         // Start daily design reminder scheduler (runs when enabled in settings)
         designReminderService.scheduleDesignReminders();
 
+        // Pending-for-ordering reminder to the Purchasing team (runs when enabled in settings)
+        require('./services/orderingReminder.cjs').scheduleOrderingReminders();
+
         // Start the FOC chasers — overdue replacements out to suppliers,
         // received-but-untrialled dies in to our own owner
         focReminderService.scheduleFocReminders();

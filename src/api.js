@@ -728,6 +728,23 @@ export const emailAPI = {
         return apiRequest('/email/reminder-settings/run-now', { method: 'POST' });
     },
 
+    // Pending-for-ordering orders, mailed to the Purchasing team (the Ordering
+    // Reminder template's default recipients), one email per plant.
+    getOrderingReminderSettings: async () => {
+        return apiRequest('/email/ordering-reminder-settings');
+    },
+
+    updateOrderingReminderSettings: async ({ enabled, days, time }) => {
+        return apiRequest('/email/ordering-reminder-settings', {
+            method: 'PUT',
+            body: JSON.stringify({ enabled, days, time }),
+        });
+    },
+
+    runOrderingRemindersNow: async () => {
+        return apiRequest('/email/ordering-reminder-settings/run-now', { method: 'POST' });
+    },
+
     // The two FOC chasers: 'supplier' (replacements they promised and have not
     // delivered) and 'internal' (replacements that arrived and sit untrialled).
     getFocReminderSettings: async () => {

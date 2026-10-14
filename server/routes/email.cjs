@@ -7,6 +7,7 @@ const { pool } = require('../db.cjs');
 const emailService = require('../services/email.cjs');
 const qdDocument = require('../services/qdDocument.cjs');
 const designReminderService = require('../services/designReminder.cjs');
+const orderingReminderService = require('../services/orderingReminder.cjs');
 const focReminderService = require('../services/focReminder.cjs');
 const dailySummaryService = require('../services/dailySummary.cjs');
 const deliveryChaserService = require('../services/deliveryChaser.cjs');
@@ -254,6 +255,67 @@ router.post('/reminder-settings/run-now', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Manual reminder run error:', error);
         res.status(500).json({ error: error.message || 'Failed to run design reminders' });
+    }
+});
+
+// ── Ordering reminder settings (admin only) ───────────────────────────────────
+// Pending-for-ordering orders, mailed to the Purchasing team (the Ordering
+// Reminder template's default recipients), one email per plant.
+
+router.get('/ordering-reminder-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const settings = await orderingReminderService.getOrderingSettings();
+        res.json({ settings, state: orderingReminderService.getOrderingState() });
+    } catch (error) {
+        console.error('Get ordering reminder settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch ordering reminder settings' });
+    }
+});
+
+router.put('/ordering-reminder-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const { enabled, days, time } = req.body;
+
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({ error: 'enabled must be a boolean' });
+        }
+        let daysValue;
+        if (days !== undefined) {
+            daysValue = parseInt(days, 10);
+            if (isNaN(daysValue) || daysValue < 1 || daysValue > 60) {
+                return res.status(400).json({ error: 'days must be a number between 1 and 60' });
+            }
+        }
+        if (time !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+            return res.status(400).json({ error: 'time must be in HH:MM (24-hour) format' });
+        }
+
+        const settings = await orderingReminderService.updateOrderingSettings({
+            enabled, days: daysValue, time
+        });
+        res.json({ message: 'Ordering reminder settings updated', settings });
+    } catch (error) {
+        console.error('Update ordering reminder settings error:', error);
+        res.status(500).json({ error: 'Failed to update ordering reminder settings' });
+    }
+});
+
+router.post('/ordering-reminder-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const summary = await orderingReminderService.sendOrderingReminders();
+        res.json({ message: 'Ordering reminder run completed', summary });
+    } catch (error) {
+        console.error('Manual ordering reminder run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to run ordering reminders' });
     }
 });
 
