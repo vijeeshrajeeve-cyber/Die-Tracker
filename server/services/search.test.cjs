@@ -11,6 +11,13 @@ test('normaliseQuery trims and rejects anything under two characters', () => {
   assert.equal(search.normaliseQuery(['ab']), null);
 });
 
+test('normaliseQuery rejects a query longer than the cap', () => {
+  assert.equal(search.MAX_QUERY_LENGTH, 100);
+  assert.equal(search.normaliseQuery('x'.repeat(100)), 'x'.repeat(100));
+  assert.equal(search.normaliseQuery('x'.repeat(101)), null);
+  assert.equal(search.normaliseQuery(`  ${'x'.repeat(100)}  `), 'x'.repeat(100));
+});
+
 test('LIKE metacharacters are escaped so die nos like 30533_201 match literally', () => {
   assert.equal(search.escapeLike('30533_201'), '30533\\_201');
   assert.equal(search.escapeLike('50%\\x'), '50\\%\\\\x');

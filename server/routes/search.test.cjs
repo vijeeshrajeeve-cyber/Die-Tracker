@@ -21,7 +21,7 @@ installFakeDb(async (sql, params = []) => {
   if (q.startsWith('SELECT username FROM users WHERE id=$1')) return { rows: [{ username: 'approver' }] };
   // listQDs' child tables (files, activity, billets, FOC rounds): none here.
   if (/FROM (quality_discrepancy_files|quality_discrepancy_activity|qd_billet_parameters|qd_foc_rounds)/.test(q)) return { rows: [] };
-  if (q.startsWith('SELECT * FROM die_orders WHERE')) return { rows: orderRows };
+  if (q.startsWith('SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count FROM die_orders o WHERE')) return { rows: orderRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM die_orders')) return { rows: [{ total: totals.orders }] };
   if (q.startsWith('SELECT * FROM quality_discrepancies WHERE (')) return { rows: qdRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM quality_discrepancies')) return { rows: [{ total: totals.qds }] };
@@ -53,6 +53,13 @@ test.beforeEach(() => {
 
 const find = (q) => request(base, `/api/search?q=${encodeURIComponent(q)}`);
 
+test('a query over the length cap is refused without touching the database', async () => {
+  const { status, body } = await find('x'.repeat(101));
+  assert.equal(status, 400);
+  assert.equal(body.error, 'Type between 2 and 100 characters');
+  assert.equal(log.length, 0);
+});
+
 test('a query under two characters is refused without touching the database', async () => {
   for (const q of ['', 'a', '   ', ' b ']) {
     const { status } = await find(q);
@@ -63,7 +70,7 @@ test('a query under two characters is refused without touching the database', as
 
 test('input reaches SQL only as escaped bound parameters', async () => {
   await find("30533_201' OR 1=1 --");
-  const select = log.find(({ q }) => q.startsWith('SELECT * FROM die_orders'));
+  const select = log.find(({ q }) => q.startsWith('SELECT o.*'));
   assert.ok(!select.q.includes('30533'), 'query text must not contain user input');
   assert.equal(select.params[0], "%30533\\_201' OR 1=1 --%");
   assert.equal(select.params[1], "30533_201' or 1=1 --");
@@ -72,8 +79,8 @@ test('input reaches SQL only as escaped bound parameters', async () => {
 
 test('candidates are ordered exact-then-prefix in SQL so an old exact code is not cut off', async () => {
   await find('30');
-  const select = log.find(({ q }) => q.startsWith('SELECT * FROM die_orders'));
-  assert.match(select.q, /ORDER BY CASE WHEN lower\(die_no\) = \$2 OR lower\(order_no\) = \$2 THEN 0 .* END, created_at DESC LIMIT 200$/);
+  const select = log.find(({ q }) => q.startsWith('SELECT o.*'));
+  assert.match(select.q, /ORDER BY CASE WHEN lower\(die_no\) = \$2 OR lower\(order_no\) = \$2 THEN 0 .* END, o.created_at DESC LIMIT 200$/);
 });
 
 test('orders come back presented, ranked, capped, with the true total', async () => {
@@ -85,6 +92,12 @@ test('orders come back presented, ranked, capped, with the true total', async ()
   assert.equal(body.orders.items.length, 8);
   assert.equal(body.orders.items[0]['DIE NO'], 'D-9');
   assert.equal(body.orders.items[0].matchedField, 'die_no');
+});
+
+test("an order's change-log count survives into the presented row", async () => {
+  orderRows = [{ id: 1, die_no: 'D-1', order_no: 'O-1', supplier: 'ALPHA', created_at: '2026-01-01', change_count: 3 }];
+  const { body } = await find('D-1');
+  assert.equal(body.orders.items[0].changeCount, 3);
 });
 
 test('QD rows are trimmed to the list shape and drafts are scoped to the creator in SQL', async () => {

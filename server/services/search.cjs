@@ -4,6 +4,7 @@
 // the database's candidate order and the final order can't drift apart.
 
 const MIN_QUERY_LENGTH = 2;
+const MAX_QUERY_LENGTH = 100;
 const RESULT_CAP = 8;
 // Candidates fetched per group before ranking. The SQL orders them exact →
 // prefix → contains first, so an exact code is never lost behind 200 newer
@@ -24,7 +25,7 @@ const QD_SEARCH = {
 
 function normaliseQuery(raw) {
   const q = typeof raw === 'string' ? raw.trim() : '';
-  return q.length >= MIN_QUERY_LENGTH ? q : null;
+  return q.length >= MIN_QUERY_LENGTH && q.length <= MAX_QUERY_LENGTH ? q : null;
 }
 
 // Backslash is Postgres's default LIKE escape, so escaping it first keeps a
@@ -71,6 +72,6 @@ function rankRows(rows, q, config) {
 }
 
 module.exports = {
-  MIN_QUERY_LENGTH, RESULT_CAP, CANDIDATE_LIMIT, ORDER_SEARCH, QD_SEARCH,
+  MIN_QUERY_LENGTH, MAX_QUERY_LENGTH, RESULT_CAP, CANDIDATE_LIMIT, ORDER_SEARCH, QD_SEARCH,
   normaliseQuery, escapeLike, containsPattern, prefixPattern, matchClause, rankClause, rankRows,
 };

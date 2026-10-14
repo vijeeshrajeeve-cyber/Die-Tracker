@@ -26,8 +26,9 @@ async function findOrders(q) {
   const pattern = search.containsPattern(q);
   const [rows, count] = await Promise.all([
     pool.query(
-      `SELECT * FROM die_orders WHERE ${ORDER_MATCH}
-       ORDER BY ${ORDER_RANK}, created_at DESC LIMIT ${search.CANDIDATE_LIMIT}`,
+      `SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count
+       FROM die_orders o WHERE ${ORDER_MATCH}
+       ORDER BY ${ORDER_RANK}, o.created_at DESC LIMIT ${search.CANDIDATE_LIMIT}`,
       [pattern, q.toLowerCase(), search.prefixPattern(q)],
     ),
     pool.query(`SELECT COUNT(*)::int AS total FROM die_orders WHERE ${ORDER_MATCH}`, [pattern]),
@@ -66,7 +67,7 @@ async function findQds(q, userId) {
 // GET /api/search?q=
 router.get('/', async (req, res) => {
   const q = search.normaliseQuery(req.query.q);
-  if (!q) return res.status(400).json({ error: `Type at least ${search.MIN_QUERY_LENGTH} characters` });
+  if (!q) return res.status(400).json({ error: `Type between ${search.MIN_QUERY_LENGTH} and ${search.MAX_QUERY_LENGTH} characters` });
   try {
     const [orders, qds] = await Promise.all([
       canReadSource(req.user, 'order') ? findOrders(q) : null,
