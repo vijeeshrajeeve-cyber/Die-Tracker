@@ -1,11 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Mail, Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, Send, Inbox, RefreshCw, Bell, Truck } from 'lucide-react';
+import { Save, TestTube, CheckCircle, XCircle, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { emailAPI } from '../../api';
-import { BRAND } from '../../utils/brand';
-import { inputStyle, cardStyle } from './settingsStyles';
-import ToggleButton from './ToggleButton';
+import {
+    inputStyle, cardStyle, labelStyle, hintStyle, tones, chipStyle,
+    primaryButton, secondaryButton, fieldGrid
+} from './settingsStyles';
+import ToggleSwitch from './ToggleSwitch';
+import DesignReminderSettings from './DesignReminderSettings';
+import FocReminderSettings from './FocReminderSettings';
 import DailySummarySettings from './DailySummarySettings';
 import DeliveryChaserSettings from './DeliveryChaserSettings';
+
+// Settings → Email.
+//
+// Two halves: the mailbox (one account that sends and receives for the whole
+// tracker) and the automated emails that use it. Each automation owns its own
+// state, save and run-now; only the mailbox lives here.
+
+const MASKED = '••••••••';
 
 const EmailSettings = ({ theme }) => {
     const [config, setConfig] = useState({
@@ -26,23 +38,12 @@ const EmailSettings = ({ theme }) => {
     const [toast, setToast] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [imapStatus, setImapStatus] = useState(null);
-    const [reminder, setReminder] = useState({ enabled: false, days: 2, time: '08:00' });
-    const [reminderState, setReminderState] = useState(null);
-    const [savingReminder, setSavingReminder] = useState(false);
-    const [runningReminder, setRunningReminder] = useState(false);
-    const [foc, setFoc] = useState({
-        supplierEnabled: false, supplierTime: '08:00',
-        internalEnabled: false, internalTime: '08:00', internalTo: '', idleDays: 3,
-    });
-    const [focState, setFocState] = useState(null);
-    const [savingFoc, setSavingFoc] = useState(false);
-    const [runningFoc, setRunningFoc] = useState('');
+    const [openId, setOpenId] = useState(null);
+    const t = tones(theme);
 
     useEffect(() => {
         fetchConfig();
         fetchImapStatus();
-        fetchReminderSettings();
-        fetchFocSettings();
     }, []);
 
     const fetchConfig = async () => {
@@ -73,113 +74,12 @@ const EmailSettings = ({ theme }) => {
         try {
             const result = await emailAPI.getImapStatus();
             setImapStatus(result.status);
-        } catch (_) { /* ignore */ }
+        } catch { /* ignore */ }
     };
 
-    const fetchReminderSettings = async () => {
-        try {
-            const result = await emailAPI.getReminderSettings();
-            if (result.settings) {
-                setReminder({
-                    enabled: result.settings.design_reminder_enabled || false,
-                    days: result.settings.design_reminder_days || 2,
-                    time: result.settings.design_reminder_time || '08:00'
-                });
-            }
-            setReminderState({ ...result.state, lastRunDate: result.settings?.design_reminder_last_run });
-        } catch (err) {
-            console.error('Failed to fetch reminder settings:', err);
-        }
-    };
-
-    const handleSaveReminder = async () => {
-        setSavingReminder(true);
-        try {
-            await emailAPI.updateReminderSettings(reminder);
-            showToast('Reminder settings saved', 'success');
-            fetchReminderSettings();
-        } catch (err) {
-            showToast(err.message || 'Failed to save reminder settings', 'error');
-        } finally {
-            setSavingReminder(false);
-        }
-    };
-
-    const handleRunRemindersNow = async () => {
-        setRunningReminder(true);
-        try {
-            const result = await emailAPI.runDesignRemindersNow();
-            const s = result.summary || {};
-            showToast(
-                `Reminders sent: ${s.sent || 0} email(s) for ${s.totalOrders || 0} overdue order(s)` +
-                (s.skippedNoEmail?.length ? ` — no email set for: ${s.skippedNoEmail.join(', ')}` : ''),
-                'success'
-            );
-            fetchReminderSettings();
-        } catch (err) {
-            showToast(err.message || 'Failed to run reminders', 'error');
-        } finally {
-            setRunningReminder(false);
-        }
-    };
-
-    const fetchFocSettings = async () => {
-        try {
-            const result = await emailAPI.getFocReminderSettings();
-            const s = result.settings;
-            if (s) {
-                setFoc({
-                    supplierEnabled: s.foc_supplier_enabled || false,
-                    supplierTime: s.foc_supplier_time || '08:00',
-                    internalEnabled: s.foc_internal_enabled || false,
-                    internalTime: s.foc_internal_time || '08:00',
-                    internalTo: s.foc_internal_to || '',
-                    idleDays: s.foc_idle_days ?? 3,
-                });
-            }
-            setFocState({
-                ...result.state,
-                supplierLastRun: s?.foc_supplier_last_run,
-                internalLastRun: s?.foc_internal_last_run,
-            });
-        } catch (err) {
-            console.error('Failed to fetch FOC reminder settings:', err);
-        }
-    };
-
-    const handleSaveFoc = async () => {
-        setSavingFoc(true);
-        try {
-            await emailAPI.updateFocReminderSettings(foc);
-            showToast('FOC reminder settings saved', 'success');
-            fetchFocSettings();
-        } catch (err) {
-            showToast(err.message || 'Failed to save FOC reminder settings', 'error');
-        } finally {
-            setSavingFoc(false);
-        }
-    };
-
-    const handleRunFocNow = async (which) => {
-        setRunningFoc(which);
-        try {
-            const result = await emailAPI.runFocRemindersNow(which);
-            const s = result.summary || {};
-            showToast(
-                which === 'supplier'
-                    ? `${s.sent || 0} supplier email(s) sent for ${s.totalOverdue || 0} overdue FOC(s)` +
-                      (s.skippedNoEmail?.length ? ` — no email set for: ${s.skippedNoEmail.join(', ')}` : '')
-                    : s.quiet
-                        ? 'Nothing outstanding — no email sent'
-                        : `Sent: ${s.overdue || 0} overdue, ${s.idle || 0} awaiting trial`,
-                'success'
-            );
-            fetchFocSettings();
-        } catch (err) {
-            showToast(err.message || 'Failed to run FOC reminders', 'error');
-        } finally {
-            setRunningFoc('');
-        }
+    const showToast = (message, type) => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000);
     };
 
     const handleSave = async () => {
@@ -187,10 +87,10 @@ const EmailSettings = ({ theme }) => {
         try {
             const update = { ...config };
             // Don't send masked password back
-            if (update.email_password === '••••••••') delete update.email_password;
+            if (update.email_password === MASKED) delete update.email_password;
 
             await emailAPI.updateConfig(update);
-            showToast('Configuration saved successfully', 'success');
+            showToast('Mailbox settings saved', 'success');
             fetchConfig();
             fetchImapStatus();
         } catch (err) {
@@ -200,48 +100,40 @@ const EmailSettings = ({ theme }) => {
         }
     };
 
-    const handleTestSmtp = async () => {
-        setTestingSmtp(true);
+    const handleTest = async (kind) => {
+        const [setBusy, label] = kind === 'smtp' ? [setTestingSmtp, 'SMTP'] : [setTestingImap, 'IMAP'];
+        setBusy(true);
         try {
-            const result = await emailAPI.testConnection('smtp');
-            showToast(result.message || 'SMTP connection successful!', 'success');
+            const result = await emailAPI.testConnection(kind);
+            showToast(result.message || `${label} connection successful!`, 'success');
         } catch (err) {
-            showToast(err.message || 'SMTP connection test failed', 'error');
+            showToast(err.message || `${label} connection test failed`, 'error');
         } finally {
-            setTestingSmtp(false);
+            setBusy(false);
         }
-    };
-
-    const handleTestImap = async () => {
-        setTestingImap(true);
-        try {
-            const result = await emailAPI.testConnection('imap');
-            showToast(result.message || 'IMAP connection successful!', 'success');
-        } catch (err) {
-            showToast(err.message || 'IMAP connection test failed', 'error');
-        } finally {
-            setTestingImap(false);
-        }
-    };
-
-    const showToast = (message, type) => {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
     };
 
     if (loading) {
         return <div style={{ padding: '40px', textAlign: 'center', color: theme.textDim }}>Loading configuration...</div>;
     }
 
+    const label = labelStyle(theme);
+    const hint = hintStyle(theme);
+    const direction = {
+        border: `1px solid ${theme.cardBorder}`, borderRadius: '12px', padding: '20px',
+        display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0
+    };
+    const directionHead = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' };
+
     return (
         <div>
-            {/* Toast */}
+            {/* Toast — solid fills with white text clear 4.5:1 in either theme */}
             {toast && (
-                <div style={{
+                <div role="status" style={{
                     position: 'fixed', top: '20px', right: '20px', zIndex: 9999,
                     padding: '12px 20px', borderRadius: '12px',
-                    background: toast.type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(239,68,68,0.95)',
-                    color: 'white', fontSize: '0.875rem', fontWeight: 500,
+                    background: toast.type === 'success' ? '#0F7A4D' : '#B3261E',
+                    color: '#ffffff', fontSize: '0.875rem', fontWeight: 500,
                     display: 'flex', alignItems: 'center', gap: '8px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
                 }}>
@@ -251,464 +143,185 @@ const EmailSettings = ({ theme }) => {
             )}
 
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
-                <div style={{
-                    width: '48px', height: '48px', borderRadius: '12px',
-                    background: 'rgba(139,92,246,0.15)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <Settings size={24} color="#8B5CF6" />
-                </div>
-                <div>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>Email Settings</h2>
-                    <p style={{ fontSize: '0.8rem', color: theme.textDim, margin: 0 }}>Configure SMTP sending and IMAP receiving</p>
-                </div>
-            </div>
-
-            {/* Send Toggle */}
-            <div style={cardStyle(theme)}>
-                <ToggleButton
-                    theme={theme}
-                    enabled={config.send_enabled}
-                    onToggle={() => setConfig({ ...config, send_enabled: !config.send_enabled })}
-                    label="Outgoing Email (SMTP)"
-                    sublabel={config.send_enabled ? 'Active — emails can be sent via SMTP' : 'Disabled — outgoing email is off'}
-                    icon={Send}
-                    color="#3B82F6"
-                />
-            </div>
-
-            {/* Receive Toggle */}
-            <div style={cardStyle(theme)}>
-                <ToggleButton
-                    theme={theme}
-                    enabled={config.receive_enabled}
-                    onToggle={() => setConfig({ ...config, receive_enabled: !config.receive_enabled })}
-                    label="Incoming Email (IMAP)"
-                    sublabel={config.receive_enabled ? 'Active — polling mailbox every 5 minutes' : 'Disabled — incoming email polling is off'}
-                    icon={Inbox}
-                    color="#10B981"
-                />
-                {/* IMAP Status */}
-                {config.receive_enabled && imapStatus && (
-                    <div style={{
-                        marginTop: '14px', padding: '10px 14px', borderRadius: '10px',
-                        background: imapStatus.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                        fontSize: '0.8rem', color: imapStatus.error ? '#EF4444' : '#10B981',
-                        display: 'flex', alignItems: 'center', gap: '8px'
-                    }}>
-                        {imapStatus.error
-                            ? <><XCircle size={14} /> Last poll error: {imapStatus.error}</>
-                            : <><CheckCircle size={14} /> Last poll: {imapStatus.lastCheck ? new Date(imapStatus.lastCheck).toLocaleString() : 'Not yet'} — {imapStatus.emailsFetched} email(s) fetched</>
-                        }
-                    </div>
-                )}
-            </div>
-
-            {/* Automatic Design Reminders */}
-            <div style={cardStyle(theme)}>
-                <ToggleButton
-                    theme={theme}
-                    enabled={reminder.enabled}
-                    onToggle={() => setReminder({ ...reminder, enabled: !reminder.enabled })}
-                    label="Automatic Design Reminders"
-                    sublabel={reminder.enabled
-                        ? `Active — daily at ${reminder.time}, one email per supplier for orders awaiting design > ${reminder.days} day(s)`
-                        : 'Disabled — no automatic reminder emails will be sent'}
-                    icon={Bell}
-                    color="#F59E0B"
-                />
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-days-awaiting-design">
-                            Days Awaiting Design
-                        </label>
-                        <input id="emailsettings-days-awaiting-design"
-                            type="number"
-                            min={1}
-                            max={60}
-                            value={reminder.days}
-                            onChange={(e) => setReminder({ ...reminder, days: Math.max(1, Math.min(60, parseInt(e.target.value) || 1)) })}
-                            style={inputStyle(theme)}
-                        />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            Remind for orders in "Awaiting Design" longer than this many days
-                        </p>
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-send-time">
-                            Send Time
-                        </label>
-                        <input id="emailsettings-send-time"
-                            type="time"
-                            value={reminder.time}
-                            onChange={(e) => setReminder({ ...reminder, time: e.target.value || '08:00' })}
-                            style={inputStyle(theme)}
-                        />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            Time of day the reminder emails are sent (server time, Asia/Dubai)
-                        </p>
-                    </div>
-                </div>
-
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, margin: '14px 0 0' }}>
-                    Emails go to each supplier's contact email (set in Settings → Suppliers).
-                    Suppliers without an email fall back to the "Design Reminder" template's default recipients.
-                    Requires outgoing email (SMTP) to be enabled.
+            <div style={{ marginBottom: '1.5rem' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: theme.text, margin: 0 }}>Email settings</h2>
+                <p style={{ fontSize: '0.9rem', color: theme.textMuted, margin: '6px 0 0', maxWidth: '60ch' }}>
+                    One mailbox sends and receives for the whole tracker. Turn on the automated emails you want it to run.
                 </p>
-
-                {reminderState?.lastRunDate && (
-                    <div style={{
-                        marginTop: '14px', padding: '10px 14px', borderRadius: '10px',
-                        background: reminderState.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                        fontSize: '0.8rem', color: reminderState.error ? '#EF4444' : '#10B981',
-                        display: 'flex', alignItems: 'center', gap: '8px'
-                    }}>
-                        {reminderState.error
-                            ? <><XCircle size={14} /> Last run error: {reminderState.error}</>
-                            : <><CheckCircle size={14} /> Last run: {reminderState.lastRunDate}
-                                {reminderState.lastResult ? ` — ${reminderState.lastResult.sent} email(s) sent for ${reminderState.lastResult.totalOrders} overdue order(s)` : ''}</>
-                        }
-                    </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
-                    <button onClick={handleSaveReminder} disabled={savingReminder} style={{
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                        padding: '10px 20px', borderRadius: '12px', border: 'none',
-                        background: savingReminder ? '#475569' : 'linear-gradient(135deg, #F59E0B, #F97316)',
-                        color: 'white', cursor: savingReminder ? 'not-allowed' : 'pointer',
-                        fontWeight: 600, fontSize: '0.85rem'
-                    }}>
-                        <Save size={16} />
-                        {savingReminder ? 'Saving...' : 'Save Reminder Settings'}
-                    </button>
-                    <button onClick={handleRunRemindersNow} disabled={runningReminder} style={{
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                        padding: '10px 20px', borderRadius: '12px',
-                        border: `1px solid ${theme.cardBorder}`,
-                        background: theme.cardBg, color: theme.text,
-                        cursor: runningReminder ? 'not-allowed' : 'pointer',
-                        fontWeight: 500, fontSize: '0.85rem'
-                    }}>
-                        <Send size={16} />
-                        {runningReminder ? 'Sending...' : 'Send Reminders Now'}
-                    </button>
-                </div>
             </div>
 
-            {/* FOC replacement chasers — one out to the supplier, one in to us */}
-            <div style={cardStyle(theme)}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Truck size={18} color="#34D399" /> FOC Replacement Reminders
-                </h3>
-                <p style={{ fontSize: '0.78rem', color: theme.textDim, margin: '0 0 18px' }}>
-                    Chases what is still outstanding against QDs where a free-of-charge replacement was accepted.
-                </p>
-
-                <ToggleButton
-                    theme={theme}
-                    enabled={foc.supplierEnabled}
-                    onToggle={() => setFoc({ ...foc, supplierEnabled: !foc.supplierEnabled })}
-                    label="Chase the supplier"
-                    sublabel={foc.supplierEnabled
-                        ? `Active — daily at ${foc.supplierTime}, one email per supplier listing replacements past the ETA they gave`
-                        : 'Disabled — suppliers are not chased about overdue replacements'}
-                    icon={Bell}
-                    color="#60A5FA"
-                />
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
+            {/* Mailbox */}
+            <section style={{ ...cardStyle(theme), display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-supplier-send-time">
-                            Supplier Send Time
-                        </label>
-                        <input id="emailsettings-supplier-send-time" type="time" value={foc.supplierTime}
-                            onChange={(e) => setFoc({ ...foc, supplierTime: e.target.value || '08:00' })}
-                            style={inputStyle(theme)} />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            Emails go to each supplier's contact email (Settings → Suppliers). A supplier with no email is skipped.
-                        </p>
+                        <p style={{ ...label, margin: 0 }}>Mailbox</p>
+                        <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: theme.text, margin: '4px 0 0', overflowWrap: 'anywhere' }}>
+                            {config.mailbox_email || 'No mailbox set'}
+                        </h3>
                     </div>
+                    <details style={{ fontSize: '0.8rem', color: theme.textMuted, maxWidth: '360px' }}>
+                        <summary style={{ cursor: 'pointer', fontWeight: 600, color: theme.primary, minHeight: '44px', display: 'flex', alignItems: 'center' }}>
+                            Office 365 setup guide
+                        </summary>
+                        <div style={{ lineHeight: 2, paddingBottom: '8px' }}>
+                            SMTP <code style={chipStyle(theme)}>smtp.office365.com</code> port <code style={chipStyle(theme)}>587</code><br />
+                            IMAP <code style={chipStyle(theme)}>outlook.office365.com</code> port <code style={chipStyle(theme)}>993</code><br />
+                            With MFA, use an <strong>App Password</strong> from your Microsoft account security settings.
+                        </div>
+                    </details>
                 </div>
 
-                <div style={{ height: 1, background: theme.cardBorder, margin: '22px 0' }} />
-
-                <ToggleButton
-                    theme={theme}
-                    enabled={foc.internalEnabled}
-                    onToggle={() => setFoc({ ...foc, internalEnabled: !foc.internalEnabled })}
-                    label="Chase our own team"
-                    sublabel={foc.internalEnabled
-                        ? `Active — daily at ${foc.internalTime}, listing overdue FOCs and dies received but untrialled for over ${foc.idleDays} day(s)`
-                        : 'Disabled — nobody is told about replacements sitting untrialled'}
-                    icon={Bell}
-                    color="#F0ABFC"
-                />
-
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginTop: '18px' }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-send-to">
-                            Send To
-                        </label>
-                        <input id="emailsettings-send-to" type="text" value={foc.internalTo} placeholder="quality@example.com, hod@example.com"
-                            onChange={(e) => setFoc({ ...foc, internalTo: e.target.value })}
-                            style={inputStyle(theme)} />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            Whoever owns FOC follow-up. Required to enable this reminder.
-                        </p>
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-internal-send-time">
-                            Internal Send Time
-                        </label>
-                        <input id="emailsettings-internal-send-time" type="time" value={foc.internalTime}
-                            onChange={(e) => setFoc({ ...foc, internalTime: e.target.value || '08:00' })}
-                            style={inputStyle(theme)} />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-idle-days">
-                            Idle Days
-                        </label>
-                        <input id="emailsettings-idle-days" type="number" min={0} max={60} value={foc.idleDays}
-                            onChange={(e) => setFoc({ ...foc, idleDays: Math.max(0, Math.min(60, parseInt(e.target.value) || 0)) })}
-                            style={inputStyle(theme)} />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            How long a received die may sit untrialled before it is flagged
-                        </p>
-                    </div>
-                </div>
-
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, margin: '14px 0 0' }}>
-                    Both require outgoing email (SMTP) to be enabled. Settled QDs — closed, rejected or reference —
-                    are never chased, and a day with nothing outstanding sends no internal email.
-                </p>
-
-                {(focState?.supplier?.error || focState?.internal?.error || focState?.supplierLastRun || focState?.internalLastRun) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>
-                        {[
-                            { key: 'supplier', label: 'Supplier chaser', lastRun: focState.supplierLastRun, st: focState.supplier },
-                            { key: 'internal', label: 'Internal chaser', lastRun: focState.internalLastRun, st: focState.internal },
-                        ].filter((r) => r.lastRun || r.st?.error).map((r) => (
-                            <div key={r.key} style={{
-                                padding: '10px 14px', borderRadius: '10px',
-                                background: r.st?.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                                fontSize: '0.8rem', color: r.st?.error ? '#EF4444' : '#10B981',
-                                display: 'flex', alignItems: 'center', gap: '8px'
-                            }}>
-                                {r.st?.error
-                                    ? <><XCircle size={14} /> {r.label} — last run error: {r.st.error}</>
-                                    : <><CheckCircle size={14} /> {r.label} — last run: {r.lastRun}</>}
+                <div style={fieldGrid(320)}>
+                    {/* Sending */}
+                    <div style={direction}>
+                        <div style={directionHead}>
+                            <div>
+                                <div style={{ fontSize: '1rem', fontWeight: 700, color: theme.text }}>Sending (SMTP)</div>
+                                <div style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '2px' }}>
+                                    {config.send_enabled ? 'On · outgoing emails are delivered' : 'Off · nothing is sent, automations pause'}
+                                </div>
                             </div>
-                        ))}
+                            <ToggleSwitch theme={theme} enabled={config.send_enabled} label="Sending enabled"
+                                onToggle={() => setConfig({ ...config, send_enabled: !config.send_enabled })} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px', gap: '12px' }}>
+                            <div>
+                                <label style={label} htmlFor="emailsettings-smtp-host">SMTP host</label>
+                                <input id="emailsettings-smtp-host" type="text" value={config.smtp_host}
+                                    onChange={(e) => setConfig({ ...config, smtp_host: e.target.value })}
+                                    placeholder="smtp.office365.com" style={inputStyle(theme)} />
+                            </div>
+                            <div>
+                                <label style={label} htmlFor="emailsettings-port">Port</label>
+                                <input id="emailsettings-port" type="number" value={config.smtp_port}
+                                    onChange={(e) => setConfig({ ...config, smtp_port: parseInt(e.target.value) || 587 })}
+                                    style={inputStyle(theme)} />
+                            </div>
+                        </div>
+                        <div>
+                            <button onClick={() => handleTest('smtp')} disabled={testingSmtp} style={secondaryButton(theme, testingSmtp)}>
+                                <TestTube size={16} /> {testingSmtp ? 'Testing…' : 'Test sending'}
+                            </button>
+                        </div>
                     </div>
-                )}
 
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
-                    <button onClick={handleSaveFoc} disabled={savingFoc} style={{
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                        padding: '10px 20px', borderRadius: '12px', border: 'none',
-                        background: savingFoc ? '#475569' : 'linear-gradient(135deg, #10B981, #34D399)',
-                        color: 'white', cursor: savingFoc ? 'not-allowed' : 'pointer',
-                        fontWeight: 600, fontSize: '0.85rem'
-                    }}>
-                        <Save size={16} />
-                        {savingFoc ? 'Saving...' : 'Save FOC Settings'}
-                    </button>
-                    {['supplier', 'internal'].map((which) => (
-                        <button key={which} onClick={() => handleRunFocNow(which)} disabled={!!runningFoc} style={{
-                            display: 'flex', alignItems: 'center', gap: '8px',
-                            padding: '10px 20px', borderRadius: '12px',
-                            border: `1px solid ${theme.cardBorder}`,
-                            background: theme.cardBg, color: theme.text,
-                            cursor: runningFoc ? 'not-allowed' : 'pointer',
-                            fontWeight: 500, fontSize: '0.85rem'
-                        }}>
-                            <Send size={16} />
-                            {runningFoc === which ? 'Sending...' : `Run ${which} chaser now`}
-                        </button>
-                    ))}
+                    {/* Receiving */}
+                    <div style={direction}>
+                        <div style={directionHead}>
+                            <div>
+                                <div style={{ fontSize: '1rem', fontWeight: 700, color: theme.text }}>Receiving (IMAP)</div>
+                                <div style={{ fontSize: '0.8rem', color: theme.textDim, marginTop: '2px' }}>
+                                    {config.receive_enabled ? 'On · mailbox polled every 5 minutes' : 'Off · replies are not picked up'}
+                                </div>
+                            </div>
+                            <ToggleSwitch theme={theme} enabled={config.receive_enabled} label="Receiving enabled"
+                                onToggle={() => setConfig({ ...config, receive_enabled: !config.receive_enabled })} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px', gap: '12px' }}>
+                            <div>
+                                <label style={label} htmlFor="emailsettings-imap-host">IMAP host</label>
+                                <input id="emailsettings-imap-host" type="text" value={config.imap_host}
+                                    onChange={(e) => setConfig({ ...config, imap_host: e.target.value })}
+                                    placeholder="outlook.office365.com" style={inputStyle(theme)} />
+                            </div>
+                            <div>
+                                <label style={label} htmlFor="emailsettings-port-2">Port</label>
+                                <input id="emailsettings-port-2" type="number" value={config.imap_port}
+                                    onChange={(e) => setConfig({ ...config, imap_port: parseInt(e.target.value) || 993 })}
+                                    style={inputStyle(theme)} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <button onClick={() => handleTest('imap')} disabled={testingImap} style={secondaryButton(theme, testingImap)}>
+                                <RefreshCw size={16} /> {testingImap ? 'Testing…' : 'Test receiving'}
+                            </button>
+                            {config.receive_enabled && imapStatus && (
+                                <span style={{
+                                    display: 'flex', alignItems: 'flex-start', gap: '6px',
+                                    fontSize: '0.8rem', fontWeight: 600, minWidth: 0, overflowWrap: 'anywhere',
+                                    color: imapStatus.error ? t.danger : t.success
+                                }}>
+                                    {imapStatus.error
+                                        ? <><XCircle size={14} style={{ flex: 'none', marginTop: '2px' }} /> Last poll failed: {imapStatus.error}</>
+                                        : <><CheckCircle size={14} style={{ flex: 'none', marginTop: '2px' }} /> Last poll {imapStatus.lastCheck ? new Date(imapStatus.lastCheck).toLocaleString() : 'not yet'} · {imapStatus.emailsFetched} fetched</>}
+                                </span>
+                            )}
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {/* Daily Summary Report */}
-            <DailySummarySettings theme={theme} showToast={showToast} />
-
-            {/* Die Delivery Chaser */}
-            <DeliveryChaserSettings theme={theme} showToast={showToast} />
-
-            {/* SMTP/IMAP Configuration */}
-            <div style={cardStyle(theme)}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: theme.text, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Mail size={18} color={theme.primary} /> Connection Settings
-                </h3>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                    {/* SMTP Host & Port */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-smtp-host">
-                                SMTP Host
-                            </label>
-                            <input id="emailsettings-smtp-host"
-                                type="text"
-                                value={config.smtp_host}
-                                onChange={(e) => setConfig({ ...config, smtp_host: e.target.value })}
-                                placeholder="smtp.office365.com"
-                                style={inputStyle(theme)}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-port">
-                                Port
-                            </label>
-                            <input id="emailsettings-port"
-                                type="number"
-                                value={config.smtp_port}
-                                onChange={(e) => setConfig({ ...config, smtp_port: parseInt(e.target.value) || 587 })}
-                                style={inputStyle(theme)}
-                            />
-                        </div>
-                    </div>
-
-                    {/* IMAP Host & Port */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-imap-host">
-                                IMAP Host
-                            </label>
-                            <input id="emailsettings-imap-host"
-                                type="text"
-                                value={config.imap_host}
-                                onChange={(e) => setConfig({ ...config, imap_host: e.target.value })}
-                                placeholder="outlook.office365.com"
-                                style={inputStyle(theme)}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-port-2">
-                                Port
-                            </label>
-                            <input id="emailsettings-port-2"
-                                type="number"
-                                value={config.imap_port}
-                                onChange={(e) => setConfig({ ...config, imap_port: parseInt(e.target.value) || 993 })}
-                                style={inputStyle(theme)}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Email Credentials */}
+                {/* Credentials */}
+                <div style={fieldGrid(240)}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-email-username">
-                            Email / Username
-                        </label>
-                        <input id="emailsettings-email-username"
-                            type="text"
-                            value={config.email_user}
+                        <label style={label} htmlFor="emailsettings-email-username">Email / username</label>
+                        <input id="emailsettings-email-username" type="text" value={config.email_user}
                             onChange={(e) => setConfig({ ...config, email_user: e.target.value })}
-                            placeholder="dieorders@yourcompany.com"
-                            style={inputStyle(theme)}
-                        />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            Used for both SMTP and IMAP authentication
-                        </p>
+                            placeholder="dieorders@yourcompany.com" style={inputStyle(theme)} />
+                        <p style={hint}>Used for both sending and receiving.</p>
                     </div>
-
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-password-app-password">
-                            Password / App Password
-                        </label>
+                        <label style={label} htmlFor="emailsettings-password-app-password">Password / app password</label>
                         <div style={{ position: 'relative' }}>
                             <input id="emailsettings-password-app-password"
                                 type={showPassword ? 'text' : 'password'}
                                 value={config.email_password}
                                 onChange={(e) => setConfig({ ...config, email_password: e.target.value })}
                                 placeholder="App password or account password"
-                                style={{ ...inputStyle(theme), paddingRight: '40px' }}
-                            />
-                            <button onClick={() => setShowPassword(!showPassword)} style={{
-                                position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
-                                background: 'none', border: 'none', cursor: 'pointer', color: theme.textDim
-                            }}>
+                                style={{ ...inputStyle(theme), paddingRight: '48px' }} />
+                            <button type="button" onClick={() => setShowPassword(!showPassword)}
+                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                style={{
+                                    position: 'absolute', right: '2px', top: '50%', transform: 'translateY(-50%)',
+                                    width: '44px', height: '44px', background: 'none', border: 'none',
+                                    cursor: 'pointer', color: theme.textMuted,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            For Office 365 with MFA, use an App Password from your Microsoft account security settings
-                        </p>
+                        <p style={hint}>Leave as is to keep the saved password.</p>
                     </div>
-
-                    {/* From / Mailbox Email */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }} htmlFor="emailsettings-from-mailbox-email">
-                            From / Mailbox Email
-                        </label>
-                        <input id="emailsettings-from-mailbox-email"
-                            type="email"
-                            value={config.mailbox_email}
+                        <label style={label} htmlFor="emailsettings-from-mailbox-email">From / mailbox email</label>
+                        <input id="emailsettings-from-mailbox-email" type="email" value={config.mailbox_email}
                             onChange={(e) => setConfig({ ...config, mailbox_email: e.target.value })}
-                            placeholder="dieorders@yourcompany.com"
-                            style={inputStyle(theme)}
-                        />
-                        <p style={{ fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' }}>
-                            The "From" address shown on sent emails (usually same as username)
-                        </p>
+                            placeholder="dieorders@yourcompany.com" style={inputStyle(theme)} />
+                        <p style={hint}>The &quot;From&quot; address on sent emails.</p>
                     </div>
                 </div>
-            </div>
 
-            {/* Setup Guide */}
-            <div style={{ ...cardStyle(theme), background: 'rgba(59,130,246,0.05)', borderColor: 'rgba(59,130,246,0.2)' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: theme.primary, margin: '0 0 12px' }}>
-                    Quick Setup Guide (Office 365)
-                </h3>
-                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: theme.textMuted, lineHeight: 2 }}>
-                    <li>SMTP Host: <code style={{ background: theme.inputBg, padding: '2px 6px', borderRadius: '4px' }}>smtp.office365.com</code> Port: <code style={{ background: theme.inputBg, padding: '2px 6px', borderRadius: '4px' }}>587</code></li>
-                    <li>IMAP Host: <code style={{ background: theme.inputBg, padding: '2px 6px', borderRadius: '4px' }}>outlook.office365.com</code> Port: <code style={{ background: theme.inputBg, padding: '2px 6px', borderRadius: '4px' }}>993</code></li>
-                    <li>If MFA is enabled, generate an <strong>App Password</strong> at Microsoft account security settings</li>
-                    <li>Enter your shared mailbox email and app password above</li>
-                    <li>Enable sending and/or receiving, save, and test the connections</li>
-                </ol>
-            </div>
+                <div style={{
+                    display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                    gap: '12px', borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '20px'
+                }}>
+                    <p style={{ ...hint, margin: 0 }}>
+                        Switches and fields apply when you save. The test buttons use what was last saved.
+                    </p>
+                    <button onClick={handleSave} disabled={saving} style={primaryButton(theme, saving)}>
+                        <Save size={16} /> {saving ? 'Saving…' : 'Save mailbox'}
+                    </button>
+                </div>
+            </section>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <button onClick={handleSave} disabled={saving} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '12px 24px', borderRadius: '12px', border: 'none',
-                    background: saving ? '#475569' : BRAND.navy,
-                    color: 'white', cursor: saving ? 'not-allowed' : 'pointer',
-                    fontWeight: 600, fontSize: '0.9rem',
-                    boxShadow: '0 4px 12px rgba(59,130,246,0.3)'
+            {/* Automated emails */}
+            <section>
+                <div style={{ margin: '0 0 12px' }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: theme.text, margin: 0 }}>Automated emails</h3>
+                    <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>
+                        What the tracker sends on its own. All of these need sending to be on.
+                    </p>
+                </div>
+                <div style={{
+                    display: 'flex', flexDirection: 'column', gap: '1px',
+                    background: theme.cardBorder, border: `1px solid ${theme.cardBorder}`,
+                    borderRadius: '16px', overflow: 'hidden', boxShadow: theme.shadowMd
                 }}>
-                    <Save size={18} />
-                    {saving ? 'Saving...' : 'Save Configuration'}
-                </button>
-                <button onClick={handleTestSmtp} disabled={testingSmtp} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '12px 24px', borderRadius: '12px',
-                    border: `1px solid ${theme.cardBorder}`,
-                    background: theme.cardBg, color: theme.text,
-                    cursor: testingSmtp ? 'not-allowed' : 'pointer',
-                    fontWeight: 500, fontSize: '0.9rem'
-                }}>
-                    <TestTube size={18} />
-                    {testingSmtp ? 'Testing...' : 'Test SMTP'}
-                </button>
-                <button onClick={handleTestImap} disabled={testingImap} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '12px 24px', borderRadius: '12px',
-                    border: `1px solid ${theme.cardBorder}`,
-                    background: theme.cardBg, color: theme.text,
-                    cursor: testingImap ? 'not-allowed' : 'pointer',
-                    fontWeight: 500, fontSize: '0.9rem'
-                }}>
-                    <RefreshCw size={18} />
-                    {testingImap ? 'Testing...' : 'Test IMAP'}
-                </button>
-            </div>
+                    <DesignReminderSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                    <FocReminderSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                    <DeliveryChaserSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                    <DailySummarySettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                </div>
+            </section>
         </div>
     );
 };

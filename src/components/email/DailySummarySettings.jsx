@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Save, Send, Download, CheckCircle, XCircle } from 'lucide-react';
+import { Save, Send, Download } from 'lucide-react';
 import { emailAPI } from '../../api';
-import { inputStyle, cardStyle } from './settingsStyles';
-import ToggleButton from './ToggleButton';
+import { inputStyle, labelStyle as labelStyleFor, hintStyle as hintStyleFor, primaryButton, secondaryButton as secondaryButtonFor, fieldGrid } from './settingsStyles';
+import AutomationRow from './AutomationRow';
 
 const yesterday = () => {
     const d = new Date();
@@ -11,8 +11,11 @@ const yesterday = () => {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
-const DailySummarySettings = ({ theme, showToast }) => {
-    const [settings, setSettings] = useState({ enabled: false, time: '06:00', to: '', cc: '' });
+const DEFAULTS = { enabled: false, time: '06:00', to: '', cc: '' };
+
+const DailySummarySettings = ({ theme, showToast, openId, setOpenId }) => {
+    const [settings, setSettings] = useState(DEFAULTS);
+    const [saved, setSaved] = useState(DEFAULTS);
     const [state, setState] = useState(null);
     const [lastRunDate, setLastRunDate] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -24,12 +27,14 @@ const DailySummarySettings = ({ theme, showToast }) => {
         try {
             const result = await emailAPI.getDailySummarySettings();
             const s = result.settings || {};
-            setSettings({
+            const next = {
                 enabled: s.daily_summary_enabled || false,
                 time: s.daily_summary_time || '06:00',
                 to: s.daily_summary_to || '',
                 cc: s.daily_summary_cc || '',
-            });
+            };
+            setSettings(next);
+            setSaved(next);
             setState(result.state);
             setLastRunDate(s.daily_summary_last_run);
         } catch (err) {
@@ -87,36 +92,43 @@ const DailySummarySettings = ({ theme, showToast }) => {
         }
     };
 
-    const labelStyle = {
-        display: 'block', fontSize: '0.75rem', fontWeight: 600,
-        color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase'
-    };
-    const hintStyle = { fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' };
-    const secondaryButton = (busy) => ({
-        display: 'flex', alignItems: 'center', gap: '8px',
-        padding: '10px 20px', borderRadius: '12px',
-        border: `1px solid ${theme.cardBorder}`, background: 'transparent',
-        color: theme.text, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
-        whiteSpace: 'nowrap'
-    });
+    const labelStyle = labelStyleFor(theme);
+    const hintStyle = hintStyleFor(theme);
+    const secondaryButton = (busy) => secondaryButtonFor(theme, busy);
+
+    const dirty = JSON.stringify(settings) !== JSON.stringify(saved);
+    const status = dirty
+        ? { tone: 'warn', text: 'Unsaved changes' }
+        : state?.error
+            ? { tone: 'error', text: `Last run failed: ${state.error}` }
+            : lastRunDate
+                ? {
+                    tone: 'ok',
+                    text: `Last run ${lastRunDate}` +
+                        (state?.lastResult?.reportDate
+                            ? ` · ${state.lastResult.movements} movement(s) for ${state.lastResult.reportDate}`
+                            : '')
+                }
+                : settings.to || !settings.enabled
+                    ? { tone: 'idle', text: settings.enabled ? 'Waiting for first run' : 'Not running' }
+                    : { tone: 'idle', text: 'Add recipients to turn on' };
 
     return (
-        <div style={cardStyle(theme)}>
-            <ToggleButton
-                theme={theme}
-                enabled={settings.enabled}
-                onToggle={() => setSettings({ ...settings, enabled: !settings.enabled })}
-                label="Daily Summary Report"
-                sublabel={settings.enabled
-                    ? `Active — every day at ${settings.time}, covering the previous day`
-                    : 'Disabled — no daily summary will be sent'}
-                icon={FileText}
-                color="#0EA5E9"
-            />
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '18px' }}>
+        <AutomationRow
+            theme={theme}
+            id="summary"
+            name="Daily summary report"
+            audience={saved.to ? 'To your team' : 'To your team · needs recipients'}
+            schedule={saved.enabled ? `Daily at ${saved.time} · covers the previous day` : 'Off'}
+            status={status}
+            enabled={settings.enabled}
+            onToggle={() => { setSettings({ ...settings, enabled: !settings.enabled }); setOpenId('summary'); }}
+            open={openId === 'summary'}
+            onOpen={() => setOpenId(openId === 'summary' ? null : 'summary')}
+        >
+            <div style={fieldGrid(220)}>
                 <div>
-                    <label style={labelStyle} htmlFor="dailysummary-time">Send Time</label>
+                    <label style={labelStyle} htmlFor="dailysummary-time">Send time</label>
                     <input id="dailysummary-time"
                         type="time"
                         value={settings.time}
@@ -138,7 +150,7 @@ const DailySummarySettings = ({ theme, showToast }) => {
                 </div>
             </div>
 
-            <div style={{ marginTop: '12px' }}>
+            <div>
                 <label style={labelStyle} htmlFor="dailysummary-to">Recipients</label>
                 <input id="dailysummary-to"
                     type="text"
@@ -148,34 +160,12 @@ const DailySummarySettings = ({ theme, showToast }) => {
                     style={inputStyle(theme)}
                 />
                 <p style={hintStyle}>
-                    Comma-separated. Required to enable. Needs outgoing email (SMTP) to be enabled.
+                    Comma-separated. Required to enable. Needs sending to be on.
                 </p>
             </div>
 
-            {(state?.error || lastRunDate) && (
-                <div style={{
-                    marginTop: '14px', padding: '10px 14px', borderRadius: '10px',
-                    background: state?.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                    fontSize: '0.8rem', color: state?.error ? '#EF4444' : '#10B981',
-                    display: 'flex', alignItems: 'center', gap: '8px'
-                }}>
-                    {state?.error
-                        ? <><XCircle size={14} /> Last run error: {state.error}</>
-                        : <><CheckCircle size={14} /> Last run: {lastRunDate}
-                            {state?.lastResult?.reportDate
-                                ? ` — ${state.lastResult.movements} movement(s) for ${state.lastResult.reportDate}`
-                                : ''}</>
-                    }
-                </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <button onClick={handleSave} disabled={saving} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '10px 20px', borderRadius: '12px', border: 'none',
-                    background: '#0EA5E9', color: '#fff', fontWeight: 600,
-                    cursor: saving ? 'wait' : 'pointer'
-                }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <button onClick={handleSave} disabled={saving} style={primaryButton(theme, saving)}>
                     <Save size={15} /> {saving ? 'Saving…' : 'Save'}
                 </button>
 
@@ -201,11 +191,11 @@ const DailySummarySettings = ({ theme, showToast }) => {
             </div>
 
             {/* The distinction matters: one mails people, the other does not. */}
-            <p style={{ ...hintStyle, marginTop: '12px' }}>
+            <p style={{ ...hintStyle, margin: 0 }}>
                 <strong>Send now</strong> emails the report for yesterday to the recipients above straight away.
                 <strong> Download</strong> only builds a copy for you — it sends nothing and changes nothing.
             </p>
-        </div>
+        </AutomationRow>
     );
 };
 

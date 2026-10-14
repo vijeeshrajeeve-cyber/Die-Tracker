@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Save, Send, Eye, CheckCircle, XCircle, X } from 'lucide-react';
+import { Save, Send, Eye, X } from 'lucide-react';
 import { emailAPI } from '../../api';
-import { inputStyle, cardStyle } from './settingsStyles';
-import ToggleButton from './ToggleButton';
+import { inputStyle, labelStyle as labelStyleFor, hintStyle as hintStyleFor, primaryButton, secondaryButton as secondaryButtonFor, fieldGrid } from './settingsStyles';
+import AutomationRow from './AutomationRow';
 
 // Settings → Email panel for the die delivery chaser: dies past the supplier's
 // ETA, or with none, mailed to each supplier at most once every N days.
-const DeliveryChaserSettings = ({ theme, showToast }) => {
-    const [settings, setSettings] = useState({ enabled: false, time: '08:00', intervalDays: 3, noEtaDays: 7, cc: '' });
+const DEFAULTS = { enabled: false, time: '08:00', intervalDays: 3, noEtaDays: 7, cc: '' };
+
+const DeliveryChaserSettings = ({ theme, showToast, openId, setOpenId }) => {
+    const [settings, setSettings] = useState(DEFAULTS);
+    const [saved, setSaved] = useState(DEFAULTS);
     const [state, setState] = useState(null);
     const [lastRunDate, setLastRunDate] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -20,13 +23,15 @@ const DeliveryChaserSettings = ({ theme, showToast }) => {
         try {
             const result = await emailAPI.getDeliveryChaserSettings();
             const s = result.settings || {};
-            setSettings({
+            const next = {
                 enabled: s.delivery_chaser_enabled || false,
                 time: s.delivery_chaser_time || '08:00',
                 intervalDays: s.delivery_chaser_interval_days ?? 3,
                 noEtaDays: s.delivery_chaser_no_eta_days ?? 7,
                 cc: s.delivery_chaser_cc || '',
-            });
+            };
+            setSettings(next);
+            setSaved(next);
             setState(result.state);
             setLastRunDate(s.delivery_chaser_last_run);
         } catch (err) {
@@ -85,59 +90,61 @@ const DeliveryChaserSettings = ({ theme, showToast }) => {
         }
     };
 
-    const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' };
-    const hintStyle = { fontSize: '0.7rem', color: theme.textDim, margin: '4px 0 0' };
-    const secondaryButton = (busy) => ({ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, background: 'transparent', color: theme.text, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' });
+    const labelStyle = labelStyleFor(theme);
+    const hintStyle = hintStyleFor(theme);
+    const secondaryButton = (busy) => secondaryButtonFor(theme, busy);
     const current = preview?.suppliers?.[shown];
 
-    return (
-        <div style={cardStyle(theme)}>
-            <ToggleButton
-                theme={theme}
-                enabled={settings.enabled}
-                onToggle={() => setSettings({ ...settings, enabled: !settings.enabled })}
-                label="Die Delivery Chaser"
-                sublabel={settings.enabled
-                    ? `Active — checked daily at ${settings.time}; each supplier at most every ${settings.intervalDays} day(s)`
-                    : 'Disabled — no delivery chasers will be sent'}
-                icon={Truck}
-                color="#4F46E5"
-            />
+    const dirty = JSON.stringify(settings) !== JSON.stringify(saved);
+    const status = dirty
+        ? { tone: 'warn', text: 'Unsaved changes' }
+        : state?.error
+            ? { tone: 'error', text: `Last run failed: ${state.error}` }
+            : lastRunDate
+                ? { tone: 'ok', text: `Last run ${lastRunDate}${state?.lastResult ? ` · ${state.lastResult.sent} sent` : ''}` }
+                : { tone: 'idle', text: settings.enabled ? 'Waiting for first run' : 'Not running' };
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginTop: '18px' }}>
+    return (
+        <AutomationRow
+            theme={theme}
+            id="delivery"
+            name="Die delivery chaser"
+            audience="To suppliers"
+            schedule={saved.enabled
+                ? `Checked daily at ${saved.time} · each supplier at most every ${saved.intervalDays} day(s)`
+                : 'Off'}
+            status={status}
+            enabled={settings.enabled}
+            onToggle={() => { setSettings({ ...settings, enabled: !settings.enabled }); setOpenId('delivery'); }}
+            open={openId === 'delivery'}
+            onOpen={() => setOpenId(openId === 'delivery' ? null : 'delivery')}
+        >
+            <div style={fieldGrid(180)}>
                 <div>
-                    <label style={labelStyle} htmlFor="deliverychaser-time">Check Time</label>
+                    <label style={labelStyle} htmlFor="deliverychaser-time">Check time</label>
                     <input id="deliverychaser-time" type="time" value={settings.time} onChange={(e) => setSettings({ ...settings, time: e.target.value || '08:00' })} style={inputStyle(theme)} />
                     <p style={hintStyle}>Server time, Asia/Dubai.</p>
                 </div>
                 <div>
-                    <label style={labelStyle} htmlFor="deliverychaser-interval">Chase Every (days)</label>
+                    <label style={labelStyle} htmlFor="deliverychaser-interval">Chase every (days)</label>
                     <input id="deliverychaser-interval" type="number" min="1" max="60" value={settings.intervalDays} onChange={(e) => setSettings({ ...settings, intervalDays: e.target.value })} style={inputStyle(theme)} />
                     <p style={hintStyle}>Per supplier. 1 = daily, 7 = weekly.</p>
                 </div>
                 <div>
-                    <label style={labelStyle} htmlFor="deliverychaser-noeta">Ask for ETA After (days)</label>
+                    <label style={labelStyle} htmlFor="deliverychaser-noeta">Ask for ETA after (days)</label>
                     <input id="deliverychaser-noeta" type="number" min="1" max="365" value={settings.noEtaDays} onChange={(e) => setSettings({ ...settings, noEtaDays: e.target.value })} style={inputStyle(theme)} />
                     <p style={hintStyle}>Days in manufacturing with no ETA.</p>
                 </div>
             </div>
 
-            <div style={{ marginTop: '12px' }}>
+            <div>
                 <label style={labelStyle} htmlFor="deliverychaser-cc">CC (optional)</label>
                 <input id="deliverychaser-cc" type="text" value={settings.cc} onChange={(e) => setSettings({ ...settings, cc: e.target.value })} placeholder="buyer@company.com" style={inputStyle(theme)} />
                 <p style={hintStyle}>Comma-separated. Each email goes to the supplier&apos;s contact email set in Settings → Suppliers; suppliers without one are skipped.</p>
             </div>
 
-            {(state?.error || lastRunDate) && (
-                <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '10px', background: state?.error ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)', fontSize: '0.8rem', color: state?.error ? '#EF4444' : '#10B981', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {state?.error
-                        ? <><XCircle size={14} /> Last run error: {state.error}</>
-                        : <><CheckCircle size={14} /> Last run: {lastRunDate}{state?.lastResult ? ` — ${state.lastResult.sent} sent` : ''}</>}
-                </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
-                <button onClick={handleSave} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', background: '#4F46E5', color: '#fff', fontWeight: 600, cursor: saving ? 'wait' : 'pointer' }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <button onClick={handleSave} disabled={saving} style={primaryButton(theme, saving)}>
                     <Save size={15} /> {saving ? 'Saving…' : 'Save'}
                 </button>
                 <button onClick={handleSendNow} disabled={sending} style={secondaryButton(sending)}>
@@ -148,7 +155,7 @@ const DeliveryChaserSettings = ({ theme, showToast }) => {
                 </button>
             </div>
 
-            <p style={{ ...hintStyle, marginTop: '12px' }}>
+            <p style={{ ...hintStyle, margin: 0 }}>
                 <strong>Send now</strong> mails every supplier that is due right now — a supplier chased within the last {settings.intervalDays} day(s) is skipped.
                 <strong> Preview</strong> only shows the emails; it sends nothing and changes nothing.
             </p>
@@ -166,7 +173,7 @@ const DeliveryChaserSettings = ({ theme, showToast }) => {
                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', padding: '10px 14px' }}>
                                 {preview.suppliers.map((s, i) => (
                                     <button key={s.supplier} onClick={() => setShown(i)} aria-pressed={i === shown}
-                                        style={{ padding: '5px 10px', borderRadius: '999px', fontSize: '0.75rem', cursor: 'pointer', border: `1px solid ${i === shown ? '#4F46E5' : theme.cardBorder}`, background: i === shown ? 'rgba(79,70,229,0.12)' : 'transparent', color: theme.text }}>
+                                        style={{ padding: '5px 10px', borderRadius: '999px', fontSize: '0.75rem', cursor: 'pointer', border: `1px solid ${i === shown ? theme.primary : theme.cardBorder}`, background: i === shown ? theme.primaryLight : 'transparent', color: theme.text }}>
                                         {s.supplier} · {s.overdueCount + s.noEtaCount}
                                     </button>
                                 ))}
@@ -181,7 +188,7 @@ const DeliveryChaserSettings = ({ theme, showToast }) => {
                     )}
                 </div>
             )}
-        </div>
+        </AutomationRow>
     );
 };
 
