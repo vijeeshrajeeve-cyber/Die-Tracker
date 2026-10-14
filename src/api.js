@@ -611,7 +611,7 @@ export const backupRequestsAPI = {
                 const j = await response.json();
                 if (j?.error) errMsg = j.error;
                 if (j?.detail) errMsg += `: ${j.detail}`;
-            } catch (_) { /* response wasn't JSON */ }
+            } catch { /* response wasn't JSON */ }
             throw new Error(errMsg);
         }
         const data = await response.json();
@@ -1105,6 +1105,13 @@ export const qualityDiscrepanciesAPI = {
         a.click();
         URL.revokeObjectURL(url);
     },
+};
+
+// Universal search (Ctrl+K palette). The signal lets the palette cancel a
+// query the user has already typed past.
+export const searchAPI = {
+    query: (q, { signal } = {}) => apiRequest(`/search?q=${encodeURIComponent(q)}`, { signal }),
+    qd: (id) => apiRequest(`/search/qd/${encodeURIComponent(id)}`),
 };
 
 // Plant Budgets API
