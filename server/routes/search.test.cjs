@@ -8,6 +8,7 @@ const { installFakeDb, listen, request } = require('./testSupport.cjs');
 
 let orderRows = [];
 let qdRows = [];
+let qdById = null;
 let totals = { orders: 0, qds: 0 };
 let failQueries = false;
 let log = [];
@@ -15,6 +16,11 @@ installFakeDb(async (sql, params = []) => {
   const q = sql.trim().replace(/\s+/g, ' ');
   log.push({ q, params });
   if (failQueries) throw new Error('database unavailable');
+  if (/^SELECT \* FROM quality_discrepancies WHERE \(\$1::integer IS NULL OR id=\$1\)/.test(q)) return { rows: qdById ? [qdById] : [] };
+  if (q.startsWith('SELECT * FROM qd_settings')) return { rows: [{ approver_user_ids: JSON.stringify([1]) }] };
+  if (q.startsWith('SELECT username FROM users WHERE id=$1')) return { rows: [{ username: 'approver' }] };
+  // listQDs' child tables (files, activity, billets, FOC rounds): none here.
+  if (/FROM (quality_discrepancy_files|quality_discrepancy_activity|qd_billet_parameters|qd_foc_rounds)/.test(q)) return { rows: [] };
   if (q.startsWith('SELECT * FROM die_orders WHERE')) return { rows: orderRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM die_orders')) return { rows: [{ total: totals.orders }] };
   if (q.startsWith('SELECT * FROM quality_discrepancies WHERE (')) return { rows: qdRows };
@@ -40,6 +46,7 @@ test.beforeEach(() => {
   currentUser = ADMIN;
   orderRows = [];
   qdRows = [];
+  qdById = null;
   totals = { orders: 0, qds: 0 };
   failQueries = false;
 });
@@ -124,4 +131,34 @@ test('a database failure is a 500, not a crash', async () => {
   const { status, body } = await find('D-1');
   assert.equal(status, 500);
   assert.equal(body.error, 'Internal server error');
+});
+
+const openQd = (id) => request(base, `/api/search/qd/${id}`);
+
+test('the QD record endpoint returns the decorated record', async () => {
+  qdById = { id: 5, qd_no: 'QD-25-031', approval_state: 'Approved', created_by: 7, assigned_approver: 1, raised_date: '2025-03-01' };
+  const { status, body } = await openQd(5);
+  assert.equal(status, 200);
+  assert.equal(body.id, 5);
+  assert.equal(body.assigned_approver_name, 'approver');
+  assert.equal(typeof body.can_approve, 'boolean');
+});
+
+test("someone else's draft is a 404; your own draft opens", async () => {
+  qdById = { id: 9, qd_no: null, approval_state: 'Draft', created_by: 7, assigned_approver: null };
+  currentUser = { id: 42, username: 'other', role: 'user', pageAccess: ['qd-tracker'] };
+  assert.equal((await openQd(9)).status, 404);
+  currentUser = { id: 7, username: 'raiser', role: 'user', pageAccess: ['qd-tracker'] };
+  const mine = await openQd(9);
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.assigned_approver_name, null);
+});
+
+test('the QD record endpoint refuses users without QD access and bad ids', async () => {
+  currentUser = { id: 4, username: 'orders-only', role: 'user', pageAccess: ['orders'] };
+  assert.equal((await openQd(5)).status, 403);
+  currentUser = ADMIN;
+  assert.equal((await openQd('abc')).status, 400);
+  assert.equal((await openQd(0)).status, 400);
+  assert.equal((await openQd(123)).status, 404);
 });

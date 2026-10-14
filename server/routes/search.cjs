@@ -7,6 +7,8 @@ const { pool } = require('../db.cjs');
 const search = require('../services/search.cjs');
 const { canReadSource } = require('../services/workQueuePermissions.cjs');
 const { presentOrder } = require('../services/orderPresentation.cjs');
+const qd = require('../services/qualityDiscrepancies.cjs');
+const qdSettings = require('../services/qdSettings.cjs');
 
 const router = express.Router();
 
@@ -73,6 +75,30 @@ router.get('/', async (req, res) => {
     res.json({ ...(orders && { orders }), ...(qds && { qds }) });
   } catch (error) {
     console.error('Search error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/search/qd/:id — the full QD a search result opens. The tracker's own
+// list leaves out drafts and anything outside its filters, so the drawer is
+// handed this record directly, the same way the Work Queue does it.
+router.get('/qd/:id', async (req, res) => {
+  if (!canReadSource(req.user, 'qd')) return res.status(403).json({ error: 'Page access required' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid QD id' });
+  try {
+    const record = (await qd.listQDs(pool, id))[0];
+    if (!record || (record.approval_state === 'Draft' && record.created_by !== req.user.id)) {
+      return res.status(404).json({ error: 'QD not found' });
+    }
+    const settings = await qdSettings.getQdSettings(pool);
+    record.can_approve = qdSettings.isApprover(req.user, settings.approverUserIds) && qd.canActOnApproval(req.user, record);
+    record.assigned_approver_name = record.assigned_approver
+      ? (await pool.query('SELECT username FROM users WHERE id=$1', [record.assigned_approver])).rows[0]?.username || null
+      : null;
+    res.json(record);
+  } catch (error) {
+    console.error('Search QD record error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
