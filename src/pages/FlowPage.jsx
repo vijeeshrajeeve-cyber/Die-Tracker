@@ -6,6 +6,7 @@ import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 import { todayLocal } from '../utils/today.js';
+import useDialog from '../hooks/useDialog';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
 // are recorded on the revision row via the complete-stage endpoint.
@@ -78,9 +79,13 @@ export default function FlowPage({
 }) {
   const [cavityEdit, setCavityEdit] = useState(null);
   const [cavityReason, setCavityReason] = useState('');
+  const [cavitySaving, setCavitySaving] = useState(false);
   const [frozenMap, setFrozenMap] = useState({}); // orderId -> { id, frozen_at, files_count }
 
   const currentFlow = FLOW_TABS.find(f => f.id === activeTab);
+
+  const closeCavityEdit = () => { setCavityEdit(null); setCavityReason(''); };
+  const cavityDialogRef = useDialog({ open: !!cavityEdit, onClose: closeCavityEdit, closeOnEscape: !cavitySaving });
 
   // Flag orders that have an active frozen design — only at the early planning stages
   // so planners can fast-track them. One bulk request for all visible orders.
@@ -404,9 +409,13 @@ export default function FlowPage({
       {cavityEdit && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 1999 }}
-          onClick={() => { setCavityEdit(null); setCavityReason(''); }}
+          onClick={closeCavityEdit}
         >
           <div
+            ref={cavityDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="flowpage-cavity-title"
             style={{
               position: 'fixed',
               top: cavityEdit.rect.bottom + 8,
@@ -421,7 +430,7 @@ export default function FlowPage({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ fontSize: '0.8rem', color: theme.textMuted || '#94A3B8', marginBottom: '8px' }}>
+            <div id="flowpage-cavity-title" style={{ fontSize: '0.8rem', color: theme.textMuted || '#94A3B8', marginBottom: '8px' }}>
               Cavity change:{' '}
               <span style={{ fontFamily: 'monospace', color: '#EF4444', textDecoration: 'line-through' }}>
                 {cavityEdit.order['Cavity'] || 0}
@@ -452,7 +461,7 @@ export default function FlowPage({
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
               <button
-                onClick={() => { setCavityEdit(null); setCavityReason(''); }}
+                onClick={closeCavityEdit}
                 style={{ padding: '5px 12px', background: 'transparent', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.textMuted || '#94A3B8', fontSize: '0.8rem', cursor: 'pointer' }}
               >
                 Cancel
@@ -460,7 +469,12 @@ export default function FlowPage({
               <button
                 disabled={!cavityReason.trim()}
                 onClick={async () => {
-                  await handleCavityChange(cavityEdit.order, cavityEdit.newValue, cavityReason.trim());
+                  setCavitySaving(true);
+                  try {
+                    await handleCavityChange(cavityEdit.order, cavityEdit.newValue, cavityReason.trim());
+                  } finally {
+                    setCavitySaving(false);
+                  }
                   setCavityEdit(null);
                   setCavityReason('');
                 }}

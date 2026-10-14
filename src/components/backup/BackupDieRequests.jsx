@@ -11,6 +11,7 @@ import FrozenDesignBanner from '../FrozenDesignBanner';
 import { dialogs } from '../ui/DialogProvider';
 import { BackupStatusPill } from '../ui/StatusPill';
 import { todayLocal } from '../../utils/today.js';
+import useDialog from '../../hooks/useDialog';
 
 const COLUMNS = [
   { key: 'slNo', label: 'SL NO', sortable: false },
@@ -111,6 +112,8 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
   const [orderFile, setOrderFile] = useState(null);
   const [orderFileName, setOrderFileName] = useState('');
   const [orderBusy, setOrderBusy] = useState(false);
+  const requestDialogRef = useDialog({ open: showModal, onClose: () => setShowModal(false), closeOnEscape: !saving });
+  const orderDialogRef = useDialog({ open: showOrderModal && !!orderValues, onClose: () => setShowOrderModal(false), closeOnEscape: !orderBusy });
   const [orderError, setOrderError] = useState('');
   const orderFileInputRef = useRef(null);
   const itemsPerPage = 10;
@@ -1071,13 +1074,13 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
         }}>
-          <div style={{
+          <div ref={requestDialogRef} role="dialog" aria-modal="true" aria-labelledby="backup-request-title" style={{
             background: theme.cardBg, borderRadius: '20px', padding: '2rem',
             width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto',
             border: `1px solid ${theme.cardBorder}`,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>
+              <h3 id="backup-request-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>
                 {editingRequest ? 'Edit Backup Request' : 'New Backup Request'}
               </h3>
               <button
@@ -1378,14 +1381,14 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
         }}>
-          <div style={{
+          <div ref={orderDialogRef} role="dialog" aria-modal="true" aria-labelledby="backup-order-pdf-title" style={{
             background: theme.cardBg, borderRadius: '20px', padding: '2rem',
             width: '100%', maxWidth: '780px', maxHeight: '92vh', overflowY: 'auto',
             border: `1px solid ${theme.cardBorder}`,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>
+                <h3 id="backup-order-pdf-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>
                   Generate Die Order PDF
                 </h3>
                 <p style={{ fontSize: '0.8rem', color: theme.textMuted, marginTop: '4px' }}>

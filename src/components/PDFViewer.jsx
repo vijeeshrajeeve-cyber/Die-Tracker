@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
 import { X, Download } from 'lucide-react';
+import useDialog from '../hooks/useDialog';
 
 // Full-screen, view-only preview of a PDF: a File (a picked or fetched one) or a URL.
 const PDFViewer = ({ file, name, onClose }) => {
+    const dialogRef = useDialog({ open: true, onClose });
     // Create Object URL for the file if it's a File object, carefully managing memory
     const fileUrl = React.useMemo(() => {
         return file instanceof File ? URL.createObjectURL(file) : file;
@@ -21,6 +23,10 @@ const PDFViewer = ({ file, name, onClose }) => {
 
     return (
         <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdf-viewer-title"
             onClick={(e) => e.stopPropagation()}
             style={{
                 position: 'fixed', inset: 0, zIndex: 2000,
@@ -33,7 +39,7 @@ const PDFViewer = ({ file, name, onClose }) => {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
                 padding: '0 20px', color: 'white'
             }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</h3>
+                <h3 id="pdf-viewer-title" style={{ margin: 0, fontSize: '1.1rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</h3>
                 <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
                     <a
                         href={fileUrl}

@@ -16,6 +16,7 @@ import { workQueueAPI } from './workQueueAPI';
 import TopBar from './components/layout/TopBar';
 
 import PDFViewer from './components/PDFViewer';
+import useDialog from './hooks/useDialog';
 import DialogProvider, { dialogs } from './components/ui/DialogProvider';
 import { MissingCustomerPromptModal, RevisionModal, RevisionHistoryModal, ChangeLogModal, SignatureModal } from './components/modals';
 import BackupDieRequests from './components/backup/BackupDieRequests';
@@ -300,6 +301,7 @@ const ImportModal = ({ onClose, onImport }) => {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);
+  const dialogRef = useDialog({ open: true, onClose });
 
   const processData = (rawData) => {
     return rawData.map(row => {
@@ -367,11 +369,11 @@ const ImportModal = ({ onClose, onImport }) => {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
-      <div style={{ background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '520px', border: '1px solid #334155' }} onClick={e => e.stopPropagation()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="import-modal-title" style={{ background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '520px', border: '1px solid #334155' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid #334155' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Upload size={24} color="white" /></div>
-            <div><h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import Data</h2><p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload Excel or CSV file</p></div>
+            <div><h2 id="import-modal-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>Import Data</h2><p style={{ fontSize: '0.875rem', color: '#64748B' }}>Upload Excel or CSV file</p></div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}><X size={24} /></button>
         </div>
@@ -421,6 +423,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [errors, setErrors] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
+  const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !submitting });
   const [presses, setPresses] = React.useState([]);
 
   React.useEffect(() => {
@@ -546,7 +549,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
-      <div style={{ background: bg, borderRadius: '20px', width: '100%', maxWidth: '720px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', border: `1px solid ${border}`, boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="add-order-title" style={{ background: bg, borderRadius: '20px', width: '100%', maxWidth: '720px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', border: `1px solid ${border}`, boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
@@ -555,7 +558,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
               <Plus size={22} color="white" />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: textColor, margin: 0 }}>New Die Order</h2>
+              <h2 id="add-order-title" style={{ fontSize: '1.1rem', fontWeight: 700, color: textColor, margin: 0 }}>New Die Order</h2>
               <p style={{ fontSize: '0.8rem', color: textMuted, margin: 0 }}>Manually create a new order entry</p>
             </div>
           </div>
@@ -748,6 +751,8 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
     new: false,
     confirm: false
   });
+  // A forced change has no way out — Escape must not dismiss it either.
+  const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !isForced && !loading });
 
   const passwordRequirements = [
     { label: 'At least 8 characters', test: (p) => p.length >= 8 },
@@ -797,6 +802,10 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
       onClick={isForced ? undefined : onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="password-change-title"
         style={{
           background: '#1E293B', borderRadius: '20px', width: '100%', maxWidth: '440px',
           border: '1px solid #334155', overflow: 'hidden'
@@ -814,7 +823,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
               {isForced ? <ShieldCheck size={24} color="white" /> : <Key size={24} color="white" />}
             </div>
             <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>
+              <h2 id="password-change-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F1F5F9' }}>
                 {isForced ? 'Password Change Required' : 'Change Password'}
               </h2>
               <p style={{ fontSize: '0.875rem', color: '#64748B' }}>
@@ -961,6 +970,8 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [presses, setPresses] = useState([]);
   const [showFreeze, setShowFreeze] = useState(false);
   const [freezeToast, setFreezeToast] = useState('');
+  // Escape is held off while editing so a stray key press cannot throw away unsaved edits.
+  const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !isSaving && !isEditing });
 
   useEffect(() => {
     let cancelled = false;
@@ -1312,13 +1323,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
 
   return (
     <div className="drawer-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch', zIndex: 1000, padding: '12px' }} onClick={onClose}>
-      <div className="drawer-panel" style={{ background: theme?.cardBg || '#1E293B', borderRadius: '16px', width: '100%', maxWidth: '640px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: `1px solid ${theme?.cardBorder || '#334155'}`, boxShadow: '-24px 0 64px rgba(0,0,0,0.35)' }} onClick={e => e.stopPropagation()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="order-detail-title" className="drawer-panel" style={{ background: theme?.cardBg || '#1E293B', borderRadius: '16px', width: '100%', maxWidth: '640px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: `1px solid ${theme?.cardBorder || '#334155'}`, boxShadow: '-24px 0 64px rgba(0,0,0,0.35)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}`, background: `${config.color}10`, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: config.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><StatusIcon size={22} color="white" /></div>
             <div>
               <DieAttentionLabels order={currentOrder} dense={false} />
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: theme?.text || '#F1F5F9', margin: 0 }}>{currentOrder['DIE NO']}</h2>
+              <h2 id="order-detail-title" style={{ fontSize: '1.15rem', fontWeight: 700, color: theme?.text || '#F1F5F9', margin: 0 }}>{currentOrder['DIE NO']}</h2>
               <p style={{ color: theme?.textDim || '#64748B', margin: '2px 0 0 0', fontSize: '0.85rem' }}>Order #{currentOrder['Order No']}</p>
             </div>
           </div>

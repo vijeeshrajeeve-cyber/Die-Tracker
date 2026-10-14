@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { deliveryFollowupsAPI } from '../../api';
 import { formatDate } from '../../utils/helpers';
 import { todayLocal } from '../../utils/today.js';
+import useDialog from '../../hooks/useDialog';
 import {
   CAUSES, CHANNELS, needsCause, validateFollowUpForm, normalizeEta, causeLabel, channelLabel, formatSlip,
 } from '../../utils/deliveryFollowup';
@@ -36,12 +37,9 @@ export default function DeliveryFollowupDrawer({ order, summary, theme, onClose,
     .then((r) => { setEvents(r?.events || []); setEventsError(''); })
     .catch((err) => setEventsError(err.message || 'Could not load the timeline')), [order.id]);
 
+  const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !saving });
+
   useEffect(() => { loadEvents(); firstField.current?.focus(); }, [loadEvents]);
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const today = todayLocal();
   const current = normalizeEta(order.ETA);
@@ -74,7 +72,7 @@ export default function DeliveryFollowupDrawer({ order, summary, theme, onClose,
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000 }} onClick={onClose}>
-      <aside role="dialog" aria-modal="true" aria-labelledby="followup-title" onClick={(e) => e.stopPropagation()}
+      <aside ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="followup-title" onClick={(e) => e.stopPropagation()}
         style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(460px, 100vw)', background: theme.cardBg, borderLeft: `1px solid ${theme.cardBorder}`, boxShadow: '-12px 0 32px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
         <header style={{ padding: '1.1rem 1.25rem', borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
           <div>

@@ -4,16 +4,20 @@ import { ordersAPI } from '../../api';
 import DieAttentionLabels from '../DieAttentionLabels';
 import CorrectorSelect from '../ui/CorrectorSelect';
 import { todayLocal } from '../../utils/today.js';
+import useDialog from '../../hooks/useDialog';
 import { skipTrialAllowed, skipTrialDefault, buildReceivancePatch } from '../../utils/dieReceivance';
 
 // Confirm Die Receivance, moved out of FlowPage unchanged when In Manufacturing
 // got its own page. The parent decides what happens after a confirmed receipt.
 export default function DieReceivanceModal({ order, theme, correctors, correctorsError, setToast, onClose, onConfirmed }) {
   const [form, setForm] = useState({ die_received_date: todayLocal(), corrector: '', skip_trial: skipTrialDefault(order.TYPE) });
+  const [saving, setSaving] = useState(false);
+  const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !saving });
 
   const confirm = async () => {
     if (!form.die_received_date) { setToast({ message: 'Please enter the die received date', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
     if (!form.corrector.trim()) { setToast({ message: 'Please assign a corrector', type: 'error' }); setTimeout(() => setToast(null), 3000); return; }
+    setSaving(true);
     try {
       const { patch } = buildReceivancePatch({ order, form, skipTrial: form.skip_trial });
       await ordersAPI.patch(order.id, patch);
@@ -21,15 +25,17 @@ export default function DieReceivanceModal({ order, theme, correctors, corrector
     } catch (error) {
       setToast({ message: 'Failed to confirm: ' + error.message, type: 'error' });
       setTimeout(() => setToast(null), 5000);
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '90%', maxWidth: '480px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="die-receivance-title" style={{ background: theme.cardBg, borderRadius: '16px', padding: '2rem', width: '90%', maxWidth: '480px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>Confirm Die Receivance</h2>
+            <h2 id="die-receivance-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text, margin: 0 }}>Confirm Die Receivance</h2>
             <DieAttentionLabels order={order} dense />
             <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Die No: <strong style={{ color: theme.text, fontFamily: 'monospace' }}>{order['DIE NO']}</strong></p>
           </div>
