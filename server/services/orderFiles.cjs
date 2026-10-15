@@ -13,6 +13,15 @@ const SLOTS = Object.freeze({
 const ALLOWED_EXTENSIONS = ['pdf'];
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
 
+// The profile cut from a die drawing by the PDF import (src/utils/profileImage.js).
+// Not a drawer slot: it is only ever filled, never replaced, so the slot routes
+// above do not accept it.
+const PROFILE_IMAGE_SLOT = 'profile_image';
+const PROFILE_IMAGE_LABEL = 'Profile Image';
+const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB; a real one is tens of KB
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const isPng = (bytes) => Buffer.isBuffer(bytes) && bytes.subarray(0, 8).equals(PNG_SIGNATURE);
+
 function getRoot() {
   return process.env.ORDER_FILES_ROOT || '/app/storage/order-files';
 }
@@ -70,5 +79,6 @@ function planUpload({ slot, current, fileName, reason }) {
 
 module.exports = {
   SLOTS, ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
+  PROFILE_IMAGE_SLOT, PROFILE_IMAGE_LABEL, PROFILE_IMAGE_MAX_BYTES, isPng,
   getRoot, getTmpDir, isAllowedExtension, sanitizeFilename, sanitizeSegment, isInsideRoot, buildStoredPath, planUpload,
 };

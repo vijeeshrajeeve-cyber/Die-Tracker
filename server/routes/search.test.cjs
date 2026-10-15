@@ -21,7 +21,7 @@ installFakeDb(async (sql, params = []) => {
   if (q.startsWith('SELECT username FROM users WHERE id=$1')) return { rows: [{ username: 'approver' }] };
   // listQDs' child tables (files, activity, billets, FOC rounds): none here.
   if (/FROM (quality_discrepancy_files|quality_discrepancy_activity|qd_billet_parameters|qd_foc_rounds)/.test(q)) return { rows: [] };
-  if (q.startsWith('SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count FROM die_orders o WHERE')) return { rows: orderRows };
+  if (q.startsWith("SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count, (SELECT f.id FROM die_order_files f WHERE f.order_id = o.id AND f.slot = 'profile_image' AND f.replaced_at IS NULL) AS profile_image_id FROM die_orders o WHERE")) return { rows: orderRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM die_orders')) return { rows: [{ total: totals.orders }] };
   if (q.startsWith('SELECT * FROM quality_discrepancies WHERE (')) return { rows: qdRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM quality_discrepancies')) return { rows: [{ total: totals.qds }] };
@@ -98,6 +98,15 @@ test("an order's change-log count survives into the presented row", async () => 
   orderRows = [{ id: 1, die_no: 'D-1', order_no: 'O-1', supplier: 'ALPHA', created_at: '2026-01-01', change_count: 3 }];
   const { body } = await find('D-1');
   assert.equal(body.orders.items[0].changeCount, 3);
+});
+
+test("an order's profile image id rides along for the palette thumbnail, null when it has none", async () => {
+  orderRows = [
+    { id: 1, die_no: 'D-1', order_no: 'O-1', supplier: 'ALPHA', created_at: '2026-01-02', profile_image_id: 31 },
+    { id: 2, die_no: 'D-12', order_no: 'O-2', supplier: 'ALPHA', created_at: '2026-01-01', profile_image_id: null },
+  ];
+  const { body } = await find('D-1');
+  assert.deepEqual(body.orders.items.map((o) => o.profileImageId), [31, null]);
 });
 
 test('QD rows are trimmed to the list shape and drafts are scoped to the creator in SQL', async () => {

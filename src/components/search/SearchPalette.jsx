@@ -3,6 +3,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Search, Package, AlertTriangle } from 'lucide-react';
 import useDialog from '../../hooks/useDialog';
 import StatusPill from '../ui/StatusPill';
+import ProfileThumb from '../orders/ProfileThumb';
 import { searchAPI } from '../../api';
 import {
   shouldSearch, flattenResults, moveIndex, isAbort, DEBOUNCE_MS, GROUP_LABELS,
@@ -142,7 +143,9 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
                   <div key={`${kind}-${item.id}`} id={`${titleId}-opt-${i}`} data-index={i} role="option" aria-selected={isActive}
                     onMouseMove={() => setActive(i)} onClick={() => choose({ kind, item })}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', cursor: 'pointer', background: isActive ? theme.rowHover : 'transparent' }}>
-                    <Icon size={16} style={{ color: theme.textDim, flexShrink: 0 }} />
+                    {kind === 'order' && item.profileImageId
+                      ? <ProfileThumb orderId={item.id} fileId={item.profileImageId} size={32} alt={`Profile of ${item['DIE NO']}`} theme={theme} />
+                      : <Icon size={16} style={{ color: theme.textDim, flexShrink: 0 }} />}
                     {kind === 'order' ? (
                       <>
                         <span style={{ fontWeight: 600 }}>{item['DIE NO'] || '—'}</span>

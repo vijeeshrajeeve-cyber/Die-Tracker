@@ -25,6 +25,7 @@ installFakeDb(async (sql, params = []) => {
   log.push({ q, params });
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
   if (/^SELECT id, die_no, status FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: stored ? [stored] : [] };
+  if (/^SELECT created_by FROM die_orders WHERE id = \$1/.test(q)) return { rows: stored ? [stored] : [] };
   if (/^SELECT id, original_name FROM die_order_files WHERE order_id = \$1 AND slot = \$2 AND replaced_at IS NULL FOR UPDATE/.test(q)) {
     return { rows: current ? [current] : [] };
   }
@@ -231,4 +232,66 @@ test('deleting an order removes its stored files from disk', async () => {
   const { status } = await request(base, '/api/orders/7', { method: 'DELETE' });
   assert.equal(status, 200);
   assert.deepEqual(filesOnDisk(), ['a/2_keep.pdf']);
+});
+
+// --- Profile image (from the PDF import) ------------------------------------
+
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('rest of png')]);
+
+async function uploadProfile({ content = PNG, name = '30533_201_profile.png' } = {}) {
+  const form = new FormData();
+  form.append('file', new Blob([content], { type: 'image/png' }), name);
+  const response = await fetch(`${base}/api/orders/7/profile-image`, { method: 'POST', body: form });
+  return { status: response.status, body: await response.json() };
+}
+
+test('the first profile image is stored, recorded as a PNG and logged', async () => {
+  const { status, body } = await uploadProfile();
+  assert.equal(status, 201);
+  assert.equal(body.file.slot, 'profile_image');
+  const onDisk = filesOnDisk();
+  assert.equal(onDisk.length, 1);
+  assert.match(onDisk[0], /^30533_201\/7\/profile_image\/\d+_30533_201_profile\.png$/);
+  assert.deepEqual(fs.readFileSync(path.join(root, onDisk[0])), PNG);
+  const insert = queries('INSERT INTO die_order_files')[0];
+  assert.equal(insert.params[4], 'image/png');
+  assert.deepEqual(logged(), [{ field: 'Profile Image', old: null, new: '30533_201_profile.png', reason: 'From the die drawing PDF', stage: 'PENDING FOR DESIGN APPROVAL', by: 'planner' }]);
+});
+
+test('an order that already has a profile image keeps it', async () => {
+  current = { id: 3, original_name: 'old_profile.png' };
+  const { status, body } = await uploadProfile();
+  assert.equal(status, 200);
+  assert.deepEqual(body, { kept: true });
+  assert.equal(queries('INSERT').length, 0);
+  assert.equal(queries('UPDATE').length, 0);
+  assert.deepEqual(filesOnDisk(), []);
+});
+
+test('only a real PNG is accepted as a profile image', async () => {
+  const { status } = await uploadProfile({ content: PDF, name: 'x.png' });
+  assert.equal(status, 400);
+  assert.deepEqual(filesOnDisk(), []);
+});
+
+test('whoever created the order may attach its profile image without the switch', async () => {
+  currentUser = { id: 9, username: 'importer', role: 'user', canEditOrderDetails: false };
+  stored.created_by = 9;
+  const { status } = await uploadProfile();
+  assert.equal(status, 201);
+});
+
+test('anyone else without the switch is refused before the upload is read', async () => {
+  currentUser = { id: 9, username: 'viewer', role: 'user', canEditOrderDetails: false };
+  stored.created_by = 4;
+  const { status, body } = await uploadProfile();
+  assert.equal(status, 403);
+  assert.equal(body.code, 'ORDER_EDIT_FORBIDDEN');
+  assert.equal(queries('BEGIN').length, 0);
+  assert.deepEqual(filesOnDisk(), []);
+});
+
+test('the drawer slot route does not take a profile image', async () => {
+  const { status } = await upload('profile_image', { name: 'p.png', content: PNG });
+  assert.equal(status, 404);
 });
