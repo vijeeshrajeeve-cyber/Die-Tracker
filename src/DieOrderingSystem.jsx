@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useId, lazy, Suspense } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useId, useRef, lazy, Suspense } from 'react';
 import { Search, Package, Clock, CheckCircle, AlertTriangle, Truck, Factory, TrendingUp, Layers, X, Eye, EyeOff, Upload, FileSpreadsheet, FileText, Settings, User, Bell, Key, Lock, ShieldCheck, Copy, Plus, Snowflake, ClipboardCheck, CornerUpLeft } from 'lucide-react';
 import Papa from 'papaparse';
 
@@ -24,7 +24,7 @@ import BackupDieRequests from './components/backup/BackupDieRequests';
 import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
-import { CONTROLLABLE_PAGES, STATUS_CONFIG, APP_NAME, pageTitle } from './utils/constants';
+import { CONTROLLABLE_PAGES, STATUS_CONFIG, APP_NAME, pageTitle, statusColors } from './utils/constants';
 import { parseDateDMY, formatDate } from './utils/helpers';
 import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
@@ -122,32 +122,6 @@ const coerceImportedSpecialFollowUp = (raw) => {
   if (raw === false || raw === 0 || raw == null || raw === '') return false;
   const t = String(raw).trim().toLowerCase();
   return /^(yes|y|true|1)$/i.test(t);
-};
-
-/** Show attention strip above die number only for top urgency or flagged follow-up. */
-const orderShowsAttentionAboveDieNo = (order) =>
-  normalizeOrderUrgency(order?.Urgency) === 'TOP_URGENT' ||
-  !!(order?.specialFollowUp === true || order?.specialFollowUp === 1);
-
-const DieAttentionLabels = ({ order, dense }) => {
-  if (!orderShowsAttentionAboveDieNo(order)) return null;
-  const top = normalizeOrderUrgency(order.Urgency) === 'TOP_URGENT';
-  const spec = !!(order.specialFollowUp === true || order.specialFollowUp === 1);
-  const chipBase = {
-    display: 'inline-block',
-    borderRadius: dense ? '4px' : '6px',
-    fontWeight: 700,
-    letterSpacing: '0.03em',
-    textTransform: 'uppercase',
-    fontSize: dense ? '0.58rem' : '0.65rem',
-    padding: dense ? '2px 5px' : '3px 8px',
-  };
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: dense ? 3 : 6, alignItems: 'center', marginBottom: dense ? 2 : 4, lineHeight: 1.2 }}>
-      {top && <span style={{ ...chipBase, background: 'rgba(239,68,68,0.22)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.35)' }}>Top urgent</span>}
-      {spec && <span style={{ ...chipBase, background: 'rgba(245,158,11,0.18)', color: '#FBBF24', border: '1px solid rgba(245,158,11,0.35)' }}>Special follow-up</span>}
-    </div>
-  );
 };
 
 const URGENCY_FORM_OPTIONS = [
@@ -273,30 +247,6 @@ const normalizeColumnName = (col) => {
 // Components
 // (StatusBadge used to be defined here. It was never rendered in this file —
 // the live pill is components/ui/StatusPill, which OrdersPage uses.)
-
-const ProgressPipeline = ({ order }) => {
-  // Include 3D Model stage only if simulation is enabled for this order
-  const baseStages = ['Ordered date', 'Design Received Date'];
-  const simulationStage = isSimulationEnabled(order.simulationEnabled) ? ['3D Model Received Date'] : [];
-  const endStages = ['Design Approved Date', 'PR Entry', 'Oracle Entry'];
-  const stages = [...baseStages, ...simulationStage, ...endStages];
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-      {stages.map((key, idx) => {
-        const complete = order.STATUS !== 'CANCELLED' && order[key];
-        return (
-          <React.Fragment key={key}>
-            <div style={{ width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, background: complete ? '#10B981' : '#1E293B', color: complete ? 'white' : '#64748B', border: complete ? 'none' : '2px solid #334155' }}>
-              {complete ? '✓' : idx + 1}
-            </div>
-            {idx < stages.length - 1 && <div style={{ width: '8px', height: '2px', background: complete ? '#10B981' : '#334155' }} />}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-};
 
 // Import Modal Component
 const ImportModal = ({ onClose, onImport }) => {
@@ -972,6 +922,9 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const [presses, setPresses] = useState([]);
   const [showFreeze, setShowFreeze] = useState(false);
   const [freezeToast, setFreezeToast] = useState('');
+  // The section tab last jumped to, and the scrolling body it jumps within.
+  const [section, setSection] = useState('timeline');
+  const bodyRef = useRef(null);
   // Escape is held off while editing so a stray key press cannot throw away unsaved edits.
   const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !isSaving && !isEditing });
 
@@ -1052,9 +1005,6 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   if (!order) return null;
 
   const currentOrder = isEditing ? editedOrder : order;
-  const config = STATUS_CONFIG[currentOrder.STATUS] || { color: '#6B7280', icon: Package };
-  const StatusIcon = config.icon;
-
   // Auto-determine status based on filled fields
   const determineStatus = (orderData) => {
     if (orderData.STATUS === 'CANCELLED' || orderData.STATUS === 'HOLD') return orderData.STATUS;
@@ -1192,299 +1142,496 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     setStaged({});
   };
 
-  const inputStyle = {
-    width: '100%',
-    padding: '8px 12px',
-    background: theme?.inputBg || '#0F172A',
-    border: `1px solid ${theme?.cardBorder || '#334155'}`,
-    borderRadius: '8px',
-    color: theme?.text || '#F1F5F9',
-    fontSize: '0.875rem',
-    textAlign: 'right',
-    outline: 'none',
-    transition: 'border-color 0.2s',
+  // Colours come from the app theme so the drawer follows light and dark mode.
+  const isDark = theme?.isDark !== false;
+  const c = {
+    text: theme?.text || '#F1F5F9',
+    muted: theme?.textMuted || '#94A3B8',
+    dim: theme?.textDim || '#64748B',
+    card: theme?.cardBg || '#1E293B',
+    border: theme?.cardBorder || '#334155',
+    inset: theme?.inputBg || '#0F172A',
+    primary: theme?.primary || '#3B82F6',
+    primaryText: theme?.primaryText || '#FFFFFF',
+    primarySoft: theme?.primaryLight || 'rgba(59,130,246,0.15)',
+    done: '#10B981',
+    danger: isDark ? '#FB7185' : '#B42318',
+    dangerBg: isDark ? 'rgba(244,63,94,0.12)' : '#FEF3F2',
+    warn: isDark ? '#FBBF24' : '#92400E',
+    warnBg: isDark ? 'rgba(245,158,11,0.10)' : '#FFFBEB',
+    warnBorder: isDark ? 'rgba(245,158,11,0.32)' : '#FDE68A',
+  };
+  const mono = "ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace";
+  const sectionTitle = { margin: 0, fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: c.dim };
+  const panel = { background: c.inset, border: `1px solid ${c.border}`, borderRadius: '12px', padding: '16px', minWidth: 0 };
+  const pill = (bg, fg) => ({ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: '999px', background: bg, color: fg, fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.02em' });
+  const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+  const iconButton = { width: '36px', height: '36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', border: `1px solid ${c.border}`, background: 'transparent', color: c.muted, cursor: 'pointer', flexShrink: 0 };
+
+  const status = statusColors(currentOrder.STATUS, isDark);
+  const urgency = normalizeOrderUrgency(currentOrder.Urgency);
+  const flagged = currentOrder.specialFollowUp === true || currentOrder.specialFollowUp === 1;
+  const simulation = isSimulationEnabled(currentOrder.simulationEnabled);
+  const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+  const today = todayLocal();
+  const daysSince = (raw) => {
+    const iso = parseOrderCalendarDate(raw);
+    return iso ? Math.max(0, Math.round((Date.parse(today) - Date.parse(iso)) / 86400000)) : null;
+  };
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  // The order's life in one list. The current step is the one after the last
+  // date filled in, so an older import with a gap early on still points at
+  // where the order really is.
+  const stages = [
+    { field: 'Die Requested Date', label: 'Die requested' },
+    { field: 'Ordered date', label: 'Ordered' },
+    { field: 'Design Received Date', label: 'Design received' },
+    ...(simulation ? [{ field: '3D Model Received Date', label: '3D model received' }] : []),
+    { field: 'Design Approved Date', label: 'Design approved' },
+    { field: 'PR Entry', label: 'PR entry' },
+    { field: 'Oracle Entry', label: 'Oracle entry' },
+    { field: 'Die Received Date', label: 'Die received' },
+    { field: 'Submission Date', label: 'Sample submitted' },
+    { field: 'Sample Approval Date', label: 'Sample approved' },
+  ];
+  const stopped = currentOrder.STATUS === 'CANCELLED' || currentOrder.STATUS === 'HOLD';
+  const lastFilled = stages.reduce((last, s, i) => (hasValue(currentOrder[s.field]) ? i : last), -1);
+  const currentIdx = stopped || lastFilled === stages.length - 1 ? -1 : lastFilled + 1;
+  const waitingDays = currentIdx > 0 ? daysSince(currentOrder[stages[currentIdx - 1].field]) : null;
+  const trials = Number(currentOrder['No of Trial']) || 0;
+  const stageNote = (s, i) => {
+    const eta = s.field === 'Die Received Date' && !hasValue(currentOrder[s.field]) && hasValue(currentOrder.ETA)
+      ? `ETA ${formatDate(currentOrder.ETA)}` : '';
+    if (i === currentIdx) return eta ? `Current step · ${eta}` : 'Current step';
+    if (eta) return eta;
+    if (s.field === 'Sample Approval Date' && trials > 0) return plural(trials, 'trial');
+    return '';
   };
 
-  const dateInputStyle = {
-    ...inputStyle,
-    minWidth: '140px',
-    cursor: 'pointer',
-    colorScheme: theme?.text === '#F1F5F9' ? 'dark' : 'light',
+  const designDelay = Number(currentOrder.Delay) || 0;
+  const overallDelay = Number(currentOrder['OVERALL DELAY']) || 0;
+  const revisions = Number(currentOrder['Design Revision Count']) || 0;
+
+  const jumpTo = (key) => {
+    setSection(key);
+    bodyRef.current?.querySelector(`[data-section="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const selectStyle = { ...inputStyle, cursor: 'pointer' };
+  // Edit mode marks each field that differs from the stored order. A value the
+  // server would refuse makes planChanges throw; the plain comparison still
+  // marks it, and Save reports the problem as before.
+  let changed = new Set();
+  if (isEditing) {
+    try {
+      changed = new Set(planChanges(order, pickEditable(editedOrder)).map((ch) => ch.field));
+    } catch {
+      changed = new Set(Object.keys(pickEditable(editedOrder)).filter((f) => String(editedOrder[f] ?? '') !== String(order[f] ?? '')));
+    }
+  }
+  const stagedCount = Object.keys(staged).length;
+  const wasText = (field, type) => {
+    const v = order[field];
+    if (type === 'date') return hasValue(v) ? `was ${formatDate(v)}` : 'was empty';
+    return hasValue(v) ? `was ${v}` : 'was empty';
+  };
 
-  const InfoRow = ({ label, field, value, type = 'text', options = null, disabled = false, placeholder = '—' }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
-      <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>{label}</span>
-      {isEditing ? (
-        type === 'select' && options ? (
-          <select
-            aria-label={label}
-            style={{ ...selectStyle, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.65 : 1 }}
-            value={editedOrder[field] || ''}
-            onChange={(e) => handleFieldChange(field, e.target.value)}
-            disabled={disabled}
-          >
-            <option value="">{placeholder}</option>
-            {options.map(opt =>
-              typeof opt === 'string'
-                ? <option key={opt} value={opt}>{opt}</option>
-                : <option key={opt.value} value={opt.value}>{opt.label}</option>
-            )}
-          </select>
-        ) : type === 'date' ? (
-          <input
-            aria-label={label}
-            type="date"
-            style={dateInputStyle}
-            value={editedOrder[field] ? String(editedOrder[field]).split('T')[0] : ''}
-            onChange={(e) => handleFieldChange(field, e.target.value)}
-            onClick={(e) => e.target.showPicker && e.target.showPicker()}
-          />
-        ) : (
-          <input aria-label={label} type="text" style={inputStyle} value={editedOrder[field] || ''} onChange={(e) => handleFieldChange(field, e.target.value)} />
-        )
-      ) : (
-        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{type === 'date' ? formatDate(value) : (value || '—')}</span>
-      )}
-    </div>
+  const fieldStyle = {
+    width: '100%', height: '40px', boxSizing: 'border-box', padding: '0 12px', borderRadius: '8px',
+    border: `1px solid ${c.border}`, background: c.inset, color: c.text, fontSize: '0.875rem', outline: 'none',
+  };
+
+  // Called as a function, not mounted as a component, so typing does not
+  // remount the input and lose focus.
+  const Field = ({ label, field, type = 'text', options = null, disabled = false, placeholder = '—' }) => {
+    const isChanged = changed.has(field);
+    const style = {
+      ...fieldStyle,
+      ...(isChanged ? { borderColor: c.primary, background: c.primarySoft } : null),
+      ...(disabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
+    };
+    let control;
+    if (type === 'select') {
+      control = (
+        <select style={{ ...style, cursor: disabled ? 'not-allowed' : 'pointer' }} value={editedOrder[field] || ''} disabled={disabled}
+          onChange={(e) => handleFieldChange(field, e.target.value)}>
+          <option value="">{placeholder}</option>
+          {(options || []).map((opt) => (typeof opt === 'string'
+            ? <option key={opt} value={opt}>{opt}</option>
+            : <option key={opt.value} value={opt.value}>{opt.label}</option>))}
+        </select>
+      );
+    } else if (type === 'date') {
+      control = (
+        <input type="date" style={{ ...style, cursor: 'pointer', colorScheme: isDark ? 'dark' : 'light', fontVariantNumeric: 'tabular-nums' }}
+          value={editedOrder[field] ? String(editedOrder[field]).split('T')[0] : ''}
+          onChange={(e) => handleFieldChange(field, e.target.value)}
+          onClick={(e) => e.target.showPicker && e.target.showPicker()} />
+      );
+    } else {
+      control = <input type="text" style={style} value={editedOrder[field] ?? ''} onChange={(e) => handleFieldChange(field, e.target.value)} />;
+    }
+    return (
+      <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.8rem', color: c.muted, minWidth: 0 }}>
+        <span style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+          <span>{label}</span>
+          {isChanged && <span style={{ color: c.primary, fontWeight: 500, ...ellipsis }}>{wasText(field, type)}</span>}
+        </span>
+        {control}
+      </label>
+    );
+  };
+
+  const Toggle = ({ label, field, checked, accent }) => (
+    <label key={field} style={{
+      display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 14px', borderRadius: '10px', cursor: 'pointer',
+      border: `1px solid ${changed.has(field) ? c.primary : c.border}`, background: changed.has(field) ? c.primarySoft : 'transparent',
+      color: c.text, fontSize: '0.875rem',
+    }}>
+      <input type="checkbox" checked={checked} onChange={(e) => handleFieldChange(field, e.target.checked)}
+        style={{ width: '18px', height: '18px', accentColor: accent, cursor: 'pointer' }} />
+      {label}
+    </label>
   );
 
-  // One attachment slot: the stored file opens in the viewer; in edit mode a
-  // picker holds a new PDF until Save.
-  const FileRow = ({ slot }) => {
+  // One attachment slot as a tile: open the stored PDF, or in edit mode pick a
+  // new one that is held until Save.
+  const FileTile = ({ slot }) => {
     const label = ORDER_FILE_SLOTS[slot];
     const stored = files[slot];
     const picked = staged[slot];
-    const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
-    const iconButton = { padding: '8px', display: 'flex', borderRadius: '8px', border: 'none', cursor: 'pointer', flexShrink: 0 };
+    const opening = openingFile === slot;
+    const tile = { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '10px', minHeight: '60px', boxSizing: 'border-box', minWidth: 0 };
+    const badge = (attached) => (
+      <span aria-hidden="true" style={{ width: '36px', height: '36px', borderRadius: '8px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: attached ? c.dangerBg : c.card, color: attached ? c.danger : c.dim, fontSize: '0.65rem', fontWeight: 700 }}>
+        {attached ? 'PDF' : <FileText size={16} />}
+      </span>
+    );
+    const text = (caption, name, captionColor = c.dim, nameStyle = null) => (
+      <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1 }}>
+        <span style={{ fontSize: '0.75rem', color: captionColor }}>{caption}</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: c.text, ...ellipsis, ...nameStyle }}>{name}</span>
+      </span>
+    );
+    const picker = (verb) => (
+      <label style={{ ...iconButton, width: 'auto', padding: '0 12px', gap: '6px', fontSize: '0.8rem' }}>
+        <input type="file" accept=".pdf,application/pdf" aria-label={`${verb} ${label}`} style={{ display: 'none' }}
+          onChange={(e) => { pickFile(slot, e.target.files[0]); e.target.value = ''; }} />
+        <Upload size={14} /> {verb}
+      </label>
+    );
+
+    if (picked) {
+      return (
+        <div key={slot} style={{ ...tile, border: `1px solid ${c.done}`, background: isDark ? 'rgba(16,185,129,0.08)' : '#ECFDF5' }}>
+          {badge(true)}
+          {text(`${label} · ${stored ? 'replaces the current file on save' : 'uploads on save'}`, picked.name, isDark ? '#6EE7B7' : '#047857')}
+          <button type="button" onClick={() => setViewingFile({ file: picked, name: picked.name })} title="View" aria-label={`View ${picked.name}`} style={iconButton}><Eye size={16} /></button>
+          <button type="button" onClick={() => unstageFile(slot)} title="Don't upload" aria-label={`Don't upload ${picked.name}`} style={iconButton}><X size={16} /></button>
+        </div>
+      );
+    }
+    if (stored) {
+      const name = opening ? 'Opening…' : stored.original_name;
+      if (isEditing) {
+        return (
+          <div key={slot} style={{ ...tile, border: `1px solid ${c.border}`, background: c.inset }}>
+            {badge(true)}
+            {text(label, name)}
+            <button type="button" onClick={() => openStoredFile(slot)} disabled={opening} title="Open" aria-label={`Open ${stored.original_name}`} style={iconButton}><Eye size={16} /></button>
+            {picker('Replace')}
+          </div>
+        );
+      }
+      return (
+        <button key={slot} type="button" onClick={() => openStoredFile(slot)} disabled={opening} title={`Open ${stored.original_name}`}
+          style={{ ...tile, width: '100%', border: `1px solid ${c.border}`, background: c.inset, color: c.text, textAlign: 'left', font: 'inherit', cursor: opening ? 'wait' : 'pointer' }}>
+          {badge(true)}
+          {text(label, name)}
+        </button>
+      );
+    }
     return (
-      <div style={{ marginBottom: '16px', minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: '0.8rem', color: theme?.textDim || '#64748B', marginBottom: '4px' }}>{label}</span>
-        {stored ? (
-          <button
-            type="button"
-            onClick={() => openStoredFile(slot)}
-            disabled={openingFile === slot}
-            title={`Open ${stored.original_name}`}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '100%', padding: 0, color: '#3B82F6', background: 'transparent', border: 'none', cursor: openingFile === slot ? 'wait' : 'pointer', fontSize: '0.875rem' }}
-          >
-            <FileText size={16} style={{ flexShrink: 0 }} />
-            <span style={ellipsis}>{openingFile === slot ? 'Opening…' : stored.original_name}</span>
-          </button>
-        ) : !isEditing && (
-          <span style={{ fontSize: '0.875rem', color: theme?.textMuted || '#64748B', fontStyle: 'italic' }}>No document attached</span>
-        )}
-        {isEditing && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: stored ? '8px' : 0 }}>
-              <label style={{
-                flex: 1, minWidth: 0, cursor: 'pointer', background: theme?.cardBg, border: `1px dashed ${picked ? '#10B981' : theme?.cardBorder}`,
-                borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', gap: '8px',
-                color: picked ? theme?.text : theme?.textDim, fontSize: '0.8rem'
-              }}>
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  aria-label={`${stored ? 'Replace' : 'Upload'} ${label}`}
-                  onChange={(e) => { pickFile(slot, e.target.files[0]); e.target.value = ''; }}
-                  style={{ display: 'none' }}
-                />
-                <Upload size={16} style={{ flexShrink: 0 }} />
-                <span style={ellipsis}>{picked ? picked.name : (stored ? 'Replace PDF' : 'Upload PDF')}</span>
-              </label>
-              {picked && (
-                <>
-                  <button type="button" onClick={() => setViewingFile({ file: picked, name: picked.name })}
-                    title="View" aria-label={`View ${picked.name}`} style={{ ...iconButton, background: '#3B82F6', color: 'white' }}>
-                    <Eye size={16} />
-                  </button>
-                  <button type="button" onClick={() => unstageFile(slot)}
-                    title="Don't upload" aria-label={`Don't upload ${picked.name}`} style={{ ...iconButton, background: 'transparent', color: theme?.textDim || '#64748B', border: `1px solid ${theme?.cardBorder || '#334155'}` }}>
-                    <X size={16} />
-                  </button>
-                </>
-              )}
-            </div>
-            {picked && (
-              <span style={{ display: 'block', marginTop: '4px', fontSize: '0.75rem', color: theme?.textDim || '#64748B' }}>
-                {stored ? 'Replaces the current file on Save' : 'Uploads on Save'}
-              </span>
-            )}
-          </>
-        )}
+      <div key={slot} style={{ ...tile, border: `1px dashed ${c.border}` }}>
+        {badge(false)}
+        {text(label, 'Not attached yet', c.dim, { color: c.dim, fontStyle: 'italic', fontWeight: 400 })}
+        {isEditing && picker('Upload PDF')}
       </div>
     );
   };
 
+  const fact = (label, value, tone = null) => (
+    <div key={label} style={{ background: tone ? tone.bg : c.inset, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+      <span style={{ fontSize: '0.68rem', color: tone ? tone.fg : c.dim, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: tone ? tone.fg : c.text, ...ellipsis }}>{value}</span>
+    </div>
+  );
+
+  const specRow = (label, value) => (
+    <React.Fragment key={label}>
+      <dt style={{ color: c.dim }}>{label}</dt>
+      <dd style={{ margin: 0, textAlign: 'right', fontWeight: 500, color: c.text, minWidth: 0, overflowWrap: 'anywhere' }}>{value}</dd>
+    </React.Fragment>
+  );
+
   const statusOptions = Object.keys(STATUS_CONFIG);
   const typeOptions = ['N', 'B', 'T', 'C', 'H'];
-  const plantOptions = ['EXT 1', 'EXT 2'];
   const shipmentOptions = ['AIR', 'LAND'];
+  const subtitle = [
+    hasValue(currentOrder['Order No']) ? `Order #${currentOrder['Order No']}` : 'No order number',
+    currentOrder['Customer Name'],
+    currentOrder.TYPE && `Type ${currentOrder.TYPE}`,
+  ].filter(Boolean).join(' · ');
+  const editSummary = [
+    changed.size > 0 && plural(changed.size, 'change'),
+    stagedCount > 0 && `${plural(stagedCount, 'file')} to upload`,
+  ].filter(Boolean).join(' · ') || 'No changes yet';
 
   return (
     <div className="drawer-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch', zIndex: 1000, padding: '12px' }} onClick={onClose}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="order-detail-title" className="drawer-panel" style={{ background: theme?.cardBg || '#1E293B', borderRadius: '16px', width: '100%', maxWidth: '640px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: `1px solid ${theme?.cardBorder || '#334155'}`, boxShadow: '-24px 0 64px rgba(0,0,0,0.35)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}`, background: `${config.color}10`, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: config.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><StatusIcon size={22} color="white" /></div>
-            <div>
-              <DieAttentionLabels order={currentOrder} dense={false} />
-              <h2 id="order-detail-title" style={{ fontSize: '1.15rem', fontWeight: 700, color: theme?.text || '#F1F5F9', margin: 0 }}>{currentOrder['DIE NO']}</h2>
-              <p style={{ color: theme?.textDim || '#64748B', margin: '2px 0 0 0', fontSize: '0.85rem' }}>Order #{currentOrder['Order No']}</p>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: theme?.textDim || '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}><X size={22} /></button>
-        </div>
-        <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
-          {files.profile_image && (
-            <div style={{ marginBottom: '1.5rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
-              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Profile</h3>
-              <ProfileThumb orderId={order.id} fileId={files.profile_image.id} size="100%" alt={`Profile of ${currentOrder['DIE NO']}`}
-                theme={theme} style={{ height: '220px', borderRadius: '10px' }} />
-              <span style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', color: theme?.textDim || '#64748B' }}>
-                From the die drawing PDF{files.profile_image.uploaded_by ? `, imported by ${files.profile_image.uploaded_by}` : ''}
-              </span>
-            </div>
-          )}
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Progress</h3>
-            <ProgressPipeline order={currentOrder} />
-            {isEditing && <p style={{ fontSize: '0.7rem', color: theme?.textDim || '#64748B', marginTop: '8px', fontStyle: 'italic' }}>Fill in date fields below to update progress</p>}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-            <div style={{ background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
-              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Order Details</h3>
-              {InfoRow({ label: 'Plant', field: 'Plant', value: currentOrder.Plant, type: 'select', options: plants.map(p => p.name) })}
-              {InfoRow({ label: 'Type', field: 'TYPE', value: currentOrder.TYPE, type: 'select', options: typeOptions })}
-              {InfoRow({ label: 'Die Size', field: 'Die Size', value: currentOrder['Die Size'] })}
-              {InfoRow({ label: 'Cavity', field: 'Cavity', value: currentOrder['Cavity'] || 0 })}
-              {InfoRow({ label: 'Mandrels/Cav', field: 'Mandrels per Cavity', value: currentOrder['Mandrels per Cavity'] || 0 })}
-              {InfoRow({ label: 'Total Mandrels', field: 'Total Mandrels', value: currentOrder['Total Mandrels'] || 0 })}
-              {InfoRow({ label: 'Shipment', field: 'Type of shipment', value: currentOrder['Type of shipment'], type: 'select', options: shipmentOptions })}
-              {InfoRow({ label: 'Supplier', field: 'Supplier', value: currentOrder.Supplier, type: 'select', options: suppliers.map(s => s.name) })}
-              {InfoRow({ label: 'Customer', field: 'Customer Name', value: currentOrder['Customer Name'] })}
-              {InfoRow({ label: 'PR Number', field: 'PR Number', value: currentOrder['PR Number'] })}
-              {InfoRow({ label: 'Press', field: 'Press', value: currentOrder.Press, type: 'select', options: pressOptions, disabled: !editedOrder.Plant, placeholder: editedOrder.Plant ? 'Select Press' : 'Select Plant first' })}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
-                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>Simulation</span>
-                {isEditing ? (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: theme?.text || '#F1F5F9', fontSize: '0.875rem', fontWeight: 500 }}>
-                    <input
-                      type="checkbox"
-                      checked={isSimulationEnabled(editedOrder.simulationEnabled)}
-                      onChange={(e) => handleFieldChange('simulationEnabled', e.target.checked)}
-                      style={{ width: '18px', height: '18px', accentColor: '#3B82F6', cursor: 'pointer' }}
-                    />
-                    Required
-                  </label>
-                ) : (
-                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{isSimulationEnabled(currentOrder.simulationEnabled) ? 'Yes' : 'No'}</span>
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
-                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '96px' }}>Urgency</span>
-                {isEditing ? (
-                  <select
-                    aria-label="Urgency"
-                    style={selectStyle}
-                    value={normalizeOrderUrgency(editedOrder.Urgency)}
-                    onChange={(e) => handleFieldChange('Urgency', e.target.value)}
-                  >
-                    {URGENCY_FORM_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>{formatUrgencyForDisplay(currentOrder.Urgency)}</span>
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
-                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '96px' }}>Special follow-up</span>
-                {isEditing ? (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: theme?.text || '#F1F5F9', fontSize: '0.875rem', fontWeight: 500 }}>
-                    <input
-                      type="checkbox"
-                      checked={!!(editedOrder.specialFollowUp === true || editedOrder.specialFollowUp === 1)}
-                      onChange={(e) => handleFieldChange('specialFollowUp', e.target.checked)}
-                      style={{ width: '18px', height: '18px', accentColor: '#F59E0B', cursor: 'pointer' }}
-                    />
-                    Flagged
-                  </label>
-                ) : (
-                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>
-                    {(currentOrder.specialFollowUp === true || currentOrder.specialFollowUp === 1) ? 'Yes' : 'No'}
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="order-detail-title" className="drawer-panel" style={{ background: c.card, borderRadius: '16px', width: '100%', maxWidth: '720px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: `1px solid ${c.border}`, boxShadow: '-24px 0 64px rgba(0,0,0,0.35)', color: c.text }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: isEditing ? '16px 24px' : '20px 24px 0', borderBottom: `1px solid ${c.border}`, display: 'flex', flexDirection: 'column', gap: '16px', flexShrink: 0, background: isEditing ? c.primarySoft : 'transparent' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+              {isEditing ? (
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: c.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Editing</span>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={pill(status.bg, status.fg)}>
+                    <span aria-hidden="true" style={{ width: '7px', height: '7px', borderRadius: '50%', background: status.fg }} />
+                    {currentOrder.STATUS || 'No status'}
                   </span>
-                )}
-              </div>
-              {InfoRow({ label: 'Status', field: 'STATUS', value: currentOrder.STATUS, type: 'select', options: statusOptions })}
+                  {urgency !== 'NORMAL' && (
+                    <span style={urgency === 'TOP_URGENT' ? pill(c.dangerBg, c.danger) : pill(c.warnBg, c.warn)}>{formatUrgencyForDisplay(urgency)}</span>
+                  )}
+                  {flagged && <span style={pill(c.inset, c.muted)}>Special follow-up</span>}
+                </div>
+              )}
+              <h2 id="order-detail-title" style={{ margin: 0, fontFamily: mono, fontSize: isEditing ? '1.25rem' : '1.6rem', fontWeight: 600, letterSpacing: '-0.01em', color: c.text, overflowWrap: 'anywhere' }}>{currentOrder['DIE NO']}</h2>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: c.dim }}>
+                {isEditing ? 'Status follows the dates you fill in. Changes go through Review before they are saved.' : subtitle}
+              </p>
             </div>
-            <div style={{ background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
-              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Timeline</h3>
-              {InfoRow({ label: 'Requested', field: 'Die Requested Date', value: currentOrder['Die Requested Date'], type: 'date' })}
-              {InfoRow({ label: 'Design Received', field: 'Design Received Date', value: currentOrder['Design Received Date'], type: 'date' })}
-              {isSimulationEnabled(currentOrder.simulationEnabled) && InfoRow({ label: '3D Model Received', field: '3D Model Received Date', value: currentOrder['3D Model Received Date'], type: 'date' })}
-              {InfoRow({ label: 'Design Approved', field: 'Design Approved Date', value: currentOrder['Design Approved Date'], type: 'date' })}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme?.cardBorder || '#334155'}` }}>
-                <span style={{ fontSize: '0.8rem', color: theme?.textDim || '#64748B', minWidth: '80px' }}>Revisions</span>
-                {currentOrder['Design Revision Count'] > 0 ? (
-                  <button
-                    onClick={() => onViewRevisions && onViewRevisions(currentOrder)}
-                    style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, background: 'rgba(245,158,11,0.2)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.4)', cursor: 'pointer' }}
-                    title="View revision history"
-                  >
-                    {currentOrder['Design Revision Count']} — View history
+            <button type="button" onClick={onClose} aria-label="Close" style={{ ...iconButton, width: '40px', height: '40px', border: 'none' }}><X size={20} /></button>
+          </div>
+
+          {!isEditing && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '1px', background: c.border, border: `1px solid ${c.border}`, borderRadius: '12px', overflow: 'hidden' }}>
+                {fact('Supplier', currentOrder.Supplier || '—')}
+                {fact('Plant · Press', [currentOrder.Plant, currentOrder.Press].filter(Boolean).join(' · ') || '—')}
+                {fact('ETA', hasValue(currentOrder.ETA) ? formatDate(currentOrder.ETA) : '—')}
+                {overallDelay > 0 || designDelay > 0
+                  ? fact('Delay', `${overallDelay}d overall${designDelay > 0 ? ` · ${designDelay}d design` : ''}`, { bg: c.dangerBg, fg: c.danger })
+                  : fact('Delay', 'None')}
+              </div>
+              <nav aria-label="Order sections" style={{ display: 'flex', gap: '4px', marginBottom: '-1px' }}>
+                {[['timeline', 'Timeline'], ['details', 'Details'], ['files', 'Files']].map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => jumpTo(key)} aria-current={section === key ? 'true' : undefined}
+                    style={{ padding: '12px 14px', minHeight: '44px', background: 'transparent', border: 'none', borderBottom: `2px solid ${section === key ? c.primary : 'transparent'}`, color: section === key ? c.text : c.dim, fontSize: '0.875rem', fontWeight: section === key ? 600 : 500, cursor: 'pointer' }}>
+                    {label}
                   </button>
-                ) : (
-                  <span style={{ fontSize: '0.875rem', fontWeight: 500, color: theme?.text || '#F1F5F9' }}>None</span>
+                ))}
+              </nav>
+            </>
+          )}
+        </div>
+
+        <div ref={bodyRef} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {!isEditing ? (
+            <>
+              {currentIdx > 0 && waitingDays !== null && (
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: c.warnBg, border: `1px solid ${c.warnBorder}`, borderRadius: '12px', padding: '14px 16px' }}>
+                  <Clock size={18} color={c.warn} style={{ flexShrink: 0, marginTop: '1px' }} aria-hidden="true" />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: c.warn }}>
+                      Next step: {stages[currentIdx].label.toLowerCase()} · {waitingDays === 0 ? 'waiting since today' : `waiting ${plural(waitingDays, 'day')}`}
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: c.muted }}>
+                      {stages[currentIdx - 1].label} on {formatDate(currentOrder[stages[currentIdx - 1].field])}.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <section data-section="timeline" style={{ display: 'flex', flexDirection: 'column', gap: '12px', scrollMarginTop: '8px' }}>
+                <h3 style={sectionTitle}>Timeline</h3>
+                <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                  {stages.map((s, i) => {
+                    const done = hasValue(currentOrder[s.field]);
+                    const now = i === currentIdx;
+                    const last = i === stages.length - 1;
+                    const note = stageNote(s, i);
+                    return (
+                      <li key={s.field} style={{ display: 'grid', gridTemplateColumns: '20px minmax(0, 1fr) auto', columnGap: '12px' }}>
+                        <div aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <span style={{ width: '12px', height: '12px', borderRadius: '50%', boxSizing: 'border-box', marginTop: '4px', flexShrink: 0, background: done ? c.done : now ? status.fg : 'transparent', border: done || now ? 'none' : `2px solid ${c.border}`, boxShadow: now ? `0 0 0 4px ${status.bg}` : 'none' }} />
+                          {!last && <span style={{ flex: 1, width: '2px', margin: '4px 0', background: done ? `${c.done}66` : c.border }} />}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingBottom: last ? 0 : '14px', minWidth: 0 }}>
+                          <span style={{ fontSize: '0.875rem', fontWeight: now ? 700 : done ? 500 : 400, color: done || now ? c.text : c.dim }}>{s.label}</span>
+                          {note && <span style={{ fontSize: '0.75rem', color: c.dim }}>{note}</span>}
+                        </div>
+                        <span style={{ fontSize: '0.8rem', fontVariantNumeric: 'tabular-nums', paddingTop: '1px', color: now ? status.fg : done ? c.muted : c.dim, fontWeight: now ? 600 : 400 }}>
+                          {done ? formatDate(currentOrder[s.field]) : now ? 'Waiting' : '—'}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+
+              <section data-section="details" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', scrollMarginTop: '8px' }}>
+                {files.profile_image && (
+                  <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h3 style={sectionTitle}>Profile</h3>
+                    <ProfileThumb orderId={order.id} fileId={files.profile_image.id} size="100%" alt={`Profile of ${currentOrder['DIE NO']}`}
+                      theme={theme} style={{ height: '180px', borderRadius: '8px' }} />
+                    <span style={{ fontSize: '0.75rem', color: c.dim }}>
+                      From the die drawing PDF{files.profile_image.uploaded_by ? `, imported by ${files.profile_image.uploaded_by}` : ''}
+                    </span>
+                  </div>
+                )}
+                <div style={files.profile_image ? panel : { ...panel, gridColumn: '1 / -1' }}>
+                  <h3 style={{ ...sectionTitle, marginBottom: '12px' }}>Die spec</h3>
+                  <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', rowGap: '10px', columnGap: '12px', fontSize: '0.875rem' }}>
+                    {specRow('Die size', currentOrder['Die Size'] || '—')}
+                    {specRow('Cavity', currentOrder.Cavity || 0)}
+                    {specRow('Mandrels', `${currentOrder['Mandrels per Cavity'] || 0}/cav · ${currentOrder['Total Mandrels'] || 0} total`)}
+                    {specRow('Simulation', simulation ? 'Required' : 'Not required')}
+                    {specRow('Corrector', currentOrder.Corrector || '—')}
+                    {specRow('Trials', trials)}
+                  </dl>
+                </div>
+                <div style={{ ...panel, gridColumn: '1 / -1' }}>
+                  <h3 style={{ ...sectionTitle, marginBottom: '12px' }}>Purchasing</h3>
+                  <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', fontSize: '0.875rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                      <dt style={{ color: c.dim, fontSize: '0.75rem' }}>PR number</dt>
+                      <dd style={{ margin: 0, fontWeight: 500, fontFamily: mono, overflowWrap: 'anywhere' }}>{currentOrder['PR Number'] || '—'}</dd>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <dt style={{ color: c.dim, fontSize: '0.75rem' }}>Shipment</dt>
+                      <dd style={{ margin: 0, fontWeight: 500 }}>{currentOrder['Type of shipment'] || '—'}</dd>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <dt style={{ color: c.dim, fontSize: '0.75rem' }}>Design revisions</dt>
+                      <dd style={{ margin: 0 }}>
+                        {revisions > 0 ? (
+                          <button type="button" onClick={() => onViewRevisions && onViewRevisions(currentOrder)} title="View revision history"
+                            style={{ padding: 0, background: 'transparent', border: 'none', color: c.primary, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                            {revisions} · view history
+                          </button>
+                        ) : <span style={{ fontWeight: 500 }}>None</span>}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </section>
+
+              <section data-section="files" style={{ display: 'flex', flexDirection: 'column', gap: '12px', scrollMarginTop: '8px' }}>
+                <h3 style={sectionTitle}>Files</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                  {FileTile({ slot: 'die_order_form' })}
+                  {FileTile({ slot: 'design_pdf' })}
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h3 style={sectionTitle}>Timeline dates</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px 16px' }}>
+                  {Field({ label: 'Die requested', field: 'Die Requested Date', type: 'date' })}
+                  {Field({ label: 'Ordered', field: 'Ordered date', type: 'date' })}
+                  {Field({ label: 'Design received', field: 'Design Received Date', type: 'date' })}
+                  {simulation && Field({ label: '3D model received', field: '3D Model Received Date', type: 'date' })}
+                  {Field({ label: 'Design approved', field: 'Design Approved Date', type: 'date' })}
+                  {Field({ label: 'PR entry', field: 'PR Entry', type: 'date' })}
+                  {Field({ label: 'Oracle entry', field: 'Oracle Entry', type: 'date' })}
+                  {Field({ label: 'ETA', field: 'ETA', type: 'date' })}
+                  {Field({ label: 'Die received', field: 'Die Received Date', type: 'date' })}
+                  {Field({ label: 'Sample submitted', field: 'Submission Date', type: 'date' })}
+                  {Field({ label: 'Sample approved', field: 'Sample Approval Date', type: 'date' })}
+                </div>
+              </section>
+
+              <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h3 style={sectionTitle}>Order</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px 16px' }}>
+                  {Field({ label: 'Plant', field: 'Plant', type: 'select', options: plants.map(p => p.name) })}
+                  {Field({ label: 'Press', field: 'Press', type: 'select', options: pressOptions, disabled: !editedOrder.Plant, placeholder: editedOrder.Plant ? 'Select press' : 'Select plant first' })}
+                  {Field({ label: 'Supplier', field: 'Supplier', type: 'select', options: suppliers.map(s => s.name) })}
+                  {Field({ label: 'Type', field: 'TYPE', type: 'select', options: typeOptions })}
+                  {Field({ label: 'Shipment', field: 'Type of shipment', type: 'select', options: shipmentOptions })}
+                  {Field({ label: 'Customer', field: 'Customer Name' })}
+                  {Field({ label: 'PR number', field: 'PR Number' })}
+                  {Field({ label: 'Die size', field: 'Die Size' })}
+                  {Field({ label: 'Cavity', field: 'Cavity' })}
+                  {Field({ label: 'Mandrels/cav', field: 'Mandrels per Cavity' })}
+                  {Field({ label: 'Total mandrels', field: 'Total Mandrels' })}
+                  {Field({ label: 'No of trial', field: 'No of Trial' })}
+                  {Field({ label: 'Corrector', field: 'Corrector', type: 'select', options: correctorOptions({ correctors, plant: currentOrder.Plant, value: editedOrder['Corrector'] }), placeholder: '— select corrector —' })}
+                  {Field({ label: 'Status', field: 'STATUS', type: 'select', options: statusOptions })}
+                </div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {Toggle({ label: 'Simulation required', field: 'simulationEnabled', checked: isSimulationEnabled(editedOrder.simulationEnabled), accent: c.primary })}
+                  {Toggle({ label: 'Special follow-up', field: 'specialFollowUp', checked: !!(editedOrder.specialFollowUp === true || editedOrder.specialFollowUp === 1), accent: '#F59E0B' })}
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 8px 0 14px', borderRadius: '10px', fontSize: '0.875rem', color: c.text,
+                    border: `1px solid ${changed.has('Urgency') ? c.primary : c.border}`, background: changed.has('Urgency') ? c.primarySoft : 'transparent',
+                  }}>
+                    Urgency
+                    <select value={normalizeOrderUrgency(editedOrder.Urgency)} onChange={(e) => handleFieldChange('Urgency', e.target.value)}
+                      style={{ ...fieldStyle, width: 'auto', height: '32px', padding: '0 8px', cursor: 'pointer' }}>
+                      {URGENCY_FORM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h3 style={sectionTitle}>Files</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                  {FileTile({ slot: 'die_order_form' })}
+                  {FileTile({ slot: 'design_pdf' })}
+                </div>
+              </section>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '14px 24px', borderTop: `1px solid ${c.border}`, background: c.inset, flexShrink: 0 }}>
+          {!isEditing ? (
+            <>
+              <button type="button" onClick={() => setShowFreeze(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px', minHeight: '44px', borderRadius: '10px', border: `1px solid ${c.border}`, background: 'transparent', color: isDark ? '#7DD3FC' : '#0369A1', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
+                <Snowflake size={16} /> Freeze / Final design
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {(showViewOnly || (canEdit && editRevoked)) && (
+                  <span style={{ fontSize: '0.78rem', color: c.dim }}>View only · ask an admin for edit access</span>
+                )}
+                {canEdit && !editRevoked && (
+                  <button type="button" onClick={() => { setIsEditing(true); setSection('timeline'); bodyRef.current?.scrollTo(0, 0); }} style={{ padding: '0 24px', minHeight: '44px', borderRadius: '10px', border: 'none', background: c.primary, color: c.primaryText, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>Edit order</button>
                 )}
               </div>
-              {InfoRow({ label: 'PR Entry', field: 'PR Entry', value: currentOrder['PR Entry'], type: 'date' })}
-              {InfoRow({ label: 'Oracle Entry', field: 'Oracle Entry', value: currentOrder['Oracle Entry'], type: 'date' })}
-              {InfoRow({ label: 'Ordered', field: 'Ordered date', value: currentOrder['Ordered date'], type: 'date' })}
-              {InfoRow({ label: 'ETA', field: 'ETA', value: currentOrder.ETA, type: 'date' })}
-              {InfoRow({ label: 'Die Received', field: 'Die Received Date', value: currentOrder['Die Received Date'], type: 'date' })}
-              {InfoRow({ label: 'Submission', field: 'Submission Date', value: currentOrder['Submission Date'], type: 'date' })}
-              {InfoRow({ label: 'Sample Approval', field: 'Sample Approval Date', value: currentOrder['Sample Approval Date'], type: 'date' })}
-              {InfoRow({ label: 'No of Trial', field: 'No of Trial', value: currentOrder['No of Trial'] || 0 })}
-              {InfoRow({ label: 'Corrector', field: 'Corrector', value: currentOrder['Corrector'], type: 'select', options: correctorOptions({ correctors, plant: currentOrder.Plant, value: editedOrder['Corrector'] }), placeholder: '— select corrector —' })}
-            </div>
-          </div>
-
-          {/* Attachments Section */}
-          <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
-            <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Attachments</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-              {FileRow({ slot: 'die_order_form' })}
-              {FileRow({ slot: 'design_pdf' })}
-            </div>
-          </div>
-
-          {(currentOrder.Delay > 0 || currentOrder['OVERALL DELAY'] > 0) && (<div style={{ background: 'rgba(244,63,94,0.1)', borderRadius: '12px', padding: '1rem', marginTop: '1rem' }}><h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#F43F5E', marginBottom: '12px' }}>Delays</h3><div style={{ display: 'flex', gap: '2rem' }}><div><span style={{ fontSize: '0.8rem', color: '#F43F5E', opacity: 0.8 }}>Design</span><span style={{ display: 'block', fontSize: '1.5rem', fontWeight: 700, color: '#F43F5E' }}>{currentOrder.Delay || 0}d</span></div><div><span style={{ fontSize: '0.8rem', color: '#F43F5E', opacity: 0.8 }}>Overall</span><span style={{ display: 'block', fontSize: '1.5rem', fontWeight: 700, color: '#F43F5E' }}>{currentOrder['OVERALL DELAY'] || 0}d</span></div></div></div>)}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '1rem 1.5rem', borderTop: `1px solid ${theme?.cardBorder || '#334155'}`, flexShrink: 0 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', background: 'transparent', color: theme?.textDim || '#64748B', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', cursor: 'pointer' }}>Close</button>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {!isEditing ? (
-              <>
-                <button onClick={() => setShowFreeze(true)} style={{ padding: '9px 18px', background: 'transparent', color: '#38BDF8', border: '1px solid #38BDF8', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Snowflake size={15} /> Freeze / Final Design
-                </button>
-                {canEdit && !editRevoked && <button onClick={() => setIsEditing(true)} style={{ padding: '9px 22px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>Edit</button>}
-                {(showViewOnly || (canEdit && editRevoked)) && (
-                  <span style={{ alignSelf: 'center', fontSize: '0.78rem', color: theme?.textDim || '#64748B' }}>
-                    View only · ask an admin for edit access
+            </>
+          ) : (
+            <>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem', color: c.muted }} aria-live="polite">
+                {changed.size + stagedCount > 0 && (
+                  <span style={{ minWidth: '24px', height: '24px', padding: '0 6px', boxSizing: 'border-box', borderRadius: '999px', background: c.primary, color: c.primaryText, fontSize: '0.75rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {changed.size + stagedCount}
                   </span>
                 )}
-              </>
-            ) : (
-              <>
-                <button onClick={handleCancel} style={{ padding: '9px 18px', background: theme?.cardBg || '#334155', color: theme?.text || '#F1F5F9', border: `1px solid ${theme?.cardBorder || '#334155'}`, borderRadius: '8px', fontWeight: 500, fontSize: '0.875rem', cursor: 'pointer' }}>Cancel</button>
-                <button onClick={handleSave} disabled={isSaving} style={{ padding: '9px 22px', background: isSaving ? '#475569' : '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: isSaving ? 'not-allowed' : 'pointer' }}>{isSaving ? 'Saving...' : 'Save'}</button>
-              </>
-            )}
-          </div>
+                {editSummary}
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" onClick={() => { handleCancel(); setSection('timeline'); bodyRef.current?.scrollTo(0, 0); }} style={{ padding: '0 18px', minHeight: '44px', borderRadius: '10px', border: `1px solid ${c.border}`, background: 'transparent', color: c.text, fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer' }}>Discard</button>
+                <button type="button" onClick={handleSave} disabled={isSaving} style={{ padding: '0 22px', minHeight: '44px', borderRadius: '10px', border: 'none', background: isSaving ? '#475569' : c.primary, color: c.primaryText, fontSize: '0.875rem', fontWeight: 600, cursor: isSaving ? 'not-allowed' : 'pointer' }}>{isSaving ? 'Saving…' : 'Review & save'}</button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
