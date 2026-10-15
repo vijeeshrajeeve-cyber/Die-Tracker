@@ -266,8 +266,7 @@ body[data-dialog-depth='4'] [style*='backdrop-filter'] {
    Data table readability system (.dt-table)
    Colors are driven by CSS variables set on the scroll wrapper
    from the active theme, so this works in light & dark modes.
-   Density is controlled globally via [data-table-density] on
-   the root element (defaults to "comfortable").
+   Rows use one comfortable density everywhere.
    ============================================================ */
 
 /* Scroll container: cap width, allow horizontal scroll, and give a
@@ -321,16 +320,10 @@ body[data-dialog-depth='4'] [style*='backdrop-filter'] {
   background: var(--dt-hover, rgba(127, 127, 127, 0.1));
 }
 
-/* ---- Density (comfortable default / compact toggle) ---- */
+/* ---- Density: always comfortable ---- */
 .dt-table thead th,
 .dt-table tbody td {
-  padding: 12px 14px; /* comfortable */
-}
-[data-table-density="compact"] .dt-table thead th,
-[data-table-density="compact"] .dt-table tbody td {
-  padding: 7px 12px;
-  font-size: 0.8125rem; /* 13px floor in compact mode */
-  line-height: 1.35;
+  padding: 12px 14px;
 }
 
 /* ============================================================

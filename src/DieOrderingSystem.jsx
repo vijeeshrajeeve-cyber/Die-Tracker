@@ -1739,24 +1739,15 @@ export default function DieOrderingSystem() {
     }
   }, [isDarkMode]);
 
-  // Table density (comfortable default — better for plant-floor / shared monitors)
-  const [tableDensity, setTableDensity] = useState(() => {
-    try {
-      return localStorage.getItem('die-ordering-table-density') === 'compact' ? 'compact' : 'comfortable';
-    } catch {
-      return 'comfortable';
-    }
-  });
-
-  // Apply density globally via a root attribute the .dt-table CSS reads, and persist it
+  // Tables are always comfortable now that the density toggle is gone. Clear
+  // the old stored preference so a browser that chose compact keeps nothing.
   useEffect(() => {
     try {
-      document.documentElement.setAttribute('data-table-density', tableDensity);
-      localStorage.setItem('die-ordering-table-density', tableDensity);
+      localStorage.removeItem('die-ordering-table-density');
     } catch {
-      console.warn('Unable to save table density preference');
+      // Storage blocked: nothing was stored either.
     }
-  }, [tableDensity]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -3289,8 +3280,6 @@ export default function DieOrderingSystem() {
           theme={theme}
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
-          tableDensity={tableDensity}
-          setTableDensity={setTableDensity}
           setShowPDFImportModal={setShowPDFImportModal}
           setShowPIImportModal={setShowPIImportModal}
           setShowImportModal={setShowImportModal}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, Menu, AlignJustify, PenTool } from 'lucide-react';
+import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, PenTool } from 'lucide-react';
 import useDismissable from '../../hooks/useDismissable';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 import { shortcutLabel } from '../../utils/searchPalette';
@@ -11,8 +11,6 @@ const TopBar = ({
     theme,
     isDarkMode,
     setIsDarkMode,
-    tableDensity = 'comfortable',
-    setTableDensity = () => {},
     setShowPDFImportModal,
     setShowPIImportModal,
     setShowImportModal,
@@ -232,15 +230,6 @@ const TopBar = ({
                 <button onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle theme" style={actionButtonStyle()}>
                     {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                     <span style={actionLabelStyle()}>Theme</span>
-                </button>
-
-                <button
-                    onClick={() => setTableDensity(tableDensity === 'compact' ? 'comfortable' : 'compact')}
-                    title={tableDensity === 'compact' ? 'Switch tables to comfortable density' : 'Switch tables to compact density'}
-                    style={actionButtonStyle()}
-                >
-                    {tableDensity === 'compact' ? <AlignJustify size={18} /> : <Menu size={18} />}
-                    <span style={actionLabelStyle()}>{tableDensity === 'compact' ? 'Compact' : 'Comfortable'}</span>
                 </button>
 
                 {/* Notifications */}
