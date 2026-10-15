@@ -290,6 +290,14 @@ export const ordersAPI = {
         return apiRequest(`/orders/${id}/files/${slot}`, { method: 'POST', body: form, isMultipart: true });
     },
 
+    // The profile cut from the die drawing (a PNG Blob). Fills only: the answer
+    // is { kept: true } when the order already has one.
+    uploadProfileImage: async (id, blob, fileName) => {
+        const form = new FormData();
+        form.append('file', blob, fileName);
+        return apiRequest(`/orders/${id}/profile-image`, { method: 'POST', body: form, isMultipart: true });
+    },
+
     // A stored file's bytes for the in-app viewer. The route needs the Bearer
     // header, so the viewer cannot point an <iframe> straight at it.
     fileBlob: async (id, fileId) => {

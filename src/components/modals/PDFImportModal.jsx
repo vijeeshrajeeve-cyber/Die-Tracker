@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle, FileText, Trash2, X } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -7,6 +7,8 @@ import { parseDateDMY, formatDate } from '../../utils/helpers';
 import { extractBolsterInsertNos } from '../../utils/pdfImportFields';
 import { isBlankValue } from '../../utils/orderDetailEdits';
 import { mergeExistingForPreview, planPdfFills } from '../../utils/pdfImportFills';
+import { captureProfileImage } from '../../utils/profileImage';
+import ProfileThumb from '../orders/ProfileThumb';
 
 import useDialog from '../../hooks/useDialog';
 // Configure PDF.js worker (Vite-compatible approach)
@@ -39,6 +41,10 @@ const parseSimulationFlag = (value) => {
 // PDF Import Modal Component
 const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [], canFillExisting = false, theme = {} }) => {
   const dialogRef = useDialog({ open: true, onClose });
+
+  // The preview's profile thumbnails are object URLs; free them when the modal goes.
+  const previewUrls = useRef(new Set());
+  useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   const [dragActive, setDragActive] = useState(false);
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -634,6 +640,11 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
     const existingOrder = mainIsReorder ? null : existingOrderRaw;
     const mainReorderNote = mainIsReorder ? reorderNoteFor(existingOrderRaw) : null;
 
+    // The profile drawn on the sheet, cut out for the order (and its bolster/insert).
+    const profileBlob = await captureProfileImage(page1);
+    const profileImage = profileBlob ? { blob: profileBlob, url: URL.createObjectURL(profileBlob) } : null;
+    if (profileImage) previewUrls.current.add(profileImage.url);
+
     const mainOrder = {
       id: existingOrder?.id || null,
       isExisting: !!existingOrder,
@@ -679,6 +690,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       _componentType: meta.isDiePlateOnly ? 'DIE PLATE ONLY' : meta.isInsertMandrelOnly ? 'INSERT MANDREL ONLY' : null,
       _isRevision: meta.isRevision,
       _cavity: cavity,
+      _profileImage: profileImage,
     };
 
     // A die that already has an order: show the order's values and let the PDF
@@ -813,13 +825,18 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           delete cleanOrder._cavity;
           delete cleanOrder._reorderNote;
           delete cleanOrder._existing;
+          cleanOrder._profileImage = order._profileImage?.blob || null;
           return cleanOrder;
         });
+        // Existing dies get the image only where they have none; the server decides.
+        const profileImages = preview.orders
+          .filter((order) => order._existing && order._profileImage)
+          .map((order) => ({ id: order.id, dieNo: order['DIE NO'], blob: order._profileImage.blob }));
         const planned = preview.orders
           .filter((order) => order._existing)
           .map((order) => ({ id: order.id, dieNo: order['DIE NO'], fields: planPdfFills(order._existing, order).fields }));
         const items = planned.filter((p) => Object.keys(p.fields).length > 0);
-        await onImportRecords(newOrders, { pdfFills: { items, canFill: canFillExisting, complete: planned.length - items.length } });
+        await onImportRecords(newOrders, { pdfFills: { items, canFill: canFillExisting, complete: planned.length - items.length }, profileImages });
         onClose();
       } catch (err) {
         console.error('PDF Import failed:', err);
@@ -959,6 +976,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                     <thead>
                       <tr style={{ background: theme.inputBg }}>
+                        <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Profile</th>
                         <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Die No</th>
                         <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Size</th>
                         <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Supplier</th>
@@ -975,6 +993,11 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
                     <tbody>
                       {preview.orders.map((order, index) => (
                         <tr key={index} style={{ borderBottom: `1px solid ${theme.cardBorder}`, background: order.isExisting ? 'rgba(245,158,11,0.05)' : 'transparent' }}>
+                          <td style={{ padding: '6px 12px' }}>
+                            {order._profileImage
+                              ? <ProfileThumb src={order._profileImage.url} size={56} alt={`Profile of ${order['DIE NO']}`} theme={theme} />
+                              : <span style={{ fontSize: '0.7rem', color: theme.textMuted }}>Not found</span>}
+                          </td>
                           <td style={{ padding: '10px 12px', color: theme.text, fontFamily: 'monospace' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <span>{order['DIE NO']}</span>

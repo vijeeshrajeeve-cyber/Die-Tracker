@@ -646,6 +646,89 @@ router.post('/:id/files/:slot', requireOrderEditor, orderIdValidation, handleVal
     }
 });
 
+// The profile image is small, so it is held in memory and checked before it is written.
+const profileImageUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: orderFiles.PROFILE_IMAGE_MAX_BYTES, files: 1 },
+});
+
+// Editors, and whoever created the order: the PDF import attaches the image to
+// the orders it has just created, and that importer may not hold the switch.
+// Checked before multer so a refused upload is never read.
+const canAttachProfileImage = async (req, res, next) => {
+    if (canEditOrderDetails(req.user)) return next();
+    try {
+        const { rows } = await pool.query('SELECT created_by FROM die_orders WHERE id = $1', [req.params.id]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+        if (req.user?.id && rows[0].created_by === req.user.id) return next();
+        return res.status(403).json({ error: 'You do not have permission to edit order details', code: 'ORDER_EDIT_FORBIDDEN' });
+    } catch (error) {
+        console.error('Profile image permission error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+// Attach the profile cut from the die drawing (multipart, field "file", PNG).
+// It only fills a blank: an order that already has one keeps it and the answer
+// says so with `kept: true`, the PDF import's rule for every other field.
+router.post('/:id/profile-image', orderIdValidation, handleValidationErrors, canAttachProfileImage, (req, res, next) => {
+    profileImageUpload.single('file')(req, res, (err) => {
+        if (!err) return next();
+        const message = err.code === 'LIMIT_FILE_SIZE' ? 'Profile image too large' : err.message;
+        return res.status(400).json({ error: message });
+    });
+}, async (req, res) => {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file || !orderFiles.isPng(file.buffer)) return res.status(400).json({ error: 'Attach the profile image as a PNG' });
+
+    const slot = orderFiles.PROFILE_IMAGE_SLOT;
+    const client = await pool.connect();
+    let dest = null;
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query('SELECT id, die_no, status FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+        if (rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        const order = rows[0];
+        const existing = await client.query(
+            'SELECT id, original_name FROM die_order_files WHERE order_id = $1 AND slot = $2 AND replaced_at IS NULL FOR UPDATE',
+            [id, slot]
+        );
+        if (existing.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.json({ kept: true });
+        }
+
+        const fileName = file.originalname || `${order.die_no}_profile.png`;
+        const root = orderFiles.getRoot();
+        dest = orderFiles.buildStoredPath(root, { dieNo: order.die_no, orderId: order.id, slot, stamp: Date.now(), fileName });
+        await fsp.mkdir(path.dirname(dest), { recursive: true });
+        await fsp.writeFile(dest, file.buffer);
+
+        const inserted = await client.query(
+            `INSERT INTO die_order_files (order_id, slot, original_name, stored_path, mime_type, size_bytes, uploaded_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING id, slot, original_name, size_bytes, uploaded_at`,
+            [id, slot, fileName, path.relative(root, dest), 'image/png', file.size, req.user?.id || null]
+        );
+        await insertChangeLog(client, id, [{
+            field: orderFiles.PROFILE_IMAGE_LABEL, oldValue: null, newValue: fileName, reason: 'From the die drawing PDF', stage: order.status,
+        }], req.user);
+        await client.query('COMMIT');
+        res.status(201).json({ file: { ...inserted.rows[0], uploaded_by: req.user?.username || null } });
+    } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        if (dest) await fsp.unlink(dest).catch(() => {});
+        console.error('Upload profile image error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        client.release();
+    }
+});
+
 // Download one stored file, only through the order it belongs to.
 router.get('/:id/files/:fileId', orderIdValidation, param('fileId').isInt({ min: 1 }).withMessage('Invalid file ID'),
     handleValidationErrors, async (req, res) => {

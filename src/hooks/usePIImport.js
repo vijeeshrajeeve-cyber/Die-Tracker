@@ -89,7 +89,9 @@ export default function usePIImport({
     //   other field on the existing order untouched. New orders always get the full payload.
     // pdfFills: PDF import only — { items, canFill, complete }. Existing dies are not in
     //   importData; their planned blank fills are saved through the drawer route instead.
-    const { resolveCustomers = true, restrictUpdateFields = null, pdfFills = null } = options;
+    // profileImages: PDF import only — [{ id, dieNo, blob }] for existing dies; new
+    //   orders carry theirs as `_profileImage`. Saved only where the order has none.
+    const { resolveCustomers = true, restrictUpdateFields = null, pdfFills = null, profileImages = [] } = options;
     try {
       const records = importData.map(r => ({ ...r }));
       if (resolveCustomers) {
@@ -103,9 +105,10 @@ export default function usePIImport({
 
       let created = 0;
       let updated = 0;
+      const imageUploads = [...profileImages];
 
       for (const record of records) {
-        const { isExisting, ...orderData } = record;
+        const { isExisting, _profileImage, ...orderData } = record;
         if (isExisting && orderData.id) {
           const payload = restrictUpdateFields
             ? restrictUpdateFields.reduce((acc, key) => {
@@ -116,8 +119,9 @@ export default function usePIImport({
           await ordersAPI.patch(orderData.id, payload);
           updated++;
         } else {
-          await ordersAPI.create(orderData);
+          const saved = await ordersAPI.create(orderData);
           created++;
+          if (_profileImage && saved?.id) imageUploads.push({ id: saved.id, dieNo: orderData['DIE NO'], blob: _profileImage });
         }
       }
 
@@ -128,13 +132,25 @@ export default function usePIImport({
           : { filled: 0, failed: pdfFills.items.map(({ dieNo }) => ({ dieNo, cause: FILL_NEEDS_PERMISSION })) };
       }
 
+      // A picture never fails the import: the orders are already saved.
+      let imagesSaved = 0;
+      for (const { id, dieNo, blob } of imageUploads) {
+        try {
+          const res = await ordersAPI.uploadProfileImage(id, blob, `${dieNo || id}_profile.png`);
+          if (res?.file) imagesSaved++;
+        } catch (err) {
+          console.error(`Profile image for ${dieNo} not saved:`, err);
+        }
+      }
+      const imageNote = imagesSaved > 0 ? ` · ${imagesSaved} profile image(s) saved` : '';
+
       await fetchOrders();
       setCurrentPage(1);
 
       if (fillResult) {
         const notFilled = fillResult.failed.length > 0;
         setToast({
-          message: fillSummary({ created, filled: fillResult.filled, complete: pdfFills.complete, failed: fillResult.failed }),
+          message: fillSummary({ created, filled: fillResult.filled, complete: pdfFills.complete, failed: fillResult.failed }) + imageNote,
           type: notFilled ? 'warning' : 'success',
         });
         setTimeout(() => setToast(null), notFilled ? 10000 : 5000);
@@ -144,7 +160,7 @@ export default function usePIImport({
       const messages = [];
       if (created > 0) messages.push(`${created} new order(s) created`);
       if (updated > 0) messages.push(`${updated} order(s) updated`);
-      const msg = `PI Import successful: ${messages.join(', ')}`;
+      const msg = `PI Import successful: ${messages.join(', ')}${imageNote}`;
       setToast({ message: msg, type: 'success' });
       setTimeout(() => setToast(null), 5000);
     } catch (error) {

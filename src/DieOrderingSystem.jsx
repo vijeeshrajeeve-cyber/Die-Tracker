@@ -31,6 +31,7 @@ import usePIImport from './hooks/usePIImport';
 
 import FlowPage from './pages/FlowPage';
 import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
+import ProfileThumb from './components/orders/ProfileThumb';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
 import SampleFollowupPage from './pages/SampleFollowupPage';
@@ -1440,6 +1441,17 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               {InfoRow({ label: 'Corrector', field: 'Corrector', value: currentOrder['Corrector'], type: 'select', options: correctorOptions({ correctors, plant: currentOrder.Plant, value: editedOrder['Corrector'] }), placeholder: '— select corrector —' })}
             </div>
           </div>
+
+          {files.profile_image && (
+            <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Profile</h3>
+              <ProfileThumb orderId={order.id} fileId={files.profile_image.id} size="100%" alt={`Profile of ${currentOrder['DIE NO']}`}
+                theme={theme} style={{ height: '220px', borderRadius: '10px' }} />
+              <span style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', color: theme?.textDim || '#64748B' }}>
+                From the die drawing PDF{files.profile_image.uploaded_by ? `, imported by ${files.profile_image.uploaded_by}` : ''}
+              </span>
+            </div>
+          )}
 
           {/* Attachments Section */}
           <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>

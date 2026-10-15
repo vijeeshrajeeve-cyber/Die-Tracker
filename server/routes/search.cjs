@@ -26,7 +26,9 @@ async function findOrders(q) {
   const pattern = search.containsPattern(q);
   const [rows, count] = await Promise.all([
     pool.query(
-      `SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count
+      `SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count,
+         (SELECT f.id FROM die_order_files f
+           WHERE f.order_id = o.id AND f.slot = 'profile_image' AND f.replaced_at IS NULL) AS profile_image_id
        FROM die_orders o WHERE ${ORDER_MATCH}
        ORDER BY ${ORDER_RANK}, o.created_at DESC LIMIT ${search.CANDIDATE_LIMIT}`,
       [pattern, q.toLowerCase(), search.prefixPattern(q)],
@@ -35,7 +37,7 @@ async function findOrders(q) {
   ]);
   return {
     items: search.rankRows(rows.rows, q, search.ORDER_SEARCH)
-      .map(({ row, matchedField }) => ({ ...presentOrder(row), matchedField })),
+      .map(({ row, matchedField }) => ({ ...presentOrder(row), profileImageId: row.profile_image_id ?? null, matchedField })),
     total: count.rows[0].total,
   };
 }
