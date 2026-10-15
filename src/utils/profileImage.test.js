@@ -67,3 +67,25 @@ test('the profile is cut out alone: border, dimensions and loose text are droppe
 test('a sheet with nothing but its border has no profile', () => {
   assert.equal(extractProfile(sheet(400, 400, frame(0, 0, 400, 400, 4))), null);
 });
+
+test('an outline-style sheet keeps the cavity loops drawn inside the outer contour', () => {
+  const img = sheet(800, 800, [
+    ...frame(0, 0, 800, 800, 4),                          // sheet border
+    ...frame(200, 200, 400, 300, 3),                      // outer contour, thin line
+    ...frame(240, 240, 120, 100, 3),                      // a cavity: its own closed loop
+    { x: 450, y: 400, w: 12, h: 18, color: BLACK },       // a centre mark / text: no loop
+  ]);
+  const out = extractProfile(img);
+  assert.ok(out);
+  const left = Math.round((out.width - 400) / 2);
+  const top = Math.round((out.height - 300) / 2);
+  assert.deepEqual(at(out, left + 41, top + 60), BLACK, 'the cavity loop is kept');
+  assert.deepEqual(at(out, left + 255, top + 208), [255, 255, 255], 'the loose mark is dropped');
+});
+
+test('an order form (a page-wide table, no drawing) has no profile', () => {
+  const rules = [];
+  for (let i = 0; i <= 8; i++) rules.push({ x: 40, y: 100 + i * 30, w: 720, h: 2, color: BLACK });
+  for (const x of [40, 200, 360, 520, 758]) rules.push({ x, y: 100, w: 2, h: 242, color: BLACK });
+  assert.equal(extractProfile(sheet(800, 800, rules)), null);
+});
