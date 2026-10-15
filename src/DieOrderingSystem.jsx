@@ -1338,6 +1338,16 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: theme?.textDim || '#64748B', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}><X size={22} /></button>
         </div>
         <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
+          {files.profile_image && (
+            <div style={{ marginBottom: '1.5rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Profile</h3>
+              <ProfileThumb orderId={order.id} fileId={files.profile_image.id} size="100%" alt={`Profile of ${currentOrder['DIE NO']}`}
+                theme={theme} style={{ height: '220px', borderRadius: '10px' }} />
+              <span style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', color: theme?.textDim || '#64748B' }}>
+                From the die drawing PDF{files.profile_image.uploaded_by ? `, imported by ${files.profile_image.uploaded_by}` : ''}
+              </span>
+            </div>
+          )}
           <div style={{ marginBottom: '1.5rem' }}>
             <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Progress</h3>
             <ProgressPipeline order={currentOrder} />
@@ -1441,17 +1451,6 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
               {InfoRow({ label: 'Corrector', field: 'Corrector', value: currentOrder['Corrector'], type: 'select', options: correctorOptions({ correctors, plant: currentOrder.Plant, value: editedOrder['Corrector'] }), placeholder: '— select corrector —' })}
             </div>
           </div>
-
-          {files.profile_image && (
-            <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
-              <h3 style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: theme?.textDim || '#64748B', marginBottom: '12px' }}>Profile</h3>
-              <ProfileThumb orderId={order.id} fileId={files.profile_image.id} size="100%" alt={`Profile of ${currentOrder['DIE NO']}`}
-                theme={theme} style={{ height: '220px', borderRadius: '10px' }} />
-              <span style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', color: theme?.textDim || '#64748B' }}>
-                From the die drawing PDF{files.profile_image.uploaded_by ? `, imported by ${files.profile_image.uploaded_by}` : ''}
-              </span>
-            </div>
-          )}
 
           {/* Attachments Section */}
           <div style={{ marginTop: '1rem', background: theme?.inputBg || '#0F172A', borderRadius: '12px', padding: '1rem' }}>
