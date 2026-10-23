@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shouldSearch, isSearchShortcut, flattenResults, moveIndex, isAbort, shortcutLabel,
   buildOptions, highlightParts, toRecent, pushRecent, dropRecent, readRecents, writeRecents, recentsKey, RECENT_LIMIT,
+  recencyBucket, groupRecents, scopeResults, scopeRecents,
 } from './searchPalette.js';
 
 test('shouldSearch needs two non-space characters', () => {
@@ -65,10 +66,10 @@ test('highlightParts marks every query word, case-insensitively', () => {
 });
 
 test('toRecent keeps just what the empty-state row needs', () => {
-  assert.deepEqual(toRecent('order', { id: 3, 'DIE NO': 'D-3', 'Order No': 'O-3', Supplier: 'ALPHA', STATUS: 'Open' }),
-    { kind: 'order', id: 3, label: 'D-3', detail: 'O-3 · ALPHA' });
-  assert.deepEqual(toRecent('qd', { id: 9, qd_no: null, approval_state: 'Draft', die_no: 'D-1' }),
-    { kind: 'qd', id: 9, label: 'Draft QD', detail: 'D-1' });
+  assert.deepEqual(toRecent('order', { id: 3, 'DIE NO': 'D-3', 'Order No': 'O-3', Supplier: 'ALPHA', STATUS: 'Open' }, 100),
+    { kind: 'order', id: 3, label: 'D-3', detail: 'O-3 · ALPHA', openedAt: 100 });
+  assert.deepEqual(toRecent('qd', { id: 9, qd_no: null, approval_state: 'Draft', die_no: 'D-1' }, 100),
+    { kind: 'qd', id: 9, label: 'Draft QD', detail: 'D-1', openedAt: 100 });
 });
 
 test('pushRecent moves a reopened entry to the front without duplicating, and caps the list', () => {
@@ -98,4 +99,34 @@ test('shortcutLabel shows ⌘K on Mac and Ctrl K elsewhere', () => {
   assert.equal(shortcutLabel('MacIntel'), '⌘K');
   assert.equal(shortcutLabel('Win32'), 'Ctrl K');
   assert.equal(shortcutLabel(''), 'Ctrl K');
+});
+
+test('recencyBucket files by calendar day, and an undated entry under Earlier', () => {
+  const now = new Date(2026, 9, 23, 9, 0).getTime();
+  const at = (d, h = 12) => new Date(2026, 9, d, h).getTime();
+  assert.equal(recencyBucket(new Date(2026, 9, 23, 0, 5).getTime(), now), 'Today');
+  assert.equal(recencyBucket(new Date(2026, 9, 22, 23, 59).getTime(), now), 'Yesterday');
+  assert.equal(recencyBucket(at(22, 0), now), 'Yesterday');
+  assert.equal(recencyBucket(at(21), now), 'Past 7 days');
+  assert.equal(recencyBucket(at(16), now), 'Past 7 days');
+  assert.equal(recencyBucket(at(10), now), 'Past 30 days');
+  assert.equal(recencyBucket(new Date(2026, 7, 1).getTime(), now), 'Earlier');
+  assert.equal(recencyBucket(undefined, now), 'Earlier');
+});
+
+test('groupRecents keeps the newest-first order and each entry its index', () => {
+  const now = new Date(2026, 9, 23, 9, 0).getTime();
+  const list = [{ id: 1, openedAt: now - 1000 }, { id: 2, openedAt: now - 2000 }, { id: 3, openedAt: now - 3 * 86400000 }, { id: 4 }];
+  assert.deepEqual(groupRecents(list, now).map((g) => [g.label, g.entries.map((e) => e.index)]),
+    [['Today', [0, 1]], ['Past 7 days', [2]], ['Earlier', [3]]]);
+  assert.deepEqual(groupRecents([], now), []);
+});
+
+test('scope narrows results and recents to one kind', () => {
+  const results = { orders: { items: [{ id: 1 }], total: 1 }, qds: { items: [{ id: 2 }], total: 1 } };
+  assert.equal(scopeResults(results, 'all'), results);
+  assert.deepEqual(flattenResults(scopeResults(results, 'qd')), [{ kind: 'qd', item: { id: 2 } }]);
+  assert.deepEqual(flattenResults(scopeResults(results, 'order')), [{ kind: 'order', item: { id: 1 } }]);
+  assert.equal(scopeResults(null, 'qd'), null);
+  assert.deepEqual(scopeRecents([{ kind: 'order', id: 1 }, { kind: 'qd', id: 1 }], 'qd'), [{ kind: 'qd', id: 1 }]);
 });

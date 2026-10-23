@@ -44,6 +44,13 @@ body {
   border-radius: 6px;
 }
 
+/* The Ctrl+K palette's input is the whole dialog and always holds focus while
+   it is open, so its caret is the indicator; a ring would just box the text. */
+.search-palette-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* Pointer users never see it. */
 :focus:not(:focus-visible) {
   outline: none !important;

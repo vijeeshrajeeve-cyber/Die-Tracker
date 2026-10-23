@@ -41,12 +41,13 @@ export const highlightParts = (text, query) => {
 
 // Recently opened results, shown before anything is typed. Kept per user in
 // this browser only: a convenience, so a missing or corrupt list is just empty.
-export const RECENT_LIMIT = 8;
+export const RECENT_LIMIT = 15;
 export const recentsKey = (userId) => `dieTracker.search.recents.${userId ?? 'anon'}`;
 
-export const toRecent = (kind, item) => (kind === 'order'
-  ? { kind, id: item.id, label: item['DIE NO'] || '—', detail: [item['Order No'], item.Supplier].filter(Boolean).join(' · ') }
-  : { kind, id: item.id, label: item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : `QD #${item.id}`), detail: item.die_no || '' });
+// openedAt files the entry under Today / Yesterday / … in the empty state.
+export const toRecent = (kind, item, now = Date.now()) => (kind === 'order'
+  ? { kind, id: item.id, label: item['DIE NO'] || '—', detail: [item['Order No'], item.Supplier].filter(Boolean).join(' · '), openedAt: now }
+  : { kind, id: item.id, label: item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : `QD #${item.id}`), detail: item.die_no || '', openedAt: now });
 
 const sameEntry = (a, b) => a.kind === b.kind && a.id === b.id;
 
@@ -67,6 +68,43 @@ export const readRecents = (storage, key) => {
 export const writeRecents = (storage, key, list) => {
   try { storage?.setItem(key, JSON.stringify(list)); } catch { /* storage blocked or full: recents just won't persist */ }
 };
+
+// Calendar-day buckets, like the date headings in Evernote's switcher. Entries
+// saved before openedAt existed land in Earlier.
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const recencyBucket = (openedAt, now = Date.now()) => {
+  if (!Number.isFinite(openedAt)) return 'Earlier';
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const days = Math.ceil((today.getTime() - openedAt) / DAY_MS); // days before today began
+  if (openedAt >= today.getTime()) return 'Today';
+  if (days <= 1) return 'Yesterday';
+  if (days <= 7) return 'Past 7 days';
+  if (days <= 30) return 'Past 30 days';
+  return 'Earlier';
+};
+
+// The list is newest first, so each bucket is one contiguous run and the
+// option indexes stay in display order.
+export const groupRecents = (list, now = Date.now()) => (list || []).reduce((groups, entry, index) => {
+  const label = recencyBucket(entry.openedAt, now);
+  const last = groups[groups.length - 1];
+  if (last && last.label === label) last.entries.push({ entry, index });
+  else groups.push({ label, entries: [{ entry, index }] });
+  return groups;
+}, []);
+
+// The scope tabs under the search box narrow both the results and the recents.
+export const SCOPES = [
+  { key: 'all', label: 'All' },
+  { key: 'order', label: 'Die orders' },
+  { key: 'qd', label: 'Quality Discrepancies' },
+];
+export const scopeResults = (results, scope) => {
+  if (!results || scope === 'all') return results;
+  return { ...results, orders: scope === 'order' ? results.orders : undefined, qds: scope === 'qd' ? results.qds : undefined };
+};
+export const scopeRecents = (list, scope) => (scope === 'all' ? list : (list || []).filter((e) => e.kind === scope));
 
 export const moveIndex = (current, delta, length) => {
   if (!length) return -1;
