@@ -1120,6 +1120,7 @@ export const qualityDiscrepanciesAPI = {
 export const searchAPI = {
     query: (q, { signal } = {}) => apiRequest(`/search?q=${encodeURIComponent(q)}`, { signal }),
     qd: (id) => apiRequest(`/search/qd/${encodeURIComponent(id)}`),
+    order: (id) => apiRequest(`/search/order/${encodeURIComponent(id)}`),
 };
 
 // Plant Budgets API

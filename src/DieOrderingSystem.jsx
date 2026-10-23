@@ -2246,6 +2246,14 @@ export default function DieOrderingSystem() {
     setFocusQdRecord(record);
     setFocusQdId(record.id);
     setActiveTab('qd-tracker');
+    return record;
+  };
+
+  // The palette's last row: hand the query to the page's own filter, the same
+  // way openQueueSource does.
+  const searchOrdersPage = (query) => {
+    setSearchTerm(query);
+    setActiveTab('orders');
   };
 
   const openQueueSource = async (_action, item) => {
@@ -3488,8 +3496,9 @@ export default function DieOrderingSystem() {
 
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showSearch && !forcePasswordChange && (
-          <SearchPalette open onClose={() => setShowSearch(false)} theme={theme}
-            onOpenOrder={openSearchOrder} onOpenQd={openSearchQd} />
+          <SearchPalette open onClose={() => setShowSearch(false)} theme={theme} userId={user?.id}
+            onOpenOrder={openSearchOrder} onOpenQd={openSearchQd}
+            onSearchOrdersPage={hasPageAccess('orders') ? searchOrdersPage : undefined} />
         )}
         {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onImport={handleImport} />}
         {showPDFImportModal && (

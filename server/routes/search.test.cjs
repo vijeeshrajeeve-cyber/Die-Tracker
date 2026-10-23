@@ -184,3 +184,45 @@ test('the QD record endpoint refuses users without QD access and bad ids', async
   assert.equal((await openQd(0)).status, 400);
   assert.equal((await openQd(123)).status, 404);
 });
+
+test('a multi-word query binds each word after the fixed parameters', async () => {
+  currentUser = { id: 42, username: 'raiser', role: 'user', pageAccess: ['orders', 'qd-tracker'] };
+  await find('hydro 30533');
+  const orders = log.find(({ q }) => q.startsWith('SELECT o.*'));
+  assert.deepEqual(orders.params.slice(3), ['%hydro%', '%30533%']);
+  assert.match(orders.q, /supplier ILIKE \$4 .* AND .*supplier ILIKE \$5/);
+  const qds = log.find(({ q }) => q.startsWith('SELECT * FROM quality_discrepancies'));
+  assert.equal(qds.params[3], 42, 'the user id keeps $4');
+  assert.deepEqual(qds.params.slice(4), ['%hydro%', '%30533%']);
+  const count = log.find(({ q }) => q.startsWith('SELECT COUNT(*)::int AS total FROM quality_discrepancies'));
+  assert.deepEqual(count.params, ['%hydro 30533%', 42, '%hydro%', '%30533%']);
+  assert.match(count.q, /ILIKE \$3 .* AND .*ILIKE \$4/);
+});
+
+test('a one-word query sends no token parameters', async () => {
+  await find('D-1');
+  const orders = log.find(({ q }) => q.startsWith('SELECT o.*'));
+  assert.equal(orders.params.length, 3);
+});
+
+const openOrder = (id) => request(base, `/api/search/order/${id}`);
+
+test('the order record endpoint returns a presented order with its thumbnail id', async () => {
+  orderRows = [{ id: 7, die_no: 'D-7', order_no: 'O-7', supplier: 'ALPHA', created_at: '2026-01-01', profile_image_id: 12 }];
+  const { status, body } = await openOrder(7);
+  assert.equal(status, 200);
+  assert.equal(body['DIE NO'], 'D-7');
+  assert.equal(body.profileImageId, 12);
+  const select = log.find(({ q }) => q.startsWith('SELECT o.*'));
+  assert.match(select.q, /WHERE o\.id = \$1$/);
+  assert.deepEqual(select.params, [7]);
+});
+
+test('the order record endpoint refuses users without order access, bad ids, and missing orders', async () => {
+  currentUser = { id: 3, username: 'qd-only', role: 'user', pageAccess: ['qd-tracker'] };
+  assert.equal((await openOrder(7)).status, 403);
+  currentUser = ADMIN;
+  assert.equal((await openOrder('abc')).status, 400);
+  assert.equal((await openOrder(0)).status, 400);
+  assert.equal((await openOrder(123)).status, 404);
+});

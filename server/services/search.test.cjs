@@ -80,3 +80,29 @@ test('QD ranking uses qd_no / die_no as primary and raised_date for recency', ()
   ];
   assert.deepEqual(search.rankRows(rows, 'qd-25-031', search.QD_SEARCH).map(r => r.row.id), [1, 2]);
 });
+
+test('tokenise splits on whitespace, lower-cases, drops repeats and caps the count', () => {
+  assert.deepEqual(search.tokenise('  Hydro   30533 hydro '), ['hydro', '30533']);
+  assert.equal(search.tokenise('a b c d e f g').length, search.MAX_TOKENS);
+  assert.deepEqual(search.tokenPatterns('D-12'), [], 'one word needs no token parameters');
+  assert.deepEqual(search.tokenPatterns('hydro 30_5'), ['%hydro%', '%30\\_5%']);
+});
+
+test('a multi-word matchClause ORs the phrase with every word, numbered from tokenStart', () => {
+  assert.equal(
+    search.matchClause(['die_no', 'supplier'], 4, 2),
+    '((die_no ILIKE $1 OR supplier ILIKE $1) OR ((die_no ILIKE $4 OR supplier ILIKE $4) AND (die_no ILIKE $5 OR supplier ILIKE $5)))',
+  );
+  assert.equal(search.matchClause(['die_no'], 4, 1), '(die_no ILIKE $1)');
+});
+
+test('words spread across fields match, ranked below any phrase match', () => {
+  const rows = [
+    order(1, { die_no: '30533-A', supplier: 'Hydro Extrusion' }, '2026-09-01'), // both words, different fields
+    order(2, { supplier: 'hydro 30533 ltd' }, '2025-01-01'),                     // the phrase itself
+    order(3, { die_no: '30533-B', supplier: 'Alcoa' }),                          // one word only
+  ];
+  const ranked = search.rankRows(rows, 'hydro 30533', search.ORDER_SEARCH);
+  assert.deepEqual(ranked.map(r => r.row.id), [2, 1]);
+  assert.equal(ranked[1].matchedField, 'supplier', 'matchedField follows the first word');
+});

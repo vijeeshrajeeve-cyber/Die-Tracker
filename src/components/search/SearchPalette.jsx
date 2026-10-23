@@ -1,12 +1,13 @@
 // src/components/search/SearchPalette.jsx
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Search, Package, AlertTriangle } from 'lucide-react';
+import { Search, Package, AlertTriangle, X } from 'lucide-react';
 import useDialog from '../../hooks/useDialog';
 import StatusPill from '../ui/StatusPill';
 import ProfileThumb from '../orders/ProfileThumb';
 import { searchAPI } from '../../api';
 import {
-  shouldSearch, flattenResults, moveIndex, isAbort, DEBOUNCE_MS, GROUP_LABELS,
+  shouldSearch, buildOptions, moveIndex, isAbort, isSearchShortcut, highlightParts,
+  toRecent, pushRecent, dropRecent, readRecents, writeRecents, recentsKey, DEBOUNCE_MS, GROUP_LABELS,
 } from '../../utils/searchPalette';
 
 const formatDate = (value) => {
@@ -15,7 +16,21 @@ const formatDate = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpenQd }) {
+// Reading window.localStorage itself throws when site data is blocked.
+const browserStorage = () => {
+  try { return window.localStorage; } catch { return null; }
+};
+
+const KIND_ICONS = { order: Package, qd: AlertTriangle };
+
+// The typed words picked out in each row, so it is obvious why a row matched.
+function Highlight({ text, query }) {
+  return highlightParts(text, query).map((part, i) => (part.match
+    ? <mark key={i} style={{ background: 'rgba(250, 204, 21, 0.35)', color: 'inherit', borderRadius: 2 }}>{part.text}</mark>
+    : <React.Fragment key={i}>{part.text}</React.Fragment>));
+}
+
+export default function SearchPalette({ open, onClose, theme, userId, onOpenOrder, onOpenQd, onSearchOrdersPage }) {
   const dialogRef = useDialog({ open, onClose });
   const titleId = useId();
   const [query, setQuery] = useState('');
@@ -24,6 +39,8 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
   const [active, setActive] = useState(-1);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState('');
+  const storageKey = recentsKey(userId);
+  const [recents, setRecents] = useState(() => readRecents(browserStorage(), storageKey));
   const listRef = useRef(null);
   const inputRef = useRef(null);
   // An Enter pressed before the results for the typed query have arrived.
@@ -47,7 +64,7 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
     setStatus('loading');
     const timer = setTimeout(() => {
       searchAPI.query(query.trim(), { signal: controller.signal })
-        .then((body) => { setResults(body); setStatus('done'); setActive(flattenResults(body).length ? 0 : -1); })
+        .then((body) => { setResults(body); setStatus('done'); setActive(buildOptions(body, query).length ? 0 : -1); })
         .catch((error) => {
           if (isAbort(error)) return;
           setResults(null);
@@ -58,22 +75,47 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
     return () => { clearTimeout(timer); controller.abort(); };
   }, [open, query]);
 
-  const flat = useMemo(() => flattenResults(results), [results]);
+  // Nothing typed yet: the recently opened list stands in for results.
+  const showingRecents = status === 'idle' && recents.length > 0;
+  const options = useMemo(() => (showingRecents
+    ? recents.map((entry) => ({ kind: entry.kind, item: entry, recent: true }))
+    : buildOptions(results, query, { canSearchOrdersPage: Boolean(onSearchOrdersPage) })),
+  [showingRecents, recents, results, query, onSearchOrdersPage]);
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [active]);
 
+  const saveRecents = (next) => { setRecents(next); writeRecents(browserStorage(), storageKey, next); };
+  const remember = (kind, item) => saveRecents(pushRecent(recents, toRecent(kind, item)));
+  const forget = (entry) => {
+    saveRecents(dropRecent(recents, entry));
+    setActive(-1);
+  };
+
   const choose = async (entry) => {
     if (!entry || opening) return;
     setOpenError('');
-    if (entry.kind === 'order') { onOpenOrder(entry.item); onClose(); return; }
+    if (entry.kind === 'orders-page') { onSearchOrdersPage(entry.item.query); onClose(); return; }
+    if (entry.kind === 'order' && !entry.recent) { remember('order', entry.item); onOpenOrder(entry.item); onClose(); return; }
     setOpening(true);
     try {
-      await onOpenQd(entry.item);
+      if (entry.kind === 'order') {
+        // A recent is only a label: re-read it so the drawer gets today's order.
+        const order = await searchAPI.order(entry.item.id);
+        remember('order', order);
+        onOpenOrder(order);
+      } else {
+        const record = await onOpenQd(entry.item);
+        // The opened record relabels the recent, e.g. a draft that now has a QD no.
+        if (record) remember('qd', record);
+        else if (!entry.recent) remember('qd', entry.item);
+      }
       onClose();
     } catch (error) {
-      setOpenError(error?.message || 'Could not open that QD');
+      // Gone, or no longer yours to open: stop offering it.
+      if (entry.recent && (error?.status === 404 || error?.status === 403)) forget(entry.item);
+      setOpenError(error?.message || (entry.kind === 'order' ? 'Could not open that order' : 'Could not open that QD'));
     } finally {
       setOpening(false);
     }
@@ -84,16 +126,20 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
   useEffect(() => {
     if (!pendingEnter.current || (status !== 'done' && status !== 'error')) return;
     pendingEnter.current = false;
-    if (status === 'done' && flat[0]) choose(flat[0]);
+    if (status === 'done' && options[0]) choose(options[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, flat]);
+  }, [status, options]);
 
   const onKeyDown = (event) => {
-    if (event.key === 'ArrowDown') { event.preventDefault(); setActive((i) => moveIndex(i, 1, flat.length)); }
-    else if (event.key === 'ArrowUp') { event.preventDefault(); setActive((i) => moveIndex(i, -1, flat.length)); }
+    // The shortcut that opened the palette also closes it. Stopped here so the
+    // page-level listener doesn't reopen it once this one has unmounted.
+    if (isSearchShortcut(event)) { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+    const step = event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey) ? 1
+      : event.key === 'ArrowUp' || (event.key === 'Tab' && event.shiftKey) ? -1 : 0;
+    if (step) { event.preventDefault(); setActive((i) => moveIndex(i, step, options.length)); }
     else if (event.key === 'Enter') {
       event.preventDefault();
-      if (flat[active]) choose(flat[active]);
+      if (options[active]) choose(options[active]);
       else if (shouldSearch(query) && status !== 'done' && status !== 'error') pendingEnter.current = true;
     }
   };
@@ -101,12 +147,21 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
   if (!open) return null;
 
   const muted = { color: theme.textMuted, fontSize: '0.8rem' };
+  const groupLabel = { ...muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '8px 16px 4px' };
+  const rowProps = (i, entry) => ({
+    id: `${titleId}-opt-${i}`, 'data-index': i, role: 'option', 'aria-selected': i === active,
+    onMouseMove: () => setActive(i), onClick: () => choose(entry),
+    style: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', cursor: 'pointer', background: i === active ? theme.rowHover : 'transparent' },
+  });
+
   const groups = [
-    { kind: 'order', group: results?.orders, Icon: Package },
-    { kind: 'qd', group: results?.qds, Icon: AlertTriangle },
+    { kind: 'order', group: results?.orders },
+    { kind: 'qd', group: results?.qds },
   ].filter(({ group }) => group && group.items.length);
+  const q = query.trim();
 
   let index = -1;
+  const pageEntry = options.find((entry) => entry.kind === 'orders-page');
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '12vh 16px 16px' }}>
@@ -116,7 +171,7 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}` }}>
           <Search size={18} style={{ color: theme.textDim, flexShrink: 0 }} />
           <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
-            role="combobox" aria-expanded={flat.length > 0} aria-controls={`${titleId}-list`}
+            role="combobox" aria-expanded={options.length > 0} aria-controls={`${titleId}-list`}
             aria-activedescendant={active >= 0 ? `${titleId}-opt-${active}` : undefined}
             aria-label="Search die orders and QDs" placeholder="Search die no, order no, QD no, supplier…"
             style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: theme.text, fontSize: '1rem' }} />
@@ -124,39 +179,57 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
         </div>
 
         <div ref={listRef} id={`${titleId}-list`} role="listbox" style={{ maxHeight: '55vh', overflowY: 'auto', padding: '6px 0' }}>
-          {status === 'idle' && <p style={{ ...muted, padding: '14px 16px' }}>Type at least 2 characters to search die orders and Quality Discrepancies.</p>}
+          {status === 'idle' && !showingRecents && <p style={{ ...muted, padding: '14px 16px' }}>Type at least 2 characters to search die orders and Quality Discrepancies. Several words match across fields, e.g. “hydro 30533”.</p>}
           {status === 'loading' && !results && <p style={{ ...muted, padding: '14px 16px' }}>Searching…</p>}
           {status === 'error' && <p role="alert" style={{ padding: '14px 16px', color: '#ef4444', fontSize: '0.85rem' }}>Search failed — try again.</p>}
-          {status === 'done' && flat.length === 0 && <p style={{ ...muted, padding: '14px 16px' }}>No matches for “{query.trim()}”.</p>}
+          {status === 'done' && options.length === 0 && <p style={{ ...muted, padding: '14px 16px' }}>No matches for “{q}”.</p>}
+
+          {showingRecents && (
+            <div role="group" aria-label="Recently opened">
+              <div style={groupLabel}>Recently opened</div>
+              {options.map((entry, i) => {
+                const Icon = KIND_ICONS[entry.kind];
+                return (
+                  <div key={`recent-${entry.kind}-${entry.item.id}`} {...rowProps(i, entry)}>
+                    <Icon size={16} style={{ color: theme.textDim, flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600 }}>{entry.item.label}</span>
+                    <span style={{ ...muted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.item.detail}</span>
+                    {/* Mouse-only, so Tab keeps moving through the rows. */}
+                    <button type="button" tabIndex={-1} aria-label={`Remove ${entry.item.label} from recently opened`}
+                      onClick={(e) => { e.stopPropagation(); forget(entry.item); }}
+                      style={{ border: 'none', background: 'transparent', color: theme.textDim, cursor: 'pointer', padding: 2, display: 'flex' }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {groups.map((entry) => {
             const { kind, group } = entry;
-            const Icon = entry.Icon; // capitalised const so the JSX use below is accepted by no-unused-vars
+            const Icon = KIND_ICONS[kind];
             return (
             <div key={kind} role="group" aria-label={GROUP_LABELS[kind]}>
-              <div style={{ ...muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '8px 16px 4px' }}>{GROUP_LABELS[kind]}</div>
+              <div style={groupLabel}>{GROUP_LABELS[kind]}</div>
               {group.items.map((item) => {
                 index += 1;
-                const i = index;
-                const isActive = i === active;
                 return (
-                  <div key={`${kind}-${item.id}`} id={`${titleId}-opt-${i}`} data-index={i} role="option" aria-selected={isActive}
-                    onMouseMove={() => setActive(i)} onClick={() => choose({ kind, item })}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', cursor: 'pointer', background: isActive ? theme.rowHover : 'transparent' }}>
+                  <div key={`${kind}-${item.id}`} {...rowProps(index, { kind, item })}>
                     {kind === 'order' && item.profileImageId
                       ? <ProfileThumb orderId={item.id} fileId={item.profileImageId} size={32} alt={`Profile of ${item['DIE NO']}`} theme={theme} />
                       : <Icon size={16} style={{ color: theme.textDim, flexShrink: 0 }} />}
                     {kind === 'order' ? (
                       <>
-                        <span style={{ fontWeight: 600 }}>{item['DIE NO'] || '—'}</span>
-                        <span style={muted}>{item['Order No'] || 'No order no'}</span>
-                        <span style={{ ...muted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.Supplier || ''}</span>
+                        <span style={{ fontWeight: 600 }}><Highlight text={item['DIE NO'] || '—'} query={q} /></span>
+                        <span style={muted}><Highlight text={item['Order No'] || 'No order no'} query={q} /></span>
+                        <span style={{ ...muted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Highlight text={item.Supplier || ''} query={q} /></span>
                         {item.STATUS && <StatusPill status={item.STATUS} theme={theme} />}
                       </>
                     ) : (
                       <>
-                        <span style={{ fontWeight: 600 }}>{item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : `QD #${item.id}`)}</span>
-                        <span style={muted}>{item.die_no}</span>
+                        <span style={{ fontWeight: 600 }}><Highlight text={item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : `QD #${item.id}`)} query={q} /></span>
+                        <span style={muted}><Highlight text={item.die_no} query={q} /></span>
                         <span style={{ ...muted, flex: 1 }}>{formatDate(item.raised_date)}</span>
                         <span style={{ ...muted, fontWeight: 600 }}>{item.approval_state === 'Draft' ? 'Draft' : item.status}</span>
                       </>
@@ -170,6 +243,13 @@ export default function SearchPalette({ open, onClose, theme, onOpenOrder, onOpe
             </div>
             );
           })}
+
+          {pageEntry && (
+            <div {...rowProps(options.length - 1, pageEntry)} style={{ ...rowProps(options.length - 1, pageEntry).style, borderTop: `1px solid ${theme.cardBorder}`, marginTop: 4 }}>
+              <Search size={16} style={{ color: theme.textDim, flexShrink: 0 }} />
+              <span>Filter the die orders page by “<b>{pageEntry.item.query}</b>”</span>
+            </div>
+          )}
         </div>
 
         {(opening || openError) && (
