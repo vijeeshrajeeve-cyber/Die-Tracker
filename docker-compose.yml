@@ -151,6 +151,9 @@ services:
     ports:
       - "${STUDIO_PORT:-8082}:3000"
     environment:
+      # Next.js binds to $HOSTNAME, which Docker sets to the container id — so it
+      # never listens on loopback and the image's localhost:3000 healthcheck fails.
+      HOSTNAME: 0.0.0.0
       STUDIO_PG_META_URL: http://supabase-meta:8080
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       DEFAULT_ORGANIZATION_NAME: "Gulf Extrusions Die Shop"
