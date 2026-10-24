@@ -48,13 +48,25 @@ export function oracleFill() {
   }
   function visible(el) { return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length); }
   function controlAfter(node) {
-    // The first visible control after the label inside the label's table row.
-    var row = node.closest('tr') || node.parentElement;
-    var all = row ? row.querySelectorAll('input, select, textarea') : [];
-    for (var i = 0; i < all.length; i++) {
-      if (isControl(all[i]) && visible(all[i]) && (node.compareDocumentPosition(all[i]) & Node.DOCUMENT_POSITION_FOLLOWING)) return all[i];
+    // The first visible control after the label, in the label's own cell or the
+    // cells right after it. A cell with text but no control is the next field's
+    // label (or a read-only value), so the search stops there rather than borrow
+    // another field's box.
+    function first(scope) {
+      var all = scope.querySelectorAll('input, select, textarea');
+      for (var i = 0; i < all.length; i++) {
+        if (isControl(all[i]) && visible(all[i]) && (node.compareDocumentPosition(all[i]) & Node.DOCUMENT_POSITION_FOLLOWING)) return all[i];
+      }
+      return null;
     }
-    return null;
+    var cell = node.closest('td, th');
+    if (!cell) return node.parentElement ? first(node.parentElement) : null;
+    var found = first(cell);
+    for (var next = cell.nextElementSibling; !found && next; next = next.nextElementSibling) {
+      found = first(next);
+      if (!found && norm(next.textContent)) return null;
+    }
+    return found;
   }
   function field(label) {
     var want = norm(label);
@@ -88,17 +100,13 @@ export function oracleFill() {
   function setSelect(el, wanted) {
     var names = [].concat(wanted).filter(Boolean).map(function (w) { return String(w).trim().toLowerCase(); });
     var options = [].slice.call(el.options);
+    // Exact option text or value only: a near match ("1" for 12, "Phoenix" for
+    // Phoenix Middle East) would be a different press or supplier.
     var pick = null;
     names.some(function (n) {
       pick = options.find(function (o) { return o.text.trim().toLowerCase() === n || o.value.trim().toLowerCase() === n; });
       return !!pick;
     });
-    if (!pick) {
-      names.some(function (n) {
-        pick = options.find(function (o) { var t = o.text.trim().toLowerCase(); return t && (t.indexOf(n) === 0 || n.indexOf(t) === 0); });
-        return !!pick;
-      });
-    }
     if (!pick) return false;
     el.value = pick.value;
     fire(el, 'change');

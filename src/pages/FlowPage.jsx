@@ -187,8 +187,8 @@ export default function FlowPage({
   const isPR = currentFlow.status === 'PENDING FOR PR';
   const isDesignApproval = currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
   const isOracleEntry = currentFlow.status === 'PENDING FOR ORACLE ENTRY';
-  // Oracle Entry batch: the dies on the page, toolings never, minus any unticked.
-  const oracleDies = isOracleEntry ? flowOrders.filter(o => !isTooling(o)) : [];
+  // Oracle Entry batch: the dies the table shows (search applies), toolings never, minus any unticked.
+  const oracleDies = isOracleEntry ? filteredOrders.filter(o => !isTooling(o)) : [];
   const oracleBatchOrders = oracleDies.filter(o => !untickedForOracle.has(o.id));
 
   const columns = [

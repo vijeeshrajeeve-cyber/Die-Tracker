@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isTooling, nextStatusAfter, designToEmsSince, toOracleDie, buildOracleBatch, batchSummary, ORACLE_BATCH_MARK } from './oracleEntry.js';
+import { isTooling, nextStatusAfter, designToEmsSince, toOracleDie, buildOracleBatch, batchSummary, isBolsterOrInsertNo, ORACLE_BATCH_MARK } from './oracleEntry.js';
 
 test('a tooling is order type T, whatever its case or padding', () => {
   assert.equal(isTooling({ TYPE: 'T' }), true);
@@ -95,4 +95,12 @@ test('the copy message says how many dies went into the batch and which were lef
     'Copied 2 dies for Oracle (1 to check: 32148-401). Left out: INS-30713 (tooling — not an Oracle asset). In Oracle, click Fill die and paste.',
   );
   assert.equal(batchSummary(buildOracleBatch([])), 'No dies selected.');
+});
+
+test('bolster and insert numbers are not dies, so they stay out of the batch', () => {
+  for (const dieNo of ['25IC2-030724', 'INS-30732', 'I-05138', 'BOL-30587', 'B-12345']) {
+    assert.equal(isBolsterOrInsertNo(dieNo), true, dieNo);
+    assert.deepEqual(toOracleDie({ ...DIE_30713, 'DIE NO': dieNo }), { ok: false, reason: 'bolster/insert — not a die' }, dieNo);
+  }
+  for (const dieNo of ['30713-201', '030724-701', '120658-803']) assert.equal(isBolsterOrInsertNo(dieNo), false, dieNo);
 });

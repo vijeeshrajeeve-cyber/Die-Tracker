@@ -1043,7 +1043,9 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'die_type_backfill_v1') THEN
           UPDATE die_orders
              SET die_type = CASE WHEN COALESCE(mandrels_per_cavity, 0) > 0 THEN 'HOLLOW' ELSE 'SOLID' END
-           WHERE die_type IS NULL AND COALESCE(type, '') <> 'T';
+           WHERE die_type IS NULL AND COALESCE(type, '') <> 'T'
+             -- bolster/insert orders cut from a die PDF (isBolsterOrInsertNo in src/utils/oracleEntry.js)
+             AND die_no !~* '^(I|INS|B|BOL)-[0-9]+$' AND die_no !~ '^[0-9]+[A-Za-z][A-Za-z0-9]*-[0-9]+$';
           INSERT INTO app_migrations (id) VALUES ('die_type_backfill_v1');
         END IF;
       END $$;

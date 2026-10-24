@@ -57,9 +57,19 @@ const supplierNamesFor = (code) => [
   code, ...Object.keys(SUPPLIER_ALIASES).filter((alias) => SUPPLIER_ALIASES[alias] === code),
 ];
 
+// A bolster or insert cut from a die order PDF carries its own number as the
+// die number (PDFImportModal: "I-30602", "BOL-30587", "25IC2-030724") and the
+// die's order type. It is not a die, so it is not created in Oracle as one.
+// Mirrored in the die_type backfill in server/db.cjs.
+export const isBolsterOrInsertNo = (dieNo) => {
+  const text = String(dieNo ?? '').trim();
+  return /^(I|INS|B|BOL)-\d+$/i.test(text) || /^\d+[A-Za-z][A-Za-z0-9]*-\d+$/.test(text);
+};
+
 export const toOracleDie = (order) => {
   if (isTooling(order)) return { ok: false, reason: 'tooling — not an Oracle asset' };
   const dieNo = String(order?.['DIE NO'] ?? '').trim();
+  if (isBolsterOrInsertNo(dieNo)) return { ok: false, reason: 'bolster/insert — not a die' };
   const split = dieNo.match(/^([A-Za-z0-9]+)-(\d+)$/);
   if (!split) return { ok: false, reason: 'die number is not <profile>-<index>' };
   const [, profileId, dieIndex] = split;
