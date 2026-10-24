@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isTooling, nextStatusAfter, designToEmsSince, toOracleDie, buildOracleBatch, ORACLE_BATCH_MARK } from './oracleEntry.js';
+import { isTooling, nextStatusAfter, designToEmsSince, toOracleDie, buildOracleBatch, batchSummary, ORACLE_BATCH_MARK } from './oracleEntry.js';
 
 test('a tooling is order type T, whatever its case or padding', () => {
   assert.equal(isTooling({ TYPE: 'T' }), true);
@@ -86,4 +86,13 @@ test('a batch is marked text the Fill die bookmark recognises, with the left-out
   assert.deepEqual(batch.skipped, [{ dieNo: 'BOL 2-2-A', reason: 'tooling — not an Oracle asset' }]);
   assert.ok(batch.text.startsWith(`${ORACLE_BATCH_MARK}\n`));
   assert.deepEqual(JSON.parse(batch.text.slice(ORACLE_BATCH_MARK.length + 1)), batch.dies);
+});
+
+test('the copy message says how many dies went into the batch and which were left out', () => {
+  assert.equal(batchSummary(buildOracleBatch([DIE_30713])), 'Copied 1 die for Oracle. In Oracle, click Fill die and paste.');
+  assert.equal(
+    batchSummary(buildOracleBatch([DIE_30713, { ...DIE_30713, 'DIE NO': '32148-401', 'Die Type': null }, { ...DIE_30713, 'DIE NO': 'INS-30713', TYPE: 'T' }])),
+    'Copied 2 dies for Oracle (1 to check: 32148-401). Left out: INS-30713 (tooling — not an Oracle asset). In Oracle, click Fill die and paste.',
+  );
+  assert.equal(batchSummary(buildOracleBatch([])), 'No dies selected.');
 });

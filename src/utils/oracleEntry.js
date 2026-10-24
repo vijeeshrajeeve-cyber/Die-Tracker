@@ -101,3 +101,14 @@ export const buildOracleBatch = (orders) => {
   return { dies, skipped, text: `${ORACLE_BATCH_MARK}
 ${JSON.stringify(dies)}` };
 };
+
+// The toast after "Copy batch for Oracle".
+export const batchSummary = ({ dies, skipped }) => {
+  if (!dies.length && !skipped.length) return 'No dies selected.';
+  const flagged = dies.filter((d) => d.flags.length).map((d) => d.dieNo);
+  let text = `Copied ${dies.length} ${dies.length === 1 ? 'die' : 'dies'} for Oracle`;
+  if (flagged.length) text += ` (${flagged.length} to check: ${flagged.join(', ')})`;
+  text += '.';
+  if (skipped.length) text += ` Left out: ${skipped.map((s) => `${s.dieNo} (${s.reason})`).join(', ')}.`;
+  return dies.length ? `${text} In Oracle, click Fill die and paste.` : text;
+};

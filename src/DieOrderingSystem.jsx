@@ -3378,7 +3378,7 @@ export default function DieOrderingSystem() {
               handleInlineFieldSave={handleInlineFieldSave} handleSizeChange={handleSizeChange}
               handleMandrelsChange={handleMandrelsChange} handlePRNumberChange={handlePRNumberChange}
               handleCavityChange={handleCavityChange}
-              copyForERP={copyForERP}
+              copyForERP={copyForERP} copyToClipboard={copyToClipboard}
             />
           )}
 
