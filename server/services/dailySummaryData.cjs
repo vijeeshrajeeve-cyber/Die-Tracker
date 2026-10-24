@@ -91,7 +91,7 @@ const PENDING_STAGES = [
   { status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval',   ageFrom: ['design_received_date', 'three_d_model_received_date'] },
   { status: 'PENDING FOR PR',              label: 'Pending PR',        ageFrom: ['design_approved_date'] },
   { status: 'PENDING FOR ORACLE ENTRY',    label: 'Oracle Entry',      ageFrom: ['pr_entry'] },
-  { status: 'PENDING FOR DESIGN TO EMS',   label: 'Design to EMS',     ageFrom: ['oracle_entry'] },
+  { status: 'PENDING FOR DESIGN TO EMS',   label: 'Design to EMS',     ageFrom: ['oracle_entry', 'pr_entry'] }, // toolings skip Oracle Entry
   { status: 'DONE',                        label: 'In Manufacturing',  ageFrom: ['design_to_ems_date'] },
   { status: 'DIE RECEIVED',                label: 'Die Received',      ageFrom: ['die_received_date'] },
   { status: 'HOLD',                        label: 'On Hold',           ageFrom: ['die_requested_date'] },

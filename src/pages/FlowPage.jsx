@@ -6,6 +6,7 @@ import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 import { todayLocal } from '../utils/today.js';
+import { designToEmsSince, nextStatusAfter } from '../utils/oracleEntry';
 import useDialog from '../hooks/useDialog';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
@@ -48,7 +49,7 @@ const getStageEntryDate = (order) => {
       return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
-    case 'PENDING FOR DESIGN TO EMS': return order['Oracle Entry'];
+    case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);
     default: return null;
   }
 };
@@ -125,7 +126,7 @@ export default function FlowPage({
     const today = todayLocal();
     const nextStatus = currentFlow.status === 'AWAITING FOR DESIGN' && isSimulationEnabled(order.simulationEnabled)
       ? 'UNDER SIMULATION'
-      : workflow.nextStatus;
+      : nextStatusAfter(order, currentFlow.status);
     const changeLogEntry = {
       date: today,
       field: 'STATUS',

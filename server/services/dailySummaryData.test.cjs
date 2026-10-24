@@ -395,3 +395,10 @@ test('the pending statuses match the frontend status vocabulary', () => {
   assert.deepEqual([...server].sort(), frontend.filter(s => s !== 'CANCELLED').sort(),
     'PENDING_STAGES must cover every status in STATUS_CONFIG except CANCELLED');
 });
+
+test('a tooling in Design to EMS skipped Oracle Entry, so it waits from its PR entry', () => {
+  const p = data.buildPending([
+    order({ status: 'PENDING FOR DESIGN TO EMS', type: 'T', oracle_entry: null, pr_entry: '2026-08-25', die_requested_date: '2026-08-01' }),
+  ], '2026-08-29');
+  assert.equal(pendingFor(p, 'PENDING FOR DESIGN TO EMS').oldestDays, 4);
+});

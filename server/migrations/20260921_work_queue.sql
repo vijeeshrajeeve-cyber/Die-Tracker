@@ -203,7 +203,7 @@ BEGIN
        WHEN 'PENDING FOR DESIGN APPROVAL' THEN st:='design_approval'; label:='Design Approval'; anchor:=COALESCE(NULLIF(rev->>'design_received_date',''),s->>'design_received_date');
        WHEN 'PENDING FOR PR' THEN st:='pending_pr'; label:='Pending PR'; anchor:=s->>'design_approved_date';
        WHEN 'PENDING FOR ORACLE ENTRY' THEN st:='oracle_entry'; label:='Oracle Entry'; anchor:=s->>'pr_entry';
-       WHEN 'PENDING FOR DESIGN TO EMS' THEN st:='design_to_ems'; label:='Design to EMS'; anchor:=s->>'oracle_entry';
+       WHEN 'PENDING FOR DESIGN TO EMS' THEN st:='design_to_ems'; label:='Design to EMS'; anchor:=COALESCE(NULLIF(s->>'oracle_entry',''),s->>'pr_entry'); -- toolings skip Oracle Entry
        WHEN 'DONE' THEN st:='manufacturing'; label:='In Manufacturing'; anchor:=s->>'design_to_ems_date'; eta:=s->>'eta';
        ELSE st:='needs_setup'; label:=CASE WHEN held THEN 'On Hold' ELSE 'Unknown Order Status' END;
          reason:=CASE WHEN held THEN 'Held source has no known prior queue stage' ELSE 'Unknown order status: '||status END;
