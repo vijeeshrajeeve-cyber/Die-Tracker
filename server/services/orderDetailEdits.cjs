@@ -43,6 +43,7 @@ const EDITABLE_FIELDS = Object.freeze({
   'Cavity':                 { col: 'cavity', type: 'int', max: 10000 },
   'Mandrels per Cavity':    { col: 'mandrels_per_cavity', type: 'int', max: 10000 },
   'Total Mandrels':         { col: 'total_mandrels', type: 'int', max: 100000 },
+  'Die Type':               { col: 'die_type', type: 'text', oneOf: ['HOLLOW', 'SOLID'] },
   'Type of shipment':       { col: 'shipment_type', type: 'text', oneOf: ['AIR', 'LAND'] },
   'Supplier':               { col: 'supplier', type: 'text' },
   'Customer Name':          { col: 'customer_name', type: 'text' },

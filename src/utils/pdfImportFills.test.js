@@ -123,3 +123,13 @@ test('type and mandrels are not on the PDF, so a value carried from another die 
   // A value the user picks in the preview still fills the blank.
   assert.equal(planPdfFills(insert, { ...row, TYPE: 'N' }).fields.TYPE, 'N');
 });
+
+test('the die type the PDF read fills a blank die type and never replaces a set one', () => {
+  const blank = { ...EXISTING, 'Die Type': null };
+  const row = mergeExistingForPreview(blank, { ...PARSED, 'Die Type': 'HOLLOW' }, FROM_PDF);
+  assert.equal(planPdfFills(blank, row).fields['Die Type'], 'HOLLOW');
+  const set = { ...EXISTING, 'Die Type': 'SOLID' };
+  const kept = mergeExistingForPreview(set, { ...PARSED, 'Die Type': 'HOLLOW' }, FROM_PDF);
+  assert.equal(kept['Die Type'], 'SOLID');
+  assert.equal('Die Type' in planPdfFills(set, kept).fields, false);
+});

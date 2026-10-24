@@ -259,6 +259,7 @@ const orderValidation = [
     body('Mandrels per Cavity').optional().isInt({ min: 0, max: 10000 }).withMessage('Invalid mandrels per cavity'),
     body('Cavity').optional().isInt({ min: 0, max: 10000 }).withMessage('Invalid cavity count'),
     body('Total Mandrels').optional().isInt({ min: 0, max: 100000 }).withMessage('Invalid total mandrels'),
+    body('Die Type').optional({ nullable: true }).isIn(['HOLLOW', 'SOLID', '']).withMessage('Invalid die type'),
     body('Design Received Date').optional().customSanitizer(sanitizeString),
     body('3D Model Received Date').optional().customSanitizer(sanitizeString),
     body('simulationEnabled').optional().toBoolean(),
@@ -351,8 +352,8 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 urgency, special_follow_up, design_to_ems_date,
                 frozen_design_id, frozen_design_action,
                 frozen_design_override_reason, frozen_design_override_note,
-                created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43)
+                created_by, die_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -397,7 +398,8 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['frozenDesignAction']),
             sanitizeString(order['frozenDesignOverrideReason']),
             sanitizeString(order['frozenDesignOverrideNote']),
-            req.user.id
+            req.user.id,
+            sanitizeString(order['Die Type']) || null
         ]);
 
         await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
@@ -431,6 +433,7 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
             'Type of shipment':       { col: 'shipment_type',               fn: sanitizeString },
             'Mandrels per Cavity':    { col: 'mandrels_per_cavity',         fn: (v) => Math.round(v || 0) },
             'Total Mandrels':         { col: 'total_mandrels',              fn: (v) => Math.round(v || 0) },
+            'Die Type':               { col: 'die_type',                    fn: (v) => sanitizeString(v) || null },
             'Cavity':                 { col: 'cavity',                      fn: (v) => Math.round(v || 0) },
             'Design Received Date':   { col: 'design_received_date',        fn: sanitizeDate   },
             '3D Model Received Date': { col: 'three_d_model_received_date', fn: sanitizeDate   },

@@ -116,3 +116,11 @@ test('rows map onto drawer fields, and the yes/no integer column is written as 0
   assert.equal(columnValue('simulationEnabled', false), 0);
   assert.equal(columnValue('specialFollowUp', true), true);
 });
+
+test('die type is HOLLOW or SOLID, stored in die_type, and fillable without a reason', () => {
+  assert.equal(EDITABLE_FIELDS['Die Type'].col, 'die_type');
+  assert.deepEqual(kinds({ 'Die Type': null }, { 'Die Type': 'HOLLOW' }), [['Die Type', 'filled']]);
+  assert.deepEqual(kinds({ 'Die Type': 'HOLLOW' }, { 'Die Type': 'SOLID' }), [['Die Type', 'changed']]);
+  assert.throws(() => planChanges({}, { 'Die Type': 'SEMI' }), /Die Type cannot be SEMI/);
+  assert.equal(fromRow({ die_type: 'SOLID' })['Die Type'], 'SOLID');
+});

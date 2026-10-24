@@ -1497,6 +1497,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', rowGap: '10px', columnGap: '12px', fontSize: '0.875rem' }}>
                     {specRow('Die size', currentOrder['Die Size'] || '—')}
                     {specRow('Cavity', currentOrder.Cavity || 0)}
+                    {specRow('Die type', currentOrder['Die Type'] ? currentOrder['Die Type'][0] + currentOrder['Die Type'].slice(1).toLowerCase() : '—')}
                     {specRow('Mandrels', `${currentOrder['Mandrels per Cavity'] || 0}/cav · ${currentOrder['Total Mandrels'] || 0} total`)}
                     {specRow('Simulation', simulation ? 'Required' : 'Not required')}
                     {specRow('Corrector', currentOrder.Corrector || '—')}
@@ -1568,6 +1569,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   {Field({ label: 'PR number', field: 'PR Number' })}
                   {Field({ label: 'Die size', field: 'Die Size' })}
                   {Field({ label: 'Cavity', field: 'Cavity' })}
+                  {Field({ label: 'Die type', field: 'Die Type', type: 'select', options: [{ value: 'HOLLOW', label: 'Hollow' }, { value: 'SOLID', label: 'Solid' }] })}
                   {Field({ label: 'Mandrels/cav', field: 'Mandrels per Cavity' })}
                   {Field({ label: 'Total mandrels', field: 'Total Mandrels' })}
                   {Field({ label: 'No of trial', field: 'No of Trial' })}

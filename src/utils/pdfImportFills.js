@@ -12,6 +12,7 @@ import { fieldLabel, isBlankValue, planChanges } from './orderDetailEdits.js';
 export const FILLABLE_FIELDS = Object.freeze([
   'Die Size', 'Supplier', 'Press', 'Plant', 'Cavity', 'Die Requested Date',
   'simulationEnabled', 'Type of shipment', 'TYPE', 'Mandrels per Cavity', 'Total Mandrels',
+  'Die Type',
 ]);
 
 export const FILL_NEEDS_PERMISSION = 'needs Order Details permission';
