@@ -6,6 +6,8 @@ import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import { BRAND, BRAND_ALPHA } from '../utils/brand';
 import { todayLocal } from '../utils/today.js';
+import { designToEmsSince, isTooling, nextStatusAfter } from '../utils/oracleEntry';
+import OracleBatchBar from '../components/oracle/OracleBatchBar';
 import useDialog from '../hooks/useDialog';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
@@ -48,7 +50,7 @@ const getStageEntryDate = (order) => {
       return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
-    case 'PENDING FOR DESIGN TO EMS': return order['Oracle Entry'];
+    case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);
     default: return null;
   }
 };
@@ -75,12 +77,14 @@ export default function FlowPage({
   setRevisionHistoryOrder,
   setData, setToast,
   handleInlineFieldSave, handleSizeChange, handleMandrelsChange, handlePRNumberChange, copyForERP,
-  handleCavityChange,
+  handleCavityChange, copyToClipboard,
 }) {
   const [cavityEdit, setCavityEdit] = useState(null);
   const [cavityReason, setCavityReason] = useState('');
   const [cavitySaving, setCavitySaving] = useState(false);
   const [frozenMap, setFrozenMap] = useState({}); // orderId -> { id, frozen_at, files_count }
+  // Oracle Entry: dies the user unticked from the batch (new arrivals start ticked).
+  const [untickedForOracle, setUntickedForOracle] = useState(() => new Set());
 
   const currentFlow = FLOW_TABS.find(f => f.id === activeTab);
 
@@ -125,7 +129,7 @@ export default function FlowPage({
     const today = todayLocal();
     const nextStatus = currentFlow.status === 'AWAITING FOR DESIGN' && isSimulationEnabled(order.simulationEnabled)
       ? 'UNDER SIMULATION'
-      : workflow.nextStatus;
+      : nextStatusAfter(order, currentFlow.status);
     const changeLogEntry = {
       date: today,
       field: 'STATUS',
@@ -183,6 +187,9 @@ export default function FlowPage({
   const isPR = currentFlow.status === 'PENDING FOR PR';
   const isDesignApproval = currentFlow.status === 'PENDING FOR DESIGN APPROVAL';
   const isOracleEntry = currentFlow.status === 'PENDING FOR ORACLE ENTRY';
+  // Oracle Entry batch: the dies the table shows (search applies), toolings never, minus any unticked.
+  const oracleDies = isOracleEntry ? filteredOrders.filter(o => !isTooling(o)) : [];
+  const oracleBatchOrders = oracleDies.filter(o => !untickedForOracle.has(o.id));
 
   const columns = [
     { key: 'DIE NO', label: 'Die No' },
@@ -211,6 +218,9 @@ export default function FlowPage({
           <span style={{ background: config.color, color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600 }}>{flowOrders.length}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {isOracleEntry && (
+            <OracleBatchBar selectedOrders={oracleBatchOrders} theme={theme} copyToClipboard={copyToClipboard} setToast={setToast} />
+          )}
           {isPendingOrder && (
             <button onClick={() => setShowAddOrderModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 18px', background: BRAND.navy, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               <Plus size={16} /> New Order
@@ -229,6 +239,12 @@ export default function FlowPage({
             <table style={styles.table}>
               <thead>
                 <tr>
+                  {isOracleEntry && (
+                    <th scope="col" style={{ ...styles.th, width: '36px', cursor: 'default' }}>
+                      <input type="checkbox" aria-label="Include all dies in the Oracle batch" checked={oracleDies.length > 0 && oracleBatchOrders.length === oracleDies.length}
+                        onChange={(e) => setUntickedForOracle(e.target.checked ? new Set() : new Set(oracleDies.map(o => o.id)))} />
+                    </th>
+                  )}
                   {columns.map(col => (
                     <th scope="col" key={col.key} style={styles.th} onClick={() => handleSort(col.key)}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -253,6 +269,14 @@ export default function FlowPage({
               <tbody>
                 {filteredOrders.map((order, idx) => (
                   <tr key={`${order['DIE NO']}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedOrder(order)}>
+                    {isOracleEntry && (
+                      <td style={{ ...styles.td, width: '36px' }} onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" aria-label={`Include ${order['DIE NO']} in the Oracle batch`}
+                          disabled={isTooling(order)} title={isTooling(order) ? 'Tooling: not created in Oracle' : undefined}
+                          checked={!isTooling(order) && !untickedForOracle.has(order.id)}
+                          onChange={(e) => setUntickedForOracle(prev => { const next = new Set(prev); if (e.target.checked) next.delete(order.id); else next.add(order.id); return next; })} />
+                      </td>
+                    )}
                     <td style={{ ...styles.td, whiteSpace: 'nowrap', minWidth: '120px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
                         <DieAttentionLabels order={order} dense />
@@ -289,6 +313,11 @@ export default function FlowPage({
                       <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: order.TYPE === 'N' ? '#3B82F620' : order.TYPE === 'B' ? '#F59E0B20' : '#64748B20', color: order.TYPE === 'N' ? '#3B82F6' : order.TYPE === 'B' ? '#F59E0B' : '#64748B' }}>
                         {order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : order.TYPE}
                       </span>
+                      {isOracleEntry && !isTooling(order) && (
+                        <div style={{ fontSize: '0.7rem', marginTop: '3px', color: order['Die Type'] ? theme.textMuted : '#F59E0B' }}>
+                          {order['Die Type'] ? order['Die Type'][0] + order['Die Type'].slice(1).toLowerCase() : 'Die type?'}
+                        </div>
+                      )}
                     </td>
                     <td style={styles.td}>
                       {isSimOrApproval ? (

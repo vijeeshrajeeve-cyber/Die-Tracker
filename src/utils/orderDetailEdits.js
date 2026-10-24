@@ -33,6 +33,7 @@ export const EDITABLE_FIELDS = Object.freeze({
   'Cavity':                 { type: 'int', max: 10000 },
   'Mandrels per Cavity':    { type: 'int', max: 10000 },
   'Total Mandrels':         { type: 'int', max: 100000 },
+  'Die Type':               { type: 'text', oneOf: ['HOLLOW', 'SOLID'] },
   'Type of shipment':       { type: 'text', oneOf: ['AIR', 'LAND'] },
   'Supplier':               { type: 'text' },
   'Customer Name':          { type: 'text' },

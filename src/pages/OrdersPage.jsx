@@ -6,6 +6,7 @@ import { dialogs } from '../components/ui/DialogProvider';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import DatePickerField from '../components/DatePickerField';
 import { parseDateDMY, formatDate } from '../utils/helpers';
+import { designToEmsSince } from '../utils/oracleEntry';
 import { exportToExcel } from '../utils/exportExcel';
 import StatusPill from '../components/ui/StatusPill';
 
@@ -35,7 +36,7 @@ const getStageEntryDate = (order) => {
       return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
-    case 'PENDING FOR DESIGN TO EMS': return order['Oracle Entry'];
+    case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);
     case 'DONE': return order['Design to EMS Date'];
     default: return null;
   }

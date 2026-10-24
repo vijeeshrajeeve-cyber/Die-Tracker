@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS die_orders (
     shipment_type TEXT,
     mandrels_per_cavity INTEGER DEFAULT 0,
     total_mandrels INTEGER DEFAULT 0,
+    die_type TEXT,
     design_received_date TEXT,
     three_d_model_received_date TEXT,
     simulation_enabled INTEGER DEFAULT 0,

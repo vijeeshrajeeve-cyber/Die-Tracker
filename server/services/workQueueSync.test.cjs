@@ -200,6 +200,13 @@ test('PostgreSQL queue synchronization and deadline invariants', {
       assert.equal(tombstone.sample_id, null); assert.equal(tombstone.state, 'cancelled'); assert.ok(tombstone.source_deleted_at);
       assert.equal((await one("SELECT count(*) FROM work_queue_events WHERE item_id=$1 AND kind='source_deleted'", [first.id])).count, '1');
     });
+    await t.test('a tooling in Design to EMS skipped Oracle Entry and is due from its PR entry', async () => {
+      const id = await order({ status: 'PENDING FOR DESIGN TO EMS', type: 'T', pr_entry: '2026-09-21', oracle_entry: null });
+      const item = await current('order', id);
+      assert.equal(item.stage_key, 'design_to_ems');
+      assert.equal(item.setup_reason, null);
+      assert.equal((await one('SELECT entered_date::text AS d FROM work_queue_items WHERE id=$1', [item.id])).d, '2026-09-21');
+    });
     await t.test('unknown source status is visible as setup work and typed identity cannot mismatch', async () => {
       const id = await qd({ status: 'Unexpected legacy value' });
       const item = await current('qd', id);

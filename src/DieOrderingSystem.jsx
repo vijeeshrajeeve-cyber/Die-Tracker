@@ -34,6 +34,7 @@ import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
 import ProfileThumb from './components/orders/ProfileThumb';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
+import { designToEmsSince, isTooling } from './utils/oracleEntry';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -1010,7 +1011,8 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     if (orderData.STATUS === 'CANCELLED' || orderData.STATUS === 'HOLD') return orderData.STATUS;
 
     // Check dates in reverse order of progress to find current stage
-    if (orderData['Oracle Entry'] && orderData['PR Entry'] && orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
+    // A tooling skips Oracle Entry: PR entry takes it on as an Oracle entry would.
+    if ((orderData['Oracle Entry'] || isTooling(orderData)) && orderData['PR Entry'] && orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
       if (hasDieReceivedDate(orderData)) return 'DIE RECEIVED';
       return 'DONE';
     }
@@ -1497,6 +1499,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', rowGap: '10px', columnGap: '12px', fontSize: '0.875rem' }}>
                     {specRow('Die size', currentOrder['Die Size'] || '—')}
                     {specRow('Cavity', currentOrder.Cavity || 0)}
+                    {specRow('Die type', currentOrder['Die Type'] ? currentOrder['Die Type'][0] + currentOrder['Die Type'].slice(1).toLowerCase() : '—')}
                     {specRow('Mandrels', `${currentOrder['Mandrels per Cavity'] || 0}/cav · ${currentOrder['Total Mandrels'] || 0} total`)}
                     {specRow('Simulation', simulation ? 'Required' : 'Not required')}
                     {specRow('Corrector', currentOrder.Corrector || '—')}
@@ -1568,6 +1571,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   {Field({ label: 'PR number', field: 'PR Number' })}
                   {Field({ label: 'Die size', field: 'Die Size' })}
                   {Field({ label: 'Cavity', field: 'Cavity' })}
+                  {Field({ label: 'Die type', field: 'Die Type', type: 'select', options: [{ value: 'HOLLOW', label: 'Hollow' }, { value: 'SOLID', label: 'Solid' }] })}
                   {Field({ label: 'Mandrels/cav', field: 'Mandrels per Cavity' })}
                   {Field({ label: 'Total mandrels', field: 'Total Mandrels' })}
                   {Field({ label: 'No of trial', field: 'No of Trial' })}
@@ -2712,7 +2716,7 @@ export default function DieOrderingSystem() {
         return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
       case 'PENDING FOR PR': return order['Design Approved Date'];
       case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
-      case 'PENDING FOR DESIGN TO EMS': return order['Oracle Entry'];
+      case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);
       case 'DONE': return order['Design to EMS Date'];
       default: return null;
     }
@@ -3374,7 +3378,7 @@ export default function DieOrderingSystem() {
               handleInlineFieldSave={handleInlineFieldSave} handleSizeChange={handleSizeChange}
               handleMandrelsChange={handleMandrelsChange} handlePRNumberChange={handlePRNumberChange}
               handleCavityChange={handleCavityChange}
-              copyForERP={copyForERP}
+              copyForERP={copyForERP} copyToClipboard={copyToClipboard}
             />
           )}
 

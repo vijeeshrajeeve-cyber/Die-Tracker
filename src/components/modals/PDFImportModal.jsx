@@ -4,7 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 import { parseDateDMY, formatDate } from '../../utils/helpers';
-import { extractBolsterInsertNos } from '../../utils/pdfImportFields';
+import { extractBolsterInsertNos, readDieType } from '../../utils/pdfImportFields';
 import { isBlankValue } from '../../utils/orderDetailEdits';
 import { mergeExistingForPreview, planPdfFills } from '../../utils/pdfImportFills';
 import { captureProfileImage } from '../../utils/profileImage';
@@ -118,6 +118,7 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
     let insertNo = null;
     let bolsterSize = null;
     let insertSize = null;
+    let dieType = null;
 
     // ── Detect format: check if any line has info box LABELS as text ──
     const fullText = lines.map(l => l.text).join(' ');
@@ -281,6 +282,15 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
             const nextPress = nextText.match(/^[-\s]*(?:\d{1,2}\s+)?(P\s*\d+|[A-F])$/i);
             if (nextPress) pressCode = nextPress[1].trim();
           }
+        }
+
+        // SOLID / HOLLOW (Format A). The labels, or the mark, can land a hair apart
+        // in Y and on a line of their own, so read the neighbouring lines' items too:
+        // the reader goes by x position, and a mark too far right is ignored.
+        if (/\bHOLLOW\b/.test(upperLine) && dieType === null) {
+          const near = [lines[i - 1], lines[i], lines[i + 1]].filter(Boolean)
+            .filter(l => l === lines[i] || /^(SOLID\b.*|OK|YES|Y)$/i.test(l.text.trim()));
+          dieType = readDieType(near.flatMap(l => l.items));
         }
 
         // BOLSTER NO. / INSERT NO. extraction (Format A)
@@ -662,6 +672,8 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       'Cavity': cavity || existingOrderRaw?.Cavity || 0,
       'Mandrels per Cavity': existingOrderRaw?.['Mandrels per Cavity'] || 0,
       'Total Mandrels': existingOrderRaw?.['Total Mandrels'] || 0,
+      // SOLID/HOLLOW box on the form; only Format A prints its labels as text.
+      'Die Type': dieType || existingOrderRaw?.['Die Type'] || null,
       'Design Received Date': null,
       '3D Model Received Date': null,
       simulationEnabled: simulationEnabled || false,
@@ -719,6 +731,8 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
         'Customer Name': existingSubRaw?.['Customer Name'] || mainOrder['Customer Name'],
         'PR Number': existingSub?.['PR Number'] || null,
         STATUS: existingSub?.STATUS || 'PENDING FOR ORDERING',
+        // A bolster or insert is not a hollow or solid die.
+        'Die Type': null,
         _componentType: 'BOLSTER/INSERT',
       };
       // Remark/_reorderNote inherited from mainOrder apply to the main die, not this sub-order

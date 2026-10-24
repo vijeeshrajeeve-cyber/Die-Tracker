@@ -225,6 +225,10 @@ const initializeDatabase = async () => {
 
       -- Add new optional columns to existing die_orders installs
       DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='die_type') THEN
+          -- HOLLOW | SOLID from the order PDF's SOLID/HOLLOW box; NULL for toolings.
+          ALTER TABLE die_orders ADD COLUMN die_type TEXT;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='pr_number') THEN
           ALTER TABLE die_orders ADD COLUMN pr_number TEXT;
         END IF;
@@ -1029,6 +1033,20 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'force_pwd_reset_all_users_v1') THEN
           UPDATE users SET password_must_change = true;
           INSERT INTO app_migrations (id) VALUES ('force_pwd_reset_all_users_v1');
+        END IF;
+      END $$;
+
+      -- One-time: orders imported before die type was read from the PDF. A die
+      -- with mandrels is hollow, one without is solid (user decision 2026-10-24);
+      -- toolings have no die type. Stored once, so a drawer correction sticks.
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'die_type_backfill_v1') THEN
+          UPDATE die_orders
+             SET die_type = CASE WHEN COALESCE(mandrels_per_cavity, 0) > 0 THEN 'HOLLOW' ELSE 'SOLID' END
+           WHERE die_type IS NULL AND COALESCE(type, '') <> 'T'
+             -- bolster/insert orders cut from a die PDF (isBolsterOrInsertNo in src/utils/oracleEntry.js)
+             AND die_no !~* '^(I|INS|B|BOL)-[0-9]+$' AND die_no !~ '^[0-9]+[A-Za-z][A-Za-z0-9]*-[0-9]+$';
+          INSERT INTO app_migrations (id) VALUES ('die_type_backfill_v1');
         END IF;
       END $$;
 

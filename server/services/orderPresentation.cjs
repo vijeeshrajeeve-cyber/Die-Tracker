@@ -11,6 +11,7 @@ function presentOrder(order) { return {
             'Type of shipment': order.shipment_type,
             'Mandrels per Cavity': order.mandrels_per_cavity,
             'Total Mandrels': order.total_mandrels,
+            'Die Type': order.die_type || null,
             'Design Received Date': order.design_received_date,
             '3D Model Received Date': order.three_d_model_received_date,
             'simulationEnabled': !!order.simulation_enabled,
