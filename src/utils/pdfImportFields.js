@@ -17,3 +17,23 @@ export const extractBolsterInsertNos = (lineText) => ({
   bolsterNo: numberAfter(lineText, 'BOLSTER'),
   insertNo: numberAfter(lineText, 'INSERT'),
 });
+
+// A box is ticked by writing one of these after its label.
+const MARK = /^(OK|YES|Y|✓|✔|√)$/i;
+
+// Hollow or solid from the form's "SOLID - … HOLLOW - …" row, as pdf.js items
+// ({ text, x }). A mark between the two labels ticks SOLID; one just after
+// HOLLOW (within one label-gap) ticks HOLLOW. Position, not line order, decides,
+// because the mark can land on a line of its own. No mark, or both, says nothing.
+export const readDieType = (items) => {
+  const at = (word) => (items || []).find((it) => String(it.text).trim().toUpperCase() === word);
+  const solid = at('SOLID');
+  const hollow = at('HOLLOW');
+  if (!solid || !hollow || hollow.x <= solid.x) return null;
+  const gap = hollow.x - solid.x;
+  const marks = items.filter((it) => MARK.test(String(it.text).trim()));
+  const solidMarked = marks.some((m) => m.x > solid.x && m.x < hollow.x);
+  const hollowMarked = marks.some((m) => m.x > hollow.x && m.x < hollow.x + gap);
+  if (solidMarked === hollowMarked) return null;
+  return solidMarked ? 'SOLID' : 'HOLLOW';
+};
