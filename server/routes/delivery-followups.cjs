@@ -103,4 +103,41 @@ router.post('/:orderId', async (req, res) => {
   }
 });
 
+// Set ETA from the In Manufacturing row: the ETA change alone, with no
+// contact logged, so "Last follow-up" still means someone spoke to the supplier.
+router.put('/:orderId/eta', async (req, res) => {
+  const id = orderIdFrom(req, res);
+  if (!id) return;
+  const { eta, cause, causeNote } = req.body || {};
+  const newEta = delivery.normalizeEta(eta);
+  if (!newEta) return res.status(400).json({ error: 'A valid ETA is required (YYYY-MM-DD)' });
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT eta FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const plan = delivery.planEtaChange(rows[0].eta, newEta, { cause, note: causeNote });
+    const events = [];
+    if (plan) {
+      await client.query('UPDATE die_orders SET eta = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [plan.after, id]);
+      events.push(await delivery.insertEtaEvent(client, id, plan, req.user));
+    }
+    await client.query('COMMIT');
+    res.json({ events, eta: plan ? plan.after : rows[0].eta });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (error instanceof delivery.DeliveryRuleError) {
+      return res.status(400).json({ error: error.message, code: error.code });
+    }
+    console.error('Set ETA error:', error);
+    res.status(500).json({ error: 'Failed to save the ETA' });
+  } finally {
+    client?.release();
+  }
+});
+
 module.exports = router;

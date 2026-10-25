@@ -75,6 +75,52 @@ test('an unknown order is a 404', async () => {
   assert.equal((await post({ contactDate: today, channel: 'email', note: 'x' })).status, 404);
 });
 
+const putEta = (body, id = 3) => request(base, `/api/delivery-followups/${id}/eta`, { body, method: 'PUT' });
+const inserts = () => log.filter(({ q }) => q.startsWith('INSERT INTO die_delivery_events'));
+
+test('setting a first ETA needs no cause and logs no contact', async () => {
+  storedEta = 'TBC';
+  const { status, body } = await putEta({ eta: '2026-11-05' });
+  assert.equal(status, 200);
+  assert.equal(body.eta, '2026-11-05');
+  assert.deepEqual(log.find(({ q }) => q.startsWith('UPDATE die_orders')).params, ['2026-11-05', 3]);
+  assert.equal(inserts().length, 1);
+  assert.equal(inserts()[0].params[1], 'eta_set');
+  assert.ok(!inserts().some(({ q }) => /'contact'/.test(q)));
+});
+
+test('moving a set ETA without a cause is refused before anything is written', async () => {
+  const { status, body } = await putEta({ eta: '2026-10-20' });
+  assert.equal(status, 400);
+  assert.equal(body.code, 'ETA_CAUSE_REQUIRED');
+  assert.ok(!has('UPDATE') && !has('INSERT'));
+  assert.ok(has('ROLLBACK'));
+});
+
+test('moving a set ETA with a cause logs one revision', async () => {
+  const { status, body } = await putEta({ eta: '2026-10-20', cause: 'logistics', causeNote: 'Port strike' });
+  assert.equal(status, 200);
+  assert.equal(body.eta, '2026-10-20');
+  assert.equal(inserts().length, 1);
+  assert.deepEqual(inserts()[0].params.slice(1, 6), ['eta_revised', '2026-10-01', '2026-10-20', 'logistics', 'Port strike']);
+});
+
+test('the same ETA again writes nothing', async () => {
+  const { status, body } = await putEta({ eta: '01/10/2026' });
+  assert.equal(status, 200);
+  assert.equal(body.eta, '2026-10-01');
+  assert.ok(!has('UPDATE') && !has('INSERT'));
+});
+
+test('a missing or invalid ETA is a 400, an unknown order a 404', async () => {
+  assert.equal((await putEta({})).status, 400);
+  assert.equal((await putEta({ eta: 'TBC' })).status, 400);
+  assert.equal((await putEta({ eta: '2026-11-05' }, 'abc')).status, 400);
+  assert.ok(!has('BEGIN'));
+  storedEta = undefined;
+  assert.equal((await putEta({ eta: '2026-11-05' })).status, 404);
+});
+
 test('summaries are keyed by order id', async () => {
   const { status, body } = await request(base, '/api/delivery-followups');
   assert.equal(status, 200);

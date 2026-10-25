@@ -350,6 +350,11 @@ export const deliveryFollowupsAPI = {
         method: 'POST',
         body: JSON.stringify(payload),
     }),
+    // { eta, cause?, causeNote? } — the ETA change alone, no contact logged.
+    setEta: async (orderId, payload) => apiRequest(`/delivery-followups/${orderId}/eta`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    }),
 };
 
 // Presses API

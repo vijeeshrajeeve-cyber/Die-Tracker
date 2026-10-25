@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, ChevronDown, ChevronUp, Package, MessageSquarePlus } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Package, MessageSquarePlus, CalendarClock } from 'lucide-react';
 import { STATUS_CONFIG } from '../utils/constants';
 import { deliveryFollowupsAPI } from '../api';
 import { formatDate } from '../utils/helpers';
@@ -7,6 +7,7 @@ import { todayLocal } from '../utils/today.js';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import DieReceivanceModal from '../components/delivery/DieReceivanceModal';
 import DeliveryFollowupDrawer from '../components/delivery/DeliveryFollowupDrawer';
+import SetEtaDialog from '../components/delivery/SetEtaDialog';
 import {
   etaChip, countBuckets, compareByUrgency, normalizeEta, daysBetween, formatSlip, channelLabel,
 } from '../utils/deliveryFollowup';
@@ -49,6 +50,7 @@ export default function InManufacturingPage({
   const [sort, setSort] = useState(null); // null = urgency order
   const [followupId, setFollowupId] = useState(null);
   const [receivanceOrder, setReceivanceOrder] = useState(null);
+  const [etaId, setEtaId] = useState(null);
 
   const loadSummaries = useCallback(() => {
     deliveryFollowupsAPI.getSummaries()
@@ -77,6 +79,7 @@ export default function InManufacturingPage({
     ? { key, direction: 'asc' }
     : s.direction === 'asc' ? { key, direction: 'desc' } : null));
   const followupOrder = followupId != null ? data.find((o) => o.id === followupId) : null;
+  const etaOrder = etaId != null ? data.find((o) => o.id === etaId) : null;
 
   const styles = {
     tableContainer: { background: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, overflow: 'hidden', boxShadow: theme.shadowSm },
@@ -198,6 +201,9 @@ export default function InManufacturingPage({
                       </td>
                       <td style={{ ...styles.td, textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button type="button" onClick={() => setEtaId(order.id)} style={styles.action('#0F766E')} title={current ? 'Change the ETA' : 'Set the ETA'}>
+                            <CalendarClock size={15} /> Set ETA
+                          </button>
                           <button type="button" onClick={() => setFollowupId(order.id)} style={styles.action('#4F46E5')} title="Log a follow-up or a new ETA">
                             <MessageSquarePlus size={15} /> Follow up
                           </button>
@@ -234,6 +240,22 @@ export default function InManufacturingPage({
             }
             loadSummaries();
             setToast({ message: `Follow-up saved for ${followupOrder['DIE NO']}`, type: 'success' });
+            setTimeout(() => setToast(null), 3000);
+          }}
+        />
+      )}
+
+      {etaOrder && (
+        <SetEtaDialog
+          order={etaOrder}
+          theme={theme}
+          onClose={() => setEtaId(null)}
+          onSaved={(result) => {
+            if (result?.eta !== undefined && result.eta !== etaOrder.ETA) {
+              setData((prev) => prev.map((o) => (o.id === etaOrder.id ? { ...o, ETA: result.eta } : o)));
+            }
+            setEtaId(null);
+            setToast({ message: `ETA saved for ${etaOrder['DIE NO']}`, type: 'success' });
             setTimeout(() => setToast(null), 3000);
           }}
         />
