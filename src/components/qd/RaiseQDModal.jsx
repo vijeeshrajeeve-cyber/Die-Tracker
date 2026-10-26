@@ -7,6 +7,7 @@ import CorrectorSelect from '../ui/CorrectorSelect';
 import useDialog from '../../hooks/useDialog';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 import { todayLocal } from '../../utils/today.js';
+import { qdDieTypeFor } from '../../utils/dieType.js';
 
 
 // qd_billet_parameters columns — order here drives the Production parameters grid.
@@ -185,7 +186,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], correctors = 
         ...prev,
         dieReceivedDate: match['Die Received Date'] || prev.dieReceivedDate,
         press: match.Press || prev.press,
-        dieType: match.TYPE || prev.dieType,
+        dieType: qdDieTypeFor(match['Die Type'], dieTypeOptions) || prev.dieType,
         dieSize: match['Die Size'] || prev.dieSize,
         noOfCavity: match.Cavity != null && match.Cavity !== '' ? String(match.Cavity) : prev.noOfCavity,
         noOfTrials: match['No of Trial'] != null && match['No of Trial'] !== '' ? String(match['No of Trial']) : prev.noOfTrials,

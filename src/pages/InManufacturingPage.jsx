@@ -8,6 +8,7 @@ import DieAttentionLabels from '../components/DieAttentionLabels';
 import DieReceivanceModal from '../components/delivery/DieReceivanceModal';
 import DeliveryFollowupDrawer from '../components/delivery/DeliveryFollowupDrawer';
 import SetEtaDialog from '../components/delivery/SetEtaDialog';
+import { typeLabel } from '../utils/dieType';
 import {
   etaChip, countBuckets, compareByUrgency, normalizeEta, daysBetween, formatSlip, channelLabel,
 } from '../utils/deliveryFollowup';
@@ -36,7 +37,7 @@ const TONES = {
 
 const SORTABLE = [
   { key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' }, { key: 'Plant', label: 'Plant' },
-  { key: 'TYPE', label: 'Type' }, { key: 'Die Size', label: 'Size' }, { key: 'Cavity', label: 'Cav' },
+  { key: 'TYPE', label: 'Item Type' }, { key: 'Die Size', label: 'Size' }, { key: 'Cavity', label: 'Cav' },
   { key: 'Supplier', label: 'Supplier' }, { key: 'ETA', label: 'ETA' },
 ];
 
@@ -170,7 +171,7 @@ export default function InManufacturingPage({
                       </td>
                       <td style={styles.td}>{order['Order No'] || '—'}</td>
                       <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{order.Plant || '—'}</td>
-                      <td style={styles.td}>{order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : (order.TYPE || '—')}</td>
+                      <td style={styles.td}>{typeLabel(order.TYPE) || '—'}</td>
                       <td style={{ ...styles.td, whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{order['Die Size'] || '—'}</td>
                       <td style={{ ...styles.td, fontFamily: 'monospace' }}>{order.Cavity || '—'}</td>
                       <td style={styles.td}>{order.Supplier || '—'}</td>

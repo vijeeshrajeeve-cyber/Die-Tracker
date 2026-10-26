@@ -6,6 +6,7 @@ import CorrectorSelect from '../ui/CorrectorSelect';
 import { todayLocal } from '../../utils/today.js';
 import useDialog from '../../hooks/useDialog';
 import { skipTrialAllowed, skipTrialDefault, buildReceivancePatch } from '../../utils/dieReceivance';
+import { typeLabel, dieTypeLabel } from '../../utils/dieType';
 
 // Confirm Die Receivance, moved out of FlowPage unchanged when In Manufacturing
 // got its own page. The parent decides what happens after a confirmed receipt.
@@ -45,7 +46,7 @@ export default function DieReceivanceModal({ order, theme, correctors, corrector
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
             <div><span style={{ color: theme.textDim }}>Supplier:</span> <strong style={{ color: theme.text }}>{order.Supplier}</strong></div>
             <div><span style={{ color: theme.textDim }}>Plant:</span> <strong style={{ color: theme.text }}>{order.Plant}</strong></div>
-            <div><span style={{ color: theme.textDim }}>Type:</span> <strong style={{ color: theme.text }}>{order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : order.TYPE}</strong></div>
+            <div><span style={{ color: theme.textDim }}>Type:</span> <strong style={{ color: theme.text }}>{[typeLabel(order.TYPE), dieTypeLabel(order['Die Type'])].filter(Boolean).join(' · ') || '—'}</strong></div>
             <div><span style={{ color: theme.textDim }}>Size:</span> <strong style={{ color: theme.text }}>{order['Die Size'] || '—'}</strong></div>
           </div>
         </div>

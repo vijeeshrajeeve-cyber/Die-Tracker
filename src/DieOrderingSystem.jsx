@@ -35,6 +35,7 @@ import ProfileThumb from './components/orders/ProfileThumb';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
 import { designToEmsSince, isTooling } from './utils/oracleEntry';
+import { typeLabel, dieTypeLabel, erpDieTypeCode } from './utils/dieType';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -1377,12 +1378,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   );
 
   const statusOptions = Object.keys(STATUS_CONFIG);
-  const typeOptions = ['N', 'B', 'T', 'C', 'H'];
+  const typeOptions = ['N', 'B', 'T', 'C', 'H'].map((value) => ({ value, label: typeLabel(value) }));
   const shipmentOptions = ['AIR', 'LAND'];
   const subtitle = [
     hasValue(currentOrder['Order No']) ? `Order #${currentOrder['Order No']}` : 'No order number',
     currentOrder['Customer Name'],
-    currentOrder.TYPE && `Type ${currentOrder.TYPE}`,
+    typeLabel(currentOrder.TYPE),
+    dieTypeLabel(currentOrder['Die Type']),
   ].filter(Boolean).join(' · ');
   const editSummary = [
     changed.size > 0 && plural(changed.size, 'change'),
@@ -1499,7 +1501,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', rowGap: '10px', columnGap: '12px', fontSize: '0.875rem' }}>
                     {specRow('Die size', currentOrder['Die Size'] || '—')}
                     {specRow('Cavity', currentOrder.Cavity || 0)}
-                    {specRow('Die type', currentOrder['Die Type'] ? currentOrder['Die Type'][0] + currentOrder['Die Type'].slice(1).toLowerCase() : '—')}
+                    {specRow('Die type', dieTypeLabel(currentOrder['Die Type']) || '—')}
                     {specRow('Mandrels', `${currentOrder['Mandrels per Cavity'] || 0}/cav · ${currentOrder['Total Mandrels'] || 0} total`)}
                     {specRow('Simulation', simulation ? 'Required' : 'Not required')}
                     {specRow('Corrector', currentOrder.Corrector || '—')}
@@ -1565,7 +1567,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   {Field({ label: 'Plant', field: 'Plant', type: 'select', options: plants.map(p => p.name) })}
                   {Field({ label: 'Press', field: 'Press', type: 'select', options: pressOptions, disabled: !editedOrder.Plant, placeholder: editedOrder.Plant ? 'Select press' : 'Select plant first' })}
                   {Field({ label: 'Supplier', field: 'Supplier', type: 'select', options: suppliers.map(s => s.name) })}
-                  {Field({ label: 'Type', field: 'TYPE', type: 'select', options: typeOptions })}
+                  {Field({ label: 'Item type', field: 'TYPE', type: 'select', options: typeOptions })}
                   {Field({ label: 'Shipment', field: 'Type of shipment', type: 'select', options: shipmentOptions })}
                   {Field({ label: 'Customer', field: 'Customer Name' })}
                   {Field({ label: 'PR number', field: 'PR Number' })}
@@ -2407,8 +2409,8 @@ export default function DieOrderingSystem() {
     // CAV is the actual cavity count from the PDF "No OF CAV" field, persisted in `cavity`.
     // Falls back to `_cavity` (preview-only metadata) and finally to 1 for legacy orders.
     const cavities = order['Cavity'] || order['_cavity'] || 1;
-    // SF = Solid (T type), PH = Hollow (others)
-    const dieType = order.TYPE === 'T' ? 'SF' : 'PH';
+    // SF = Solid, PH = Hollow, from the die type
+    const dieType = erpDieTypeCode(order);
 
     // ERP expects press code, so press names/numbers are mapped first (2 -> B, 7 -> 25, etc.).
     // When Press is missing, the prefix (and its comma) are omitted so we never produce a leading comma.

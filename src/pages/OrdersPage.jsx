@@ -7,6 +7,7 @@ import DieAttentionLabels from '../components/DieAttentionLabels';
 import DatePickerField from '../components/DatePickerField';
 import { parseDateDMY, formatDate } from '../utils/helpers';
 import { designToEmsSince } from '../utils/oracleEntry';
+import { typeLabel, dieTypeLabel } from '../utils/dieType';
 import { exportToExcel } from '../utils/exportExcel';
 import StatusPill from '../components/ui/StatusPill';
 
@@ -98,7 +99,8 @@ export default function OrdersPage({
         { key: 'DIE NO', label: 'Die No' },
         { key: 'Order No', label: 'Order No' },
         { key: 'Plant', label: 'Plant' },
-        { key: 'TYPE', label: 'Type' },
+        { key: 'TYPE', label: 'Item Type', format: (v) => typeLabel(v) },
+        { key: 'Die Type', label: 'Die Type', format: (v) => dieTypeLabel(v) },
         { key: 'Die Size', label: 'Diameter', format: (v) => parseDieSize(v).diameter || '' },
         { key: 'Die Size', label: 'Thickness', format: (v) => parseDieSize(v).thickness || '' },
         { key: 'Cavity', label: 'Cavity' },
@@ -144,7 +146,7 @@ export default function OrdersPage({
           <select aria-label="Filter by plant" style={filterSelect} value={filters.plant} onChange={(e) => setFilters({ ...filters, plant: e.target.value })}><option value="all">All Plants</option>{uniquePlants.map(p => <option key={p} value={p}>{p}</option>)}</select>
           <select aria-label="Filter by status" style={filterSelect} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="all">All Status</option><option value="pre-approval">Pre–design approval (not cancelled)</option>{uniqueStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}</select>
           <select aria-label="Filter by supplier" style={filterSelect} value={filters.supplier} onChange={(e) => setFilters({ ...filters, supplier: e.target.value })}><option value="all">All Suppliers</option>{uniqueSuppliers.map(s => <option key={s} value={s}>{s}</option>)}</select>
-          <select aria-label="Filter by die type" style={filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <select aria-label="Filter by item type" style={filterSelect} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="all">All Item Types</option>{uniqueTypes.map(t => <option key={t} value={t}>{typeLabel(t)}</option>)}</select>
           <select aria-label="Filter by month" style={filterSelect} value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })}><option value="all">All Months</option>{uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
           <select aria-label="Filter by year" style={filterSelect} value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="all">All Years</option>{uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
           <select aria-label="Filter by customer" style={filterSelect} value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })}><option value="all">All Customers</option>{uniqueCustomers.map(c => <option key={c} value={c}>{c}</option>)}</select>
@@ -216,7 +218,7 @@ export default function OrdersPage({
               <tr>
                 {[
                   { key: 'DIE NO', label: 'Die No' }, { key: 'Order No', label: 'Order' },
-                  { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Type' },
+                  { key: 'Plant', label: 'Plant' }, { key: 'TYPE', label: 'Item Type' }, { key: 'Die Type', label: 'Die Type' },
                   { key: 'Diameter', label: 'Ø', align: 'right' }, { key: 'Thickness', label: 'T', align: 'right' }, { key: 'Cavity', label: 'Cav', align: 'right' },
                   { key: 'Supplier', label: 'Supplier' }, { key: 'Customer Name', label: 'Customer' },
                   { key: 'PR Number', label: 'PR#' }, { key: 'Mandrels per Cavity', label: 'Mandrels/Cav', align: 'right' },
@@ -258,7 +260,8 @@ export default function OrdersPage({
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: order.Plant === 'EXT 1' ? 'rgba(59,130,246,0.2)' : 'rgba(139,92,246,0.2)', color: order.Plant === 'EXT 1' ? '#60A5FA' : '#A78BFA' }}>{order.Plant}</span>
                   </td>
-                  <td style={td}>{order.TYPE}</td>
+                  <td style={td}>{typeLabel(order.TYPE) || '—'}</td>
+                  <td style={td}>{dieTypeLabel(order['Die Type']) || '—'}</td>
                   <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).diameter || '—'}</span></td>
                   <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{parseDieSize(order['Die Size']).thickness || '—'}</span></td>
                   <td style={td} className="dt-num"><span style={{ fontFamily: 'monospace' }}>{order['Cavity'] || '—'}</span></td>

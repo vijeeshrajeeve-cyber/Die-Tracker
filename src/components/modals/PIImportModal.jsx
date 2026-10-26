@@ -6,6 +6,7 @@ import { MONTHS } from '../../utils/constants';
 
 import useDialog from '../../hooks/useDialog';
 import { todayLocal } from '../../utils/today.js';
+import { typeLabel } from '../../utils/dieType.js';
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -747,7 +748,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [], theme = 
                                             <tr style={{ background: theme.inputBg }}>
                                                 <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Die No</th>
                                                 <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Size</th>
-                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Type</th>
+                                                <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Item Type</th>
                                                 <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Cavity</th>
                                                 <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Plant</th>
                                                 <th scope="col" style={{ padding: '10px 12px', textAlign: 'left', color: theme.textDim, fontWeight: 600 }}>Supplier</th>
@@ -773,7 +774,7 @@ function PIImportModal({ onClose, onImportRecords, existingOrders = [], theme = 
                                                         )}
                                                     </td>
                                                     <td style={{ padding: '10px 12px', color: theme.text }}>{order['Die Size']}</td>
-                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{order.TYPE || '-'}</td>
+                                                    <td style={{ padding: '10px 12px', color: theme.text }}>{typeLabel(order.TYPE) || '-'}</td>
                                                     <td style={{ padding: '10px 12px', color: theme.text }}>{order._cavity || order['Mandrels per Cavity'] || '-'}</td>
                                                     <td style={{ padding: '10px 12px', color: theme.text }}>{order.Plant || '-'}</td>
                                                     <td style={{ padding: '10px 12px', color: theme.text }}>{order.Supplier}</td>
