@@ -55,6 +55,7 @@ const WorkQueuePage = lazy(() => import('./pages/WorkQueuePage'));
 // Loaded on first visit like the Work Queue: the follow-up drawer and its
 // rules are only needed on this one page.
 const InManufacturingPage = lazy(() => import('./pages/InManufacturingPage'));
+const SimulationPage = lazy(() => import('./pages/SimulationPage'));
 // Dashboard is the landing tab, but it is still behind the login screen — and
 // it is the only other thing pulling in recharts.
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -3369,7 +3370,16 @@ export default function DieOrderingSystem() {
             </Suspense>
           )}
 
-          {activeTab.startsWith('flow-') && activeTab !== 'flow-completed' && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
+          {activeTab === 'flow-simulation' && hasPageAccess(activeTab) && (
+            <Suspense fallback={<ChunkFallback theme={theme} />}>
+              <SimulationPage
+                theme={theme} user={user} data={data} setData={setData} setToast={setToast}
+                searchTerm={searchTerm} setSearchTerm={setSearchTerm} setSelectedOrder={setSelectedOrder}
+              />
+            </Suspense>
+          )}
+
+          {activeTab.startsWith('flow-') && activeTab !== 'flow-completed' && activeTab !== 'flow-simulation' && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
             <FlowPage
               data={data} activeTab={activeTab} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               sortConfig={sortConfig} handleSort={handleSort} suppliers={suppliers} theme={theme}
