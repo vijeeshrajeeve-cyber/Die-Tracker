@@ -8,6 +8,7 @@ const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
 const { todayLocal } = require('../services/dates.cjs');
+const { createRevision } = require('../services/orderRevisions.cjs');
 const { planEtaChange, insertEtaEvent, DeliveryRuleError } = require('../services/deliveryFollowup.cjs');
 const {
     EDITABLE_FIELDS, OrderEditError, planChanges, needsReason, changeNeedsReason,
@@ -938,69 +939,21 @@ router.post('/:id/revisions', orderIdValidation, revisionValidation, handleValid
     try {
         const { id } = req.params;
         const { targetStatus, notes, revisionDate, revisionPdf } = req.body;
-        const revDate = revisionDate || todayLocal();
-
         await client.query('BEGIN');
-
-        const orderRes = await client.query(
-            'SELECT status, design_revision_count FROM die_orders WHERE id = $1 FOR UPDATE',
-            [id]
-        );
-        if (orderRes.rowCount === 0) {
+        const rev = await createRevision(client, {
+            orderId: id, targetStatus, notes, revisionDate, revisionPdf, user: req.user,
+        });
+        if (!rev) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Order not found' });
         }
-
-        const fromStatus = orderRes.rows[0].status;
-        const newRevisionNumber = (orderRes.rows[0].design_revision_count || 0) + 1;
-
-        const revInsert = await client.query(`
-            INSERT INTO order_revisions
-              (order_id, revision_number, from_status, to_status, notes, revision_date, revision_pdf, created_by, created_by_name)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            RETURNING id, created_at
-        `, [
-            id,
-            newRevisionNumber,
-            fromStatus,
-            targetStatus,
-            notes,
-            revDate,
-            revisionPdf || null,
-            req.user?.id || null,
-            req.user?.username || null,
-        ]);
-
-        await client.query(`
-            UPDATE die_orders
-            SET status = $1, design_revision_count = $2, last_revision_date = $3, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $4
-        `, [targetStatus, newRevisionNumber, revDate, id]);
-
-        // Audit entry in the change log
-        await client.query(`
-            INSERT INTO order_changes
-              (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        `, [
-            id,
-            req.user?.id || null,
-            req.user?.username || null,
-            new Date(),
-            'Revision',
-            fromStatus,
-            `${targetStatus} (Rev #${newRevisionNumber})`,
-            notes,
-            fromStatus,
-        ]);
-
         await client.query('COMMIT');
 
         res.status(201).json({
-            id: revInsert.rows[0].id,
-            revisionNumber: newRevisionNumber,
-            status: targetStatus,
-            lastRevisionDate: revDate,
+            id: rev.id,
+            revisionNumber: rev.revisionNumber,
+            status: rev.status,
+            lastRevisionDate: rev.lastRevisionDate,
             message: 'Revision recorded successfully',
         });
     } catch (error) {
