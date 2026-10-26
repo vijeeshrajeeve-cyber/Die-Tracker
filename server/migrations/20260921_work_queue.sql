@@ -28,7 +28,7 @@ INSERT INTO work_queue_config(id) VALUES(1) ON CONFLICT DO NOTHING;
 INSERT INTO work_queue_calendars(plant) SELECT NULL WHERE NOT EXISTS(SELECT 1 FROM work_queue_calendars WHERE plant IS NULL);
 INSERT INTO work_queue_rules(stage_key,days)
 SELECT stage,days FROM (VALUES
- ('pending_order',1),('awaiting_design',3),('simulation',2),('design_approval',1),
+ ('pending_order',1),('awaiting_design',3),('simulation',1),('design_approval',1),
  ('pending_pr',1),('oracle_entry',1),('design_to_ems',1),('manufacturing',NULL::integer),
  ('sample_submission',7),('sample_approval',3),('qd_approval',2),('qd_returned',2),
  ('foc_receipt',NULL::integer),('foc_trial',3)
@@ -172,7 +172,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION work_queue_project(kind TEXT, sid INTEGER) RETURNS JSONB
 LANGUAGE plpgsql STABLE AS $$
-DECLARE s JSONB; rev JSONB; foc JSONB; st TEXT; label TEXT; anchor TEXT; eta TEXT; sig TEXT;
+DECLARE s JSONB; rev JSONB; foc JSONB; sim JSONB; st TEXT; label TEXT; anchor TEXT; eta TEXT; sig TEXT;
  held BOOLEAN:=FALSE; reason TEXT; owner INTEGER; omode TEXT:='rule'; epoch INTEGER:=0; status TEXT;
 BEGIN
  IF kind='order' THEN SELECT to_jsonb(d) INTO s FROM die_orders d WHERE id=sid;
@@ -199,7 +199,19 @@ BEGIN
      CASE status
        WHEN 'PENDING FOR ORDERING' THEN st:='pending_order'; label:='Pending Order'; anchor:=s->>'die_requested_date';
        WHEN 'AWAITING FOR DESIGN' THEN st:='awaiting_design'; label:='Awaiting Design'; anchor:=COALESCE(rev->>'revision_date',s->>'ordered_date');
-       WHEN 'UNDER SIMULATION' THEN st:='simulation'; label:='Simulation'; anchor:=COALESCE(rev->>'revision_date',s->>'design_received_date');
+       -- One working-day clock per round, from its 3D model receipt. While the
+       -- model is awaited or the team is modifying it in-house there is nothing
+       -- for the engineer to be late on, so there is no item.
+       WHEN 'UNDER SIMULATION' THEN st:='simulation'; label:='Simulation';
+         SELECT to_jsonb(r) INTO sim FROM simulation_rounds r WHERE order_id=sid ORDER BY round_no DESC,id DESC LIMIT 1;
+         IF sim IS NULL THEN
+           -- First pass from before step tracking: a hand-typed 3D date is a real receipt.
+           IF COALESCE((s->>'design_revision_count')::int,0)=0 AND NULLIF(s->>'three_d_model_received_date','') IS NOT NULL THEN
+             anchor:=s->>'three_d_model_received_date'; sig:='simulation:legacy:'||epoch;
+           ELSE RETURN jsonb_build_object('terminal','completed'); END IF;
+         ELSIF NULLIF(sim->>'model_received_date','') IS NOT NULL AND NULLIF(sim->>'sim_completed_date','') IS NULL THEN
+           anchor:=sim->>'model_received_date'; sig:='simulation:round:'||(sim->>'id')||':'||epoch;
+         ELSE RETURN jsonb_build_object('terminal','completed'); END IF;
        WHEN 'PENDING FOR DESIGN APPROVAL' THEN st:='design_approval'; label:='Design Approval'; anchor:=COALESCE(NULLIF(rev->>'design_received_date',''),s->>'design_received_date');
        WHEN 'PENDING FOR PR' THEN st:='pending_pr'; label:='Pending PR'; anchor:=s->>'design_approved_date';
        WHEN 'PENDING FOR ORACLE ENTRY' THEN st:='oracle_entry'; label:='Oracle Entry'; anchor:=s->>'pr_entry';
@@ -208,7 +220,7 @@ BEGIN
        ELSE st:='needs_setup'; label:=CASE WHEN held THEN 'On Hold' ELSE 'Unknown Order Status' END;
          reason:=CASE WHEN held THEN 'Held source has no known prior queue stage' ELSE 'Unknown order status: '||status END;
      END CASE;
-     sig:=st||':revision:'||COALESCE(s->>'design_revision_count','0')||':'||epoch;
+     sig:=COALESCE(sig,st||':revision:'||COALESCE(s->>'design_revision_count','0')||':'||epoch);
    END IF;
  ELSE
    IF status NOT IN ('Open','Sent to Supplier','FOC Accepted','FOC Received','Rejected','Reference','Rework In-house','Closed') THEN
@@ -365,7 +377,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION work_queue_child_changed() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
- IF TG_TABLE_NAME='order_revisions' THEN PERFORM work_queue_sync('order',CASE WHEN TG_OP='DELETE' THEN OLD.order_id ELSE NEW.order_id END);
+ IF TG_TABLE_NAME IN ('order_revisions','simulation_rounds') THEN PERFORM work_queue_sync('order',CASE WHEN TG_OP='DELETE' THEN OLD.order_id ELSE NEW.order_id END);
  ELSE PERFORM work_queue_sync('qd',CASE WHEN TG_OP='DELETE' THEN OLD.qd_id ELSE NEW.qd_id END); END IF;
  RETURN NULL;
 END $$;
@@ -395,6 +407,8 @@ DROP TRIGGER IF EXISTS work_queue_revision_sync ON order_revisions;
 CREATE CONSTRAINT TRIGGER work_queue_revision_sync AFTER INSERT OR UPDATE OR DELETE ON order_revisions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION work_queue_child_changed();
 DROP TRIGGER IF EXISTS work_queue_foc_sync ON qd_foc_rounds;
 CREATE CONSTRAINT TRIGGER work_queue_foc_sync AFTER INSERT OR UPDATE OR DELETE ON qd_foc_rounds DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION work_queue_child_changed();
+DROP TRIGGER IF EXISTS work_queue_simulation_round_sync ON simulation_rounds;
+CREATE CONSTRAINT TRIGGER work_queue_simulation_round_sync AFTER INSERT OR UPDATE OR DELETE ON simulation_rounds DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION work_queue_child_changed();
 DROP TRIGGER IF EXISTS work_queue_order_delete ON die_orders;
 CREATE TRIGGER work_queue_order_delete BEFORE DELETE ON die_orders FOR EACH ROW EXECUTE FUNCTION work_queue_source_deleted('order');
 DROP TRIGGER IF EXISTS work_queue_sample_delete ON sample_followups;
@@ -420,3 +434,14 @@ CREATE TRIGGER work_queue_user_access AFTER UPDATE OF page_access,role ON users
 DROP TRIGGER IF EXISTS work_queue_approver_access ON qd_settings;
 CREATE TRIGGER work_queue_approver_access AFTER UPDATE OF approver_user_ids ON qd_settings
  FOR EACH STATEMENT EXECUTE FUNCTION work_queue_access_changed();
+
+-- One-time: Simulation moved from 2 days after design received to 1 working
+-- day after each round's 3D model. A rule an admin already edited is kept.
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id='work_queue_simulation_1day_v1') THEN
+   UPDATE work_queue_rules SET days=1 WHERE stage_key='simulation' AND days=2 AND version=1;
+   PERFORM work_queue_sync('order',id) FROM die_orders WHERE status='UNDER SIMULATION';
+   INSERT INTO app_migrations(id) VALUES('work_queue_simulation_1day_v1');
+ END IF;
+END $$;

@@ -117,6 +117,35 @@ test('PostgreSQL queue synchronization and deadline invariants', {
       assert.equal((await one('SELECT state FROM work_queue_items WHERE id=$1', [first.id])).state, 'superseded');
       assert.equal(Number((await one('SELECT count(*) FROM work_queue_items WHERE source_kind=$1 AND source_id=$2', ['order', id])).count), 2);
     });
+    await t.test('simulation is due one working day after the open round received its 3D model', async () => {
+      const id = await order({ status: 'UNDER SIMULATION', ordered_date: '2026-10-01', design_received_date: '2026-10-10', simulation_enabled: 1 });
+      await db.query("INSERT INTO simulation_rounds(order_id,round_no,started_from,model_received_date) VALUES($1,1,'initial','2026-10-24')", [id]);
+      const item = await current('order', id);
+      assert.equal(item.stage_key, 'simulation');
+      assert.equal(item.due_at.toISOString(), '2026-10-26T13:00:00.000Z'); // Sat model, Sunday skipped
+    });
+    await t.test('simulation awaiting its 3D model has no queue item', async () => {
+      const id = await order({ status: 'UNDER SIMULATION', ordered_date: '2026-10-01', design_received_date: '2026-10-10', simulation_enabled: 1 });
+      assert.equal(await current('order', id), undefined);
+    });
+    await t.test('simulation in in-house modification has no queue item', async () => {
+      const id = await order({ status: 'UNDER SIMULATION', ordered_date: '2026-10-01', design_received_date: '2026-10-10', simulation_enabled: 1 });
+      await db.query(`INSERT INTO simulation_rounds(order_id,round_no,started_from,model_received_date,prep_done_date,sim_completed_date,result,fail_reason,modification)
+        VALUES($1,1,'initial','2026-10-19','2026-10-19','2026-10-20','Not OK','Other','In-house')`, [id]);
+      assert.equal(await current('order', id), undefined);
+    });
+    await t.test('a first-pass legacy simulation die is due from its 3D model date', async () => {
+      const id = await order({ status: 'UNDER SIMULATION', ordered_date: '2026-10-01', design_received_date: '2026-10-10',
+        simulation_enabled: 1, three_d_model_received_date: '2026-10-24' });
+      assert.equal((await current('order', id)).due_at.toISOString(), '2026-10-26T13:00:00.000Z');
+    });
+    await t.test('the simulation rule default becomes one day but an admin-edited rule is kept', async () => {
+      await db.query("INSERT INTO work_queue_rules(plant,stage_key,days,version) VALUES($1,'simulation',3,2)", [plant]);
+      await initializeWorkQueue(db);
+      assert.equal((await one("SELECT days FROM work_queue_rules WHERE plant=$1 AND stage_key='simulation'", [plant])).days, 3);
+      assert.equal((await one("SELECT days FROM work_queue_rules WHERE plant IS NULL AND stage_key='simulation'")).days, 1);
+      await db.query("DELETE FROM work_queue_rules WHERE plant=$1 AND stage_key='simulation'", [plant]);
+    });
     await t.test('manufacturing requires valid ETA and preserves baseline when promise changes', async () => {
       const id = await order({ status: 'DONE', eta: 'TBC' });
       assert.equal((await current('order', id)).due_at, null);
