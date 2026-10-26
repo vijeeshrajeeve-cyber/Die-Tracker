@@ -88,7 +88,7 @@ const PENDING_STAGES = [
   { status: 'PENDING FOR ORDERING',        label: 'Pending Order',     ageFrom: ['die_requested_date'] },
   { status: 'AWAITING FOR DESIGN',         label: 'Awaiting Design',   ageFrom: ['ordered_date'] },
   { status: 'UNDER SIMULATION',            label: 'Simulation',        ageFrom: ['ordered_date'] },
-  { status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval',   ageFrom: ['design_received_date', 'three_d_model_received_date'] },
+  { status: 'PENDING FOR DESIGN APPROVAL', label: 'Design Approval',   ageFrom: ['design_received_date', 'simulation_completed_date'] },
   { status: 'PENDING FOR PR',              label: 'Pending PR',        ageFrom: ['design_approved_date'] },
   { status: 'PENDING FOR ORACLE ENTRY',    label: 'Oracle Entry',      ageFrom: ['pr_entry'] },
   { status: 'PENDING FOR DESIGN TO EMS',   label: 'Design to EMS',     ageFrom: ['oracle_entry', 'pr_entry'] }, // toolings skip Oracle Entry
@@ -103,7 +103,7 @@ const LATE_LIST_LIMIT = 40;
 
 const ORDER_COLUMNS = [
   'id', 'die_no', 'order_no', 'plant', 'type', 'status', 'created_at',
-  'three_d_model_received_date',
+  'simulation_completed_date',
   ...new Set(STAGES.map((s) => s.column)),
 ].join(', ');
 

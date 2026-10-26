@@ -34,7 +34,8 @@ import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
 import ProfileThumb from './components/orders/ProfileThumb';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
-import { designToEmsSince, isTooling } from './utils/oracleEntry';
+import { designToEmsSince } from './utils/oracleEntry';
+import { determineStatus, hasDieReceivedDate } from './utils/determineStatus';
 import { typeLabel, dieTypeLabel, erpDieTypeCode } from './utils/dieType';
 import SampleFollowupPage from './pages/SampleFollowupPage';
 import SettingsPage from './pages/SettingsPage';
@@ -105,11 +106,6 @@ const isSimulationEnabled = (value) => {
   if (value === true || value === 1) return true;
   if (typeof value === 'string') return /^(true|1|yes|ok|required)$/i.test(value.trim());
   return false;
-};
-
-const hasDieReceivedDate = (order) => {
-  const d = order?.['Die Received Date'];
-  return d != null && String(d).trim() !== '';
 };
 
 /** Stored/API values: NORMAL | URGENT | TOP_URGENT */
@@ -1008,34 +1004,6 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   if (!order) return null;
 
   const currentOrder = isEditing ? editedOrder : order;
-  // Auto-determine status based on filled fields
-  const determineStatus = (orderData) => {
-    if (orderData.STATUS === 'CANCELLED' || orderData.STATUS === 'HOLD') return orderData.STATUS;
-
-    // Check dates in reverse order of progress to find current stage
-    // A tooling skips Oracle Entry: PR entry takes it on as an Oracle entry would.
-    if ((orderData['Oracle Entry'] || isTooling(orderData)) && orderData['PR Entry'] && orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
-      if (hasDieReceivedDate(orderData)) return 'DIE RECEIVED';
-      return 'DONE';
-    }
-    if (orderData['PR Entry'] && orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
-      return 'PENDING FOR ORACLE ENTRY';
-    }
-    if (orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
-      return 'PENDING FOR PR';
-    }
-    // Check for 3D Model Received (simulation in progress) - only if simulation is enabled
-    if (orderData.simulationEnabled && orderData['3D Model Received Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
-      return 'UNDER SIMULATION';
-    }
-    if (orderData['Design Received Date'] && orderData['Ordered date']) {
-      return 'PENDING FOR DESIGN APPROVAL';
-    }
-    if (orderData['Ordered date']) {
-      return 'AWAITING FOR DESIGN';
-    }
-    return 'PENDING FOR ORDERING';
-  };
 
   const handleFieldChange = (field, value) => {
     setEditedOrder(prev => {
@@ -1191,7 +1159,10 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     { field: 'Die Requested Date', label: 'Die requested' },
     { field: 'Ordered date', label: 'Ordered' },
     { field: 'Design Received Date', label: 'Design received' },
-    ...(simulation ? [{ field: '3D Model Received Date', label: '3D model received' }] : []),
+    ...(simulation ? [
+      { field: '3D Model Received Date', label: '3D model received' },
+      { field: 'Simulation Completed Date', label: 'Simulation completed' },
+    ] : []),
     { field: 'Design Approved Date', label: 'Design approved' },
     { field: 'PR Entry', label: 'PR entry' },
     { field: 'Oracle Entry', label: 'Oracle entry' },
@@ -2716,7 +2687,7 @@ export default function DieOrderingSystem() {
       case 'AWAITING FOR DESIGN': return order['Ordered date'];
       case 'UNDER SIMULATION': return order['Design Received Date'];
       case 'PENDING FOR DESIGN APPROVAL':
-        return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
+        return order.simulationEnabled ? order['Simulation Completed Date'] : order['Design Received Date'];
       case 'PENDING FOR PR': return order['Design Approved Date'];
       case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
       case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);

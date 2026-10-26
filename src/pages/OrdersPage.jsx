@@ -34,7 +34,7 @@ const getStageEntryDate = (order) => {
     case 'AWAITING FOR DESIGN': return order['Ordered date'];
     case 'UNDER SIMULATION': return order['Design Received Date'];
     case 'PENDING FOR DESIGN APPROVAL':
-      return order.simulationEnabled ? order['3D Model Received Date'] : order['Design Received Date'];
+      return order.simulationEnabled ? order['Simulation Completed Date'] : order['Design Received Date'];
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
     case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);
