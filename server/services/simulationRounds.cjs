@@ -188,6 +188,26 @@ function deriveDie({ order, rows, latestRevision = null, calendar = {}, today })
   };
 }
 
+// Completed rounds of the last 180 days, across every die -- most finished
+// rounds belong to dies that already left Simulation, so the page's 90-day
+// figures cannot be worked out from the dies it lists.
+const RECENT_DAYS = 180;
+function recentRounds(rows, calendarFor, today) {
+  const cutoff = new Date(`${today}T00:00:00Z`);
+  cutoff.setUTCDate(cutoff.getUTCDate() - RECENT_DAYS);
+  const from = cutoff.toISOString().slice(0, 10);
+  return rows
+    .map(r => ({ ...r, sim_completed_date: day(r.sim_completed_date), model_received_date: day(r.model_received_date) }))
+    .filter(r => r.sim_completed_date && r.sim_completed_date > from && r.sim_completed_date <= today)
+    .map(r => ({
+      plant: r.plant || null,
+      sim_completed_date: r.sim_completed_date,
+      model_to_result_days: daysBetween(r.model_received_date, r.sim_completed_date, calendarFor(r.plant)),
+      result: r.result,
+      fail_reason: r.fail_reason || null,
+    }));
+}
+
 const fail = (error, extra = {}) => ({ ok: false, error, ...extra });
 
 // `today` is an ISO day so the caller decides what today means.
@@ -231,5 +251,5 @@ function validateStep(round, input = {}, today) {
 
 module.exports = {
   STAGES, STAGE_LABELS, FAIL_REASONS, MODIFICATIONS, RESULTS, TARGET_WORKING_DAYS,
-  NEXT_STEP, STEP_LABELS, stageOfRound, deriveRounds, deriveDie, validateStep,
+  NEXT_STEP, STEP_LABELS, stageOfRound, deriveRounds, deriveDie, validateStep, recentRounds, RECENT_DAYS,
 };

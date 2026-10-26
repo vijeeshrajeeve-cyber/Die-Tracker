@@ -51,7 +51,15 @@ async function listSimulation(client, today) {
   const { rows: orders } = await client.query(
     "SELECT * FROM die_orders WHERE status = 'UNDER SIMULATION' ORDER BY id"
   );
-  if (!orders.length) return { dies: [] };
+  const calendarFor = await loadCalendars(client);
+  const { rows: finished } = await client.query(
+    `SELECT r.model_received_date, r.sim_completed_date, r.result, r.fail_reason, o.plant
+       FROM simulation_rounds r JOIN die_orders o ON o.id = r.order_id
+      WHERE r.sim_completed_date > $1::date - $2::int`,
+    [today, rules.RECENT_DAYS]
+  );
+  const recent_rounds = rules.recentRounds(finished, calendarFor, today);
+  if (!orders.length) return { dies: [], recent_rounds };
   const ids = orders.map(o => o.id);
   const { rows: rounds } = await client.query(
     'SELECT * FROM simulation_rounds WHERE order_id = ANY($1) ORDER BY order_id, round_no', [ids]
@@ -62,13 +70,12 @@ async function listSimulation(client, today) {
       ORDER BY order_id, revision_number DESC, id DESC`,
     [ids]
   );
-  const calendarFor = await loadCalendars(client);
   const latest = new Map(revisions.map(r => [r.order_id, r]));
   const dies = orders.map(order => rules.deriveDie({
     order, rows: rounds.filter(r => r.order_id === order.id), latestRevision: latest.get(order.id) || null,
     calendar: calendarFor(order.plant), today,
   }));
-  return { dies };
+  return { dies, recent_rounds };
 }
 
 const refuse = (status, error) => ({ ok: false, status, error });

@@ -44,17 +44,18 @@ export const stageSummary = (dies) => Object.fromEntries(SIM_STAGES.map(stage =>
   return [stage, { count: rows.length, late: rows.filter(d => d.late).length }];
 }));
 
-// Completed rounds of every die, with the day number of their result.
-const completedRounds = (dies) => dies.flatMap(d => d.rounds || [])
-  .filter(r => r.sim_completed_date && r.stage !== 'left')
+// `rounds` are the server's recent_rounds: every completed round of the last
+// 180 days, including dies that have since left Simulation.
+const completedRounds = (rounds) => rounds
+  .filter(r => r.sim_completed_date)
   .map(r => ({ ...r, day: dayNumber(r.sim_completed_date) }));
 
 const mean = (values) => (values.length ? values.reduce((s, v) => s + v, 0) / values.length : null);
 
 // Days run back from today: the last 90 days are (today-90, today].
-export const modelToResult = (dies, today) => {
+export const modelToResult = (recent, today) => {
   const now = dayNumber(today);
-  const rounds = completedRounds(dies).filter(r => r.model_to_result_days !== null && r.model_to_result_days !== undefined);
+  const rounds = completedRounds(recent).filter(r => r.model_to_result_days !== null && r.model_to_result_days !== undefined);
   const inWindow = (r, from, to) => r.day > now - to && r.day <= now - from;
   return {
     current: mean(rounds.filter(r => inWindow(r, 0, 90)).map(r => r.model_to_result_days)),
@@ -62,9 +63,9 @@ export const modelToResult = (dies, today) => {
   };
 };
 
-export const topReason = (dies, today) => {
+export const topReason = (recent, today) => {
   const now = dayNumber(today);
-  const notOk = completedRounds(dies).filter(r => r.result === 'Not OK' && r.day > now - 90 && r.day <= now);
+  const notOk = completedRounds(recent).filter(r => r.result === 'Not OK' && r.day > now - 90 && r.day <= now);
   if (!notOk.length) return null;
   const counts = new Map();
   notOk.forEach(r => counts.set(r.fail_reason, (counts.get(r.fail_reason) || 0) + 1));

@@ -58,16 +58,16 @@ test('stage summary counts dies and late dies per stage', () => {
   assert.deepEqual(s.in_house_mod, { count: 0, late: 0 });
 });
 
-test('model to result averages the last 90 days and the 90 before', () => {
-  const dies = [die({ rounds: [done('2026-10-20', 1), done('2026-10-01', 3), done('2026-06-01', 4), done(null, null)] })];
-  assert.deepEqual(modelToResult(dies, TODAY), { current: 2, previous: 4 });
-  assert.deepEqual(modelToResult([die()], TODAY), { current: null, previous: null });
+test('model to result averages the last 90 days and the 90 before, over all recent rounds', () => {
+  const rounds = [done('2026-10-20', 1), done('2026-10-01', 3), done('2026-06-01', 4)];
+  assert.deepEqual(modelToResult(rounds, TODAY), { current: 2, previous: 4 });
+  assert.deepEqual(modelToResult([], TODAY), { current: null, previous: null });
 });
 
 test('top reason picks the most frequent Not OK reason of the last 90 days', () => {
   const notOk = (date, reason) => done(date, 1, { result: 'Not OK', fail_reason: reason });
-  const dies = [die({ rounds: [notOk('2026-10-20', 'Weld seam quality'), notOk('2026-10-18', 'Weld seam quality'),
-    notOk('2026-10-10', 'Other'), notOk('2026-01-01', 'Other'), done('2026-10-19', 1)] })];
-  assert.deepEqual(topReason(dies, TODAY), { reason: 'Weld seam quality', count: 2, total: 3 });
-  assert.equal(topReason([die()], TODAY), null);
+  const rounds = [notOk('2026-10-20', 'Weld seam quality'), notOk('2026-10-18', 'Weld seam quality'),
+    notOk('2026-10-10', 'Other'), notOk('2026-01-01', 'Other'), done('2026-10-19', 1)];
+  assert.deepEqual(topReason(rounds, TODAY), { reason: 'Weld seam quality', count: 2, total: 3 });
+  assert.equal(topReason([], TODAY), null);
 });

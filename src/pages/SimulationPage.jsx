@@ -17,6 +17,7 @@ const SORT_HINT = { overdue: 'Late first, then longest at this stage', newest: '
 
 export default function SimulationPage({ theme, user, data, setData, setToast, searchTerm, setSearchTerm, setSelectedOrder }) {
   const [dies, setDies] = useState([]);
+  const [recentRounds, setRecentRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [stage, setStage] = useState('model_received');
@@ -33,8 +34,9 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
 
   const load = useCallback(async () => {
     try {
-      const { dies: rows } = await simulationAPI.list();
+      const { dies: rows, recent_rounds: recent } = await simulationAPI.list();
       setDies(rows || []);
+      setRecentRounds(recent || []);
       setLoadError(null);
     } catch (error) {
       setLoadError(error.message);
@@ -48,8 +50,9 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
   const scoped = useMemo(() => scopeDies(plantScope, { search: searchTerm || '' }), [plantScope, searchTerm]);
   const summary = useMemo(() => stageSummary(plantScope), [plantScope]);
   const tabCounts = useMemo(() => stageSummary(scoped), [scoped]);
-  const pace = useMemo(() => modelToResult(plantScope, today), [plantScope, today]);
-  const reason = useMemo(() => topReason(plantScope, today), [plantScope, today]);
+  const recentScope = useMemo(() => recentRounds.filter(r => plant === 'All' || r.plant === plant), [recentRounds, plant]);
+  const pace = useMemo(() => modelToResult(recentScope, today), [recentScope, today]);
+  const reason = useMemo(() => topReason(recentScope, today), [recentScope, today]);
   const stageRows = useMemo(() => sortDies(scoped.filter(d => d.stage === stage), sort), [scoped, stage, sort]);
   const bands = sort === 'overdue' ? bandsFor(stage, stageRows) : (stageRows.length ? [{ key: 'all', label: SORT_HINT[sort], tone: 'open', rows: stageRows }] : []);
   const plants = useMemo(() => [...new Set(dies.map(d => d.plant).filter(Boolean))].sort(), [dies]);

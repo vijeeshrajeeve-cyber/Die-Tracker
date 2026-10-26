@@ -10,6 +10,8 @@ installFakeDb(async (sql) => {
   log.push(q);
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
   if (/FROM die_orders WHERE status = 'UNDER SIMULATION'/.test(q)) return { rows: [] };
+  if (/FROM work_queue_calendars/.test(q)) return { rows: [] };
+  if (/FROM simulation_rounds r JOIN die_orders o/.test(q)) return { rows: [] };
   if (/FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: [] };
   throw new Error(`simulation route test: unexpected query ${q}`);
 });
@@ -30,7 +32,7 @@ test.beforeEach(() => { log = []; role = 'user'; });
 test('GET lists the dies in Simulation', async () => {
   const { status, body } = await request(base, '/api/simulation');
   assert.equal(status, 200);
-  assert.deepEqual(body, { dies: [] });
+  assert.deepEqual(body, { dies: [], recent_rounds: [] });
 });
 
 test('DELETE last-step is admin only and touches nothing for others', async () => {

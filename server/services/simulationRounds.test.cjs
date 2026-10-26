@@ -183,3 +183,17 @@ test('a malformed revision date gives no day count instead of failing', () => {
   assert.equal(d.stage, 'awaiting_model');
   assert.equal(d.days_on_stage, null);
 });
+
+test('recent rounds cover completed rounds of the last 180 days, with working days model to result', () => {
+  const rows = [
+    { order_id: 1, plant: 'P1', model_received_date: '2026-10-24', sim_completed_date: '2026-10-26', result: 'OK', fail_reason: null },
+    { order_id: 2, plant: 'P2', model_received_date: '2026-10-01', sim_completed_date: '2026-10-02', result: 'Not OK', fail_reason: 'Other' },
+    { order_id: 3, plant: 'P1', model_received_date: '2026-03-01', sim_completed_date: '2026-03-02', result: 'OK', fail_reason: null },
+    { order_id: 4, plant: 'P1', model_received_date: '2026-10-20', sim_completed_date: null, result: null, fail_reason: null },
+  ];
+  const out = sim.recentRounds(rows, () => ({}), '2026-10-26');
+  assert.deepEqual(out, [
+    { plant: 'P1', sim_completed_date: '2026-10-26', model_to_result_days: 1, result: 'OK', fail_reason: null },
+    { plant: 'P2', sim_completed_date: '2026-10-02', model_to_result_days: 1, result: 'Not OK', fail_reason: 'Other' },
+  ]);
+});
