@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS die_orders (
     die_type TEXT,
     design_received_date TEXT,
     three_d_model_received_date TEXT,
+    simulation_completed_date DATE,
     simulation_enabled INTEGER DEFAULT 0,
     design_approved_date TEXT,
     delay INTEGER DEFAULT 0,

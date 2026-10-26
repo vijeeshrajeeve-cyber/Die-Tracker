@@ -769,7 +769,7 @@ export default function SettingsPage({
                       <div style={{ marginTop: '1rem' }}>
                         <h5 style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' }}>Available Fields</h5>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'three_d_model_received_date', 'simulation_enabled', 'design_approved_date', 'delay', 'pr_entry', 'pr_number', 'customer_name', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month', 'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial', 'corrector', 'urgency', 'special_follow_up'].map(f => (
+                          {['plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date', 'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels', 'design_received_date', 'three_d_model_received_date', 'simulation_completed_date', 'simulation_enabled', 'design_approved_date', 'delay', 'pr_entry', 'pr_number', 'customer_name', 'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month', 'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial', 'corrector', 'urgency', 'special_follow_up'].map(f => (
                             <span key={f} style={{ fontSize: '0.65rem', padding: '2px 6px', background: theme.cardBg, color: theme.textDim, borderRadius: '3px', fontFamily: 'monospace' }}>{f}</span>
                           ))}
                         </div>
