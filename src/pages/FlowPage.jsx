@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, Snowflake } from 'lucide-react';
-import { STATUS_CONFIG, WORKFLOW_STEPS } from '../utils/constants';
+import { STATUS_CONFIG, WORKFLOW_STEPS, TYPE_LABELS } from '../utils/constants';
 import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
 import DieAttentionLabels from '../components/DieAttentionLabels';
@@ -195,7 +195,8 @@ export default function FlowPage({
     { key: 'DIE NO', label: 'Die No' },
     ...(isOracleEntry ? [] : [{ key: 'Order No', label: 'Order' }]),
     { key: 'Plant', label: 'Plant' },
-    { key: 'TYPE', label: 'Type' },
+    { key: 'TYPE', label: isOracleEntry ? 'Item Type' : 'Type' },
+    ...(isOracleEntry ? [{ key: 'Die Type', label: 'Die Type' }] : []),
     { key: 'Diameter', label: 'Diameter' },
     { key: 'Thickness', label: 'Thickness' },
     { key: 'Cavity', label: 'Cav' },
@@ -311,14 +312,18 @@ export default function FlowPage({
                     </td>
                     <td style={styles.td}>
                       <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: order.TYPE === 'N' ? '#3B82F620' : order.TYPE === 'B' ? '#F59E0B20' : '#64748B20', color: order.TYPE === 'N' ? '#3B82F6' : order.TYPE === 'B' ? '#F59E0B' : '#64748B' }}>
-                        {order.TYPE === 'N' ? 'New' : order.TYPE === 'B' ? 'Backup' : order.TYPE}
+                        {TYPE_LABELS[order.TYPE] || order.TYPE}
                       </span>
-                      {isOracleEntry && !isTooling(order) && (
-                        <div style={{ fontSize: '0.7rem', marginTop: '3px', color: order['Die Type'] ? theme.textMuted : '#F59E0B' }}>
-                          {order['Die Type'] ? order['Die Type'][0] + order['Die Type'].slice(1).toLowerCase() : 'Die type?'}
-                        </div>
-                      )}
                     </td>
+                    {isOracleEntry && (
+                      <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                        {isTooling(order)
+                          ? <span style={{ color: '#64748B' }}>—</span>
+                          : order['Die Type']
+                            ? order['Die Type'][0] + order['Die Type'].slice(1).toLowerCase()
+                            : <span style={{ color: '#F59E0B' }} title="Die type is needed for the Oracle die life">Missing</span>}
+                      </td>
+                    )}
                     <td style={styles.td}>
                       {isSimOrApproval ? (
                         <input type="number" defaultValue={parseDieSize(order['Die Size']).diameter || ''} onBlur={(e) => handleSizeChange(order, 'Diameter', parseInt(e.target.value, 10))} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} style={{ width: '65px', padding: '4px 6px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '6px', color: theme.text, fontSize: '0.8rem', textAlign: 'center' }} placeholder="Ø" />
