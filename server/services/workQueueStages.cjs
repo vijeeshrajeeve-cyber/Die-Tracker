@@ -4,7 +4,7 @@
 const STAGES = Object.freeze([
   { key: 'pending_order', label: 'Pending Order', days: 1, page: 'flow-pending-order' },
   { key: 'awaiting_design', label: 'Awaiting Design', days: 3, page: 'flow-awaiting-design' },
-  { key: 'simulation', label: 'Simulation', days: 2, page: 'flow-simulation' },
+  { key: 'simulation', label: 'Simulation', days: 1, page: 'flow-simulation' },
   { key: 'design_approval', label: 'Design Approval', days: 1, page: 'flow-design-approval' },
   { key: 'pending_pr', label: 'Pending PR', days: 1, page: 'flow-pending-pr' },
   { key: 'oracle_entry', label: 'Oracle Entry', days: 1, page: 'flow-oracle-entry' },

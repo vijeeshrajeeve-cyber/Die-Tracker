@@ -153,4 +153,18 @@ function pauseCredit(startAt, endAt, calendar = {}) {
   return dates;
 }
 
-module.exports = { strictDate, localDate, dueDate, localCutoffInstant, classify, pauseCredit, validateCalendar };
+// Working days d with from < d <= to: a model received Monday and simulated
+// Tuesday took one working day. Zero when `to` is not after `from`.
+function workingDaysBetween(from, to, calendar = {}) {
+  const rule = validateCalendar(calendar);
+  const start = dateNumber(from);
+  const end = dateNumber(to);
+  const holidays = new Set(rule.holidays);
+  let count = 0;
+  for (let cursor = start + DAY_MS; cursor <= end; cursor += DAY_MS) {
+    if (rule.weekdays.includes(new Date(cursor).getUTCDay()) && !holidays.has(isoDay(cursor))) count++;
+  }
+  return count;
+}
+
+module.exports = { strictDate, localDate, dueDate, localCutoffInstant, classify, pauseCredit, validateCalendar, workingDaysBetween };

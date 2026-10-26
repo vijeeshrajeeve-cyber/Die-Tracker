@@ -71,3 +71,6 @@ pi_analysis_output.txt
 # Python bytecode cache (die_order_template.py is kept as the layout reference)
 __pycache__/
 *.pyc
+
+# Brainstorm mockups and plan-execution scratch
+.superpowers/

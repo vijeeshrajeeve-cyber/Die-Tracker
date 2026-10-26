@@ -1341,6 +1341,66 @@ const initializeDatabase = async () => {
       END $$;
     `);
 
+    // Simulation step tracking. One row per simulation round of a die; the
+    // die's current stage is derived from its latest round, never stored.
+    // three_d_model_received_date now means the first real model receipt, so
+    // the "simulation finished" meaning it used to carry moves to its own
+    // column -- Design Approval aging reads that one.
+    await client.query(`
+      ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_completed_date DATE;
+
+      CREATE TABLE IF NOT EXISTS simulation_rounds (
+        id                     SERIAL PRIMARY KEY,
+        order_id               INTEGER NOT NULL REFERENCES die_orders(id) ON DELETE CASCADE,
+        round_no               INTEGER NOT NULL,
+        started_from           TEXT NOT NULL CHECK (started_from IN ('initial','supplier','in_house','reentry')),
+        revision_id            INTEGER REFERENCES order_revisions(id) ON DELETE SET NULL,
+        model_received_date    DATE,
+        model_date_target      TEXT CHECK (model_date_target IN ('order','revision')),
+        prep_done_date         DATE,
+        sim_completed_date     DATE,
+        result                 TEXT CHECK (result IN ('OK','Not OK')),
+        fail_reason            TEXT,
+        modification           TEXT CHECK (modification IN ('In-house','Supplier')),
+        supplier_revision_id   INTEGER REFERENCES order_revisions(id) ON DELETE SET NULL,
+        modification_done_date DATE,
+        comments               TEXT,
+        created_by             INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_by_name        TEXT,
+        created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (order_id, round_no),
+        CONSTRAINT simulation_rounds_result_fields CHECK (
+          (result = 'Not OK' AND fail_reason IS NOT NULL AND modification IS NOT NULL)
+          OR (result = 'OK' AND fail_reason IS NULL AND modification IS NULL)
+          OR (result IS NULL AND fail_reason IS NULL AND modification IS NULL)
+        ),
+        CONSTRAINT simulation_rounds_dates_in_order CHECK (
+          (prep_done_date IS NULL OR prep_done_date >= model_received_date)
+          AND (sim_completed_date IS NULL OR sim_completed_date >= prep_done_date)
+          AND (modification_done_date IS NULL OR modification_done_date >= sim_completed_date)
+        )
+      );
+      CREATE INDEX IF NOT EXISTS idx_simulation_rounds_order ON simulation_rounds(order_id);
+
+      -- One-time: orders already past Simulation keep their Design Approval
+      -- timing. Their three_d_model_received_date holds the old button's finish
+      -- date; it is copied, never rewritten -- the real receipt date is unknown.
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE id = 'simulation_completed_backfill_v1') THEN
+          -- The column is still TEXT on a database the DATE migration below
+          -- has not reached yet, so read it as text either way.
+          UPDATE die_orders SET simulation_completed_date = SUBSTRING(three_d_model_received_date::text, 1, 10)::date
+           WHERE simulation_enabled = 1
+             AND three_d_model_received_date::text ~ '^\\d{4}-\\d{2}-\\d{2}'
+             AND simulation_completed_date IS NULL
+             AND status NOT IN ('PENDING FOR ORDERING','AWAITING FOR DESIGN','UNDER SIMULATION');
+          INSERT INTO app_migrations (id) VALUES ('simulation_completed_backfill_v1');
+        END IF;
+      END $$;
+    `);
+
     // Migration: TEXT date columns → DATE
     if (!(await client.query(`SELECT 1 FROM app_migrations WHERE id='date_columns_to_date_v1'`)).rows.length) {
       const dieDateCols = [

@@ -1,0 +1,55 @@
+/* Simulation page — reuses the Sample Followup layout (.sample-followup and
+   the sf-* classes); this file adds only the stage tones and round steps. */
+.sample-followup.simulation {
+  --sim-tone-awaiting: #F59E0B;
+  --sim-tone-received: #60A5FA;
+  --sim-tone-prep: #A78BFA;
+  --sim-tone-inhouse: #F472B6;
+}
+.sample-followup.simulation[data-theme='light'] {
+  --sim-tone-awaiting: #B45309;
+  --sim-tone-received: #2563EB;
+  --sim-tone-prep: #7C3AED;
+  --sim-tone-inhouse: #BE185D;
+}
+.sim-tone-awaiting_model { --sf-tone: var(--sim-tone-awaiting); }
+.sim-tone-model_received { --sf-tone: var(--sim-tone-received); }
+.sim-tone-prep_done { --sf-tone: var(--sim-tone-prep); }
+.sim-tone-in_house_mod { --sf-tone: var(--sim-tone-inhouse); }
+.sim-tone-awaiting_model.sf-dot, .sim-tone-model_received.sf-dot,
+.sim-tone-prep_done.sf-dot, .sim-tone-in_house_mod.sf-dot { background: var(--sf-tone); }
+
+.sim-rounds { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; padding: 0; list-style: none; }
+.sim-round { border: 1px solid var(--sf-line); border-radius: 8px; padding: 10px 12px; }
+.sim-round.is-open { border-color: var(--sim-tone-prep); }
+.sim-round.is-left { opacity: .55; }
+.sim-round-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.sim-round-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--sf-muted); }
+.sim-round-result { font-size: .78rem; font-weight: 600; }
+.sim-round-result.is-ok { color: var(--sf-ok); }
+.sim-round-result.is-bad { color: var(--sf-late-text); }
+.sim-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; list-style: none; margin: 0; padding: 0; }
+.sim-step { border-radius: 6px; padding: 6px 7px; background: var(--sf-chip-bg); font-size: .72rem; color: var(--sf-dim); min-width: 0; }
+.sim-step-label { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sim-step-date { display: block; font-family: var(--sf-mono); margin-top: 2px; }
+.sim-step.is-done { background: var(--sf-ok-bg); color: var(--sf-ok); }
+.sim-step.is-current { background: var(--sf-accent-soft); color: var(--sf-accent-text); outline: 1px solid var(--sf-accent); }
+.sim-step.is-late { background: var(--sf-late-bg); color: var(--sf-late-text); outline-color: var(--sf-late); }
+.sim-step.is-skipped { background: transparent; border: 1px dashed var(--sf-line); }
+.sim-round-note { font-size: .78rem; color: var(--sf-dim); margin-top: 8px !important; }
+
+.sim-step-form { border-top: 1px solid var(--sf-line); padding-top: 14px; margin-top: 4px; }
+.sim-step-form .sf-form-grid { margin-bottom: 12px; }
+.sim-step-form label { display: block; font-size: .7rem; font-weight: 700; color: var(--sf-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.sim-step-form input, .sim-step-form select, .sim-step-form textarea {
+  width: 100%; padding: 8px 10px; background: var(--sf-raised); border: 1px solid var(--sf-border-strong);
+  border-radius: 8px; color: var(--sf-text); font-size: .85rem; outline: none;
+}
+.sim-step-form textarea { resize: vertical; }
+.sim-choice { display: flex; gap: 8px; flex-wrap: wrap; }
+.sim-choice button { flex: 1; }
+.sim-choice button[aria-pressed='true'] { border-color: var(--sf-accent); color: var(--sf-accent-text); background: var(--sf-accent-soft); }
+
+@media (max-width: 640px) {
+  .sim-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

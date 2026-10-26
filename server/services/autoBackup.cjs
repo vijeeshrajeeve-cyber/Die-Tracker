@@ -10,7 +10,7 @@ const INTERVAL_MS = (parseFloat(process.env.BACKUP_INTERVAL_HOURS) || 5) * 60 * 
 const FIELDS = [
     'plant', 'order_no', 'die_no', 'type', 'die_size', 'die_requested_date',
     'ordered_date', 'shipment_type', 'mandrels_per_cavity', 'total_mandrels',
-    'design_received_date', 'three_d_model_received_date', 'simulation_enabled',
+    'design_received_date', 'three_d_model_received_date', 'simulation_completed_date', 'simulation_enabled',
     'design_approved_date', 'delay', 'pr_entry', 'pr_number', 'customer_name',
     'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month',
     'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial',
@@ -21,7 +21,7 @@ const FIELDS = [
 const HEADERS = [
     'Plant', 'Order No', 'DIE NO', 'TYPE', 'Die Size', 'Die Requested Date',
     'Ordered Date', 'Type of Shipment', 'Mandrels per Cavity', 'Total Mandrels',
-    'Design Received Date', '3D Model Received Date', 'Simulation Enabled',
+    'Design Received Date', '3D Model Received Date', 'Simulation Completed Date', 'Simulation Enabled',
     'Design Approved Date', 'Delay', 'PR Entry', 'PR Number', 'Customer Name',
     'Oracle Entry', 'Supplier', 'STATUS', 'OVERALL DELAY', 'ETA', 'Month',
     'Die Received Date', 'Submission Date', 'Sample Approval Date', 'No of Trial',

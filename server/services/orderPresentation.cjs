@@ -14,6 +14,7 @@ function presentOrder(order) { return {
             'Die Type': order.die_type || null,
             'Design Received Date': order.design_received_date,
             '3D Model Received Date': order.three_d_model_received_date,
+            'Simulation Completed Date': order.simulation_completed_date ?? null,
             'simulationEnabled': !!order.simulation_enabled,
             'Design Approved Date': order.design_approved_date,
             'Delay': order.delay,

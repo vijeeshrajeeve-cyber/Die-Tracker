@@ -280,13 +280,6 @@ test('oldest waiting days is measured from the previous stage date', () => {
   assert.equal(row.oldestDays, 10, 'the oldest of the two, not the newest');
 });
 
-test('design approval falls back to the 3D model date when there is no design date', () => {
-  const p = data.buildPending([
-    order({ status: 'PENDING FOR DESIGN APPROVAL', three_d_model_received_date: '2026-08-27' }),
-  ], '2026-08-29');
-  assert.equal(pendingFor(p, 'PENDING FOR DESIGN APPROVAL').oldestDays, 2);
-});
-
 test('a missing stage date falls back through requested date, then created_at', () => {
   const viaRequested = data.buildPending([
     order({ status: 'PENDING FOR PR', design_approved_date: null, die_requested_date: '2026-08-24' }),
@@ -373,7 +366,7 @@ test('the order query selects every column the report needs', async () => {
   await data.fetchOrders(db);
   const { sql } = db.calls[0];
   for (const col of ['id', 'die_no', 'order_no', 'type', 'status', 'created_at',
-    'three_d_model_received_date', ...data.STAGES.map(s => s.column)]) {
+    'simulation_completed_date', ...data.STAGES.map(s => s.column)]) {
     assert.match(sql, new RegExp(`\\b${col}\\b`), `missing column ${col}`);
   }
 });
@@ -401,4 +394,11 @@ test('a tooling in Design to EMS skipped Oracle Entry, so it waits from its PR e
     order({ status: 'PENDING FOR DESIGN TO EMS', type: 'T', oracle_entry: null, pr_entry: '2026-08-25', die_requested_date: '2026-08-01' }),
   ], '2026-08-29');
   assert.equal(pendingFor(p, 'PENDING FOR DESIGN TO EMS').oldestDays, 4);
+});
+
+test('Design Approval aging falls back to the simulation completed date', () => {
+  const rows = [{ status: 'PENDING FOR DESIGN APPROVAL', design_received_date: null,
+    simulation_completed_date: '2026-10-11', three_d_model_received_date: '2026-10-01', die_requested_date: '2026-09-01' }];
+  const pending = data.buildPending(rows, '2026-10-21');
+  assert.equal(pending.find(p => p.status === 'PENDING FOR DESIGN APPROVAL').oldestDays, 10);
 });
