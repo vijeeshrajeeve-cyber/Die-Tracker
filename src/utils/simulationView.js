@@ -39,6 +39,10 @@ export const bandsFor = (stage, rows) => {
   return bands.filter(b => b.rows.length);
 };
 
+// The tab the page opens on: the first stage with dies in it, so the list is
+// never empty while dies wait elsewhere.
+export const initialStage = (dies) => SIM_STAGES.find(s => dies.some(d => d.stage === s)) || 'model_received';
+
 export const stageSummary = (dies) => Object.fromEntries(SIM_STAGES.map(stage => {
   const rows = dies.filter(d => d.stage === stage);
   return [stage, { count: rows.length, late: rows.filter(d => d.late).length }];

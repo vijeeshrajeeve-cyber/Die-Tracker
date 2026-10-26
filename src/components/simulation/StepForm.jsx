@@ -96,7 +96,7 @@ export default function StepForm({ die, busy, onSubmit }) {
         )}
       </div>
       <button type="submit" className="sf-button sf-button-pane sf-button-accent" disabled={busy || !ready}>
-        {busy ? 'Saving…' : `Record ${next.label.toLowerCase()}`}
+        {busy ? 'Saving…' : `Record: ${next.label}`}
       </button>
     </form>
   );

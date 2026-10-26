@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import {
-  scopeDies, sortDies, bandsFor, stageSummary, modelToResult, topReason,
+  scopeDies, sortDies, bandsFor, stageSummary, modelToResult, topReason, initialStage,
 } from './simulationView.js';
 import { SIMULATION_FAIL_REASONS, SIMULATION_MODIFICATIONS, SIMULATION_STAGE_LABELS } from './constants.js';
 
@@ -70,4 +70,10 @@ test('top reason picks the most frequent Not OK reason of the last 90 days', () 
     notOk('2026-10-10', 'Other'), notOk('2026-01-01', 'Other'), done('2026-10-19', 1)];
   assert.deepEqual(topReason(rounds, TODAY), { reason: 'Weld seam quality', count: 2, total: 3 });
   assert.equal(topReason([], TODAY), null);
+});
+
+test('the page opens on the first stage that has dies, else 3D model received', () => {
+  assert.equal(initialStage([die({ stage: 'awaiting_model' }), die({ stage: 'prep_done' })]), 'awaiting_model');
+  assert.equal(initialStage([die({ stage: 'prep_done' })]), 'prep_done');
+  assert.equal(initialStage([]), 'model_received');
 });

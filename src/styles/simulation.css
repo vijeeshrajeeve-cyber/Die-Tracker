@@ -19,7 +19,7 @@
 .sim-tone-awaiting_model.sf-dot, .sim-tone-model_received.sf-dot,
 .sim-tone-prep_done.sf-dot, .sim-tone-in_house_mod.sf-dot { background: var(--sf-tone); }
 
-.sim-rounds { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.sim-rounds { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; padding: 0; list-style: none; }
 .sim-round { border: 1px solid var(--sf-line); border-radius: 8px; padding: 10px 12px; }
 .sim-round.is-open { border-color: var(--sim-tone-prep); }
 .sim-round.is-left { opacity: .55; }

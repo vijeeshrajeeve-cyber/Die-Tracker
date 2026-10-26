@@ -8,7 +8,7 @@ import { SIMULATION_STAGE_LABELS } from '../utils/constants';
 import SimulationDetail from '../components/simulation/SimulationDetail';
 import {
   SIM_STAGES, LATE_STAGES, TARGET_WORKING_DAYS, scopeDies, sortDies, bandsFor, stageSummary,
-  modelToResult, topReason, plural,
+  modelToResult, topReason, initialStage, plural,
 } from '../utils/simulationView';
 import '../styles/sample-followup.css';
 import '../styles/simulation.css';
@@ -25,6 +25,7 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
   const [sort, setSort] = useState('overdue');
   const [selectedId, setSelectedId] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [stageChosen, setStageChosen] = useState(false);
   const today = todayLocal();
 
   const notify = useCallback((message, type) => {
@@ -45,6 +46,10 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+  // Open on a stage that has dies, until the engineer picks a tab themselves.
+  useEffect(() => {
+    if (!stageChosen && dies.length) setStage(initialStage(dies));
+  }, [dies, stageChosen]);
 
   const plantScope = useMemo(() => scopeDies(dies, { plant }), [dies, plant]);
   const scoped = useMemo(() => scopeDies(plantScope, { search: searchTerm || '' }), [plantScope, searchTerm]);
@@ -68,7 +73,7 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
     setDies(prev => (die.stage
       ? prev.map(d => (d.order_id === die.order_id ? die : d))
       : prev.filter(d => d.order_id !== die.order_id)));
-    if (die.stage) { setStage(die.stage); setSelectedId(die.order_id); }
+    if (die.stage) { setStage(die.stage); setStageChosen(true); setSelectedId(die.order_id); }
   };
 
   const run = async (action, success) => {
@@ -76,6 +81,8 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
     try {
       applyResult(await action());
       notify(success, 'success');
+      // The summary's 90-day figures include rounds of dies that left the page.
+      load();
     } catch (error) {
       notify(error.message, 'error');
       // 409: someone else moved this die on, or it left Simulation.
@@ -208,7 +215,7 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
       <div className="sf-filterbar">
         <div className="sf-segmented" role="group" aria-label="Stage">
           {SIM_STAGES.map(s => (
-            <button type="button" key={s} aria-pressed={stage === s} onClick={() => { setStage(s); setSelectedId(null); }}>
+            <button type="button" key={s} aria-pressed={stage === s} onClick={() => { setStage(s); setStageChosen(true); setSelectedId(null); }}>
               <span className={`sf-dot sim-tone-${s}`} aria-hidden="true" />
               <span>{SIMULATION_STAGE_LABELS[s]}</span>
               <span className="sf-chip-count">{tabCounts[s].count}</span>
