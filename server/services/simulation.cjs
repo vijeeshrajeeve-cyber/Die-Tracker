@@ -29,7 +29,7 @@ async function loadRounds(client, orderId) {
 
 async function loadLatestRevision(client, orderId) {
   const { rows } = await client.query(
-    `SELECT id, design_received_date, revision_date FROM order_revisions WHERE order_id = $1
+    `SELECT id, design_received_date, revision_date, created_at FROM order_revisions WHERE order_id = $1
      ORDER BY revision_number DESC, id DESC LIMIT 1`,
     [orderId]
   );
@@ -57,7 +57,7 @@ async function listSimulation(client, today) {
     'SELECT * FROM simulation_rounds WHERE order_id = ANY($1) ORDER BY order_id, round_no', [ids]
   );
   const { rows: revisions } = await client.query(
-    `SELECT DISTINCT ON (order_id) order_id, id, design_received_date, revision_date
+    `SELECT DISTINCT ON (order_id) order_id, id, design_received_date, revision_date, created_at
        FROM order_revisions WHERE order_id = ANY($1)
       ORDER BY order_id, revision_number DESC, id DESC`,
     [ids]
@@ -115,15 +115,15 @@ async function insertRound(client, orderId, { round_no, started_from, revision_i
 
 async function recordStep(client, orderId, input, user, today) {
   const refused = await inTransaction(client, orderId, async ({ order, roundRows }) => {
-    const rounds = rules.deriveRounds({ order, rows: roundRows });
+    const latestRevision = await loadLatestRevision(client, orderId);
+    const rounds = rules.deriveRounds({ order, rows: roundRows, latestRevision });
     let round = rounds[rounds.length - 1];
     const check = rules.validateStep(round, input, today);
     if (!check.ok) return refuse(check.stageMismatch ? 409 : 400, check.error);
     const v = check.value;
 
     if (round.id === null) {
-      const revision_id = ['supplier', 'reentry'].includes(round.started_from)
-        ? (await loadLatestRevision(client, orderId))?.id || null : null;
+      const revision_id = ['supplier', 'reentry'].includes(round.started_from) ? latestRevision?.id || null : null;
       round = { ...round, ...(await insertRound(client, orderId, { ...round, revision_id }, user)) };
     }
 
@@ -195,6 +195,10 @@ async function undoLastStep(client, orderId, user, today) {
   const refused = await inTransaction(client, orderId, async ({ order, roundRows }) => {
     const last = roundRows[roundRows.length - 1];
     if (!last) return refuse(409, 'There is no step to undo');
+    // A round left open from before a later revision is history, not a step
+    // to take back: the die is waiting for a new model.
+    const derived = rules.deriveRounds({ order, rows: roundRows, latestRevision: await loadLatestRevision(client, orderId) });
+    if (derived[derived.length - 1].id === null) return refuse(409, 'There is no step to undo');
     const prev = roundRows[roundRows.length - 2];
 
     if (last.started_from === 'in_house' && prev && !last.prep_done_date) {

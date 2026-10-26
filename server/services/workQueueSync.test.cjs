@@ -134,6 +134,18 @@ test('PostgreSQL queue synchronization and deadline invariants', {
         VALUES($1,1,'initial','2026-10-19','2026-10-19','2026-10-20','Not OK','Other','In-house')`, [id]);
       assert.equal(await current('order', id), undefined);
     });
+    await t.test('a round left open before a later revision gives no item when the die re-enters', async () => {
+      const id = await order({ status: 'UNDER SIMULATION', ordered_date: '2026-09-01', design_received_date: '2026-09-02', simulation_enabled: 1 });
+      await db.query(`INSERT INTO simulation_rounds(order_id,round_no,started_from,model_received_date,created_at)
+        VALUES($1,1,'initial','2026-09-03','2026-09-03 08:00')`, [id]);
+      assert.equal((await current('order', id)).stage_key, 'simulation');
+      await db.query('BEGIN');
+      await db.query("INSERT INTO order_revisions(order_id,revision_number,to_status,revision_date,created_at) VALUES($1,1,'AWAITING FOR DESIGN','2026-10-05','2026-10-05 08:00')", [id]);
+      await db.query("UPDATE die_orders SET design_revision_count=1,status='AWAITING FOR DESIGN' WHERE id=$1", [id]);
+      await db.query('COMMIT');
+      await db.query("UPDATE die_orders SET status='UNDER SIMULATION' WHERE id=$1", [id]);
+      assert.equal(await current('order', id), undefined);
+    });
     await t.test('a first-pass legacy simulation die is due from its 3D model date', async () => {
       const id = await order({ status: 'UNDER SIMULATION', ordered_date: '2026-10-01', design_received_date: '2026-10-10',
         simulation_enabled: 1, three_d_model_received_date: '2026-10-24' });

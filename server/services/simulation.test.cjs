@@ -35,7 +35,10 @@ function fakeDb({ order, rounds = [], revisions = [], failOn = null }) {
       }
       if (/^SELECT .* FROM order_revisions WHERE order_id = \$1/.test(s)) {
         const rows = db.revisions.filter(r => r.order_id === Number(params[0])).sort((a, b) => b.revision_number - a.revision_number);
-        return { rowCount: rows.length ? 1 : 0, rows: rows.slice(0, 1) };
+        // Only the columns the statement names, so a missing column shows up here.
+        const cols = s.match(/^SELECT (.+?) FROM/)[1].split(',').map(c => c.trim());
+        const pick = (r) => Object.fromEntries(cols.map(c => [c, r[c] ?? null]));
+        return { rowCount: rows.length ? 1 : 0, rows: rows.slice(0, 1).map(pick) };
       }
       if (/FROM work_queue_calendars/.test(s)) return { rowCount: 0, rows: [] };
       if (/^INSERT INTO simulation_rounds/.test(s)) {
@@ -211,4 +214,27 @@ test('undo is refused for an OK or Supplier result, and when there is nothing to
     result: 'Not OK', fail_reason: 'Other', modification: 'Supplier' });
   assert.equal((await svc.undoLastStep(fakeDb({ order: order(), rounds: [supplier] }).client, 7, user, TODAY)).status, 409);
   assert.equal((await svc.undoLastStep(fakeDb({ order: order() }).client, 7, user, TODAY)).status, 409);
+});
+
+test('a stale open round from before a newer revision is skipped: the new model opens a fresh round', async () => {
+  const stale = round({ model_received_date: '2026-09-01', created_at: '2026-09-01T08:00:00Z' });
+  const db = fakeDb({ order: order({ three_d_model_received_date: '2026-09-01', design_revision_count: 1 }), rounds: [stale],
+    revisions: [{ id: 41, order_id: 7, revision_number: 1, created_at: '2026-10-05T08:00:00Z', design_received_date: '2026-10-15', model_received_date: null }] });
+  const out = await svc.recordStep(db.client, 7, { step: 'model_received', date: '2026-10-20' }, user, TODAY);
+  assert.equal(out.ok, true);
+  const r2 = db.rounds.find(r => r.round_no === 2);
+  assert.equal(r2.started_from, 'reentry');
+  assert.equal(r2.revision_id, 41);
+  assert.equal(db.revisions[0].model_received_date, '2026-10-20');
+  assert.equal(out.die.stage, 'model_received');
+  assert.equal(out.die.round_no, 2);
+});
+
+test('undo does not touch a stale round left over from before a revision', async () => {
+  const stale = round({ model_received_date: '2026-09-01', prep_done_date: '2026-09-02', created_at: '2026-09-01T08:00:00Z' });
+  const db = fakeDb({ order: order({ design_revision_count: 1 }), rounds: [stale],
+    revisions: [{ id: 41, order_id: 7, revision_number: 1, created_at: '2026-10-05T08:00:00Z' }] });
+  const out = await svc.undoLastStep(db.client, 7, user, TODAY);
+  assert.equal(out.status, 409);
+  assert.equal(db.rounds[0].prep_done_date, '2026-09-02');
 });

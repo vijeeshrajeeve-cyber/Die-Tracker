@@ -209,6 +209,10 @@ BEGIN
            IF COALESCE((s->>'design_revision_count')::int,0)=0 AND NULLIF(s->>'three_d_model_received_date','') IS NOT NULL THEN
              anchor:=s->>'three_d_model_received_date'; sig:='simulation:legacy:'||epoch;
            ELSE RETURN jsonb_build_object('terminal','completed'); END IF;
+         -- A revision after the round opened sent the design back while it was
+         -- open; on return the die waits for a new model, so no item.
+         ELSIF rev IS NOT NULL AND (rev->>'created_at')::timestamp > (sim->>'created_at')::timestamp THEN
+           RETURN jsonb_build_object('terminal','completed');
          ELSIF NULLIF(sim->>'model_received_date','') IS NOT NULL AND NULLIF(sim->>'sim_completed_date','') IS NULL THEN
            anchor:=sim->>'model_received_date'; sig:='simulation:round:'||(sim->>'id')||':'||epoch;
          ELSE RETURN jsonb_build_object('terminal','completed'); END IF;

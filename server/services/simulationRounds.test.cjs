@@ -155,3 +155,31 @@ test('OK drops reason and modification', () => {
   assert.equal(out.value.modification, null);
   assert.equal(out.value.comments, null);
 });
+
+test('an open round older than the latest revision is stale: the die re-enters at Awaiting 3D model', () => {
+  const stale = row({ model_received_date: '2026-09-01', created_at: '2026-09-01T08:00:00Z' });
+  const d = die(order({ design_revision_count: 1 }), [stale],
+    { latestRevision: { id: 9, created_at: '2026-10-05T08:00:00Z', design_received_date: '2026-10-15', revision_date: '2026-10-05' } });
+  assert.equal(d.rounds.length, 2);
+  assert.equal(d.rounds[0].stage, 'left');
+  assert.equal(d.rounds[0].left_simulation, '');
+  assert.equal(d.rounds[1].id, null);
+  assert.equal(d.rounds[1].started_from, 'reentry');
+  assert.equal(d.stage, 'awaiting_model');
+  assert.equal(d.late, false);
+});
+
+test('an open round newer than the latest revision stays live', () => {
+  const live = row({ model_received_date: '2026-10-20', created_at: '2026-10-16T08:00:00Z' });
+  const d = die(order({ design_revision_count: 1 }), [live],
+    { latestRevision: { id: 9, created_at: '2026-10-05T08:00:00Z', design_received_date: '2026-10-15' } });
+  assert.equal(d.rounds.length, 1);
+  assert.equal(d.stage, 'model_received');
+});
+
+test('a malformed revision date gives no day count instead of failing', () => {
+  const d = die(order({ design_revision_count: 1 }), [],
+    { latestRevision: { id: 9, design_received_date: '15/10/2026 approx', revision_date: null } });
+  assert.equal(d.stage, 'awaiting_model');
+  assert.equal(d.days_on_stage, null);
+});

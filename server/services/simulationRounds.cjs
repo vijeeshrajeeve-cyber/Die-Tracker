@@ -13,7 +13,7 @@
 // no row yet gets a *virtual* round, so shipping this writes nothing and no
 // date is ever stamped that somebody did not enter.
 
-const { workingDaysBetween } = require('./workQueueCalendar.cjs');
+const { workingDaysBetween, strictDate } = require('./workQueueCalendar.cjs');
 const { normaliseDate } = require('./sampleTrials.cjs');
 
 const STAGES = ['awaiting_model', 'model_received', 'prep_done', 'in_house_mod'];
@@ -82,10 +82,24 @@ const blankRound = (round_no, started_from) => ({
   supplier_revision_id: null, modification_done_date: null, comments: null,
 });
 
+const instant = (v) => {
+  const t = v ? new Date(v).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
+// A revision recorded after a round was opened means the design went back
+// (the drawer's Revision button, say) while that round was still open. When
+// the die returns it waits for a new model, not for the stale round's step.
+const supersededBy = (round, latestRevision) => {
+  const rev = instant(latestRevision?.created_at);
+  const opened = instant(round.created_at);
+  return rev !== null && opened !== null && rev > opened;
+};
+
 // Rounds as the page shows them. An open round that is not the live one has
 // left Simulation some other way (a status change outside this page); it keeps
 // its dates but is greyed and counted nowhere.
-function deriveRounds({ order, rows }) {
+function deriveRounds({ order, rows, latestRevision = null }) {
   const sorted = [...(rows || [])].sort((a, b) => a.round_no - b.round_no);
   const inSimulation = order.status === 'UNDER SIMULATION';
   const rounds = sorted.map((r) => ({
@@ -100,14 +114,14 @@ function deriveRounds({ order, rows }) {
 
   rounds.forEach((r, i) => {
     if (r.stage === 'closed') return;
-    const isLive = i === rounds.length - 1 && inSimulation;
+    const isLive = i === rounds.length - 1 && inSimulation && !supersededBy(r, latestRevision);
     if (!isLive) {
-      r.left_simulation = i === rounds.length - 1 ? order.status : '';
+      r.left_simulation = i === rounds.length - 1 && !inSimulation ? order.status : '';
       r.stage = 'left';
     }
   });
 
-  if (inSimulation && (!last || last.stage === 'closed')) {
+  if (inSimulation && (!last || ['closed', 'left'].includes(last.stage))) {
     const started = !last ? 'initial' : last.modification === 'Supplier' ? 'supplier' : 'reentry';
     const virtual = blankRound((last ? last.round_no : 0) + 1, started);
     // A first-pass die still in Simulation with a 3D date had it typed in by
@@ -134,13 +148,15 @@ function stageSince(round, order, latestRevision) {
   }
 }
 
+// Revision dates are free text, so a malformed one gives no count rather than
+// taking the whole page down.
 const daysBetween = (from, to, calendar) => {
-  if (!from || !to) return null;
+  if (!strictDate(from) || !strictDate(to)) return null;
   return workingDaysBetween(from, to, calendar);
 };
 
 function deriveDie({ order, rows, latestRevision = null, calendar = {}, today }) {
-  const rounds = deriveRounds({ order, rows }).map((r) => {
+  const rounds = deriveRounds({ order, rows, latestRevision }).map((r) => {
     const model_to_result_days = r.sim_completed_date
       ? daysBetween(r.model_received_date, r.sim_completed_date, calendar) : null;
     let late = false;
