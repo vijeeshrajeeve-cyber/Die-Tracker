@@ -881,6 +881,17 @@ export const sampleTrialsAPI = {
     },
 };
 
+export const simulationAPI = {
+    list: async () => apiRequest('/simulation'),
+    recordStep: async (orderId, payload) => apiRequest(`/simulation/${orderId}/steps`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    }),
+    undoLastStep: async (orderId) => apiRequest(`/simulation/${orderId}/last-step`, {
+        method: 'DELETE',
+    }),
+};
+
 // Auto Backups API (admin only)
 export const autoBackupsAPI = {
     getAll: async () => {
