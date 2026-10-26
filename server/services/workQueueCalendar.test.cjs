@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { strictDate, localDate, dueDate, localCutoffInstant, classify, pauseCredit, validateCalendar } = require('./workQueueCalendar.cjs');
+const { strictDate, localDate, dueDate, localCutoffInstant, classify, pauseCredit, validateCalendar, workingDaysBetween } = require('./workQueueCalendar.cjs');
 
 const calendar = { timezone: 'Asia/Dubai', weekdays: [1, 2, 3, 4, 5, 6], holidays: [], cutoff: '17:00' };
 const badRequest = error => error.status === 400 && error.statusCode === 400;
@@ -86,4 +86,19 @@ test('pause credit counts only complete eligible local dates, excluding both bou
 test('pause boundaries are plant-local dates across a DST change', () => {
   const daily = { ...calendar, timezone: 'America/New_York', weekdays: [0, 1, 2, 3, 4, 5, 6] };
   assert.deepEqual(pauseCredit('2026-03-07T23:00:00Z', '2026-03-10T02:00:00Z', daily), ['2026-03-08']);
+});
+
+test('working days between counts days after the start up to and including the end', () => {
+  assert.equal(workingDaysBetween('2026-10-19', '2026-10-20'), 1); // Mon -> Tue
+  assert.equal(workingDaysBetween('2026-10-19', '2026-10-21'), 2); // Mon -> Wed
+  assert.equal(workingDaysBetween('2026-10-19', '2026-10-19'), 0);
+  assert.equal(workingDaysBetween('2026-10-20', '2026-10-19'), 0);
+});
+
+test('working days between skips Sunday', () => {
+  assert.equal(workingDaysBetween('2026-10-24', '2026-10-26'), 1); // Sat -> Mon
+});
+
+test('working days between skips holidays', () => {
+  assert.equal(workingDaysBetween('2026-10-19', '2026-10-21', { holidays: ['2026-10-20'] }), 1);
 });
