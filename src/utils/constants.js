@@ -216,6 +216,26 @@ export const TRIAL_FAIL_REASONS = [
   'Other',
 ];
 
+// Simulation round vocabulary. Mirrored from server/services/simulationRounds.cjs,
+// which is the authority — src/utils/simulationView.test.js fails if the two
+// drift. Stored verbatim in the database.
+export const SIMULATION_FAIL_REASONS = [
+  'Uneven exit velocity / flow imbalance',
+  'Extrusion pressure too high (exceeds press capacity)',
+  'Die deflection / stress too high',
+  'Weld seam quality',
+  'Exit temperature out of range',
+  'Profile dimension / shape deviation',
+  'Other',
+];
+export const SIMULATION_MODIFICATIONS = ['In-house', 'Supplier'];
+export const SIMULATION_STAGE_LABELS = {
+  awaiting_model: 'Awaiting 3D model',
+  model_received: '3D model received',
+  prep_done: 'Preparation done',
+  in_house_mod: 'In-house modification',
+};
+
 // QD Tracker status vocabulary — colours match the QD Tracker design.
 export const QD_STATUS_CONFIG = {
   'Open':             { fg: '#FBBF24', bg: 'rgba(245,158,11,0.15)' },
