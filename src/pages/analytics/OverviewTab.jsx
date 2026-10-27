@@ -83,7 +83,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
   const typeData = useMemo(() => {
     const labels = { 'N': 'New', 'B': 'Backup', 'T': 'Tooling', 'H': 'Hold' };
     const counts = {};
-    analyticsData.forEach(o => { counts[labels[o.TYPE] || o.TYPE] = (counts[labels[o.TYPE] || o.TYPE] || 0) + 1; });
+    analyticsData.forEach(o => { const name = labels[o.TYPE] || o.TYPE || 'Not set'; counts[name] = (counts[name] || 0) + 1; });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [analyticsData]);
 
