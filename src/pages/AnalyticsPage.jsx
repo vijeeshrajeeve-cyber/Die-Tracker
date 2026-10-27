@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import OverviewTab from './analytics/OverviewTab';
 import SupplierReportTab from './analytics/SupplierReportTab';
 import DieLifeTab from './analytics/DieLifeTab';
+import SimulationSummaryTab from './analytics/SimulationSummaryTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'supplier', label: 'Supplier Report' },
   { id: 'dielife', label: 'Die Life Data' },
+  { id: 'simulation', label: 'Simulation' },
 ];
 
 export default function AnalyticsPage({ data, suppliers, theme }) {
@@ -53,6 +55,9 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
       </div>
       <div style={{ display: tab === 'dielife' ? 'block' : 'none' }}>
         <DieLifeTab theme={theme} onSaved={() => setDieLifeVersion((v) => v + 1)} />
+      </div>
+      <div style={{ display: tab === 'simulation' ? 'block' : 'none' }}>
+        <SimulationSummaryTab theme={theme} active={tab === 'simulation'} />
       </div>
     </div>
   );

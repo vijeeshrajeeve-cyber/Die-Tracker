@@ -890,6 +890,7 @@ export const simulationAPI = {
     undoLastStep: async (orderId) => apiRequest(`/simulation/${orderId}/last-step`, {
         method: 'DELETE',
     }),
+    summary: async () => apiRequest('/simulation-summary'),
 };
 
 // Auto Backups API (admin only)
