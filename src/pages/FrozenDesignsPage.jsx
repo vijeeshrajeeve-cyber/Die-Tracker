@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { Snowflake, Download, Upload, Lock, FileText, Layers, Send, ShieldAlert, Search } from 'lucide-react';
+import { Snowflake, Download, Upload, Lock, FileText, Layers, Send, ShieldAlert } from 'lucide-react';
 import { frozenDesignsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import FreezeDesignModal from '../components/FreezeDesignModal';
@@ -18,11 +18,11 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
 // otherwise the person who froze it.
 const updatedBy = (r) => (r.is_active ? r.frozen_by_name : (r.released_by_name || r.frozen_by_name)) || '—';
 
-export default function FrozenDesignsPage({ user, theme = {} }) {
+// search is the top-bar box, which filters whichever page is open.
+export default function FrozenDesignsPage({ user, theme = {}, search = '' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState(null);
-  const [search, setSearch] = useState('');
   const [plant, setPlant] = useState('All');
   const [status, setStatus] = useState('All');
   const [showFreeze, setShowFreeze] = useState(false);
@@ -187,11 +187,6 @@ export default function FrozenDesignsPage({ user, theme = {} }) {
 
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: theme.shadowSm }}>
-        <div style={{ flex: 1, minWidth: 240, position: 'relative' }}>
-          <Search size={16} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: dim }} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by profile, supplier, press, or file…"
-            style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
-        </div>
         <select aria-label="Filter by plant" value={plant} onChange={(e) => setPlant(e.target.value)} style={selectStyle}>
           <option value="All">All plants</option>
           {plantOptions.map(p => <option key={p} value={p}>{p}</option>)}

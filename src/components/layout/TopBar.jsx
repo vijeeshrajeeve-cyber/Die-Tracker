@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, PenTool } from 'lucide-react';
+import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, PenTool, X } from 'lucide-react';
 import useDismissable from '../../hooks/useDismissable';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 import { shortcutLabel } from '../../utils/searchPalette';
@@ -8,6 +8,7 @@ const TopBar = ({
     user,
     searchTerm,
     setSearchTerm,
+    searchPlaceholder, // The open page's search hint; none hides the box
     theme,
     isDarkMode,
     setIsDarkMode,
@@ -111,17 +112,20 @@ const TopBar = ({
                     </p>
                 </div>
 
-                {/* Search Bar - Moved from filter area to TopBar */}
+                {/* Filters the open page. Pages used to carry their own search
+                    boxes beside this one; now this is the only one. */}
+                {searchPlaceholder && (
                 <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
                     <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: theme.textDim }} />
-                    <input aria-label="Search dies, orders and profiles"
+                    <input aria-label={searchPlaceholder.replace(/…$/, '')}
                         type="text"
-                        placeholder="Start searching here..."
+                        placeholder={searchPlaceholder}
                         value={searchTerm || ''}
                         onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Escape' && searchTerm) setSearchTerm(''); }}
                         style={{
                             width: '100%',
-                            padding: '12px 16px 12px 48px',
+                            padding: '12px 40px 12px 48px',
                             background: theme.inputBg,
                             border: 'none', // Cleaner look for topbar
                             borderRadius: '50px', // Rounder like reference
@@ -131,7 +135,14 @@ const TopBar = ({
                             boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.20)'
                         }}
                     />
+                    {searchTerm && (
+                        <button type="button" onClick={() => setSearchTerm('')} aria-label="Clear search" title="Clear search"
+                            style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', display: 'flex', padding: '4px', background: 'transparent', border: 'none', borderRadius: '50%', color: theme.textMuted, cursor: 'pointer' }}>
+                            <X size={14} />
+                        </button>
+                    )}
                 </div>
+                )}
                 {onOpenSearch && (
                     <button type="button" onClick={onOpenSearch} aria-label="Search all die orders and QDs"
                         title="Search all die orders and QDs"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import {
-  Download, Plus, ClipboardList, Factory, Search, X,
+  Download, Plus, ClipboardList, Factory, X,
   AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit, Upload,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, suppliersAPI, correctorsAPI } from '../api';
@@ -71,7 +71,8 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
   );
 };
 
-export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = null, focusQdId = null, focusQdRecord = null, onFocusHandled }) {
+// search/setSearch are the top-bar box, which filters whichever page is open.
+export default function QDTrackerPage({ user, theme = {}, search = '', setSearch, onCompose, qdQueue = null, focusQdId = null, focusQdRecord = null, onFocusHandled }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, foc: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
@@ -86,7 +87,6 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
   const [correctors, setCorrectors] = useState([]);
   const [correctorsError, setCorrectorsError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [plant, setPlant] = useState('All');
   const [supplier, setSupplier] = useState('All');
   const [status, setStatus] = useState('All');
@@ -362,11 +362,6 @@ export default function QDTrackerPage({ user, theme = {}, onCompose, qdQueue = n
 
           {/* Filter bar */}
           <div style={{ ...panel, padding: '14px 16px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 240, position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Search size={16} style={{ position: 'absolute', left: 13, color: dim, pointerEvents: 'none' }} />
-              <input aria-label="Search quality discrepancies" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by QD no, die number, corrector, or issue…"
-                style={{ width: '100%', padding: '9px 12px 9px 38px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
-            </div>
             {/* Year scopes the whole page (KPIs + supplier tab), unlike the
                 row filters beside it, so it is fetched rather than filtered. */}
             <select aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)} style={{ ...selectStyle, minWidth: 120 }}>

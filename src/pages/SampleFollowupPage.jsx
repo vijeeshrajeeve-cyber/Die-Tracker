@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, X, Plus, ClipboardList, Download } from 'lucide-react';
+import { X, Plus, ClipboardList, Download } from 'lucide-react';
 import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import { exportToExcel } from '../utils/exportExcel';
@@ -380,11 +380,6 @@ export default function SampleFollowupPage({
           </div>
         </div>
         <div className="sf-header-actions">
-          <label className="sf-search">
-            <Search size={18} aria-hidden="true" />
-            <input aria-label="Search die, profile, customer or corrector" placeholder="Die, profile, customer, corrector" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} />
-            {searchTerm && <button type="button" className="sf-icon-button" aria-label="Clear search" onClick={() => setSearchTerm('')}><X size={14} /></button>}
-          </label>
           <button type="button" className="sf-button sf-button-header" disabled={!exportRows.length} onClick={() => handleExport().catch(error => setToast({ type: 'error', message: `Export failed: ${error.message}` }))}><Download size={16} />Export</button>
           <button type="button" className="sf-button sf-button-header sf-button-primary" disabled={saving} onClick={addSample}><Plus size={16} />Add Record</button>
         </div>

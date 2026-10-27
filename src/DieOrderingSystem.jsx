@@ -24,7 +24,7 @@ import BackupDieRequests from './components/backup/BackupDieRequests';
 import EmailCompose from './components/email/EmailCompose';
 import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
-import { CONTROLLABLE_PAGES, STATUS_CONFIG, APP_NAME, pageTitle, statusColors } from './utils/constants';
+import { CONTROLLABLE_PAGES, STATUS_CONFIG, APP_NAME, pageTitle, pageSearchHint, statusColors } from './utils/constants';
 import { parseDateDMY, formatDate } from './utils/helpers';
 import { toExcelDate } from './utils/exportExcel';
 import usePIImport from './hooks/usePIImport';
@@ -3250,7 +3250,10 @@ export default function DieOrderingSystem() {
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        // One search box serves every page, so a term typed on one page
+        // must not silently filter the next. Only the nav clears it: the
+        // palette and Work Queue set a term and then switch page on purpose.
+        setActiveTab={(tab) => { if (tab !== activeTab) setSearchTerm(''); setActiveTab(tab); }}
         user={user}
         theme={theme}
         collapsed={sidebarCollapsed}
@@ -3263,6 +3266,7 @@ export default function DieOrderingSystem() {
           user={user}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          searchPlaceholder={!forcePasswordChange && hasPageAccess(activeTab) ? pageSearchHint(activeTab) : null}
           theme={theme}
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
@@ -3304,7 +3308,7 @@ export default function DieOrderingSystem() {
           )}
 
           {activeTab === 'work-queue' && hasPageAccess('work-queue') && (
-            <WorkQueuePage theme={theme} user={user} onOpenSource={openQueueSource} />
+            <WorkQueuePage theme={theme} user={user} onOpenSource={openQueueSource} search={searchTerm} />
           )}
 
           {activeTab === 'orders' && hasPageAccess('orders') && (
@@ -3333,7 +3337,7 @@ export default function DieOrderingSystem() {
           {activeTab === 'flow-completed' && hasPageAccess(activeTab) && (
             <Suspense fallback={<ChunkFallback theme={theme} />}>
               <InManufacturingPage
-                data={data} searchTerm={searchTerm} setSearchTerm={setSearchTerm} theme={theme}
+                data={data} searchTerm={searchTerm} theme={theme}
                 correctors={correctors} correctorsError={correctorsError}
                 setSelectedOrder={setSelectedOrder} setRevisionHistoryOrder={setRevisionHistoryOrder}
                 setData={setData} setToast={setToast} setActiveTab={setActiveTab}
@@ -3345,14 +3349,14 @@ export default function DieOrderingSystem() {
             <Suspense fallback={<ChunkFallback theme={theme} />}>
               <SimulationPage
                 theme={theme} user={user} data={data} setData={setData} setToast={setToast}
-                searchTerm={searchTerm} setSearchTerm={setSearchTerm} setSelectedOrder={setSelectedOrder}
+                searchTerm={searchTerm} setSelectedOrder={setSelectedOrder}
               />
             </Suspense>
           )}
 
           {activeTab.startsWith('flow-') && activeTab !== 'flow-completed' && activeTab !== 'flow-simulation' && !activeTab.includes('sample-followup') && hasPageAccess(activeTab) && (
             <FlowPage
-              data={data} activeTab={activeTab} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+              data={data} activeTab={activeTab} searchTerm={searchTerm}
               sortConfig={sortConfig} handleSort={handleSort} suppliers={suppliers} theme={theme}
               setSelectedOrder={setSelectedOrder} setShowAddOrderModal={setShowAddOrderModal}
               setRevisionOrder={setRevisionOrder} setChangelogOrder={setChangelogOrder}
@@ -3393,6 +3397,7 @@ export default function DieOrderingSystem() {
           {activeTab === 'backup-requests' && hasPageAccess('backup-requests') && (
             <BackupDieRequests
               theme={theme}
+              searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               backupRequests={backupRequests}
               onRefresh={fetchBackupRequests}
               plants={plants}
@@ -3403,13 +3408,14 @@ export default function DieOrderingSystem() {
           )}
 
           {activeTab === 'frozen-designs' && hasPageAccess('frozen-designs') && (
-            <FrozenDesignsPage user={user} theme={theme} />
+            <FrozenDesignsPage user={user} theme={theme} search={searchTerm} />
           )}
 
           {activeTab === 'qd-tracker' && hasPageAccess('qd-tracker') && (
             <QDTrackerPage
               user={user}
               theme={theme}
+              search={searchTerm} setSearch={setSearchTerm}
               onCompose={(prefill) => setShowEmailCompose(prefill || {})}
               qdQueue={qdQueue}
               focusQdId={focusQdId}

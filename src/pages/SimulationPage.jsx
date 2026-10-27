@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, X, Cpu, Download, RefreshCw } from 'lucide-react';
+import { Cpu, Download, RefreshCw } from 'lucide-react';
 import { simulationAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import { exportToExcel } from '../utils/exportExcel';
@@ -15,7 +15,7 @@ import '../styles/simulation.css';
 
 const SORT_HINT = { overdue: 'Late first, then longest at this stage', newest: 'Most recent stage start first', plant: 'By plant' };
 
-export default function SimulationPage({ theme, user, data, setData, setToast, searchTerm, setSearchTerm, setSelectedOrder }) {
+export default function SimulationPage({ theme, user, data, setData, setToast, searchTerm, setSelectedOrder }) {
   const [dies, setDies] = useState([]);
   const [recentRounds, setRecentRounds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -166,11 +166,6 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
           </div>
         </div>
         <div className="sf-header-actions">
-          <label className="sf-search">
-            <Search size={18} aria-hidden="true" />
-            <input aria-label="Search die, order or supplier" placeholder="Die, order, supplier" value={searchTerm || ''} onChange={e => setSearchTerm(e.target.value)} />
-            {searchTerm && <button type="button" className="sf-icon-button" aria-label="Clear search" onClick={() => setSearchTerm('')}><X size={14} /></button>}
-          </label>
           <button type="button" className="sf-button sf-button-header" aria-label="Refresh" onClick={() => load()}><RefreshCw size={16} /></button>
           <button type="button" className="sf-button sf-button-header" disabled={!dies.length}
             onClick={() => handleExport().catch(error => notify(`Export failed: ${error.message}`, 'error'))}><Download size={16} />Export</button>

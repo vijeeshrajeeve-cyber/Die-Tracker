@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, RefreshCw, Search, Settings2, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, RefreshCw, Settings2, X } from 'lucide-react';
 import useWorkQueue from '../hooks/useWorkQueue';
 import QueueScopes from '../components/work-queue/QueueScopes';
 import DeadlineFilters from '../components/work-queue/DeadlineFilters';
@@ -11,11 +11,11 @@ import { BUCKETS } from '../components/work-queue/view';
 import { BRAND } from '../utils/brand';
 import '../styles/work-queue.css';
 
-export default function WorkQueuePage({ theme = {}, user, onOpenSource }) {
+// search comes from the top-bar box, which filters whichever page is open.
+export default function WorkQueuePage({ theme = {}, user, onOpenSource, search = '' }) {
   const [scope, setScope] = useState('mine');
   const [bucket, setBucket] = useState('all');
   const [plant, setPlant] = useState('');
-  const [search, setSearch] = useState('');
   const [q, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
@@ -53,8 +53,7 @@ export default function WorkQueuePage({ theme = {}, user, onOpenSource }) {
       <DeadlineFilters bucket={bucket} counts={data?.counts?.buckets} onChange={changeBucket} />
       <div className="wq-card">
         <div className="wq-toolbar"><div><h2>{scopeTitle}{bucket !== 'all' ? ` · ${BUCKETS.find(entry => entry.key === bucket)?.label}` : ''}</h2><p className="wq-help">Sorted by attention needed, then deadline.</p></div>
-          <div className="wq-filters"><label className="wq-search"><Search size={17} /><span className="wq-sr-only">Search die, profile, supplier or stage</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search die, profile, supplier…" />{search && <button type="button" className="wq-icon-button" aria-label="Clear search" onClick={() => setSearch('')}><X size={14} /></button>}</label>
-            <label className="wq-plant-filter"><span className="wq-sr-only">Filter by plant</span><select value={plant} onChange={event => { setPlant(event.target.value); setPage(1); }}><option value="">All plants</option>{(data?.plants || []).map(entry => { const name = typeof entry === 'string' ? entry : entry.name; return <option key={name} value={name}>{name}</option>; })}</select></label>
+          <div className="wq-filters">            <label className="wq-plant-filter"><span className="wq-sr-only">Filter by plant</span><select value={plant} onChange={event => { setPlant(event.target.value); setPage(1); }}><option value="">All plants</option>{(data?.plants || []).map(entry => { const name = typeof entry === 'string' ? entry : entry.name; return <option key={name} value={name}>{name}</option>; })}</select></label>
             {bucket !== 'all' && <button type="button" className="wq-button wq-button-small" onClick={() => changeBucket('all')}>All deadlines<X size={13} /></button>}
           </div>
         </div>

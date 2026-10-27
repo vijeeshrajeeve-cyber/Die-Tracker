@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, ChevronDown, ChevronUp, Package, MessageSquarePlus, CalendarClock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Package, MessageSquarePlus, CalendarClock } from 'lucide-react';
 import { STATUS_CONFIG } from '../utils/constants';
 import { deliveryFollowupsAPI } from '../api';
 import { formatDate } from '../utils/helpers';
@@ -42,7 +42,7 @@ const SORTABLE = [
 ];
 
 export default function InManufacturingPage({
-  data, searchTerm, setSearchTerm, theme, correctors, correctorsError,
+  data, searchTerm, theme, correctors, correctorsError,
   setSelectedOrder, setRevisionHistoryOrder, setData, setToast, setActiveTab,
 }) {
   const [summaries, setSummaries] = useState({});
@@ -102,10 +102,6 @@ export default function InManufacturingPage({
             <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: '4px 0 0' }}>Follow up delivery against each supplier&apos;s ETA</p>
           </div>
           <span style={{ background: config.color, color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600 }}>{orders.length}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '280px' }}>
-          <Search size={18} color={theme.textMuted} />
-          <input aria-label="Search dies in manufacturing" type="text" placeholder="Search die, order or supplier…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }} />
         </div>
       </div>
 

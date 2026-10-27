@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, existingDataAPI, extractProfileFromDie, getUser } from '../../api';
 import { applyPrefill } from '../../utils/dieOrderPrefill';
@@ -80,8 +80,8 @@ const escapeHtml = (value) => (value || 'N/A')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user, onCompose, emailTemplates = [] }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+// searchTerm/setSearchTerm are the top-bar box, which filters whichever page is open.
+const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupRequests, onRefresh, plants = [], user, onCompose, emailTemplates = [] }) => {
   const [filterPlant, setFilterPlant] = useState('all');
   const [filterStatus, setFilterStatus] = useState('Pending');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -292,6 +292,9 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
     const validIds = new Set((backupRequests || []).filter(isSelectable).map(request => request.id));
     setSelectedRequestIds(prev => prev.filter(id => validIds.has(id)));
   }, [backupRequests]);
+
+  // The search box lives in the top bar now, so it cannot reset the page itself.
+  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
   const handleSort = (key) => {
     if (key === 'slNo') return;
@@ -823,20 +826,6 @@ const BackupDieRequests = ({ theme, backupRequests, onRefresh, plants = [], user
         boxShadow: theme.shadowMd,
       }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-          <div style={{ flex: 1, minWidth: '250px', position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: theme.textDim }} />
-            <input
-              type="text"
-              placeholder="Search by DIE NO or CUSTOMER..."
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-              style={{
-                width: '100%', padding: '12px 16px 12px 44px',
-                background: theme.inputBg, border: `1px solid ${theme.cardBorder}`,
-                borderRadius: '12px', color: theme.text, fontSize: '0.875rem',
-              }}
-            />
-          </div>
           <select
             value={filterPlant}
             onChange={(e) => { setFilterPlant(e.target.value); setCurrentPage(1); }}

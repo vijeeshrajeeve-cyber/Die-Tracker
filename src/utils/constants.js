@@ -199,6 +199,25 @@ export const pageTitle = (tabId) => {
   return label ? `${label} · ${APP_NAME}` : APP_NAME;
 };
 
+// The top-bar search box filters whichever page is open, so its hint says what
+// that page matches on. A page missing here has nothing to filter and the box
+// is hidden there; Search all (Ctrl K) still covers it.
+const FLOW_SEARCH_HINT = 'Search die, order or supplier…';
+export const PAGE_SEARCH_HINTS = {
+  'orders': 'Search die no, order no or supplier…',
+  'work-queue': 'Search die, profile, supplier or stage…',
+  'backup-requests': 'Search by die no or customer…',
+  'frozen-designs': 'Search by profile, supplier, press or file…',
+  'qd-tracker': 'Search by QD no, die number, corrector or issue…',
+  'flow-sample-followup': 'Search die, profile, customer or corrector…',
+  ...Object.fromEntries(CONTROLLABLE_PAGES
+    .filter(p => p.id.startsWith('flow-') && p.id !== 'flow-sample-followup')
+    .map(p => [p.id, FLOW_SEARCH_HINT])),
+};
+
+/** The search hint for a page, or null when the page has no search. */
+export const pageSearchHint = (tabId) => PAGE_SEARCH_HINTS[tabId] || null;
+
 // Preset reasons for bypassing a frozen design and following the normal flow.
 export const BYPASS_REASONS = ['Profile revised', 'Customer change', 'Quality issue', 'Other'];
 

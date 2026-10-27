@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, Snowflake } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, RotateCcw, Eye, Plane, Truck, Copy, History, Package, Plus, Snowflake } from 'lucide-react';
 import { STATUS_CONFIG, WORKFLOW_STEPS, TYPE_LABELS } from '../utils/constants';
 import { ordersAPI, frozenDesignsAPI, extractProfileFromDie } from '../api';
 import { formatDate } from '../utils/helpers';
@@ -72,7 +72,7 @@ const DaysBadge = ({ order }) => {
 };
 
 export default function FlowPage({
-  data, activeTab, searchTerm, setSearchTerm, sortConfig, handleSort, suppliers, theme,
+  data, activeTab, searchTerm, sortConfig, handleSort, suppliers, theme,
   setSelectedOrder, setShowAddOrderModal, setRevisionOrder, setChangelogOrder,
   setRevisionHistoryOrder,
   setData, setToast,
@@ -227,10 +227,6 @@ export default function FlowPage({
               <Plus size={16} /> New Order
             </button>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.inputBg || '#0F172A', borderRadius: '10px', padding: '10px 14px', border: `1px solid ${theme.border || '#334155'}`, minWidth: '280px' }}>
-            <Search size={18} color={theme.textMuted} />
-            <input aria-label="Search orders in this stage" type="text" placeholder="Search orders..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ border: 'none', background: 'transparent', color: theme.text, fontSize: '0.9rem', outline: 'none', width: '100%' }} />
-          </div>
         </div>
       </div>
 
