@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Snowflake, X, Upload } from 'lucide-react';
-import { frozenDesignsAPI, extractProfileFromDie } from '../api';
+import { frozenDesignsAPI, extractProfileFromDie, plantsAPI, pressesAPI } from '../api';
 import useDialog from '../hooks/useDialog';
 
 // "Freeze / Final Design" action. Works two ways:
@@ -19,6 +19,17 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
   const [files, setFiles] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Suggestions from the plant and press masters. Matching is exact on the stored
+  // values (the server canonicalises "P8"/"8" to "PRESS 8"), so offering the
+  // master names steers people away from free-typed variants.
+  const [plantNames, setPlantNames] = useState([]);
+  const [presses, setPresses] = useState([]);
+  useEffect(() => {
+    plantsAPI.getAll().then(r => setPlantNames((r || []).map(p => p.name).filter(Boolean))).catch(() => {});
+    pressesAPI.getAll().then(r => setPresses(r || [])).catch(() => {});
+  }, []);
+  const plantKey = (v) => String(v || '').trim().toUpperCase().replace(/\b0+(\d+)\b/g, '$1');
+  const pressOptions = presses.filter(p => !plant || !p.plant || plantKey(p.plant) === plantKey(plant));
 
   const bg = theme.cardBg || '#09090b';
   const border = theme.cardBorder || '#27272a';
@@ -79,11 +90,13 @@ export default function FreezeDesignModal({ order = null, theme = {}, onClose, o
             </div>
             <div>
               <label style={labelStyle} htmlFor="freezedesignmodal-plant">Plant *</label>
-              <input id="freezedesignmodal-plant" style={inputStyle} value={plant} onChange={(e) => setPlant(e.target.value)} placeholder="e.g. GEX 1" />
+              <input id="freezedesignmodal-plant" style={inputStyle} value={plant} onChange={(e) => setPlant(e.target.value)} placeholder="e.g. GEX 1" list="freezedesignmodal-plants" autoComplete="off" />
+              <datalist id="freezedesignmodal-plants">{plantNames.map(p => <option key={p} value={p} />)}</datalist>
             </div>
             <div>
               <label style={labelStyle} htmlFor="freezedesignmodal-press">Press *</label>
-              <input id="freezedesignmodal-press" style={inputStyle} value={press} onChange={(e) => setPress(e.target.value)} placeholder="e.g. PRESS 4 / P5" />
+              <input id="freezedesignmodal-press" style={inputStyle} value={press} onChange={(e) => setPress(e.target.value)} placeholder="e.g. PRESS 4" list="freezedesignmodal-presses" autoComplete="off" />
+              <datalist id="freezedesignmodal-presses">{pressOptions.map(p => <option key={p.press_name} value={p.press_name}>{p.press_code ? `Code ${p.press_code}` : ''}</option>)}</datalist>
             </div>
             <div>
               <label style={labelStyle} htmlFor="freezedesignmodal-cavity">Cavity *</label>

@@ -183,6 +183,8 @@ CREATE TABLE IF NOT EXISTS frozen_designs (
     supplier        TEXT,
     die_size        TEXT,
     notes           TEXT,
+    edited_at       TIMESTAMP,
+    edited_by       INTEGER REFERENCES users(id),
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_frozen

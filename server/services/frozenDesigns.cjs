@@ -103,6 +103,7 @@ async function listFrozenDesigns(client, { profile, plant, press, cavity, active
     `SELECT fd.*,
        fz.username AS frozen_by_name,
        rl.username AS released_by_name,
+       ed.username AS edited_by_name,
        (SELECT COUNT(*) FROM die_orders o WHERE o.frozen_design_id = fd.id AND o.frozen_design_action = 'released')
        + (SELECT COUNT(*) FROM backup_die_requests b WHERE b.frozen_design_id = fd.id AND b.frozen_design_action = 'released')
          AS released_count,
@@ -112,6 +113,7 @@ async function listFrozenDesigns(client, { profile, plant, press, cavity, active
        FROM frozen_designs fd
        LEFT JOIN users fz ON fz.id = fd.frozen_by
        LEFT JOIN users rl ON rl.id = fd.released_by
+       LEFT JOIN users ed ON ed.id = fd.edited_by
        ${whereSql}
        ORDER BY fd.frozen_at DESC`,
     params
@@ -169,4 +171,72 @@ async function manualRelease(client, { id, userId }) {
   return rowCount > 0;
 }
 
-module.exports = { extractProfileFromDie, normalizePlant, cleanPressToken, canonicalPress, loadPresses, hasFullKey, findActiveMatch, matchBulk, freezeDesign, listFrozenDesigns, manualRelease };
+// Admin correction of a frozen design. Supplier, die size and notes can change on
+// any version. The match key (profile/plant/press/cavity) only on the active one —
+// a retired or superseded row is history — and never onto a key another active
+// design already holds. Returns { ok } or { error, status }.
+async function updateFrozenDesign(client, { id, userId, profile, plant, press, cavity, supplier, dieSize, notes }) {
+  const { rows } = await client.query('SELECT * FROM frozen_designs WHERE id = $1', [id]);
+  const d = rows[0];
+  if (!d) return { error: 'Frozen design not found', status: 404 };
+
+  const presses = await loadPresses(client);
+  const next = {
+    profile: profile === undefined ? d.profile_number : String(profile).trim(),
+    plant: plant === undefined ? d.plant : normalizePlant(plant),
+    press: press === undefined ? d.press : canonicalPress(press, presses),
+    cavity: cavity === undefined ? d.cavity : Math.round(Number(cavity)),
+  };
+  if (!hasFullKey(next) || !(next.cavity > 0)) {
+    return { error: 'Profile, plant, press and a cavity above 0 are required', status: 400 };
+  }
+  const keyChanged = next.profile !== d.profile_number || next.plant !== d.plant
+    || next.press !== d.press || next.cavity !== d.cavity;
+  if (keyChanged && !d.is_active) {
+    return { error: 'Only the frozen version can change its profile, plant, press or cavity', status: 409 };
+  }
+  if (keyChanged) {
+    const clash = await client.query(
+      `SELECT id FROM frozen_designs WHERE profile_number = $1 AND plant = $2 AND press = $3 AND cavity = $4
+         AND is_active = true AND id <> $5 LIMIT 1`,
+      [next.profile, next.plant, next.press, next.cavity, id]
+    );
+    if (clash.rows.length) {
+      return { error: `${next.profile} · ${next.plant} · ${next.press} · ${next.cavity} cav is already frozen as another design`, status: 409 };
+    }
+  }
+  const text = (v, old) => (v === undefined ? old : (String(v).trim() || null));
+  await client.query(
+    `UPDATE frozen_designs SET profile_number = $1, plant = $2, press = $3, cavity = $4,
+       supplier = $5, die_size = $6, notes = $7, edited_at = CURRENT_TIMESTAMP, edited_by = $8
+       WHERE id = $9`,
+    [next.profile, next.plant, next.press, next.cavity,
+      text(supplier, d.supplier), text(dieSize, d.die_size), text(notes, d.notes), userId || null, id]
+  );
+  return { ok: true };
+}
+
+// Every die order and backup request that met a frozen design for the same
+// Profile + Plant + Press + Cavity as design `id` — across all its versions, so a
+// superseded version's history stays visible beside the current one.
+async function listUsage(client, id) {
+  const { rows } = await client.query(
+    `WITH k AS (SELECT profile_number, plant, press, cavity FROM frozen_designs WHERE id = $1),
+          v AS (SELECT fd.id FROM frozen_designs fd JOIN k ON fd.profile_number = k.profile_number
+                  AND fd.plant = k.plant AND fd.press = k.press AND fd.cavity = k.cavity)
+     SELECT 'order' AS kind, o.id, o.die_no::text AS die_no, o.order_no::text AS order_no, o.status::text AS status,
+            o.created_at, o.frozen_design_id, o.frozen_design_action AS action,
+            o.frozen_design_override_reason AS reason, o.frozen_design_override_note AS note
+       FROM die_orders o WHERE o.frozen_design_id IN (SELECT id FROM v) AND o.frozen_design_action IS NOT NULL
+     UNION ALL
+     SELECT 'backup' AS kind, b.id, b.die_no::text, NULL::text, b.status::text,
+            b.created_at, b.frozen_design_id, b.frozen_design_action,
+            b.frozen_design_override_reason, b.frozen_design_override_note
+       FROM backup_die_requests b WHERE b.frozen_design_id IN (SELECT id FROM v) AND b.frozen_design_action IS NOT NULL
+     ORDER BY created_at DESC`,
+    [id]
+  );
+  return rows;
+}
+
+module.exports = { extractProfileFromDie, normalizePlant, cleanPressToken, canonicalPress, loadPresses, hasFullKey, findActiveMatch, matchBulk, freezeDesign, listFrozenDesigns, manualRelease, listUsage, updateFrozenDesign };
