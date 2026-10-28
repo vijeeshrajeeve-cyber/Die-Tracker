@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, useId } from 'react';
-import { Snowflake, Download, Upload, FileText, X, ChevronRight, AlertTriangle, Unlock, History, ArrowRight, Pencil } from 'lucide-react';
+import { Snowflake, Download, Upload, FileText, X, ChevronRight, AlertTriangle, Unlock, History, ArrowRight, Pencil, Send, ShieldAlert } from 'lucide-react';
 import { frozenDesignsAPI, plantsAPI, pressesAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import FreezeDesignModal from '../components/FreezeDesignModal';
 import useDialog from '../hooks/useDialog';
+import { BRAND } from '../utils/brand';
 
 // A design is "Retired" once someone unfreezes it by hand, and "Superseded" when a
 // newer freeze for the same Profile + Plant + Press + Cavity replaced it. (The
@@ -145,11 +146,12 @@ export default function FrozenDesignsPage({ user, theme = {}, search = '' }) {
     URL.revokeObjectURL(url);
   };
 
-  const stats = [
-    { label: 'Frozen now', value: active.length, note: `${rows.length - active.length} retired or superseded` },
-    { label: 'Missing a drawing', value: noDrawing, note: noDrawing ? 'frozen with no file attached' : 'every frozen design has a file', warn: noDrawing > 0 },
-    { label: 'Orders that reused one', value: reused, note: 'skipped design and simulation' },
-    { label: 'Orders that bypassed one', value: bypassed, note: 'went through design anyway' },
+  // Same card recipe as the QD Tracker and Dashboard KPI tiles.
+  const kpis = [
+    { label: 'Frozen now', value: active.length, sub: `${rows.length - active.length} retired or superseded`, icon: Snowflake, ic: '#fff', ibg: BRAND.navy },
+    { label: 'Missing a drawing', value: noDrawing, sub: noDrawing ? 'frozen with no file attached' : 'every frozen design has a file', icon: AlertTriangle, ic: '#FBBF24', ibg: 'rgba(245,158,11,0.14)' },
+    { label: 'Reused by orders', value: reused, sub: 'skipped design and simulation', icon: Send, ic: '#34D399', ibg: 'rgba(16,185,129,0.14)' },
+    { label: 'Bypassed by orders', value: bypassed, sub: 'went through design anyway', icon: ShieldAlert, ic: '#A78BFA', ibg: 'rgba(139,92,246,0.14)' },
   ];
 
   const btn = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', borderRadius: 10, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' };
@@ -164,31 +166,25 @@ export default function FrozenDesignsPage({ user, theme = {}, search = '' }) {
         .fd-row:focus-visible, .fd-tab:focus-visible, .fd-btn:focus-visible { outline: 2px solid ${c.primary}; outline-offset: -2px; }
         .fd-btn:hover { filter: brightness(1.08); }
         .fd-grid { display: grid; grid-template-columns: minmax(170px, 1.3fr) minmax(120px, 1fr) 150px 170px 120px 20px; gap: 16px; align-items: center; }
-        .fd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        .fd-stat + .fd-stat { border-left: 1px solid ${c.border}; }
+        .fd-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        @media (max-width: 1280px) { .fd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 520px) { .fd-kpis { grid-template-columns: 1fr; } }
         @media (max-width: 900px) {
           .fd-page { padding: 20px 16px !important; }
-          .fd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .fd-stat:nth-child(3) { border-left: none; }
-          .fd-stat:nth-child(n+3) { border-top: 1px solid ${c.border}; }
           .fd-grid { grid-template-columns: 1fr auto; row-gap: 8px; }
           .fd-head { display: none !important; }
           .fd-c-supplier, .fd-c-date { display: none !important; }
           .fd-c-files, .fd-c-usage { grid-column: 1 / -1; }
           .fd-c-chev { grid-row: 1; grid-column: 2; }
         }
-        @media (max-width: 520px) {
-          .fd-stats { grid-template-columns: 1fr; }
-          .fd-stat + .fd-stat { border-left: none; border-top: 1px solid ${c.border}; }
-        }
       `}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div style={{ maxWidth: 640 }}>
+        <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>Frozen Designs</h1>
           <p style={{ fontSize: '0.875rem', color: c.muted, margin: '6px 0 0', lineHeight: 1.5 }}>
-            Final designs locked to a profile, plant, press and cavity. A new order that matches one can skip design and simulation.
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{view.length} of {rows.length} designs</span> · locked to a profile, plant, press and cavity
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -201,16 +197,19 @@ export default function FrozenDesignsPage({ user, theme = {}, search = '' }) {
         </div>
       </div>
 
-      {/* Stat strip */}
-      <div className="fd-stats" style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, marginBottom: 20, overflow: 'hidden' }}>
-        {stats.map(s => (
-            <div key={s.label} className="fd-stat" style={{ padding: '14px 18px', background: s.warn ? c.warnBg : 'transparent' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <span style={{ fontSize: '1.5rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1, color: s.warn ? c.warn : c.text }}>{s.value}</span>
-                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: s.warn ? c.warn : c.text }}>{s.label}</span>
+      {/* KPI cards */}
+      <div className="fd-kpis" style={{ display: 'grid', gap: 16, marginBottom: 20 }}>
+        {kpis.map(kp => (
+          <div key={kp.label} style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, boxShadow: theme.shadowSm, padding: '18px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{kp.label}</span>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: kp.ibg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: kp.ic }}>
+                <kp.icon size={17} />
               </div>
-              <div style={{ fontSize: '0.75rem', color: s.warn ? c.warn : c.dim, marginTop: 4 }}>{s.note}</div>
             </div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginTop: 10, lineHeight: 1 }}>{kp.value}</div>
+            <div style={{ fontSize: '0.75rem', color: c.dim, marginTop: 6 }}>{kp.sub}</div>
+          </div>
         ))}
       </div>
 
@@ -237,7 +236,7 @@ export default function FrozenDesignsPage({ user, theme = {}, search = '' }) {
       </div>
 
       {/* Registry */}
-      <div style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, overflow: 'hidden', boxShadow: theme.shadowSm }}>
         <div className="fd-grid fd-head" style={{ padding: '10px 18px', borderBottom: `1px solid ${c.border}`, fontSize: 11, fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           <span>Design</span><span>Supplier · die size</span><span>Drawing</span><span>Orders</span><span>Frozen</span><span />
         </div>
