@@ -65,7 +65,7 @@ export default function FrozenDesignBanner({ profile, plant, press, cavity, onRe
       <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
         <button type="button" onClick={() => onRelease && onRelease(match)}
           style={{ background: '#16A34A', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>
-          Release Frozen Design
+          Use Frozen Design
         </button>
         <button type="button" onClick={() => setMode(mode === 'bypass' ? null : 'bypass')}
           style={{ background: '#fff', color: '#92400E', border: '1px solid #F59E0B', borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>

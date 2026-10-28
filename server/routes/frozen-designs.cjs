@@ -169,6 +169,33 @@ router.get('/files/:fileId', async (req, res) => {
   }
 });
 
+// PATCH /api/frozen-designs/:id  (admin)  { profile, plant, press, cavity, supplier, dieSize, notes }
+router.patch('/:id', adminMiddleware, async (req, res) => {
+  try {
+    const { profile, plant, press, cavity, supplier, dieSize, notes } = req.body || {};
+    const r = await fd.updateFrozenDesign(pool, {
+      id: req.params.id, userId: req.user?.id, profile, plant, press, cavity, supplier, dieSize, notes,
+    });
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json({ message: 'Updated' });
+  } catch (e) {
+    // The partial unique index is the last word if two edits race onto one key.
+    if (e.code === '23505') return res.status(409).json({ error: 'That profile, plant, press and cavity is already frozen' });
+    console.error('Update frozen design error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/frozen-designs/:id/usage  — orders/backup requests that reused or bypassed this design key
+router.get('/:id/usage', async (req, res) => {
+  try {
+    res.json(await fd.listUsage(pool, req.params.id));
+  } catch (e) {
+    console.error('Frozen design usage error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/frozen-designs/:id/release  (admin)
 router.post('/:id/release', adminMiddleware, async (req, res) => {
   try {

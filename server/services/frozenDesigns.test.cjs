@@ -150,3 +150,60 @@ test('manualRelease deactivates by id with reason manual', async () => {
   assert.equal(ok, true);
   assert.deepEqual(client.calls[0].params, [2, 5]);
 });
+
+test('listUsage reads orders and backup requests across every version of the key', async () => {
+  const client = makeClient([
+    { match: (s) => s.includes('UNION ALL'),
+      result: () => ({ rows: [{ kind: 'order', id: 4, action: 'bypassed', reason: 'Design change' }] }) },
+  ]);
+  const rows = await fd.listUsage(client, 12);
+  const sql = client.calls[0].sql;
+  assert.deepEqual(client.calls[0].params, [12]);
+  assert.ok(sql.includes('fd.profile_number = k.profile_number'));
+  assert.ok(sql.includes('FROM die_orders o') && sql.includes('FROM backup_die_requests b'));
+  assert.equal(rows[0].reason, 'Design change');
+});
+
+const ACTIVE = { id: 12, profile_number: '13794', plant: 'GEX 1', press: 'PRESS 2', cavity: 1, is_active: true, supplier: 'JIANGSU', die_size: '355x200', notes: null };
+const editClient = (row, { clash = false } = {}) => makeClient([
+  { match: (s) => s.startsWith('SELECT * FROM frozen_designs WHERE id'), result: () => ({ rows: row ? [row] : [] }) },
+  { match: (s) => s.includes('FROM presses'), result: () => ({ rows: PRESSES }) },
+  { match: (s) => s.includes('AND id <> $5'), result: () => ({ rows: clash ? [{ id: 99 }] : [] }) },
+]);
+
+test('updateFrozenDesign saves details and stamps the editor', async () => {
+  const client = editClient(ACTIVE);
+  const r = await fd.updateFrozenDesign(client, { id: 12, userId: 3, supplier: ' PDTMC ', notes: '' });
+  assert.deepEqual(r, { ok: true });
+  const upd = client.calls.find(c => c.sql.startsWith('UPDATE frozen_designs'));
+  assert.deepEqual(upd.params, ['13794', 'GEX 1', 'PRESS 2', 1, 'PDTMC', '355x200', null, 3, 12]);
+  assert.ok(upd.sql.includes('edited_by = $8'));
+});
+
+test('updateFrozenDesign canonicalises a changed key and checks for a clash', async () => {
+  const client = editClient(ACTIVE);
+  const r = await fd.updateFrozenDesign(client, { id: 12, press: 'P8', plant: 'gex 02' });
+  assert.deepEqual(r, { ok: true });
+  const upd = client.calls.find(c => c.sql.startsWith('UPDATE frozen_designs'));
+  assert.equal(upd.params[1], 'GEX 2');
+  assert.equal(upd.params[2], 'PRESS 8');
+  assert.ok(client.calls.some(c => c.sql.includes('AND id <> $5')));
+});
+
+test('updateFrozenDesign refuses a key another active design holds', async () => {
+  const client = editClient(ACTIVE, { clash: true });
+  const r = await fd.updateFrozenDesign(client, { id: 12, cavity: 2 });
+  assert.equal(r.status, 409);
+  assert.ok(!client.calls.some(c => c.sql.startsWith('UPDATE frozen_designs')));
+});
+
+test('updateFrozenDesign keeps the key of a retired or superseded version fixed', async () => {
+  const client = editClient({ ...ACTIVE, is_active: false });
+  assert.equal((await fd.updateFrozenDesign(client, { id: 12, cavity: 2 })).status, 409);
+  assert.deepEqual(await fd.updateFrozenDesign(editClient({ ...ACTIVE, is_active: false }), { id: 12, notes: 'x' }), { ok: true });
+});
+
+test('updateFrozenDesign rejects a blank key field and a missing design', async () => {
+  assert.equal((await fd.updateFrozenDesign(editClient(ACTIVE), { id: 12, profile: '  ' })).status, 400);
+  assert.equal((await fd.updateFrozenDesign(editClient(null), { id: 5 })).status, 404);
+});

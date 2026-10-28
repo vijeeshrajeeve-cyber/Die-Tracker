@@ -382,6 +382,12 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='frozen_designs' AND column_name='die_size') THEN
           ALTER TABLE frozen_designs ADD COLUMN die_size TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='frozen_designs' AND column_name='edited_at') THEN
+          ALTER TABLE frozen_designs ADD COLUMN edited_at TIMESTAMP;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='frozen_designs' AND column_name='edited_by') THEN
+          ALTER TABLE frozen_designs ADD COLUMN edited_by INTEGER REFERENCES users(id);
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='die_orders' AND column_name='frozen_design_id') THEN
           ALTER TABLE die_orders ADD COLUMN frozen_design_id INTEGER REFERENCES frozen_designs(id);
         END IF;

@@ -935,6 +935,7 @@ export const frozenDesignsAPI = {
     matchBulk: async (keys) => {
         return apiRequest('/frozen-designs/match-bulk', { method: 'POST', body: JSON.stringify({ keys }) });
     },
+    usage: async (id) => apiRequest(`/frozen-designs/${id}/usage`),
     create: async (payload) => {
         return apiRequest('/frozen-designs', { method: 'POST', body: JSON.stringify(payload) });
     },
@@ -960,6 +961,7 @@ export const frozenDesignsAPI = {
     release: async (id) => {
         return apiRequest(`/frozen-designs/${id}/release`, { method: 'POST' });
     },
+    update: async (id, payload) => apiRequest(`/frozen-designs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
 };
 
 // Quality Discrepancies (QD Tracker) API
