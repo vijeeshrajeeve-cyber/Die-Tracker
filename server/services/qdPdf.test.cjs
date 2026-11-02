@@ -140,6 +140,22 @@ test('extra photos fill each working area two to a row, and only the rest is ann
   assert.equal(await imagesOnPage(five, 2), 1, 'the fifth extra photo goes to the annexure');
 });
 
+// Annexure rows are the same height as the form's extra-photo rows, so a photo
+// looks the same wherever it lands; three such rows fit an annexure page.
+test('the annexure holds three rows of two photos a page', async () => {
+  const twelve = await generateQdPdf(baseQd, photoSet(
+    ['profile_image', 'approved_design', ...Array(10).fill('general')],
+  ));
+  assert.equal((await PDFDocument.load(twelve)).getPageCount(), 3);
+  assert.equal(await imagesOnPage(twelve, 2), 6, 'six extra photos on the first annexure page');
+
+  const thirteen = await generateQdPdf(baseQd, photoSet(
+    ['profile_image', 'approved_design', ...Array(11).fill('general')],
+  ));
+  assert.equal((await PDFDocument.load(thirteen)).getPageCount(), 4);
+  assert.equal(await imagesOnPage(thirteen, 3), 1, 'the seventh extra photo starts a second annexure page');
+});
+
 test('each extra photo is headed by its category, numbered when the category repeats', async () => {
   const [p1, p2, p3] = await textOf(await generateQdPdf(baseQd, photoSet(
     ['trial_photo', 'trial_photo', 'trial_photo', 'general', 'profile_image', 'profile_image'],
