@@ -12,6 +12,7 @@ const qdSettings = require('../services/qdSettings.cjs');
 const email = require('../services/email.cjs');
 const qdDocument = require('../services/qdDocument.cjs');
 const qdImport = require('../services/qdImport.cjs');
+const signatures = require('../services/userSignatures.cjs');
 const { adminMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -177,7 +178,7 @@ router.post('/', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const text = String(issue || '').trim() || 'Quality discrepancy raised';
+    const text = String(issue || '').trim() || qd.NO_ISSUE_TEXT;
     const summary = text.split('\n')[0].slice(0, 160);
 
     await client.query('BEGIN');
@@ -467,6 +468,31 @@ router.post('/:id/submit', async (req, res) => {
   } finally { client.release(); }
 });
 
+// GET /:id/approval-check → what the approver should know before approving.
+// Read fresh rather than sent with the register: it needs signature lookups that
+// only matter when someone is about to decide.
+router.get('/:id/approval-check', requireApprover, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM quality_discrepancies WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'QD not found' });
+    const { rows: files } = await pool.query(
+      'SELECT original_name, category FROM quality_discrepancy_files WHERE qd_id = $1', [req.params.id]);
+    const [{ prepared }, approver, { purchaseEmailTo }] = await Promise.all([
+      qdDocument.loadQdSignatures(pool, rows[0]),
+      signatures.getSignature(pool, req.user?.id),
+      qdSettings.getQdSettings(pool),
+    ]);
+    res.json({
+      checks: qd.approvalChecks({
+        row: rows[0], files, preparedSigned: !!prepared, approverSigned: !!approver, purchaseEmailTo,
+      }),
+    });
+  } catch (e) {
+    console.error('QD approval check error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /:id/approve → Pending → Approved, then email Purchase (non-blocking)
 router.post('/:id/approve', requireApprover, async (req, res) => {
   const client = await pool.connect();
@@ -576,8 +602,8 @@ router.get('/:id/document', async (req, res) => {
 
 // PATCH /api/quality-discrepancies/:id  { outcome?, input_at_failure?, eta_date?, corrector? }
 // Editable detail fields. An empty string clears the field. Part-A fields are
-// refused once the QD is Pending or Approved, exactly as PUT /:id refuses them —
-// the progress fields (supplier reply, hand-off dates, ETA) stay open.
+// refused once the QD is Pending or Approved, exactly as PUT /:id refuses them.
+// The progress fields (supplier reply, hand-off dates, ETA) open on approval.
 router.patch('/:id', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -643,6 +669,9 @@ router.put('/:id', async (req, res) => {
 // or absent date, or an impossible FOC move (a receipt against no promise).
 // These are 400s, not 500s — the UI shows the message as-is.
 const isClientError = (message) => /^(Reason|ETA|Received date|Invalid|No FOC round|This FOC round|Record the receipt|Trial date) /.test(message);
+// A status change on a QD that has not been approved yet: well formed, but the
+// QD is in the wrong state for it, as with a locked edit.
+const isNotApproved = (message) => /^Cannot change the status/.test(message);
 
 // PATCH /api/quality-discrepancies/:id/status  { status, reason, etaDate?, receivedDate? }
 // A reason is always mandatory; an ETA is mandatory when moving to FOC Accepted,
@@ -664,6 +693,7 @@ router.patch('/:id/status', async (req, res) => {
     res.json({ message: 'Status updated' });
   } catch (e) {
     await client.query('ROLLBACK');
+    if (isNotApproved(e.message)) return res.status(409).json({ error: e.message });
     if (isClientError(e.message)) return res.status(400).json({ error: e.message });
     console.error('Update QD status error:', e);
     res.status(500).json({ error: 'Internal server error' });
@@ -712,6 +742,7 @@ router.post('/:id/foc-trial', async (req, res) => {
     res.json({ message: 'Trial recorded' });
   } catch (e) {
     await client.query('ROLLBACK');
+    if (isNotApproved(e.message)) return res.status(409).json({ error: e.message });
     if (isClientError(e.message)) return res.status(400).json({ error: e.message });
     console.error('Record FOC trial error:', e);
     res.status(500).json({ error: 'Internal server error' });

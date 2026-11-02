@@ -41,6 +41,60 @@ function nextApprovalState(from, action) {
   return to;
 }
 
+// What a QD must carry before it can go for approval. The form that reaches
+// Purchase and the supplier is printed from these, so a blank one here is a blank
+// box on a certification record. Billet readings are left out on purpose: not
+// every QD has them.
+const SUBMIT_REQUIRED_FIELDS = [
+  ['issue_detail', 'Quality issue'],
+  ['manufacturing_defect', 'Manufacturing defect'],
+  ['die_performance', 'Die performance'],
+  ['recommended_action', 'Recommended action'],
+];
+// Saved in place of an empty issue so a draft still has a register line. It says
+// nothing about the die, so it does not count as having described the issue.
+const NO_ISSUE_TEXT = 'Quality discrepancy raised';
+
+// The form only prints PNG and JPG, so a WebP or PDF profile image would leave
+// that box empty even though a file is attached.
+const isPrintableProfileImage = (f) => f.category === 'profile_image'
+  && /\.(png|jpe?g)$/i.test(String(f.original_name || ''));
+
+// The labels of whatever is still missing, in form order. Empty means complete.
+function missingForSubmit(row, files = []) {
+  const missing = SUBMIT_REQUIRED_FIELDS
+    .filter(([col]) => {
+      const value = String(row?.[col] == null ? '' : row[col]).trim();
+      return !value || (col === 'issue_detail' && value === NO_ISSUE_TEXT);
+    })
+    .map(([, label]) => label);
+  if (!files.some(isPrintableProfileImage)) missing.push('Profile image (PNG or JPG)');
+  return missing;
+}
+
+// What an approver should know before approving. These warn rather than block:
+// an empty Purchase address or an absent signature must not hold up a decision,
+// and Resend to Purchase covers the first once it is fixed.
+function approvalChecks({ row, files = [], preparedSigned = false, approverSigned = false, purchaseEmailTo = '' }) {
+  const missing = missingForSubmit(row, files);
+  const to = String(purchaseEmailTo || '').trim();
+  const preparer = String(row?.prepared_by || '').trim() || 'The raiser';
+  return [
+    { key: 'complete', ok: !missing.length, label: missing.length
+      ? `Still blank on the form: ${missing.join(', ')}`
+      : 'All required details are filled in' },
+    { key: 'preparedSignature', ok: !!preparedSigned, label: preparedSigned
+      ? `${preparer}'s signature will print as Prepared By`
+      : `${preparer} has no signature on file, so Prepared By will print unsigned` },
+    { key: 'approverSignature', ok: !!approverSigned, label: approverSigned
+      ? 'Your signature will print as Authorized By'
+      : 'You have no signature on file, so Authorized By will print unsigned' },
+    { key: 'purchaseEmail', ok: !!to, label: to
+      ? `The form will be emailed to Purchase: ${to}`
+      : 'No Purchase email is set in Settings, so Purchase will not be emailed' },
+  ];
+}
+
 // Timeline entry kinds. The icon/tone are decided here rather than by the
 // client so the timeline vocabulary stays consistent (and unspoofable).
 const ACTIVITY_KINDS = {
@@ -331,6 +385,10 @@ async function listQDs(client, id = null) {
   const now = new Date();
   return rows.map((r) => ({
     ...r,
+    // Decides the drawer's checklist, so the rule lives only on this side.
+    submit_missing: r.approval_state === 'Approved'
+      ? []
+      : missingForSubmit(r, files.filter((f) => f.qd_id === r.id)),
     age_days: ageDays(r, now),
     resolution_days: resolutionDays(r),
     eta_display: etaDisplay(r, now),
@@ -481,12 +539,21 @@ async function updateFields(client, { id, fields, actor, userId }) {
       : `set ${EDITABLE_FIELDS[column].label} to ${value}`);
   }
   params.push(id);
+  // Progress fields record what happened after approval, such as the date it
+  // went to the supplier. On an unapproved QD those would be false, so the row
+  // has to be Approved at the moment of the write.
+  const progressOnly = entries.every(([column]) => isProgressField(column));
   const { rowCount } = await client.query(
     `UPDATE quality_discrepancies SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $${params.length}`,
+      WHERE id = $${params.length}${progressOnly ? " AND approval_state = 'Approved'" : ''}`,
     params
   );
-  if (!rowCount) return false;
+  if (!rowCount) {
+    if (!progressOnly) return false;
+    const row = await getApprovalRow(client, id);
+    if (!row) return false;
+    throw new Error(`Cannot edit a QD's progress in ${row.approval_state} state`);
+  }
   await addActivity(client, {
     qdId: id, actor, action: changes.join(' · '), icon: 'pencil', tone: 'neutral', userId,
   });
@@ -592,10 +659,16 @@ async function updateStatus(client, { id, status, reason, etaDate, receivedDate,
         SET status = $1,
             closed_at = CASE WHEN $1 IN ('Closed', 'Rejected') THEN COALESCE(closed_at, CURRENT_DATE) ELSE NULL END${etaSql},
             updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2`,
+      WHERE id = $2 AND approval_state = 'Approved'`,
     params
   );
-  if (!rowCount) return false;
+  // The status tracks the claim once it has been issued. Before approval there
+  // is nothing issued to track, and closing it would bypass the approver.
+  if (!rowCount) {
+    const row = await getApprovalRow(client, id);
+    if (!row) return false;
+    throw new Error(`Cannot change the status of a QD in ${row.approval_state} state. It must be approved first`);
+  }
 
   // The round table is the record of what was promised and what turned up.
   // These throw on an impossible move (a receipt against no promise), which
@@ -658,6 +731,13 @@ async function submitForApproval(client, { id, newQdNo, actor, userId, approverU
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   const to = nextApprovalState(row.approval_state, 'submit');
+  const { rows: detail } = await client.query(
+    `SELECT ${SUBMIT_REQUIRED_FIELDS.map(([col]) => col).join(', ')}
+       FROM quality_discrepancies WHERE id = $1`, [id]);
+  const { rows: files } = await client.query(
+    'SELECT original_name, category FROM quality_discrepancy_files WHERE qd_id = $1', [id]);
+  const missing = missingForSubmit(detail[0], files);
+  if (missing.length) throw new Error(`Cannot submit yet. Still needed: ${missing.join(', ')}`);
   const qdNo = row.qd_no || newQdNo;
   if (!qdNo) throw new Error('A QD number is required to submit');
   await client.query(
@@ -817,6 +897,7 @@ module.exports = {
   deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
+  NO_ISSUE_TEXT, missingForSubmit, approvalChecks,
   submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
   isInApprovalQueue, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,

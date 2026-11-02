@@ -9,7 +9,7 @@ import useDialog from '../../hooks/useDialog';
 // the QD is a certification record, and a preview that can disagree with the
 // document Purchase receives would be worse than no preview at all.
 export default function QDFormPreviewModal({
-  qd, theme = {}, mayApprove = false, busy = false, onApprove, onSendBack, onClose,
+  qd, theme = {}, mayApprove = false, approveLabel = 'Approve & send to Purchase', busy = false, onApprove, onSendBack, onClose,
 }) {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -132,7 +132,7 @@ export default function QDFormPreviewModal({
             </button>
             <button type="button" onClick={onApprove} disabled={busy}
               style={{ padding: '8px 14px', background: '#22C55E', border: 'none', borderRadius: 8, color: '#052e16', fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Check size={15} /> Approve &amp; send to Purchase
+              <Check size={15} /> {approveLabel}
             </button>
           </div>
         )}

@@ -30,6 +30,12 @@ router.post('/send', authMiddleware, emailPageAccess, async (req, res) => {
         // this to attach an arbitrary file from the server.
         let attachments = null;
         if (qdId) {
+            // A QD form goes out only once it has been approved. The drawer hides
+            // the button, but this is what actually holds the line.
+            const { rows } = await pool.query('SELECT approval_state FROM quality_discrepancies WHERE id = $1', [qdId]);
+            if (rows[0] && rows[0].approval_state !== 'Approved') {
+                return res.status(409).json({ error: 'This QD has not been approved, so its form cannot be emailed yet' });
+            }
             const { row, bytes } = await qdDocument.buildQdPdfBytes(pool, qdId);
             attachments = [{
                 filename: qdDocument.qdPdfFilename(row),
