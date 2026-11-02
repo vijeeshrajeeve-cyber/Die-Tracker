@@ -547,8 +547,59 @@ test('recordFocTrial closes the round and logs the verdict, leaving the status a
 });
 
 test('updateStatus returns false when the QD does not exist', async () => {
-  const client = { query: async () => ({ rowCount: 0 }) };
+  const client = { query: async () => ({ rows: [], rowCount: 0 }) };
   assert.equal(await q.updateStatus(client, { id: 999, status: 'Open', reason: 'r', actor: 'X' }), false);
+});
+
+// Answers the status UPDATE with no row touched unless the QD is Approved, as the
+// real WHERE clause does.
+function gatedMock(approvalState) {
+  const calls = [];
+  const client = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 7, approval_state: approvalState }] };
+      if (/UPDATE quality_discrepancies/.test(sql) && /approval_state = 'Approved'/.test(sql)) {
+        return { rows: [], rowCount: approvalState === 'Approved' ? 1 : 0 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  return { client, calls };
+}
+
+test('updateStatus refuses a QD that has not been approved, and writes no timeline entry', async () => {
+  for (const state of ['Draft', 'Pending', 'SentBack']) {
+    const { client, calls } = gatedMock(state);
+    await assert.rejects(
+      () => q.updateStatus(client, { id: 7, status: 'Closed', reason: 'r', actor: 'X' }),
+      /Cannot change the status of a QD in \w+ state/,
+    );
+    assert.equal(calls.some(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql)), false);
+  }
+});
+
+test('updateStatus still works on an approved QD', async () => {
+  const { client } = gatedMock('Approved');
+  assert.equal(await q.updateStatus(client, { id: 7, status: 'Closed', reason: 'r', actor: 'X' }), true);
+});
+
+test('progress fields open only on approval', async () => {
+  for (const state of ['Draft', 'Pending', 'SentBack']) {
+    const { client, calls } = gatedMock(state);
+    await assert.rejects(
+      () => q.updateFields(client, { id: 7, fields: { sent_to_supplier_date: '2026-09-01' }, actor: 'X' }),
+      /Cannot edit a QD's progress/,
+    );
+    assert.equal(calls.some(c => /INSERT INTO quality_discrepancy_activity/.test(c.sql)), false);
+  }
+  const { client } = gatedMock('Approved');
+  assert.equal(await q.updateFields(client, { id: 7, fields: { sent_to_supplier_date: '2026-09-01' }, actor: 'X' }), true);
+});
+
+test('Part-A fields on a draft do not need the QD to be approved', async () => {
+  const { client } = gatedMock('Draft');
+  assert.equal(await q.updateFields(client, { id: 7, fields: { press: 'P2' }, actor: 'X' }), true);
 });
 
 // ── editQdDetails (bulk edit, allowed only in Draft/SentBack) ───────────────
@@ -688,12 +739,75 @@ test('nextApprovalState allows only legal transitions', () => {
   assert.throws(() => q.nextApprovalState('Pending', 'submit'), /Cannot submit/);
 });
 
+// A QD with everything the submit check asks for.
+const COMPLETE_QD = { issue_detail: 'Bearing marks', manufacturing_defect: 'Yes', die_performance: 'No', recommended_action: 'Rework' };
+const PROFILE_FILE = { original_name: 'profile.png', category: 'profile_image' };
+const answerSubmitCheck = (sql) => {
+  if (/SELECT issue_detail/.test(sql)) return { rows: [COMPLETE_QD] };
+  if (/FROM quality_discrepancy_files/.test(sql)) return { rows: [PROFILE_FILE] };
+  return null;
+};
+
+test('missingForSubmit lists every blank required field, in form order', () => {
+  assert.deepEqual(q.missingForSubmit({}, []), [
+    'Quality issue', 'Manufacturing defect', 'Die performance', 'Recommended action', 'Profile image (PNG or JPG)',
+  ]);
+  assert.deepEqual(q.missingForSubmit(COMPLETE_QD, [PROFILE_FILE]), []);
+});
+
+test('missingForSubmit treats a No answer as filled in, and whitespace as blank', () => {
+  assert.deepEqual(q.missingForSubmit({ ...COMPLETE_QD, manufacturing_defect: 'No', recommended_action: '  ' }, [PROFILE_FILE]),
+    ['Recommended action']);
+});
+
+test('missingForSubmit does not accept the text saved in place of an empty issue', () => {
+  assert.deepEqual(q.missingForSubmit({ ...COMPLETE_QD, issue_detail: q.NO_ISSUE_TEXT }, [PROFILE_FILE]), ['Quality issue']);
+});
+
+test('missingForSubmit needs a profile image the form can print', () => {
+  const label = ['Profile image (PNG or JPG)'];
+  assert.deepEqual(q.missingForSubmit(COMPLETE_QD, [{ original_name: 'a.webp', category: 'profile_image' }]), label);
+  assert.deepEqual(q.missingForSubmit(COMPLETE_QD, [{ original_name: 'a.png', category: 'trial_photo' }]), label);
+  assert.deepEqual(q.missingForSubmit(COMPLETE_QD, [{ original_name: 'A.JPG', category: 'profile_image' }]), []);
+});
+
+test('submitForApproval refuses an incomplete QD and takes no number', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
+    if (/SELECT issue_detail/.test(sql)) return { rows: [{ ...COMPLETE_QD, recommended_action: null }] };
+    return { rows: [], rowCount: 1 };
+  } };
+  await assert.rejects(
+    () => q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 }),
+    /^Error: Cannot submit yet\. Still needed: Recommended action, Profile image \(PNG or JPG\)$/,
+  );
+  assert.equal(calls.some(c => /SET qd_no = /.test(c.sql)), false);
+});
+
+test('approvalChecks says what will go wrong before it does', () => {
+  const byKey = (checks) => Object.fromEntries(checks.map((c) => [c.key, c]));
+  const clean = byKey(q.approvalChecks({
+    row: { ...COMPLETE_QD, prepared_by: 'Veera' }, files: [PROFILE_FILE],
+    preparedSigned: true, approverSigned: true, purchaseEmailTo: 'buy@example.com',
+  }));
+  assert.ok(Object.values(clean).every((c) => c.ok));
+  assert.match(clean.purchaseEmail.label, /buy@example\.com/);
+
+  const bad = byKey(q.approvalChecks({ row: { prepared_by: 'Veera' }, files: [] }));
+  assert.ok(Object.values(bad).every((c) => !c.ok));
+  assert.match(bad.complete.label, /Quality issue/);
+  assert.match(bad.preparedSignature.label, /Veera has no signature/);
+  assert.match(bad.purchaseEmail.label, /will not be emailed/);
+});
+
 test('submitForApproval assigns a number to an unnumbered draft and moves it to Pending', async () => {
   const calls = [];
   const client = { query: async (sql, params) => {
     calls.push({ sql, params });
     if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
-    return { rowCount: 1, rows: [] };
+    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
   } };
   const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 });
   assert.deepEqual(out, { ok: true, qdNo: '2026PH-04', state: 'Pending' });
@@ -707,7 +821,7 @@ test('submitForApproval keeps an existing number when resubmitting a SentBack QD
   const client = { query: async (sql) => {
     calls.push(sql);
     if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix' }] };
-    return { rowCount: 1, rows: [] };
+    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
   } };
   const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-99', actor: 'Veera', userId: 2 });
   assert.equal(out.qdNo, '2026PH-04'); // not the freshly-computed candidate
@@ -718,7 +832,7 @@ test('submitForApproval records the approver the raiser sent it to, and names th
   const client = { query: async (sql, params) => {
     calls.push({ sql, params });
     if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
-    return { rowCount: 1, rows: [] };
+    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
   } };
   await q.submitForApproval(client, {
     id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2, approverUserId: 9, approverName: 'Imran',
@@ -738,7 +852,7 @@ test('resubmitting can redirect the QD to a different approver', async () => {
     if (/SELECT id, qd_no, approval_state/.test(sql)) {
       return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix', assigned_approver: 9 }] };
     }
-    return { rowCount: 1, rows: [] };
+    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
   } };
   await q.submitForApproval(client, { id: 5, actor: 'Veera', userId: 2, approverUserId: 12, approverName: 'Sara' });
   assert.equal(calls.find(c => /assigned_approver = \$4/.test(c.sql)).params[3], 12);

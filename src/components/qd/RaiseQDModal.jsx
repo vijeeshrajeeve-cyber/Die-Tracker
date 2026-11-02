@@ -266,6 +266,14 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], correctors = 
       }
       onCreated(id, { submitted: doSubmit, isEdit, wasDraft: isEdit ? editQd.approval_state === 'Draft' : true });
     } catch (e) {
+      // Everything is saved and only the QD's contents stopped the submit. The
+      // drawer lists what is missing, and editing from there saves it properly.
+      if (doSubmit && /^Cannot submit yet/.test(e.message || '')) {
+        onCreated(isEdit ? editQd.id : createdIdRef.current, {
+          submitted: false, isEdit, wasDraft: isEdit ? editQd.approval_state === 'Draft' : true,
+        });
+        return;
+      }
       const savedSomething = isEdit || createdIdRef.current;
       const message = savedSomething
         ? `${isEdit ? 'Some changes were saved' : 'Draft was saved'}, but ${phase} failed: ${e.message || 'unknown error'}. Retrying resumes from that step.`

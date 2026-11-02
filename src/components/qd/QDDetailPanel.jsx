@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
   Calendar, Check, MessageSquare, Pencil, XCircle, Mail, ArrowUpCircle, CornerUpLeft, Repeat,
-  Download, Eye, Undo2,
+  Download, Eye, Undo2, AlertTriangle, ArrowRight,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, getUser } from '../../api';
 import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS, QD_APPROVAL_BADGE, QD_IMPORTED_BADGE } from '../../utils/constants';
@@ -71,7 +71,7 @@ const fmtWhen = (v) => {
     : d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
 };
 
-export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, onCompose, onClose, onEdit, onChanged }) {
+export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, nextQd = null, queueLeft = 0, onOpenNext, onCompose, onClose, onEdit, onChanged }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -91,6 +91,8 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !editing });
   const [approvers, setApprovers] = useState([]);
   const [approverId, setApproverId] = useState('');
+  const [checks, setChecks] = useState(null);
+  const [checksFailed, setChecksFailed] = useState(false);
   const fileRef = useRef(null);
 
   const me = getUser();
@@ -101,6 +103,10 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   // account-wide flag, so fall back to it.
   const mayApprove = qd.can_approve != null ? qd.can_approve : canApprove;
   const aBadge = QD_APPROVAL_BADGE[qd.approval_state] || null;
+  const isPending = qd.approval_state === 'Pending';
+  const isApproved = qd.approval_state === 'Approved';
+  const missing = qd.submit_missing || [];
+  const canDecide = isPending && mayApprove;
 
   // Only needed while a QD is waiting to be sent, so it is fetched on demand
   // rather than with every drawer open. Defaults to whoever it went to last,
@@ -119,6 +125,17 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
       .catch(() => { if (!cancelled) setApprovers([]); });
     return () => { cancelled = true; };
   }, [needsApprover, qd.id, qd.assigned_approver]);
+
+  // Read when someone can actually decide, not on every drawer open: it looks up
+  // signatures and settings that nobody else needs.
+  useEffect(() => {
+    if (!canDecide) return undefined;
+    let cancelled = false;
+    qualityDiscrepanciesAPI.approvalCheck(qd.id)
+      .then((r) => { if (!cancelled) setChecks(r.checks || []); })
+      .catch(() => { if (!cancelled) setChecksFailed(true); });
+    return () => { cancelled = true; };
+  }, [canDecide, qd.id]);
 
   const bg = theme.cardBg || '#09090b';
   const border = theme.cardBorder || '#27272a';
@@ -305,12 +322,27 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   // through, so this reports the warning after refreshing rather than via `run`'s
   // catch (which would skip onChanged and make it look like approval failed).
   const handleApprove = async () => {
+    const warnings = (checks || []).filter((c) => !c.ok);
+    if (warnings.length) {
+      const ok = await dialogs.confirm({
+        title: `Approve QD ${qd.qd_no} anyway?`,
+        message: warnings.map((w) => w.label).join('. ') + '.',
+        confirmLabel: 'Approve anyway',
+        tone: 'warning',
+      });
+      if (!ok) return;
+    }
+    // Taken before the refresh, which removes this QD from the queue and moves on
+    // the props. A failed email stays here so the warning is seen; the Next button
+    // on the approved QD carries on from there.
+    const next = nextQd;
     setBusy(true);
     setError('');
     try {
       const r = await qualityDiscrepanciesAPI.approve(qd.id);
       await onChanged();
       if (r?.emailWarning) setError(`Approved, but the Purchase email failed: ${r.emailWarning}`);
+      else if (next && onOpenNext) onOpenNext(next.id);
     } catch (e) {
       setError(e.message || 'Something went wrong');
     } finally {
@@ -376,6 +408,20 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
     }
   };
 
+  const secondaryBtn = { padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 };
+  const primaryBtn = { ...secondaryBtn, background: primary, border: 'none', color: primaryFg, fontWeight: 600 };
+  const stepCard = { border: `1px solid ${border}`, borderRadius: 8, padding: 16, marginBottom: 20 };
+  const stepTitle = { fontSize: 14, fontWeight: 700, marginBottom: 10 };
+
+  const canSend = !missing.length && !!approverId;
+  const approveLabel = nextQd ? 'Approve & next' : 'Approve & send to Purchase';
+  const waitingDays = qd.submitted_at
+    ? Math.max(0, Math.floor((Date.now() - new Date(qd.submitted_at).getTime()) / 86400000))
+    : null;
+  const waitingFor = waitingDays === null ? ''
+    : waitingDays === 0 ? ' · submitted today'
+      : ` · submitted ${waitingDays} day${waitingDays === 1 ? '' : 's'} ago`;
+
   return (
     <>
       <style>{`@keyframes qdSlideIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
@@ -415,90 +461,23 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           </button>
         </div>
 
-        {/* Actions */}
+        {/* Reading the form changes nothing, so these are there in every state. */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={composeEmail} className="qd-action" title={mailTitle}
-            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Mail size={15} /> Email supplier
-          </button>
-          <button onClick={composeReminder} className="qd-action" title={mailTitle}
-            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Bell size={15} /> Send reminder
+          <button onClick={() => setPreviewOpen(true)} className="qd-action" title="Read the QD form without leaving the app"
+            style={{ ...secondaryBtn, cursor: 'pointer' }}>
+            <Eye size={15} /> Preview QD form
           </button>
           <button onClick={handleDownloadDocument} disabled={busy} className="qd-action" title="Download the QD form as a PDF"
-            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            style={secondaryBtn}>
             <Download size={15} /> Download QD PDF
-          </button>
-          <button onClick={() => setPreviewOpen(true)} className="qd-action" title="Read the QD form without leaving the app"
-            style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Eye size={15} /> Preview QD form
           </button>
           {me?.role === 'admin' && qd.imported && (
             <button onClick={handleUndoImport} disabled={busy} className="qd-action" title="Remove this imported QD so it can be imported again correctly"
-              style={{ padding: '8px 14px', background: bg, border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, color: '#FCA5A5', fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ ...secondaryBtn, border: '1px solid rgba(239,68,68,0.35)', color: '#FCA5A5' }}>
               <Undo2 size={15} /> Undo import
             </button>
           )}
-          <select aria-label="Change QD status" value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
-            style={{ padding: '8px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
-            {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-          {error && <span style={{ fontSize: 12.5, color: '#FCA5A5' }}>{error}</span>}
         </div>
-
-        {/* Approval workflow actions — state-driven, per the brief in task-6 */}
-        {needsApprover || (qd.approval_state === 'Pending' && mayApprove) || (qd.approval_state === 'Approved' && mayApprove) ? (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-            {needsApprover && (
-              <>
-                {onEdit && (
-                  <button onClick={onEdit} disabled={busy} className="qd-action" title="Edit this QD's details and images"
-                    style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Pencil size={15} /> Edit QD
-                  </button>
-                )}
-                <select value={approverId} onChange={(e) => setApproverId(e.target.value)} disabled={busy || !approvers.length}
-                  title="Who should approve this QD"
-                  style={{ padding: '8px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: approverId ? text : muted, fontSize: 13, fontWeight: 500, cursor: busy ? 'wait' : 'pointer' }}>
-                  <option value="">{approvers.length ? 'Send to approver…' : 'No approvers configured'}</option>
-                  {approvers.map((a) => <option key={a.id} value={a.id}>{a.username}</option>)}
-                </select>
-                <button onClick={handleSubmit} disabled={busy || !approverId} className="qd-action"
-                  title={approverId ? '' : 'Choose who should approve this QD first'}
-                  style={{ padding: '8px 14px', background: approverId ? primary : border, border: 'none', borderRadius: 8, color: approverId ? primaryFg : muted, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : (approverId ? 'pointer' : 'not-allowed'), display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <ArrowUpCircle size={15} /> Submit for approval
-                </button>
-              </>
-            )}
-            {qd.approval_state === 'Pending' && mayApprove && (
-              <>
-                <button onClick={handleApprove} disabled={busy} className="qd-action"
-                  style={{ padding: '8px 14px', background: '#22C55E', border: 'none', borderRadius: 8, color: '#052e16', fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Check size={15} /> Approve &amp; send to Purchase
-                </button>
-                <button onClick={() => setSendBackOpen(true)} disabled={busy} className="qd-action"
-                  style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CornerUpLeft size={15} /> Send back
-                </button>
-              </>
-            )}
-            {qd.approval_state === 'Approved' && mayApprove && (
-              <button onClick={handleResend} disabled={busy} className="qd-action"
-                style={{ padding: '8px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Repeat size={15} /> Resend to Purchase
-              </button>
-            )}
-          </div>
-        ) : null}
-
-        {/* Who a pending QD is sitting with, so the raiser knows who to chase
-            and another approver knows why they cannot act on it. */}
-        {qd.approval_state === 'Pending' && qd.assigned_approver_name && (
-          <div style={{ border: `1px solid rgba(234,179,8,0.35)`, background: 'rgba(234,179,8,0.08)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#EAB308' }}>
-            <strong>Awaiting approval from:</strong> {qd.assigned_approver_name}
-            {!mayApprove && me?.role !== 'admin' && ' — only they can approve or send it back.'}
-          </div>
-        )}
 
         {qd.approval_state === 'SentBack' && qd.sent_back_reason && (
           <div style={{ border: `1px solid rgba(239,68,68,0.35)`, background: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#FCA5A5' }}>
@@ -506,15 +485,142 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           </div>
         )}
 
+        {/* The next step, decided by the approval state. */}
+        {needsApprover && (
+          <div style={stepCard}>
+            <div style={stepTitle}>{qd.approval_state === 'SentBack' ? 'Fix and resubmit' : 'Finish and submit'}</div>
+            {missing.length > 0 ? (
+              <div style={{ marginBottom: 12, fontSize: 13, color: '#EAB308' }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Still needed before this can be submitted:</div>
+                {missing.map((m) => (
+                  <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                    <AlertTriangle size={13} style={{ flexShrink: 0 }} /> {m}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12, fontSize: 13, color: '#22C55E', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Check size={14} /> Everything required is filled in.
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {onEdit && (
+                <button onClick={onEdit} disabled={busy} className={missing.length ? undefined : 'qd-action'} title="Edit this QD's details and images"
+                  style={missing.length ? primaryBtn : secondaryBtn}>
+                  <Pencil size={15} /> Edit QD
+                </button>
+              )}
+              <select aria-label="Approver" value={approverId} onChange={(e) => setApproverId(e.target.value)} disabled={busy || !approvers.length}
+                title="Who should approve this QD"
+                style={{ padding: '8px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: approverId ? text : muted, fontSize: 13, fontWeight: 500, cursor: busy ? 'wait' : 'pointer' }}>
+                <option value="">{approvers.length ? 'Send to approver…' : 'No approvers configured'}</option>
+                {approvers.map((a) => <option key={a.id} value={a.id}>{a.username}</option>)}
+              </select>
+              <button onClick={handleSubmit} disabled={busy || !canSend}
+                title={missing.length ? 'Fill in what is still needed first' : (approverId ? '' : 'Choose who should approve this QD first')}
+                style={{ ...(canSend ? primaryBtn : { ...primaryBtn, background: border, color: muted }), cursor: busy ? 'wait' : (canSend ? 'pointer' : 'not-allowed') }}>
+                <ArrowUpCircle size={15} /> {qd.approval_state === 'SentBack' ? 'Resubmit for approval' : 'Submit for approval'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!needsApprover && qd.approval_state === 'SentBack' && (
+          <div style={{ ...stepCard, fontSize: 13, color: muted }}>
+            Waiting for {qd.prepared_by || 'the raiser'} to fix and resubmit this QD.
+          </div>
+        )}
+
+        {!needsApprover && qd.approval_state === 'Draft' && (
+          <div style={{ ...stepCard, fontSize: 13, color: muted }}>
+            This QD is still a draft. {qd.prepared_by || 'The raiser'} has not submitted it.
+          </div>
+        )}
+
+        {/* Who a pending QD is sitting with, so the raiser knows who to chase
+            and another approver knows why they cannot act on it. */}
+        {isPending && !(canDecide && qd.assigned_approver === me?.id) && (
+          <div style={{ border: `1px solid rgba(234,179,8,0.35)`, background: 'rgba(234,179,8,0.08)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#EAB308' }}>
+            <strong>Awaiting approval{qd.assigned_approver_name ? ` from: ${qd.assigned_approver_name}` : ''}</strong>{waitingFor}
+            {!mayApprove && qd.assigned_approver_name && '. Only they can approve or send it back.'}
+          </div>
+        )}
+
+        {canDecide && (
+          <div style={stepCard}>
+            <div style={stepTitle}>Your decision{waitingFor}</div>
+            {checksFailed && (
+              <div style={{ marginBottom: 12, fontSize: 13, color: '#EAB308' }}>Could not run the pre-approval checks. Read the form before deciding.</div>
+            )}
+            {checks && (
+              <div style={{ marginBottom: 12, fontSize: 13 }}>
+                {checks.map((c) => (
+                  <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, color: c.ok ? muted : '#EAB308' }}>
+                    {c.ok ? <Check size={13} style={{ color: '#22C55E', flexShrink: 0 }} /> : <AlertTriangle size={13} style={{ flexShrink: 0 }} />}
+                    {c.label}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginBottom: 12, fontSize: 12.5, color: dim }}>
+              Approving signs this as Authorized By and releases it for the supplier.
+              {queueLeft > 0 && ` ${queueLeft} more waiting for you after this.`}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={handleApprove} disabled={busy}
+                style={{ ...primaryBtn, background: '#22C55E', color: '#052e16' }}>
+                <Check size={15} /> {approveLabel}
+              </button>
+              <button onClick={() => setSendBackOpen(true)} disabled={busy} className="qd-action" style={secondaryBtn}>
+                <CornerUpLeft size={15} /> Send back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isApproved && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={composeEmail} className={qd.status === 'Open' ? undefined : 'qd-action'} title={mailTitle}
+              style={{ ...(qd.status === 'Open' ? primaryBtn : secondaryBtn), cursor: 'pointer' }}>
+              <Mail size={15} /> Email supplier
+            </button>
+            {!qd.closed_at && (
+              <button onClick={composeReminder} className="qd-action" title={mailTitle} style={{ ...secondaryBtn, cursor: 'pointer' }}>
+                <Bell size={15} /> Send reminder
+              </button>
+            )}
+            {mayApprove && (
+              <button onClick={handleResend} disabled={busy} className="qd-action" style={secondaryBtn}>
+                <Repeat size={15} /> Resend to Purchase
+              </button>
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: muted }}>
+              Status
+              <select aria-label="Change QD status" value={pendingStatus || qd.status} onChange={changeStatus} disabled={busy}
+                style={{ padding: '8px 12px', background: bg, color: text, border: `1px solid ${border}`, borderRadius: 8, fontWeight: 500, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
+                {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+            {nextQd && onOpenNext && (
+              <button onClick={() => onOpenNext(nextQd.id)} className="qd-action" style={{ ...secondaryBtn, cursor: 'pointer', marginLeft: 'auto' }}>
+                Next: QD {nextQd.qd_no} <ArrowRight size={15} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {error && <div style={{ fontSize: 12.5, color: '#FCA5A5', marginBottom: 20 }}>{error}</div>}
+
         {/* Facts — click an editable one to change it */}
         {/* Wide enough for the date picker (trigger + calendar button) to sit
             inside the card instead of spilling past its border. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
           {facts.map(f => {
             const isEditing = editing === f.field;
-            // Part-A fields stop being editable once the QD is out for approval;
-            // the server refuses them with a 409, so don't offer the pencil.
-            const editable = !!f.field && (isDraftOrSentBack || QD_PROGRESS_FIELDS.has(f.field));
+            // Part-A fields stop being editable once the QD is out for approval,
+            // and progress fields open only once it is approved. The server
+            // refuses both with a 409, so don't offer the pencil.
+            const editable = !!f.field && (QD_PROGRESS_FIELDS.has(f.field) ? isApproved : isDraftOrSentBack);
             const fieldStyle = {
               width: '100%', marginTop: 4, padding: '5px 8px', background: inputBg,
               border: `1px solid ${theme.accent || '#3B82F6'}`, borderRadius: 6, color: text,
@@ -675,6 +781,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           qd={qd}
           theme={theme}
           mayApprove={mayApprove}
+          approveLabel={approveLabel}
           busy={busy}
           // Both close the preview first, deliberately: handleApprove reports a
           // failed Purchase email into the drawer's error line, and the

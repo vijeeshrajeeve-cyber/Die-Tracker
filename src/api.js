@@ -1000,6 +1000,9 @@ export const qualityDiscrepanciesAPI = {
     myQueue: async () =>
         apiRequest('/quality-discrepancies/my-queue'),
 
+    approvalCheck: async (id) =>
+        apiRequest(`/quality-discrepancies/${id}/approval-check`),
+
     approve: async (id) =>
         apiRequest(`/quality-discrepancies/${id}/approve`, { method: 'POST' }),
 

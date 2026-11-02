@@ -200,6 +200,11 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
   // does nothing. Deferred a tick because load() reaches setState, which this
   // repo's lint refuses directly in an effect body; `missing` stays true until
   // the fetch lands, so the effect runs once rather than looping.
+  // Oldest first (the queue arrives newest first), and only QDs the register has
+  // loaded: another year's QD would have nothing to open.
+  const queueRest = (qdQueue?.awaitingApproval?.qds || []).filter(q => q.id !== openId);
+  const nextQd = [...queueRest].reverse().find(q => data.qds.some(r => r.id === q.id)) || null;
+
   const missingFromRegister = openId != null && !selected;
   useEffect(() => {
     if (!missingFromRegister) return undefined;
@@ -585,10 +590,15 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
 
       {selected && (
         <QDDetailPanel
+          // Remounts on Next, so one QD's checks and half-typed note cannot carry over.
+          key={selected.id}
           qd={selected}
           theme={theme}
           user={user}
           canApprove={!!data.canApprove}
+          nextQd={nextQd}
+          queueLeft={queueRest.length}
+          onOpenNext={setSelectedId}
           supplier={supplierMaster.find(s => (s.name || '').toLowerCase() === (selected.supplier || '').toLowerCase()) || null}
           onCompose={onCompose}
           onClose={() => { setSelectedId(null); onFocusHandled?.(); }}
