@@ -361,7 +361,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
     const warnings = (checks || []).filter((c) => !c.ok);
     if (warnings.length) {
       const ok = await dialogs.confirm({
-        title: `Approve QD ${qd.qd_no} anyway?`,
+        title: `Approve ${qd.qd_no ? `QD ${qd.qd_no}` : `the QD against die ${qd.die_no}`} anyway?`,
         message: warnings.map((w) => w.label).join('. ') + '.',
         confirmLabel: 'Approve anyway',
         tone: 'warning',
@@ -900,7 +900,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${border}` }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '1rem', fontWeight: 700 }}>Send back to owner</div>
-                <div style={{ fontSize: '0.8rem', color: dim, marginTop: 6 }}>QD {qd.qd_no}</div>
+                <div style={{ fontSize: '0.8rem', color: dim, marginTop: 6 }}>{qd.qd_no ? `QD ${qd.qd_no}` : QD_UNNUMBERED} · die {qd.die_no}</div>
               </div>
               <button onClick={() => { setSendBackOpen(false); setSendBackReason(''); }}
                 style={{ width: 32, height: 32, background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

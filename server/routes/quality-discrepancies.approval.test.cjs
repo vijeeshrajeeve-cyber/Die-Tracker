@@ -15,13 +15,16 @@ let hasSignature;
 let settingsRow;
 let writes;
 let collideOnApprove;
+let staleOnWrite;
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
   if (/^(UPDATE|INSERT)/.test(q)) {
     writes.push(q);
     if (collideOnApprove && /approval_state = 'Approved'/.test(q)) throw Object.assign(new Error('duplicate key'), { code: '23505' });
-    const blocked = /approval_state = 'Approved'/.test(q) && qdRow.approval_state !== 'Approved';
+    if (staleOnWrite && /^UPDATE/.test(q)) return { rows: [], rowCount: 0 };
+    // The progress gate (`AND approval_state = 'Approved'`), not approve's own SET.
+    const blocked = /AND approval_state = 'Approved'/.test(q) && qdRow.approval_state !== 'Approved';
     return { rows: [], rowCount: blocked ? 0 : 1 };
   }
   if (/FROM user_signatures/.test(q)) {
@@ -63,6 +66,7 @@ test.beforeEach(() => {
   settingsRow = null;
   writes = [];
   collideOnApprove = false;
+  staleOnWrite = false;
 });
 
 const QD = '/api/quality-discrepancies/7';
@@ -102,6 +106,14 @@ test('approving an unnumbered QD issues its number', async () => {
   assert.equal(status, 200);
   assert.equal(body.qd_no, `${new Date().getFullYear()}PH-01`);
   assert.ok(writes.some((w) => /approval_state = 'Approved'/.test(w) && /qd_no = \$1/.test(w)));
+});
+
+test('approving a QD that stopped being Pending underneath answers 409', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Pending', submitted_at: new Date() };
+  staleOnWrite = true; // the UPDATE finds no Pending row
+  const { status, body } = await request(base, `${QD}/approve`, { method: 'POST' });
+  assert.equal(status, 409);
+  assert.match(body.error, /changed while you were working on it/);
 });
 
 test('approving answers 409 when the number collides', async () => {

@@ -512,6 +512,7 @@ router.post('/:id/approve', requireApprover, async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK');
     if (e.code === '23505') return res.status(409).json({ error: 'QD number already exists — please retry' });
+    if (/^QD changed/.test(e.message)) return res.status(409).json({ error: e.message });
     if (/^Cannot approve/.test(e.message) || /^No QD code/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Approve QD error:', e); res.status(500).json({ error: 'Internal server error' });
   } finally { if (!released) client.release(); }
@@ -553,6 +554,7 @@ router.post('/:id/send-back', requireApprover, async (req, res) => {
     res.json({ message: 'Sent back', ...notice });
   } catch (e) {
     await client.query('ROLLBACK');
+    if (/^QD changed/.test(e.message)) return res.status(409).json({ error: e.message });
     if (/^Reason is required/.test(e.message) || /^Cannot sendBack/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Send-back QD error:', e); res.status(500).json({ error: 'Internal server error' });
   } finally { client.release(); }
@@ -580,7 +582,7 @@ router.post('/:id/cancel', async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     if (/^Reason is required/.test(e.message)) return res.status(400).json({ error: e.message });
-    if (/^Cannot cancel/.test(e.message)) return res.status(409).json({ error: e.message });
+    if (/^Cannot cancel/.test(e.message) || /^QD changed/.test(e.message)) return res.status(409).json({ error: e.message });
     console.error('Cancel QD error:', e); res.status(500).json({ error: 'Internal server error' });
   } finally { client.release(); }
 });

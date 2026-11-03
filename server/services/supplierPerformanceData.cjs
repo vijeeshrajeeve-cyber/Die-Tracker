@@ -116,6 +116,7 @@ async function getSnapshot(pool, { supplier, from, to }) {
     SELECT count(*) AS qd_count
       FROM quality_discrepancies
      WHERE upper(btrim(supplier)) = upper(btrim($1))
+       AND approval_state NOT IN ('Draft', 'Cancelled')
        AND qd_requested_date BETWEEN $2 AND $3`, args);
 
   // Manually entered die life for the same months. Keyed by (year, month)

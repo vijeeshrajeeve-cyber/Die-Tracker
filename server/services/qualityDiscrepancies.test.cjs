@@ -976,6 +976,42 @@ test('cancelQD records who, when and why, keeps the number, and writes the timel
   assert.ok(act.params.some(p => p === 'cancelled QD — Raised twice'));
 });
 
+// The row read at the start of approve / cancel / send-back is unlocked, so the
+// UPDATE itself re-checks the state and refuses when another call got there first.
+const staleRow = (approval_state) => ({ query: async (sql) => {
+  if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state, supplier: 'Phoenix' }] };
+  if (/^\s*UPDATE/.test(sql)) return { rows: [], rowCount: 0 };
+  return { rows: [], rowCount: 1 };
+} });
+
+test('approveQD, cancelQD and sendBack refuse when the row changed state underneath them', async () => {
+  await assert.rejects(() => q.approveQD(staleRow('Pending'), { id: 5, actor: 'I', userId: 9 }), /^Error: QD changed while you were working on it/);
+  await assert.rejects(() => q.cancelQD(staleRow('Pending'), { id: 5, reason: 'dup', actor: 'V', userId: 2 }), /^Error: QD changed while you were working on it/);
+  await assert.rejects(() => q.sendBack(staleRow('Pending'), { id: 5, reason: 'why', actor: 'I', userId: 9 }), /^Error: QD changed while you were working on it/);
+});
+
+test('the guarded UPDATEs name the states they accept', async () => {
+  const sqls = [];
+  const client = { query: async (sql) => { sqls.push(sql);
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending', supplier: 'Phoenix' }] };
+    return { rows: [], rowCount: 1 }; } };
+  await q.approveQD(client, { id: 5, actor: 'I', userId: 9 });
+  await q.cancelQD(client, { id: 5, reason: 'dup', actor: 'V', userId: 2 });
+  await q.sendBack(client, { id: 5, reason: 'why', actor: 'I', userId: 9 });
+  const updates = sqls.filter((s) => /^\s*UPDATE/.test(s));
+  assert.match(updates[0], /approval_state = 'Pending'\s*$/m);
+  assert.match(updates[1], /approval_state IN \('Draft', 'Pending', 'SentBack'\)/);
+  assert.match(updates[2], /approval_state = 'Pending'\s*$/m);
+});
+
+test('the send-back email names an unnumbered QD by its die', () => {
+  const row = { qd_no: null, die_no: '30601-201', supplier: 'Phoenix' };
+  assert.equal(q.sendBackEmailSubject(row), 'QD against die 30601-201 sent back — changes needed');
+  const html = q.buildSendBackEmailHtml(row, { reason: 'x', by: 'Imran' });
+  assert.ok(html.includes('QD against die 30601-201 was sent back'));
+  assert.ok(!html.includes('null'));
+});
+
 test('excludeHidden drops drafts always and cancelled QDs unless asked for', () => {
   const rows = [{ approval_state: 'Draft' }, { approval_state: 'Cancelled' }, { approval_state: 'Approved' }];
   assert.deepEqual(q.excludeHidden(rows).map(r => r.approval_state), ['Approved']);

@@ -44,6 +44,9 @@ function nextApprovalState(from, action) {
   if (!to) throw new Error(`Cannot ${action} a QD that is ${from}`);
   return to;
 }
+// Thrown when a state-guarded UPDATE finds the row no longer in the state it
+// was read in: someone else approved, sent back or cancelled it meanwhile.
+const STALE_ROW = 'QD changed while you were working on it — reload and try again';
 
 // What a QD must carry before it can go for approval. The form that reaches
 // Purchase and the supplier is printed from these, so a blank one here is a blank
@@ -837,13 +840,16 @@ async function approveQD(client, { id, actor, userId }) {
   if (!row) return { ok: false };
   nextApprovalState(row.approval_state, 'approve');
   const qdNo = row.qd_no || await allocateQdNo(client, row.supplier);
-  await client.query(
+  // The row read above is unlocked, so the write re-checks the state: a second
+  // approver landing a moment later must not renumber an approved QD.
+  const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
         SET qd_no = $1, approval_state = 'Approved', approved_by = $2, approved_at = CURRENT_TIMESTAMP,
             sent_to_purchase_date = COALESCE(sent_to_purchase_date, CURRENT_DATE),
             updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3`,
+      WHERE id = $3 AND approval_state = 'Pending'`,
     [qdNo, userId || null, id]);
+  if (!rowCount) throw new Error(STALE_ROW);
   await addActivity(client, { qdId: id, actor, action: `approved QD ${qdNo}`, icon: 'check', tone: 'good', userId });
   return { ok: true, qdNo };
 }
@@ -854,12 +860,13 @@ async function sendBack(client, { id, reason, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   nextApprovalState(row.approval_state, 'sendBack');
-  await client.query(
+  const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
         SET approval_state = 'SentBack', sent_back_reason = $1,
             sent_back_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2`,
+      WHERE id = $2 AND approval_state = 'Pending'`,
     [why, id]);
+  if (!rowCount) throw new Error(STALE_ROW);
   await addActivity(client, { qdId: id, actor, action: `sent QD back — ${why}`, icon: 'undo', tone: 'bad', userId });
   return { ok: true };
 }
@@ -873,12 +880,13 @@ async function cancelQD(client, { id, reason, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   nextApprovalState(row.approval_state, 'cancel');
-  await client.query(
+  const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
         SET approval_state = 'Cancelled', cancel_reason = $1, cancelled_by = $2,
             cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3`,
+      WHERE id = $3 AND approval_state IN ('Draft', 'Pending', 'SentBack')`,
     [why, userId || null, id]);
+  if (!rowCount) throw new Error(STALE_ROW);
   await addActivity(client, { qdId: id, actor, action: `cancelled QD — ${why}`, icon: 'undo', tone: 'bad', userId });
   return { ok: true };
 }
@@ -923,14 +931,14 @@ function buildPurchaseEmailHtml(qd, sender) {
 // carries no PDF: the QD is unfinished, and the point is to get them back into
 // the app to fix it.
 function sendBackEmailSubject(qd) {
-  return `QD ${qd.qd_no} sent back — changes needed`;
+  return `${qdName(qd)} sent back — changes needed`;
 }
 
 function buildSendBackEmailHtml(qd, { reason, by, sender } = {}) {
   const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
     `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
-    <h2 style="margin:0 0 6px">Quality Discrepancy ${escapeHtml(qd.qd_no)} was sent back</h2>
+    <h2 style="margin:0 0 6px">${escapeHtml(qdName(qd))} was sent back</h2>
     <p>${escapeHtml(by) || 'The approver'} has returned this QD to you for changes. It is not approved and has not gone to Purchase.</p>
     <table style="border-collapse:collapse;margin:8px 0">
       ${row('QD No', qd.qd_no)}${row('Die No', qd.die_no)}${row('Supplier', qd.supplier)}
