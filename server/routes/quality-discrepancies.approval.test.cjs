@@ -111,6 +111,57 @@ test('the approval check passes when everything is in place', async () => {
   assert.ok(body.checks.every((c) => c.ok), JSON.stringify(body.checks));
 });
 
+test('cancelling needs a reason', async () => {
+  qdRow.approval_state = 'Pending';
+  const { status, body } = await request(base, `${QD}/cancel`, { body: { reason: '' } });
+  assert.equal(status, 400);
+  assert.match(body.error, /Reason is required/);
+});
+
+test('an approved QD cannot be cancelled', async () => {
+  qdRow.approval_state = 'Approved';
+  const { status, body } = await request(base, `${QD}/cancel`, { body: { reason: 'dup' } });
+  assert.equal(status, 409);
+  assert.match(body.error, /Cannot cancel a QD that is Approved/);
+  assert.equal(writes.some((w) => /Cancelled/.test(w)), false);
+});
+
+test('a plain user cannot cancel someone else\'s QD', async () => {
+  // The main app signs in as admin, so mount the router once more behind a plain user.
+  const plain = express();
+  plain.use(express.json());
+  plain.use((req, _res, next) => { req.user = { id: 9, username: 'sijith', role: 'user' }; next(); });
+  plain.use('/api/quality-discrepancies', qdRouter);
+  const { base: plainBase, close: closePlain } = await listen(plain);
+  try {
+    qdRow.approval_state = 'Pending';
+    qdRow.created_by = 1;
+    settingsRow = { approver_user_ids: '[]' };
+    const { status, body } = await request(plainBase, `${QD}/cancel`, { body: { reason: 'dup' } });
+    assert.equal(status, 403);
+    assert.match(body.error, /cannot cancel/i);
+    assert.equal(writes.some((w) => /Cancelled/.test(w)), false);
+  } finally { await closePlain(); }
+});
+
+test('the raiser can cancel their own pending QD', async () => {
+  qdRow.approval_state = 'Pending';
+  qdRow.created_by = 1;
+  const { status, body } = await request(base, `${QD}/cancel`, { body: { reason: 'Raised twice' } });
+  assert.equal(status, 200);
+  assert.equal(body.message, 'Cancelled');
+  assert.ok(writes.some((w) => /approval_state = 'Cancelled'/.test(w)));
+});
+
+test('the register hides cancelled QDs unless asked, and never counts them', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Cancelled', status: 'Open', raised_date: '2026-10-01' };
+  assert.equal((await request(base, '/api/quality-discrepancies')).body.qds.length, 0);
+  const { body } = await request(base, '/api/quality-discrepancies?cancelled=1');
+  assert.equal(body.qds.length, 1);
+  assert.equal(body.qds[0].approval_state, 'Cancelled');
+  assert.equal(body.kpis.total, 0);
+});
+
 test('the supplier email route refuses the form of an unapproved QD', async () => {
   const token = jwt.sign({ id: 1, username: 'admin', role: 'admin' }, process.env.JWT_SECRET);
   for (const state of ['Draft', 'Pending', 'SentBack']) {

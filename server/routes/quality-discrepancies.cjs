@@ -106,6 +106,13 @@ async function nextQdNo(client, supplierName) {
   return qd.formatQdNo(year, code, qd.nextSequence(rows.map(r => r.qd_no), year, code));
 }
 
+// Who may withdraw a QD: the person who raised it, anyone who could approve
+// it, or an admin. A plain user has no business cancelling someone else's.
+function mayCancel(user, row, isApprover) {
+  if (!user) return false;
+  return user.role === 'admin' || row.created_by === user.id || !!isApprover;
+}
+
 // Resolves the assigned approvers of a page of QDs to usernames in one query.
 async function approverNameMap(rows) {
   const ids = [...new Set((rows || []).map((r) => r.assigned_approver).filter(Boolean))];
@@ -124,10 +131,11 @@ router.get('/', async (req, res) => {
     const all = await qd.listQDs(pool);
     const scoped = qd.filterByYear(all, req.query.year);
     const settings = await qdSettings.getQdSettings(pool);
+    // Cancelled QDs are history: shown only when asked for, never counted.
     const visible = req.query.drafts === '1'
       ? qd.onlyDrafts(scoped, req.user?.id)
-      : qd.excludeDrafts(scoped);
-    const forKpis = qd.excludeDrafts(scoped);
+      : qd.excludeHidden(scoped, { cancelled: req.query.cancelled === '1' });
+    const forKpis = qd.excludeHidden(scoped);
     // Approving is per-QD now, so each row carries its own verdict rather than
     // the drawer deciding from a single account-wide flag.
     const isApprover = qdSettings.isApprover(req.user, settings.approverUserIds);
@@ -136,6 +144,7 @@ router.get('/', async (req, res) => {
       ...r,
       assigned_approver_name: approverNames.get(r.assigned_approver) || null,
       can_approve: isApprover && qd.canActOnApproval(req.user, r),
+      can_cancel: qd.CANCELLABLE_APPROVAL_STATES.includes(r.approval_state) && mayCancel(req.user, r, isApprover),
     }));
     res.json({
       qds: decorated,
@@ -377,11 +386,19 @@ async function signatureUser(userId) {
   } catch { return null; }
 }
 
-// Emails the raiser that their QD came back, and records on the timeline
-// whether they were actually reached. Never throws: the send-back has already
-// been committed by the time this runs. Returns { emailWarning } when the
-// raiser could not be told, so the approver sees it instead of assuming.
-async function notifySendBack(qdId, { reason, by, userId }) {
+// The two notices that go to a QD's raiser: their QD came back, or someone
+// else withdrew it.
+const RAISER_NOTICES = {
+  sendBack: { subject: (row) => qd.sendBackEmailSubject(row), body: qd.buildSendBackEmailHtml, note: 'sent-back notice' },
+  cancel: { subject: (row) => qd.cancelEmailSubject(row), body: qd.buildCancelEmailHtml, note: 'cancellation notice' },
+};
+
+// Emails the raiser, and records on the timeline whether they were actually
+// reached. Never throws: the send-back or cancel has already been committed by
+// the time this runs. Returns { emailWarning } when the raiser could not be
+// told, so the approver sees it instead of assuming.
+async function notifyRaiser(qdId, { kind, reason, by, userId }) {
+  const notice = RAISER_NOTICES[kind];
   let warning = null;
   const senderUser = await signatureUser(userId);
   try {
@@ -398,16 +415,16 @@ async function notifySendBack(qdId, { reason, by, userId }) {
     } else {
       await email.sendEmail({
         to,
-        subject: qd.sendBackEmailSubject(row),
-        body: qd.buildSendBackEmailHtml(row, { reason, by, sender: senderUser }),
+        subject: notice.subject(row),
+        body: notice.body(row, { reason, by, sender: senderUser }),
         importance: 'high', sentBy: userId,
       });
       await qd.addActivityOfKind(pool, {
-        qdId, kind: 'email', actor: by, note: `sent-back notice emailed to ${row.username || to}`, userId,
+        qdId, kind: 'email', actor: by, note: `${notice.note} emailed to ${row.username || to}`, userId,
       });
     }
   } catch (e) {
-    console.error('Send-back notification failed:', e.message);
+    console.error('Raiser notification failed:', e.message);
     warning = e.message;
   }
   if (warning) {
@@ -553,14 +570,41 @@ router.post('/:id/send-back', requireApprover, async (req, res) => {
     // send-back that already happened — same rule as the Purchase email on
     // approve. The outcome goes on the timeline either way, so nobody is left
     // assuming the raiser was told when they were not.
-    const notice = await notifySendBack(req.params.id, {
-      reason: req.body?.reason, by: actorFor(req), userId: req.user?.id,
+    const notice = await notifyRaiser(req.params.id, {
+      kind: 'sendBack', reason: req.body?.reason, by: actorFor(req), userId: req.user?.id,
     });
     res.json({ message: 'Sent back', ...notice });
   } catch (e) {
     await client.query('ROLLBACK');
     if (/^Reason is required/.test(e.message) || /^Cannot sendBack/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Send-back QD error:', e); res.status(500).json({ error: 'Internal server error' });
+  } finally { client.release(); }
+});
+
+// POST /:id/cancel → Draft/Pending/SentBack → Cancelled, with a reason.
+// Open to the raiser, any approver and admins. The raiser is told only when
+// somebody else did it; nobody needs an email about their own cancellation.
+router.post('/:id/cancel', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const row = await qd.getApprovalRow(client, req.params.id);
+    if (!row) return res.status(404).json({ error: 'QD not found' });
+    const settings = await qdSettings.getQdSettings(pool);
+    if (!mayCancel(req.user, row, qdSettings.isApprover(req.user, settings.approverUserIds))) {
+      return res.status(403).json({ error: 'You cannot cancel this QD' });
+    }
+    await client.query('BEGIN');
+    await qd.cancelQD(client, { id: req.params.id, reason: req.body?.reason, actor: actorFor(req), userId: req.user?.id });
+    await client.query('COMMIT');
+    const notice = row.created_by && row.created_by !== req.user?.id
+      ? await notifyRaiser(req.params.id, { kind: 'cancel', reason: req.body?.reason, by: actorFor(req), userId: req.user?.id })
+      : {};
+    res.json({ message: 'Cancelled', ...notice });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (/^Reason is required/.test(e.message)) return res.status(400).json({ error: e.message });
+    if (/^Cannot cancel/.test(e.message)) return res.status(409).json({ error: e.message });
+    console.error('Cancel QD error:', e); res.status(500).json({ error: 'Internal server error' });
   } finally { client.release(); }
 });
 

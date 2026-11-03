@@ -916,6 +916,31 @@ function buildSendBackEmailHtml(qd, { reason, by, sender } = {}) {
   </div>`;
 }
 
+// A QD without a number (nothing approved yet) is named by its die.
+const qdName = (qd) => (qd.qd_no ? `QD ${qd.qd_no}` : `QD against die ${qd.die_no}`);
+
+function cancelEmailSubject(qd) {
+  return `${qdName(qd)} cancelled`;
+}
+
+// Sent to the raiser when someone else withdraws their QD, so a Pending QD
+// does not simply vanish from their queue.
+function buildCancelEmailHtml(qd, { reason, by, sender } = {}) {
+  const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
+    `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
+    <h2 style="margin:0 0 6px">${escapeHtml(qdName(qd))} was cancelled</h2>
+    <p>${escapeHtml(by) || 'An approver'} has cancelled this QD. It was not approved and has not gone to Purchase. Nothing has been deleted; it stays readable in the QD Tracker under "Show cancelled".</p>
+    <table style="border-collapse:collapse;margin:8px 0">
+      ${row('QD No', qd.qd_no || 'Unnumbered')}${row('Die No', qd.die_no)}${row('Supplier', qd.supplier)}
+      ${row('Cancelled by', by)}
+    </table>
+    <p style="margin:12px 0 4px;color:#555">Reason given:</p>
+    <blockquote style="margin:0;padding:8px 12px;border-left:3px solid #71717a;background:#F4F4F5;white-space:pre-wrap">${escapeHtml(reason)}</blockquote>
+    ${signature.userSignature(sender)}
+  </div>`;
+}
+
 module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS, ISO_DATE,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
@@ -928,6 +953,6 @@ module.exports = {
   submitForApproval, approveQD, sendBack, cancelQD, canActOnApproval, excludeHidden, excludeDrafts, onlyDrafts,
   isInApprovalQueue, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,
-  sendBackEmailSubject, buildSendBackEmailHtml,
+  sendBackEmailSubject, buildSendBackEmailHtml, cancelEmailSubject, buildCancelEmailHtml,
   BILLETS, saveBilletParameters, listBilletParameters,
 };

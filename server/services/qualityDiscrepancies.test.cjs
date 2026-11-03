@@ -886,6 +886,18 @@ test('the send-back email names the QD and quotes the reason verbatim', () => {
   assert.ok(/has not gone to Purchase/.test(html));
 });
 
+test('the cancel email names the QD by number or die, quotes the reason, and escapes it', () => {
+  assert.equal(q.cancelEmailSubject({ qd_no: '2026PH-04', die_no: '30601-201' }), 'QD 2026PH-04 cancelled');
+  assert.equal(q.cancelEmailSubject({ qd_no: null, die_no: '30601-201' }), 'QD against die 30601-201 cancelled');
+  const html = q.buildCancelEmailHtml({ qd_no: null, die_no: '30601-201', supplier: 'Phoenix' },
+    { reason: 'Raised <twice>', by: 'Imran' });
+  assert.ok(html.includes('30601-201'));
+  assert.ok(html.includes('Raised &lt;twice&gt;'));
+  assert.ok(!html.includes('<twice>'));
+  assert.ok(html.includes('Imran'));
+  assert.ok(/not approved/.test(html));
+});
+
 test('a reason containing HTML is escaped, not rendered', () => {
   const html = q.buildSendBackEmailHtml(
     { qd_no: '2026PH-04' },
