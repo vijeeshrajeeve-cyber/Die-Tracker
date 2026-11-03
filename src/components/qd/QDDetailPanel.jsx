@@ -11,6 +11,7 @@ import { dieDesignSignature, userSignature } from '../../utils/emailSignature';
 import StatusChangeModal from './StatusChangeModal';
 import FocTrialModal from './FocTrialModal';
 import FocRounds from './FocRounds';
+import QdJourneyStrip from './QdJourneyStrip';
 import QDFormPreviewModal from './QDFormPreviewModal';
 import DatePickerField from '../DatePickerField';
 import useDialog from '../../hooks/useDialog';
@@ -460,6 +461,9 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             <X size={16} />
           </button>
         </div>
+
+        {/* Where the QD is and whether it is late, before anything else. */}
+        <QdJourneyStrip qd={qd} theme={theme} />
 
         {/* Reading the form changes nothing, so these are there in every state. */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
