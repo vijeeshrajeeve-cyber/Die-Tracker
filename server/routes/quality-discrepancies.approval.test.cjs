@@ -14,11 +14,13 @@ let qdFiles;
 let hasSignature;
 let settingsRow;
 let writes;
+let collideOnApprove;
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
   if (/^(UPDATE|INSERT)/.test(q)) {
     writes.push(q);
+    if (collideOnApprove && /approval_state = 'Approved'/.test(q)) throw Object.assign(new Error('duplicate key'), { code: '23505' });
     const blocked = /approval_state = 'Approved'/.test(q) && qdRow.approval_state !== 'Approved';
     return { rows: [], rowCount: blocked ? 0 : 1 };
   }
@@ -60,6 +62,7 @@ test.beforeEach(() => {
   hasSignature = true;
   settingsRow = null;
   writes = [];
+  collideOnApprove = false;
 });
 
 const QD = '/api/quality-discrepancies/7';
@@ -86,10 +89,27 @@ test('submitting an incomplete QD answers 400, names what is missing, and takes 
   assert.equal(writes.some((w) => /SET qd_no/.test(w)), false);
 });
 
-test('submitting a complete QD goes through', async () => {
+test('submitting a complete QD goes through and never writes a number', async () => {
   const { status, body } = await request(base, `${QD}/submit`, { body: { approverUserId: 1 } });
   assert.equal(status, 200);
   assert.equal(body.approval_state, 'Pending');
+  assert.equal(writes.some((w) => /qd_no/.test(w)), false);
+});
+
+test('approving an unnumbered QD issues its number', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Pending', submitted_at: new Date() };
+  const { status, body } = await request(base, `${QD}/approve`, { method: 'POST' });
+  assert.equal(status, 200);
+  assert.equal(body.qd_no, `${new Date().getFullYear()}PH-01`);
+  assert.ok(writes.some((w) => /approval_state = 'Approved'/.test(w) && /qd_no = \$1/.test(w)));
+});
+
+test('approving answers 409 when the number collides', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Pending', submitted_at: new Date() };
+  collideOnApprove = true;
+  const { status, body } = await request(base, `${QD}/approve`, { method: 'POST' });
+  assert.equal(status, 409);
+  assert.match(body.error, /please retry/);
 });
 
 test('the approval check warns about a blank form, a missing signature and no Purchase email', async () => {

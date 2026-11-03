@@ -723,15 +723,41 @@ async function recordFocTrial(client, { id, trialDate, result, notes, actor, use
 
 async function getApprovalRow(client, id) {
   const { rows } = await client.query(
-    `SELECT id, qd_no, approval_state, supplier, assigned_approver, created_by
+    `SELECT id, qd_no, approval_state, supplier, assigned_approver, created_by, die_no
        FROM quality_discrepancies WHERE id = $1`, [id]);
   return rows[0] || null;
 }
 
+// QD numbers run YYYY + supplier code + per-supplier sequence, e.g. 2026PD-01.
+// The code comes from the supplier master so collisions (PHOENIX/PHME) stay
+// resolved in one place; we only fall back to deriving it for suppliers that
+// have no row in the master yet. Issued on approval, so a number means an
+// approved discrepancy exists. The per-prefix advisory lock keeps two approvers
+// clicking at once from reading the same max; the UNIQUE on qd_no is only the
+// last line of defence.
+async function allocateQdNo(client, supplierName) {
+  const year = new Date().getFullYear();
+  const { rows: sup } = await client.query(
+    `SELECT name, qd_code FROM suppliers WHERE UPPER(name) = UPPER($1) LIMIT 1`,
+    [supplierName]
+  );
+  const code = sup[0]?.qd_code || deriveQdCode(sup[0]?.name || supplierName);
+  if (!code) {
+    throw new Error(`No QD code for supplier "${supplierName}" — set one in Settings → Suppliers`);
+  }
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${year}${code}`]);
+  const { rows } = await client.query(
+    `SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE $1`,
+    [`${year}${code}-%`]
+  );
+  return formatQdNo(year, code, nextSequence(rows.map(r => r.qd_no), year, code));
+}
+
 // `approverUserId` is the approver the raiser is sending this QD to. The route
 // checks they are actually eligible; resubmitting a sent-back QD may name a
-// different one, so this always overwrites rather than coalescing.
-async function submitForApproval(client, { id, newQdNo, actor, userId, approverUserId = null, approverName = '' }) {
+// different one, so this always overwrites rather than coalescing. No number is
+// issued here: that happens on approval.
+async function submitForApproval(client, { id, actor, userId, approverUserId = null, approverName = '' }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   const to = nextApprovalState(row.approval_state, 'submit');
@@ -742,17 +768,15 @@ async function submitForApproval(client, { id, newQdNo, actor, userId, approverU
     'SELECT original_name, category FROM quality_discrepancy_files WHERE qd_id = $1', [id]);
   const missing = missingForSubmit(detail[0], files);
   if (missing.length) throw new Error(`Cannot submit yet. Still needed: ${missing.join(', ')}`);
-  const qdNo = row.qd_no || newQdNo;
-  if (!qdNo) throw new Error('A QD number is required to submit');
   await client.query(
     `UPDATE quality_discrepancies
-        SET qd_no = $1, approval_state = $2, submitted_by = $3, assigned_approver = $4,
+        SET approval_state = $1, submitted_by = $2, assigned_approver = $3,
             submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5`,
-    [qdNo, to, userId || null, approverUserId, id]);
+      WHERE id = $4`,
+    [to, userId || null, approverUserId, id]);
   const to_whom = approverName ? ` to ${approverName}` : '';
-  await addActivity(client, { qdId: id, actor, action: `submitted QD ${qdNo} for approval${to_whom}`, icon: 'send', tone: 'send', userId });
-  return { ok: true, qdNo, state: to };
+  await addActivity(client, { qdId: id, actor, action: `submitted QD against die ${row.die_no} for approval${to_whom}`, icon: 'send', tone: 'send', userId });
+  return { ok: true, state: to };
 }
 
 // Who may act on this QD's approval. Anyone in the approver list can act on a
@@ -806,19 +830,22 @@ async function listMyQueue(client, userId, { isApprover = false } = {}) {
   };
 }
 
+// Approval is where the QD gets its number. A QD numbered before this rule
+// (submit used to issue it) keeps the one it has.
 async function approveQD(client, { id, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   nextApprovalState(row.approval_state, 'approve');
+  const qdNo = row.qd_no || await allocateQdNo(client, row.supplier);
   await client.query(
     `UPDATE quality_discrepancies
-        SET approval_state = 'Approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP,
+        SET qd_no = $1, approval_state = 'Approved', approved_by = $2, approved_at = CURRENT_TIMESTAMP,
             sent_to_purchase_date = COALESCE(sent_to_purchase_date, CURRENT_DATE),
             updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2`,
-    [userId || null, id]);
-  await addActivity(client, { qdId: id, actor, action: `approved QD ${row.qd_no}`, icon: 'check', tone: 'good', userId });
-  return { ok: true, qdNo: row.qd_no };
+      WHERE id = $3`,
+    [qdNo, userId || null, id]);
+  await addActivity(client, { qdId: id, actor, action: `approved QD ${qdNo}`, icon: 'check', tone: 'good', userId });
+  return { ok: true, qdNo };
 }
 
 async function sendBack(client, { id, reason, actor, userId }) {
@@ -950,7 +977,7 @@ module.exports = {
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
   APPROVAL_STATES, EDITABLE_APPROVAL_STATES, CANCELLABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   NO_ISSUE_TEXT, missingForSubmit, approvalChecks,
-  submitForApproval, approveQD, sendBack, cancelQD, canActOnApproval, excludeHidden, excludeDrafts, onlyDrafts,
+  allocateQdNo, submitForApproval, approveQD, sendBack, cancelQD, canActOnApproval, excludeHidden, excludeDrafts, onlyDrafts,
   isInApprovalQueue, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,
   sendBackEmailSubject, buildSendBackEmailHtml, cancelEmailSubject, buildCancelEmailHtml,

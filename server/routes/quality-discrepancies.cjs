@@ -85,27 +85,6 @@ async function moveIntoPlace(src, dest) {
 
 const actorFor = (req) => req.user?.username || 'You';
 
-// QD numbers run YYYY + supplier code + per-supplier sequence, e.g. 2026PD-01.
-// The code comes from the supplier master so collisions (PHOENIX/PHME) stay
-// resolved in one place; we only fall back to deriving it for suppliers that
-// have no row in the master yet.
-async function nextQdNo(client, supplierName) {
-  const year = new Date().getFullYear();
-  const { rows: sup } = await client.query(
-    `SELECT name, qd_code FROM suppliers WHERE UPPER(name) = UPPER($1) LIMIT 1`,
-    [supplierName]
-  );
-  const code = sup[0]?.qd_code || qd.deriveQdCode(sup[0]?.name || supplierName);
-  if (!code) {
-    throw new Error(`No QD code for supplier "${supplierName}" — set one in Settings → Suppliers`);
-  }
-  const { rows } = await client.query(
-    `SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE $1`,
-    [`${year}${code}-%`]
-  );
-  return qd.formatQdNo(year, code, qd.nextSequence(rows.map(r => r.qd_no), year, code));
-}
-
 // Who may withdraw a QD: the person who raised it, anyone who could approve
 // it, or an admin. A plain user has no business cancelling someone else's.
 function mayCancel(user, row, isApprover) {
@@ -450,7 +429,7 @@ async function sendPurchaseEmail(qdId, sentBy) {
   });
 }
 
-// POST /:id/submit → Draft/SentBack → Pending (assigns a number if unnumbered)
+// POST /:id/submit → Draft/SentBack → Pending. No number yet: that is issued on approval.
 router.post('/:id/submit', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -469,18 +448,15 @@ router.post('/:id/submit', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'That user cannot approve QDs' });
     }
-    const newQdNo = row.qd_no || await nextQdNo(client, row.supplier);
     const out = await qd.submitForApproval(client, {
-      id: req.params.id, newQdNo, actor: actorFor(req), userId: req.user?.id,
+      id: req.params.id, actor: actorFor(req), userId: req.user?.id,
       approverUserId, approverName: approver.username,
     });
     await client.query('COMMIT');
-    res.json({ message: 'Submitted', qd_no: out.qdNo, approval_state: out.state });
+    res.json({ message: 'Submitted', approval_state: out.state });
   } catch (e) {
     await client.query('ROLLBACK');
-    if (e.code === '23505') return res.status(409).json({ error: 'QD number already exists — please retry' });
     if (/^Cannot submit/.test(e.message)) return res.status(400).json({ error: e.message });
-    if (/^No QD code/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Submit QD error:', e); res.status(500).json({ error: 'Internal server error' });
   } finally { client.release(); }
 });
@@ -528,14 +504,15 @@ router.post('/:id/approve', requireApprover, async (req, res) => {
       await sendPurchaseEmail(req.params.id, req.user?.id);
       await qd.addActivityOfKind(pool, { qdId: req.params.id, kind: 'email',
         actor: actorFor(req), note: 'QD emailed to Purchase team', userId: req.user?.id });
-      res.json({ message: 'Approved and sent to Purchase' });
+      res.json({ message: 'Approved and sent to Purchase', qd_no: out.qdNo });
     } catch (mailErr) {
       console.error('Purchase email failed:', mailErr.message);
-      res.json({ message: 'Approved', emailWarning: mailErr.message });
+      res.json({ message: 'Approved', qd_no: out.qdNo, emailWarning: mailErr.message });
     }
   } catch (e) {
     await client.query('ROLLBACK');
-    if (/^Cannot approve/.test(e.message)) return res.status(400).json({ error: e.message });
+    if (e.code === '23505') return res.status(409).json({ error: 'QD number already exists — please retry' });
+    if (/^Cannot approve/.test(e.message) || /^No QD code/.test(e.message)) return res.status(400).json({ error: e.message });
     console.error('Approve QD error:', e); res.status(500).json({ error: 'Internal server error' });
   } finally { if (!released) client.release(); }
 });

@@ -772,7 +772,13 @@ test('missingForSubmit needs a profile image the form can print', () => {
   assert.deepEqual(q.missingForSubmit(COMPLETE_QD, [{ original_name: 'A.JPG', category: 'profile_image' }]), []);
 });
 
-test('submitForApproval refuses an incomplete QD and takes no number', async () => {
+const submitClient = (row, calls) => ({ query: async (sql, params) => {
+  calls.push({ sql, params });
+  if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, die_no: 'D-1', supplier: 'Phoenix', ...row }] };
+  return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
+} });
+
+test('submitForApproval refuses an incomplete QD', async () => {
   const calls = [];
   const client = { query: async (sql, params) => {
     calls.push({ sql, params });
@@ -781,10 +787,10 @@ test('submitForApproval refuses an incomplete QD and takes no number', async () 
     return { rows: [], rowCount: 1 };
   } };
   await assert.rejects(
-    () => q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 }),
+    () => q.submitForApproval(client, { id: 5, actor: 'Veera', userId: 2 }),
     /^Error: Cannot submit yet\. Still needed: Recommended action, Profile image \(PNG or JPG\)$/,
   );
-  assert.equal(calls.some(c => /SET qd_no = /.test(c.sql)), false);
+  assert.equal(calls.some(c => /^UPDATE/.test(c.sql.trim())), false);
 });
 
 test('approvalChecks says what will go wrong before it does', () => {
@@ -803,60 +809,66 @@ test('approvalChecks says what will go wrong before it does', () => {
   assert.match(bad.purchaseEmail.label, /will not be emailed/);
 });
 
-test('submitForApproval assigns a number to an unnumbered draft and moves it to Pending', async () => {
+// The number is issued on approval, so submitting only moves the QD along.
+test('submitForApproval moves a draft to Pending without touching the number', async () => {
   const calls = [];
-  const client = { query: async (sql, params) => {
-    calls.push({ sql, params });
-    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 });
-  assert.deepEqual(out, { ok: true, qdNo: '2026PH-04', state: 'Pending' });
-  const upd = calls.find(c => /SET qd_no = \$1, approval_state = \$2/.test(c.sql));
-  assert.equal(upd.params[0], '2026PH-04');
-  assert.equal(upd.params[1], 'Pending');
+  const out = await q.submitForApproval(submitClient({ qd_no: null, approval_state: 'Draft' }, calls), { id: 5, actor: 'Veera', userId: 2 });
+  assert.deepEqual(out, { ok: true, state: 'Pending' });
+  const upd = calls.find(c => /^UPDATE/.test(c.sql.trim()));
+  assert.match(upd.sql, /SET approval_state = \$1/);
+  assert.equal(/qd_no/.test(upd.sql), false);
+  assert.equal(upd.params[0], 'Pending');
 });
 
-test('submitForApproval keeps an existing number when resubmitting a SentBack QD', async () => {
+test('submitForApproval records the approver the raiser sent it to, and names the die and approver in the timeline', async () => {
   const calls = [];
-  const client = { query: async (sql) => {
-    calls.push(sql);
-    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix' }] };
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-99', actor: 'Veera', userId: 2 });
-  assert.equal(out.qdNo, '2026PH-04'); // not the freshly-computed candidate
-});
-
-test('submitForApproval records the approver the raiser sent it to, and names them in the timeline', async () => {
-  const calls = [];
-  const client = { query: async (sql, params) => {
-    calls.push({ sql, params });
-    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  await q.submitForApproval(client, {
-    id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2, approverUserId: 9, approverName: 'Imran',
+  await q.submitForApproval(submitClient({ qd_no: null, approval_state: 'Draft' }, calls), {
+    id: 5, actor: 'Veera', userId: 2, approverUserId: 9, approverName: 'Imran',
   });
-  const upd = calls.find(c => /assigned_approver = \$4/.test(c.sql));
-  assert.equal(upd.params[3], 9);
+  const upd = calls.find(c => /assigned_approver = \$3/.test(c.sql));
+  assert.equal(upd.params[2], 9);
   const activity = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
-  assert.ok(activity.params.some(p => typeof p === 'string' && p.includes('to Imran')), 'the timeline does not say who it went to');
+  assert.ok(activity.params.some(p => p === 'submitted QD against die D-1 for approval to Imran'), 'the timeline does not name the die and approver');
 });
 
 // Resubmitting a sent-back QD may go to a different approver, so the new choice
 // has to replace the old one rather than being coalesced away.
 test('resubmitting can redirect the QD to a different approver', async () => {
   const calls = [];
-  const client = { query: async (sql, params) => {
-    calls.push({ sql, params });
-    if (/SELECT id, qd_no, approval_state/.test(sql)) {
-      return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix', assigned_approver: 9 }] };
-    }
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  await q.submitForApproval(client, { id: 5, actor: 'Veera', userId: 2, approverUserId: 12, approverName: 'Sara' });
-  assert.equal(calls.find(c => /assigned_approver = \$4/.test(c.sql)).params[3], 12);
+  await q.submitForApproval(submitClient({ qd_no: '2026PH-04', approval_state: 'SentBack', assigned_approver: 9 }, calls),
+    { id: 5, actor: 'Veera', userId: 2, approverUserId: 12, approverName: 'Sara' });
+  assert.equal(calls.find(c => /assigned_approver = \$3/.test(c.sql)).params[2], 12);
+});
+
+test('approveQD issues the next number under the prefix lock when the QD has none', async () => {
+  const calls = [];
+  const year = new Date().getFullYear();
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Pending', supplier: 'Phoenix' }] };
+    if (/FROM suppliers/.test(sql)) return { rows: [{ name: 'Phoenix', qd_code: 'PH' }] };
+    if (/SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE/.test(sql)) return { rows: [{ qd_no: `${year}PH-03` }] };
+    return { rows: [], rowCount: 1 }; } };
+  const out = await q.approveQD(client, { id: 5, actor: 'Imran', userId: 9 });
+  assert.equal(out.qdNo, `${year}PH-04`);
+  const lockIdx = calls.findIndex(c => /pg_advisory_xact_lock/.test(c.sql));
+  const scanIdx = calls.findIndex(c => /SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE/.test(c.sql));
+  assert.ok(lockIdx >= 0 && lockIdx < scanIdx, 'the lock must be taken before the number scan');
+  assert.equal(calls[lockIdx].params[0], `${year}PH`);
+  const upd = calls.find(c => /approval_state = 'Approved'/.test(c.sql));
+  assert.match(upd.sql, /qd_no = \$1/);
+  assert.equal(upd.params[0], out.qdNo);
+  const activity = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
+  assert.ok(activity.params.some(p => p === `approved QD ${year}PH-04`));
+});
+
+test('approveQD keeps an existing number', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-02', approval_state: 'Pending', supplier: 'Phoenix' }] };
+    return { rows: [], rowCount: 1 }; } };
+  const out = await q.approveQD(client, { id: 5, actor: 'Imran', userId: 9 });
+  assert.equal(out.qdNo, '2026PH-02');
+  assert.equal(calls.some(c => /pg_advisory_xact_lock/.test(c.sql)), false);
 });
 
 test('only the named approver — or an admin — can act on an assigned QD', () => {
