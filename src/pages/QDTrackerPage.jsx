@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import {
   Download, Plus, ClipboardList, Factory, X,
-  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit, Upload,
+  AlertTriangle, Truck, CheckCircle, CheckCircle2, Clock, Wrench, RefreshCcw, FileText, Eye, FileEdit, Upload, Ban,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, suppliersAPI, correctorsAPI } from '../api';
-import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES, QD_IMPORTED_BADGE } from '../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_APPROVAL_BADGE, QD_LIST_BADGE_STATES, QD_IMPORTED_BADGE, QD_UNNUMBERED } from '../utils/constants';
 import QDDetailPanel from '../components/qd/QDDetailPanel';
 import RaiseQDModal from '../components/qd/RaiseQDModal';
 import FocPendingPanel from '../components/qd/FocPendingPanel';
@@ -72,13 +72,17 @@ const Handoff = ({ date, days, mono, muted, dim }) => {
 };
 
 // search/setSearch are the top-bar box, which filters whichever page is open.
-export default function QDTrackerPage({ user, theme = {}, search = '', setSearch, onCompose, qdQueue = null, focusQdId = null, focusQdRecord = null, onFocusHandled }) {
+// onOpenOrder(dieOrderId) opens the app-level order drawer, the same way the
+// search palette does; the QD drawer closes first.
+export default function QDTrackerPage({ user, theme = {}, search = '', setSearch, onCompose, qdQueue = null, focusQdId = null, focusQdRecord = null, onFocusHandled, onOpenOrder }) {
   const [tab, setTab] = useState('qds');
   const [data, setData] = useState({ qds: [], kpis: null, foc: null, suppliers: [], years: [], canApprove: false });
   const [year, setYear] = useState('All');
   // Drafts view: the caller's own unsubmitted QDs, fetched separately from the
   // normal (submitted) register rather than filtered client-side.
   const [showDrafts, setShowDrafts] = useState(false);
+  // Cancelled QDs are history: off by default, shown dim when asked for.
+  const [showCancelled, setShowCancelled] = useState(false);
   // Supplier master — the source for the Raise dropdown and for contact_email.
   const [supplierMaster, setSupplierMaster] = useState([]);
   // Corrector master — the source for the Raise form's Corrector dropdown.
@@ -112,14 +116,14 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
     try {
       // Keep the known years when a scoped fetch returns none, so the filter
       // does not empty itself and strand the user on a year with no QDs.
-      const next = await qualityDiscrepanciesAPI.list(year, { drafts: showDrafts });
+      const next = await qualityDiscrepanciesAPI.list(year, { drafts: showDrafts, cancelled: showCancelled });
       setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
     } catch {
       setData(prev => ({ qds: [], kpis: null, foc: null, suppliers: [], years: prev.years, canApprove: false }));
     } finally {
       setLoading(false);
     }
-  }, [year, showDrafts]);
+  }, [year, showDrafts, showCancelled]);
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
@@ -307,6 +311,10 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
             style={{ padding: '10px 16px', background: showDrafts ? 'rgba(139,92,246,0.15)' : bg, border: `1px solid ${showDrafts ? 'rgba(139,92,246,0.4)' : border}`, borderRadius: 10, color: showDrafts ? '#A78BFA' : text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileEdit size={16} /> {showDrafts ? 'Drafts (viewing)' : 'Drafts'}
           </button>
+          <button onClick={() => setShowCancelled(v => !v)} className="qd-btn" title="Include cancelled QDs in the register"
+            style={{ padding: '10px 16px', background: showCancelled ? 'rgba(113,113,122,0.18)' : bg, border: `1px solid ${showCancelled ? 'rgba(161,161,170,0.4)' : border}`, borderRadius: 10, color: showCancelled ? muted : text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Ban size={16} /> {showCancelled ? 'Cancelled (showing)' : 'Show cancelled'}
+          </button>
           <button onClick={exportCsv} className="qd-btn" style={{ padding: '10px 16px', background: bg, border: `1px solid ${border}`, borderRadius: 10, color: text, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Download size={16} /> Export
           </button>
@@ -410,7 +418,7 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
                   const sc = QD_STATUS_CONFIG[q.status] || QD_STATUS_CONFIG.Open;
                   const OIcon = OUTCOME_ICON[q.outcome] || Eye;
                   return (
-                    <tr key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)}>
+                    <tr key={q.id} className="qd-row" onClick={() => setSelectedId(q.id)} style={q.approval_state === 'Cancelled' ? { opacity: 0.55 } : undefined}>
                       <td style={td}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                           <button
@@ -419,7 +427,7 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
                             onClick={(e) => { e.stopPropagation(); setSelectedId(q.id); }}
                             style={{ fontFamily: mono, fontSize: 13, fontWeight: 600 }}
                           >
-                            {q.qd_no}
+                            {q.qd_no || QD_UNNUMBERED}
                             <span className="sr-only"> — open details</span>
                           </button>
                           {approvalPill(q.approval_state)}{importedPill(q)}
@@ -568,7 +576,7 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
                 <button type="button" key={q.id} className="qd-row row-open press-soft" onClick={() => setSelectedId(q.id)}
                   style={{ ...ROW_FILL, display: 'grid', gridTemplateColumns: QDS_COLS, gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: `1px solid ${border}` }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no}</span>
+                    <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600 }}>{q.qd_no || QD_UNNUMBERED}</span>
                     {approvalPill(q.approval_state)}{importedPill(q)}
                   </span>
                   <span style={{ fontFamily: mono, fontSize: 12.5, color: muted }}>{q.die_no}</span>
@@ -599,6 +607,7 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
           nextQd={nextQd}
           queueLeft={queueRest.length}
           onOpenNext={setSelectedId}
+          onOpenOrder={onOpenOrder}
           supplier={supplierMaster.find(s => (s.name || '').toLowerCase() === (selected.supplier || '').toLowerCase()) || null}
           onCompose={onCompose}
           onClose={() => { setSelectedId(null); onFocusHandled?.(); }}
@@ -626,7 +635,7 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
             const wantDrafts = !submitted && (isEdit ? !!wasDraft : true);
             setShowDrafts(wantDrafts);
             try {
-              const next = await qualityDiscrepanciesAPI.list(year, { drafts: wantDrafts });
+              const next = await qualityDiscrepanciesAPI.list(year, { drafts: wantDrafts, cancelled: showCancelled });
               setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
             } catch {
               // Best-effort — the effect-driven load() (triggered by the
@@ -646,7 +655,7 @@ export default function QDTrackerPage({ user, theme = {}, search = '', setSearch
               setShowDrafts(false);
               setYear('All');
               try {
-                const next = await qualityDiscrepanciesAPI.list('All', { drafts: false });
+                const next = await qualityDiscrepanciesAPI.list('All', { drafts: false, cancelled: showCancelled });
                 setData(prev => ({ ...next, years: next.years?.length ? next.years : prev.years }));
               } catch {
                 // The effect-driven load() triggered by the state changes above retries.

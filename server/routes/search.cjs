@@ -47,7 +47,7 @@ async function findOrders(q) {
 }
 
 // A draft QD belongs to whoever is writing it, the same rule as the tracker's
-// excludeDrafts / onlyDrafts split.
+// excludeHidden / onlyDrafts split. A cancelled QD is history and stays out.
 async function findQds(q, userId) {
   const pattern = search.containsPattern(q);
   const tokens = search.tokenPatterns(q);
@@ -55,13 +55,13 @@ async function findQds(q, userId) {
   const [rows, count] = await Promise.all([
     pool.query(
       `SELECT * FROM quality_discrepancies WHERE ${search.matchClause(fields, 5, tokens.length)}
-       AND (approval_state <> 'Draft' OR created_by = $4)
+       AND (approval_state <> 'Draft' OR created_by = $4) AND approval_state <> 'Cancelled'
        ORDER BY ${QD_RANK}, raised_date DESC, id DESC LIMIT ${search.CANDIDATE_LIMIT}`,
       [pattern, q.toLowerCase(), search.prefixPattern(q), userId, ...tokens],
     ),
     pool.query(
       `SELECT COUNT(*)::int AS total FROM quality_discrepancies WHERE ${search.matchClause(fields, 3, tokens.length)}
-       AND (approval_state <> 'Draft' OR created_by = $2)`,
+       AND (approval_state <> 'Draft' OR created_by = $2) AND approval_state <> 'Cancelled'`,
       [pattern, userId, ...tokens],
     ),
   ]);

@@ -14,12 +14,17 @@ let qdFiles;
 let hasSignature;
 let settingsRow;
 let writes;
+let collideOnApprove;
+let staleOnWrite;
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
   if (/^(UPDATE|INSERT)/.test(q)) {
     writes.push(q);
-    const blocked = /approval_state = 'Approved'/.test(q) && qdRow.approval_state !== 'Approved';
+    if (collideOnApprove && /approval_state = 'Approved'/.test(q)) throw Object.assign(new Error('duplicate key'), { code: '23505' });
+    if (staleOnWrite && /^UPDATE/.test(q)) return { rows: [], rowCount: 0 };
+    // The progress gate (`AND approval_state = 'Approved'`), not approve's own SET.
+    const blocked = /AND approval_state = 'Approved'/.test(q) && qdRow.approval_state !== 'Approved';
     return { rows: [], rowCount: blocked ? 0 : 1 };
   }
   if (/FROM user_signatures/.test(q)) {
@@ -60,6 +65,8 @@ test.beforeEach(() => {
   hasSignature = true;
   settingsRow = null;
   writes = [];
+  collideOnApprove = false;
+  staleOnWrite = false;
 });
 
 const QD = '/api/quality-discrepancies/7';
@@ -86,10 +93,35 @@ test('submitting an incomplete QD answers 400, names what is missing, and takes 
   assert.equal(writes.some((w) => /SET qd_no/.test(w)), false);
 });
 
-test('submitting a complete QD goes through', async () => {
+test('submitting a complete QD goes through and never writes a number', async () => {
   const { status, body } = await request(base, `${QD}/submit`, { body: { approverUserId: 1 } });
   assert.equal(status, 200);
   assert.equal(body.approval_state, 'Pending');
+  assert.equal(writes.some((w) => /qd_no/.test(w)), false);
+});
+
+test('approving an unnumbered QD issues its number', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Pending', submitted_at: new Date() };
+  const { status, body } = await request(base, `${QD}/approve`, { method: 'POST' });
+  assert.equal(status, 200);
+  assert.equal(body.qd_no, `${new Date().getFullYear()}PH-01`);
+  assert.ok(writes.some((w) => /approval_state = 'Approved'/.test(w) && /qd_no = \$1/.test(w)));
+});
+
+test('approving a QD that stopped being Pending underneath answers 409', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Pending', submitted_at: new Date() };
+  staleOnWrite = true; // the UPDATE finds no Pending row
+  const { status, body } = await request(base, `${QD}/approve`, { method: 'POST' });
+  assert.equal(status, 409);
+  assert.match(body.error, /changed while you were working on it/);
+});
+
+test('approving answers 409 when the number collides', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Pending', submitted_at: new Date() };
+  collideOnApprove = true;
+  const { status, body } = await request(base, `${QD}/approve`, { method: 'POST' });
+  assert.equal(status, 409);
+  assert.match(body.error, /please retry/);
 });
 
 test('the approval check warns about a blank form, a missing signature and no Purchase email', async () => {
@@ -109,6 +141,57 @@ test('the approval check passes when everything is in place', async () => {
   settingsRow = { purchase_email_to: 'buy@example.com', approver_user_ids: '[]' };
   const { body } = await request(base, `${QD}/approval-check`);
   assert.ok(body.checks.every((c) => c.ok), JSON.stringify(body.checks));
+});
+
+test('cancelling needs a reason', async () => {
+  qdRow.approval_state = 'Pending';
+  const { status, body } = await request(base, `${QD}/cancel`, { body: { reason: '' } });
+  assert.equal(status, 400);
+  assert.match(body.error, /Reason is required/);
+});
+
+test('an approved QD cannot be cancelled', async () => {
+  qdRow.approval_state = 'Approved';
+  const { status, body } = await request(base, `${QD}/cancel`, { body: { reason: 'dup' } });
+  assert.equal(status, 409);
+  assert.match(body.error, /Cannot cancel a QD that is Approved/);
+  assert.equal(writes.some((w) => /Cancelled/.test(w)), false);
+});
+
+test('a plain user cannot cancel someone else\'s QD', async () => {
+  // The main app signs in as admin, so mount the router once more behind a plain user.
+  const plain = express();
+  plain.use(express.json());
+  plain.use((req, _res, next) => { req.user = { id: 9, username: 'sijith', role: 'user' }; next(); });
+  plain.use('/api/quality-discrepancies', qdRouter);
+  const { base: plainBase, close: closePlain } = await listen(plain);
+  try {
+    qdRow.approval_state = 'Pending';
+    qdRow.created_by = 1;
+    settingsRow = { approver_user_ids: '[]' };
+    const { status, body } = await request(plainBase, `${QD}/cancel`, { body: { reason: 'dup' } });
+    assert.equal(status, 403);
+    assert.match(body.error, /cannot cancel/i);
+    assert.equal(writes.some((w) => /Cancelled/.test(w)), false);
+  } finally { await closePlain(); }
+});
+
+test('the raiser can cancel their own pending QD', async () => {
+  qdRow.approval_state = 'Pending';
+  qdRow.created_by = 1;
+  const { status, body } = await request(base, `${QD}/cancel`, { body: { reason: 'Raised twice' } });
+  assert.equal(status, 200);
+  assert.equal(body.message, 'Cancelled');
+  assert.ok(writes.some((w) => /approval_state = 'Cancelled'/.test(w)));
+});
+
+test('the register hides cancelled QDs unless asked, and never counts them', async () => {
+  qdRow = { ...COMPLETE, approval_state: 'Cancelled', status: 'Open', raised_date: '2026-10-01' };
+  assert.equal((await request(base, '/api/quality-discrepancies')).body.qds.length, 0);
+  const { body } = await request(base, '/api/quality-discrepancies?cancelled=1');
+  assert.equal(body.qds.length, 1);
+  assert.equal(body.qds[0].approval_state, 'Cancelled');
+  assert.equal(body.kpis.total, 0);
 });
 
 test('the supplier email route refuses the form of an unapproved QD', async () => {

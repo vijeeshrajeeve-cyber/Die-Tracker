@@ -968,10 +968,12 @@ export const frozenDesignsAPI = {
 export const qualityDiscrepanciesAPI = {
     // year scopes the rows, KPIs and supplier rollup together; omit for all years.
     // { drafts: true } asks the server to return only the caller's own drafts instead.
-    list: async (year, { drafts = false } = {}) => {
+    // { cancelled: true } includes cancelled QDs in the register (never in the KPIs).
+    list: async (year, { drafts = false, cancelled = false } = {}) => {
         const params = new URLSearchParams();
         if (year && year !== 'All') params.set('year', year);
         if (drafts) params.set('drafts', '1');
+        if (cancelled) params.set('cancelled', '1');
         const qs = params.toString();
         return apiRequest(`/quality-discrepancies${qs ? `?${qs}` : ''}`);
     },
@@ -1008,6 +1010,11 @@ export const qualityDiscrepanciesAPI = {
 
     sendBack: async (id, reason) =>
         apiRequest(`/quality-discrepancies/${id}/send-back`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+    // Withdraws a Draft, Pending or Sent-back QD (reason required). Nothing is
+    // deleted; the QD stays readable under "Show cancelled".
+    cancel: async (id, reason) =>
+        apiRequest(`/quality-discrepancies/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
     resendPurchase: async (id) =>
         apiRequest(`/quality-discrepancies/${id}/resend-purchase`, { method: 'POST' }),
@@ -1091,14 +1098,19 @@ export const qualityDiscrepanciesAPI = {
     undoImport: async (id) =>
         apiRequest(`/quality-discrepancies/${id}/import`, { method: 'DELETE' }),
 
-    downloadFile: async (fileId, filename) => {
+    // The file route needs the bearer token, so an <img src> cannot point at it;
+    // callers get an object URL and revoke it when done.
+    fileObjectUrl: async (fileId) => {
         const token = getToken();
         const response = await fetch(`${API_BASE_URL}/quality-discrepancies/files/${fileId}`, {
             headers: { ...(token && { Authorization: `Bearer ${token}` }) },
         });
         if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        return URL.createObjectURL(await response.blob());
+    },
+
+    downloadFile: async (fileId, filename) => {
+        const url = await qualityDiscrepanciesAPI.fileObjectUrl(fileId);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename || 'qd-file';

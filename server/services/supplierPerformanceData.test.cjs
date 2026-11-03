@@ -56,6 +56,13 @@ test('getSnapshot computes QD rate as a percentage of dies received', async () =
   assert.equal(snap.ordersPlaced, 10);
 });
 
+test('getSnapshot counts only QDs that were really raised: no drafts, no cancelled', async () => {
+  const pool = makePool([[/./, [{}]]]);
+  await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-01-01', to: '2026-01-31' });
+  const qdSql = pool.calls.find((c) => /FROM quality_discrepancies/.test(c.sql)).sql;
+  assert.match(qdSql, /approval_state NOT IN \('Draft', *'Cancelled'\)/);
+});
+
 test('getSnapshot leaves QD rate null when no dies were received', async () => {
   const pool = makePool([
     [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '3' }]],

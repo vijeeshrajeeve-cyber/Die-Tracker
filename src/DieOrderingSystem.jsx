@@ -3097,9 +3097,9 @@ export default function DieOrderingSystem() {
                           fontSize: '0.75rem', fontWeight: 700, color: 'white'
                         }}>{(q.supplier || '??').substring(0, 2)}</div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{q.qd_no || 'Draft'}</div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{q.qd_no || 'Unnumbered'}</div>
                           <div style={{ fontSize: '0.7rem', color: theme.textDim }}>
-                            Die {q.die_no} · {q.supplier}{q.prepared_by ? ` · from ${q.prepared_by}` : ''}
+                            Die {q.die_no} · {q.supplier}{q.submitted_at ? ` · submitted ${String(q.submitted_at).slice(0, 10)}` : ''}{q.prepared_by ? ` by ${q.prepared_by}` : ''}
                           </div>
                         </div>
                       </div>
@@ -3140,7 +3140,7 @@ export default function DieOrderingSystem() {
                           fontSize: '0.75rem', fontWeight: 700, color: 'white'
                         }}>{(q.supplier || '??').substring(0, 2)}</div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{q.qd_no || 'Draft'}</div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: theme.text }}>{q.qd_no || 'Unnumbered'}</div>
                           <div style={{ fontSize: '0.7rem', color: theme.textDim }}>
                             Die {q.die_no}{q.sent_back_reason ? ` · ${q.sent_back_reason}` : ''}
                           </div>
@@ -3421,6 +3421,8 @@ export default function DieOrderingSystem() {
               focusQdId={focusQdId}
               focusQdRecord={focusQdRecord}
               onFocusHandled={() => { setFocusQdId(null); setFocusQdRecord(null); }}
+              // "Open die order" from the QD drawer: same path as a search hit.
+              onOpenOrder={async (id) => openSearchOrder(await searchAPI.order(id))}
             />
           )}
 

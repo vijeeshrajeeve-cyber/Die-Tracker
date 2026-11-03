@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  X, Upload, FileText, Image as ImageIcon, Flag, Send, Bell, Wrench,
+  X, Flag, Send, Bell, Wrench,
   Calendar, Check, MessageSquare, Pencil, XCircle, Mail, ArrowUpCircle, CornerUpLeft, Repeat,
-  Download, Eye, Undo2, AlertTriangle, ArrowRight,
+  Download, Eye, Undo2, AlertTriangle, ArrowRight, FlaskConical, ExternalLink, Ban,
 } from 'lucide-react';
 import { qualityDiscrepanciesAPI, getUser } from '../../api';
-import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS, QD_APPROVAL_BADGE, QD_IMPORTED_BADGE } from '../../utils/constants';
+import { QD_STATUS_CONFIG, QD_STATUSES, QD_ACTIVITY_TONES, QD_OUTCOMES, QD_PROGRESS_FIELDS, QD_APPROVAL_BADGE, QD_IMPORTED_BADGE, QD_UNNUMBERED } from '../../utils/constants';
 import { dialogs } from '../ui/DialogProvider';
 import { dieDesignSignature, userSignature } from '../../utils/emailSignature';
 import StatusChangeModal from './StatusChangeModal';
 import FocTrialModal from './FocTrialModal';
 import FocRounds from './FocRounds';
+import QdJourneyStrip from './QdJourneyStrip';
+import QdPhotoGrid from './QdPhotoGrid';
+import QdCancelModal from './QdCancelModal';
 import QDFormPreviewModal from './QDFormPreviewModal';
 import DatePickerField from '../DatePickerField';
 import useDialog from '../../hooks/useDialog';
@@ -34,7 +37,15 @@ const ACTIVITY_ICON = {
   'message-square': MessageSquare,
 };
 
-const isPdf = (name) => /\.pdf$/i.test(String(name || ''));
+// The drawer's tabs, in order. Issue opens first in every state.
+const TABS = [
+  { key: 'issue', label: 'Issue' },
+  { key: 'photos', label: 'Photos' },
+  { key: 'supplier', label: 'Supplier & FOC' },
+  { key: 'die', label: 'Die' },
+  { key: 'activity', label: 'Activity' },
+];
+
 const dateVal = (v) => (v ? String(v).slice(0, 10) : '');
 const dateOnly = (v) => (v ? String(v).slice(0, 10) : '—');
 
@@ -71,7 +82,9 @@ const fmtWhen = (v) => {
     : d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
 };
 
-export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, nextQd = null, queueLeft = 0, onOpenNext, onCompose, onClose, onEdit, onChanged }) {
+export default function QDDetailPanel({ qd, theme = {}, supplier = null, canApprove = false, nextQd = null, queueLeft = 0, onOpenNext, onOpenOrder, onCompose, onClose, onEdit, onChanged }) {
+  const [tab, setTab] = useState('issue');
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -105,6 +118,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   const aBadge = QD_APPROVAL_BADGE[qd.approval_state] || null;
   const isPending = qd.approval_state === 'Pending';
   const isApproved = qd.approval_state === 'Approved';
+  const isCancelled = qd.approval_state === 'Cancelled';
   const missing = qd.submit_missing || [];
   const canDecide = isPending && mayApprove;
 
@@ -255,12 +269,23 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
     ? `Opens a draft to ${supplier.contact_email}`
     : `No contact email on file for ${qd.supplier} — add one in Settings, or type it into the draft`;
 
-  // Three of the four facts are editable in place; Age is derived from the
-  // dates, so it stays read-only.
-  const facts = [
+  // Part-A facts live on the Issue tab, Part-B and the hand-off dates on the
+  // Supplier & FOC tab. Age is derived from the dates, so it stays read-only;
+  // the answers given when raising are changed through Edit QD, not in place.
+  const issueFacts = [
+    { label: 'Manufacturing defect', value: qd.manufacturing_defect || '—' },
+    { label: 'Die performance', value: qd.die_performance || '—' },
+    { label: 'Recommended action', value: qd.recommended_action || '—' },
     { label: 'Corrector', value: qd.corrector || '—', field: 'corrector', type: 'text', current: qd.corrector || '', placeholder: 'e.g. Sijith' },
     { label: 'Outcome sought', value: qd.outcome || '—', field: 'outcome', type: 'select', current: qd.outcome || '' },
     { label: 'Input at failure', value: qd.input_at_failure || '—', field: 'input_at_failure', type: 'text', current: qd.input_at_failure || '', placeholder: 'e.g. 3,417 kg' },
+    ...(qd.billets || []).map((b) => ({
+      label: `${b.billet === 'first' ? 'First' : 'Last'} billet`,
+      value: [b.billet_temp && `${b.billet_temp} °C`, b.running_pressure && `${b.running_pressure} bar`].filter(Boolean).join(' · ') || '—',
+    })),
+    { label: 'Age', value: qd.closed_at ? 'Settled' : `${qd.age_days} days` },
+  ];
+  const supplierFacts = [
     { label: 'ETA from supplier', value: qd.eta_display || '—', field: 'eta_date', type: 'date', current: qd.eta_date ? String(qd.eta_date).slice(0, 10) : '' },
     // Part-B — filled in once the supplier has responded.
     { label: 'Supplier acceptance', value: qd.supplier_acceptance || '—', field: 'supplier_acceptance', type: 'select', options: QD_YES_NO, current: qd.supplier_acceptance || '' },
@@ -290,8 +315,19 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
         ? (qd.handoff?.toSupplier == null ? null : `${qd.handoff.toSupplier}d after raising`)
         : `${qd.handoff.purchaseToSupplier}d after purchase`,
     },
-    { label: 'Age', value: qd.closed_at ? 'Settled' : `${qd.age_days} days` },
   ];
+  const dieFacts = [
+    { label: 'Die no', value: qd.die_no || '—' },
+    { label: 'Profile', value: qd.profile_number || '—' },
+    { label: 'Plant', value: qd.plant || '—' },
+    { label: 'Supplier', value: qd.supplier || '—' },
+    { label: 'Press', value: qd.press || '—' },
+    { label: 'Die type', value: qd.die_type || '—' },
+    { label: 'Die size', value: qd.die_size || '—' },
+    { label: 'Cavities', value: qd.no_of_cavity || '—' },
+    { label: 'Tooling', value: qd.tooling || '—' },
+  ];
+  const facts = [...issueFacts, ...supplierFacts];
 
   const startEdit = (f) => { setEditing(f.field); setDraft(f.current); };
   const cancelEdit = () => { setEditing(null); setDraft(''); };
@@ -325,7 +361,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
     const warnings = (checks || []).filter((c) => !c.ok);
     if (warnings.length) {
       const ok = await dialogs.confirm({
-        title: `Approve QD ${qd.qd_no} anyway?`,
+        title: `Approve ${qd.qd_no ? `QD ${qd.qd_no}` : `the QD against die ${qd.die_no}`} anyway?`,
         message: warnings.map((w) => w.label).join('. ') + '.',
         confirmLabel: 'Approve anyway',
         tone: 'warning',
@@ -413,6 +449,79 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
   const stepCard = { border: `1px solid ${border}`, borderRadius: 8, padding: 16, marginBottom: 20 };
   const stepTitle = { fontSize: 14, fontWeight: 700, marginBottom: 10 };
 
+  // One fact card. Editable ones open an inline editor on click.
+  const renderFact = (f) => {
+            const isEditing = editing === f.field;
+            // Part-A fields stop being editable once the QD is out for approval,
+            // and progress fields open only once it is approved. The server
+            // refuses both with a 409, so don't offer the pencil.
+            const editable = !!f.field && (QD_PROGRESS_FIELDS.has(f.field) ? isApproved : isDraftOrSentBack);
+            const fieldStyle = {
+              width: '100%', marginTop: 4, padding: '5px 8px', background: inputBg,
+              border: `1px solid ${theme.accent || '#3B82F6'}`, borderRadius: 6, color: text,
+              fontSize: 13, outline: 'none', boxSizing: 'border-box',
+            };
+            return (
+              <div key={f.label}
+                onClick={() => { if (editable && !isEditing) startEdit(f); }}
+                title={editable && !isEditing ? `Click to edit ${f.label.toLowerCase()}` : undefined}
+                className={editable && !isEditing ? 'qd-fact' : undefined}
+                style={{ border: `1px solid ${border}`, borderRadius: 8, padding: '12px 14px', cursor: editable && !isEditing ? 'pointer' : 'default', position: 'relative' }}>
+                <div style={{ ...label, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {f.label}
+                  {editable && !isEditing && <Pencil size={9} className="qd-fact-pen" style={{ opacity: 0, transition: 'opacity .15s ease' }} />}
+                </div>
+
+                {!isEditing && <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 4 }}>{f.value}</div>}
+                {!isEditing && f.hint && (
+                  <div style={{ fontSize: 10.5, color: dim, marginTop: 2 }}>{f.hint}</div>
+                )}
+
+                {isEditing && f.type === 'select' && (
+                  <select aria-label={f.label} autoFocus value={draft} disabled={busy} style={{ ...fieldStyle, cursor: 'pointer' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => commitEdit(f.field)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}>
+                    <option value="">—</option>
+                    {(f.options || QD_OUTCOMES).map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                )}
+
+                {isEditing && f.type === 'date' && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}
+                    // Escape cancels the edit, as it does in the text and select
+                    // editors. The picker stops the event itself while its
+                    // calendar is open, so that keypress only dismisses the popover.
+                    onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); cancelEdit(); } }}>
+                    {/* The shared picker commits the date it produces directly —
+                        it also provides Today and Clear. */}
+                    <DatePickerField
+                      autoFocus
+                      aria-label={f.label}
+                      value={draft}
+                      theme={theme}
+                      disabled={busy}
+                      onChange={(iso) => commitEdit(f.field, iso)}
+                    />
+                  </div>
+                )}
+
+                {isEditing && f.type === 'text' && (
+                  <input aria-label={f.label} autoFocus type="text" value={draft} disabled={busy}
+                    placeholder={f.placeholder} style={fieldStyle}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => commitEdit(f.field)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitEdit(f.field);
+                      if (e.key === 'Escape') cancelEdit();
+                    }} />
+                )}
+              </div>
+            );
+  };
+
   const canSend = !missing.length && !!approverId;
   const approveLabel = nextQd ? 'Approve & next' : 'Approve & send to Purchase';
   const waitingDays = qd.submitted_at
@@ -431,7 +540,8 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
         .qd-fact { transition: border-color .15s ease, background .15s ease; }
         .qd-fact:hover { border-color: ${theme.accent || '#3B82F6'} !important; background: ${surfaceHover}; }
         .qd-fact:hover .qd-fact-pen { opacity: 1 !important; }
-        .qd-sendback-cta:hover { filter: brightness(1.06); }`}</style>
+        .qd-sendback-cta:hover { filter: brightness(1.06); }
+        .qd-cancel-link:hover { color: #FCA5A5 !important; text-decoration: underline; }`}</style>
 
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 200 }} />
 
@@ -441,7 +551,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <h2 style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, margin: 0 }}>QD {qd.qd_no || 'Draft'}</h2>
+              <h2 style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, margin: 0 }}>{qd.qd_no ? `QD ${qd.qd_no}` : 'QD · unnumbered'}</h2>
               <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>{qd.status}</span>
               {aBadge && (
                 <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: aBadge.bg, color: aBadge.fg }}>{aBadge.label}</span>
@@ -461,6 +571,9 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           </button>
         </div>
 
+        {/* Where the QD is and whether it is late, before anything else. */}
+        <QdJourneyStrip qd={qd} theme={theme} />
+
         {/* Reading the form changes nothing, so these are there in every state. */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
           <button onClick={() => setPreviewOpen(true)} className="qd-action" title="Read the QD form without leaving the app"
@@ -477,7 +590,20 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
               <Undo2 size={15} /> Undo import
             </button>
           )}
+          {/* Withdrawing an unapproved QD. Quiet on purpose: it is the rare exit. */}
+          {qd.can_cancel && !isCancelled && (
+            <button type="button" onClick={() => setCancelOpen(true)} disabled={busy} className="qd-cancel-link"
+              style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: dim, fontSize: 12.5, cursor: busy ? 'wait' : 'pointer', padding: '4px 2px', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Ban size={13} /> Cancel QD
+            </button>
+          )}
         </div>
+
+        {isCancelled && (
+          <div style={{ border: `1px solid ${border}`, background: 'rgba(113,113,122,0.08)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: muted }}>
+            <strong>Cancelled</strong>{qd.cancelled_at ? ` ${dateOnly(qd.cancelled_at)}` : ''}{qd.cancelled_by_name ? ` by ${qd.cancelled_by_name}` : ''}{qd.cancel_reason ? ` — ${qd.cancel_reason}` : ''}
+          </div>
+        )}
 
         {qd.approval_state === 'SentBack' && qd.sent_back_reason && (
           <div style={{ border: `1px solid rgba(239,68,68,0.35)`, background: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#FCA5A5' }}>
@@ -601,9 +727,14 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
                 {QD_STATUSES.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </label>
+            {qd.foc?.state === 'awaiting-trial' && (
+              <button onClick={() => setTrialOpen(true)} disabled={busy} className="qd-action" title="Record how the replacement die trialled" style={secondaryBtn}>
+                <FlaskConical size={15} /> Record trial
+              </button>
+            )}
             {nextQd && onOpenNext && (
               <button onClick={() => onOpenNext(nextQd.id)} className="qd-action" style={{ ...secondaryBtn, cursor: 'pointer', marginLeft: 'auto' }}>
-                Next: QD {nextQd.qd_no} <ArrowRight size={15} />
+                Next: {nextQd.qd_no ? `QD ${nextQd.qd_no}` : `die ${nextQd.die_no}`} <ArrowRight size={15} />
               </button>
             )}
           </div>
@@ -611,150 +742,108 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
 
         {error && <div style={{ fontSize: 12.5, color: '#FCA5A5', marginBottom: 20 }}>{error}</div>}
 
-        {/* Facts — click an editable one to change it */}
-        {/* Wide enough for the date picker (trigger + calendar button) to sit
-            inside the card instead of spilling past its border. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
-          {facts.map(f => {
-            const isEditing = editing === f.field;
-            // Part-A fields stop being editable once the QD is out for approval,
-            // and progress fields open only once it is approved. The server
-            // refuses both with a 409, so don't offer the pencil.
-            const editable = !!f.field && (QD_PROGRESS_FIELDS.has(f.field) ? isApproved : isDraftOrSentBack);
-            const fieldStyle = {
-              width: '100%', marginTop: 4, padding: '5px 8px', background: inputBg,
-              border: `1px solid ${theme.accent || '#3B82F6'}`, borderRadius: 6, color: text,
-              fontSize: 13, outline: 'none', boxSizing: 'border-box',
-            };
+        {/* Tabs — the strip and the action row above answer "where is it";
+            these answer "what is it". */}
+        <div role="tablist" aria-label="QD details" style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${border}`, marginBottom: 20, overflowX: 'auto' }}>
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            const count = t.key === 'photos' ? (qd.files || []).length : t.key === 'activity' ? (qd.activity || []).length : null;
             return (
-              <div key={f.label}
-                onClick={() => { if (editable && !isEditing) startEdit(f); }}
-                title={editable && !isEditing ? `Click to edit ${f.label.toLowerCase()}` : undefined}
-                className={editable && !isEditing ? 'qd-fact' : undefined}
-                style={{ border: `1px solid ${border}`, borderRadius: 8, padding: '12px 14px', cursor: editable && !isEditing ? 'pointer' : 'default', position: 'relative' }}>
-                <div style={{ ...label, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {f.label}
-                  {editable && !isEditing && <Pencil size={9} className="qd-fact-pen" style={{ opacity: 0, transition: 'opacity .15s ease' }} />}
-                </div>
-
-                {!isEditing && <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 4 }}>{f.value}</div>}
-                {!isEditing && f.hint && (
-                  <div style={{ fontSize: 10.5, color: dim, marginTop: 2 }}>{f.hint}</div>
-                )}
-
-                {isEditing && f.type === 'select' && (
-                  <select aria-label={f.label} autoFocus value={draft} disabled={busy} style={{ ...fieldStyle, cursor: 'pointer' }}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onBlur={() => commitEdit(f.field)}
-                    onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}>
-                    <option value="">—</option>
-                    {(f.options || QD_OUTCOMES).map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                )}
-
-                {isEditing && f.type === 'date' && (
-                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}
-                    // Escape cancels the edit, as it does in the text and select
-                    // editors. The picker stops the event itself while its
-                    // calendar is open, so that keypress only dismisses the popover.
-                    onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); cancelEdit(); } }}>
-                    {/* The shared picker commits the date it produces directly —
-                        it also provides Today and Clear. */}
-                    <DatePickerField
-                      autoFocus
-                      aria-label={f.label}
-                      value={draft}
-                      theme={theme}
-                      disabled={busy}
-                      onChange={(iso) => commitEdit(f.field, iso)}
-                    />
-                  </div>
-                )}
-
-                {isEditing && f.type === 'text' && (
-                  <input aria-label={f.label} autoFocus type="text" value={draft} disabled={busy}
-                    placeholder={f.placeholder} style={fieldStyle}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onBlur={() => commitEdit(f.field)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitEdit(f.field);
-                      if (e.key === 'Escape') cancelEdit();
-                    }} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* FOC replacement rounds — only shown once a FOC has been accepted */}
-        <FocRounds qd={qd} theme={theme} busy={busy} onRecordTrial={() => setTrialOpen(true)} />
-
-        {/* Quality issue + attachments */}
-        <div style={{ border: `1px solid ${border}`, borderRadius: 8, padding: 16, marginBottom: 20 }}>
-          <div style={{ ...sectionLabel, marginBottom: 8 }}>Quality issue</div>
-          <p style={{ fontSize: 13.5, color: muted, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-line' }}>
-            {qd.issue_detail || qd.issue_summary}
-          </p>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-            {(qd.files || []).map(f => {
-              const Icon = isPdf(f.original_name) ? FileText : ImageIcon;
-              return (
-                <button key={f.id} type="button" className="qd-chip" title={f.original_name}
-                  onClick={() => qualityDiscrepanciesAPI.downloadFile(f.id, f.original_name)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: `1px solid ${border}`, borderRadius: 8, fontSize: 12, color: muted, cursor: 'pointer', background: bg }}>
-                  <Icon size={15} style={{ color: isPdf(f.original_name) ? '#F87171' : '#60A5FA' }} /> {f.category === 'original_form' ? 'Original QD form' : f.original_name}
-                </button>
-              );
-            })}
-            <input aria-label="Attach evidence to this QD" ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }} onChange={onFilesChosen} />
-            <button type="button" onClick={() => { if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click(); } }} disabled={busy}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: `2px dashed ${border}`, borderRadius: 8, fontSize: 12, color: dim, cursor: busy ? 'wait' : 'pointer', background: 'transparent' }}>
-              <Upload size={15} /> {busy ? 'Working…' : 'Add file'}
-            </button>
-          </div>
-        </div>
-
-        {/* Activity timeline */}
-        <div style={{ ...sectionLabel, marginBottom: 14 }}>Activity</div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {(qd.activity || []).map(a => {
-            const tone = QD_ACTIVITY_TONES[a.tone] || QD_ACTIVITY_TONES.neutral;
-            const Icon = ACTIVITY_ICON[a.icon] || MessageSquare;
-            return (
-              <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 12 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ width: 24, height: 24, borderRadius: '50%', background: tone.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Icon size={12} style={{ color: tone.fg }} />
-                  </span>
-                  <span style={{ width: 1, flex: 1, background: border, minHeight: 14 }} />
-                </div>
-                <div style={{ paddingBottom: 18 }}>
-                  <div style={{ fontSize: 13 }}><strong style={{ fontWeight: 600 }}>{a.actor}</strong> {a.action}</div>
-                  <div style={{ fontSize: 11.5, color: dim, marginTop: 2 }}>{fmtWhen(a.occurred_at)}</div>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Note composer */}
-          <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 12, alignItems: 'center' }}>
-            <span style={{ width: 24, height: 24, borderRadius: '50%', background: BRAND.navy, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>ME</span>
-            </span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={note} onChange={(e) => setNote(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') postNote(); }}
-                placeholder="Add an update… (e.g. reminder sent to supplier)"
-                style={{ flex: 1, padding: '10px 14px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: 13, outline: 'none' }} />
-              <button onClick={postNote} disabled={busy || !note.trim()}
-                style={{ padding: '10px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy || !note.trim() ? 'not-allowed' : 'pointer', opacity: busy || !note.trim() ? 0.6 : 1 }}>
-                Post
+              <button key={t.key} type="button" role="tab" aria-selected={active} onClick={() => setTab(t.key)}
+                style={{ padding: '9px 14px', background: 'transparent', border: 'none', borderBottom: `2px solid ${active ? (theme.accent || '#3B82F6') : 'transparent'}`, marginBottom: -1, color: active ? text : muted, fontWeight: active ? 700 : 500, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {t.label}{count ? <span style={{ marginLeft: 6, fontSize: 11, color: dim, fontWeight: 600 }}>{count}</span> : null}
               </button>
-            </div>
-          </div>
+            );
+          })}
         </div>
+
+        {tab === 'issue' && (
+          <>
+            <div style={{ border: `1px solid ${border}`, borderRadius: 8, padding: 16, marginBottom: 20 }}>
+              <div style={{ ...sectionLabel, marginBottom: 8 }}>Quality issue</div>
+              <p style={{ fontSize: 13.5, color: muted, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-line' }}>
+                {qd.issue_detail || qd.issue_summary}
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
+              {issueFacts.map(renderFact)}
+            </div>
+          </>
+        )}
+
+        {tab === 'photos' && (
+          <QdPhotoGrid files={qd.files || []} theme={theme} busy={busy} fileRef={fileRef} onFilesChosen={onFilesChosen}
+            onAdd={isCancelled ? null : () => { if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click(); } }} />
+        )}
+
+        {tab === 'supplier' && (
+          <>
+            {/* Wide enough for the date picker (trigger + calendar button) to sit
+                inside the card instead of spilling past its border. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
+              {supplierFacts.map(renderFact)}
+            </div>
+            {/* FOC replacement rounds — only shown once a FOC has been accepted */}
+            <FocRounds qd={qd} theme={theme} />
+          </>
+        )}
+
+        {tab === 'die' && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
+              {dieFacts.map(renderFact)}
+            </div>
+            {qd.die_order_id && onOpenOrder && (
+              <button type="button" className="qd-action" onClick={() => { onClose(); onOpenOrder(qd.die_order_id); }} style={{ ...secondaryBtn, cursor: 'pointer' }}>
+                <ExternalLink size={15} /> Open die order
+              </button>
+            )}
+          </>
+        )}
+
+        {tab === 'activity' && (
+          <>
+            {/* Activity timeline */}
+            <div style={{ ...sectionLabel, marginBottom: 14 }}>Activity</div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {(qd.activity || []).map(a => {
+                const tone = QD_ACTIVITY_TONES[a.tone] || QD_ACTIVITY_TONES.neutral;
+                const Icon = ACTIVITY_ICON[a.icon] || MessageSquare;
+                return (
+                  <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <span style={{ width: 24, height: 24, borderRadius: '50%', background: tone.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon size={12} style={{ color: tone.fg }} />
+                      </span>
+                      <span style={{ width: 1, flex: 1, background: border, minHeight: 14 }} />
+                    </div>
+                    <div style={{ paddingBottom: 18 }}>
+                      <div style={{ fontSize: 13 }}><strong style={{ fontWeight: 600 }}>{a.actor}</strong> {a.action}</div>
+                      <div style={{ fontSize: 11.5, color: dim, marginTop: 2 }}>{fmtWhen(a.occurred_at)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Note composer */}
+              <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 12, alignItems: 'center' }}>
+                <span style={{ width: 24, height: 24, borderRadius: '50%', background: BRAND.navy, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>ME</span>
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={note} onChange={(e) => setNote(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') postNote(); }}
+                    placeholder="Add an update… (e.g. reminder sent to supplier)"
+                    style={{ flex: 1, padding: '10px 14px', background: inputBg, border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: 13, outline: 'none' }} />
+                  <button onClick={postNote} disabled={busy || !note.trim()}
+                    style={{ padding: '10px 14px', background: primary, color: primaryFg, border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy || !note.trim() ? 'not-allowed' : 'pointer', opacity: busy || !note.trim() ? 0.6 : 1 }}>
+                    Post
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {pendingStatus && (
@@ -764,6 +853,15 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
           theme={theme}
           onClose={() => setPendingStatus(null)}
           onDone={onChanged}
+        />
+      )}
+
+      {cancelOpen && (
+        <QdCancelModal
+          qd={qd}
+          theme={theme}
+          onClose={() => setCancelOpen(false)}
+          onDone={async (r) => { await onChanged(); if (r?.emailWarning) setError(`Cancelled, but the raiser was not notified: ${r.emailWarning}`); }}
         />
       )}
 
@@ -802,7 +900,7 @@ export default function QDDetailPanel({ qd, theme = {}, supplier = null, canAppr
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${border}` }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '1rem', fontWeight: 700 }}>Send back to owner</div>
-                <div style={{ fontSize: '0.8rem', color: dim, marginTop: 6 }}>QD {qd.qd_no}</div>
+                <div style={{ fontSize: '0.8rem', color: dim, marginTop: 6 }}>{qd.qd_no ? `QD ${qd.qd_no}` : QD_UNNUMBERED} · die {qd.die_no}</div>
               </div>
               <button onClick={() => { setSendBackOpen(false); setSendBackReason(''); }}
                 style={{ width: 32, height: 32, background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

@@ -35,12 +35,14 @@ export default function QdQueueBanner({ title, tone = 'amber', qds = [], theme =
       {qds.map((q) => (
         <button type="button" key={q.id} className={`${rowClass} row-open press-soft`} onClick={() => onOpen && onOpen(q.id)}
           style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 6px', borderRadius: 8, cursor: onOpen ? 'pointer' : 'default' }}>
-          <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: text, minWidth: 96 }}>{q.qd_no || '—'}</span>
+          <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: text, minWidth: 96 }}>{q.qd_no || 'Unnumbered'}</span>
           <span style={{ fontSize: 12.5, color: muted }}>Die {q.die_no}</span>
           <span style={{ fontSize: 12.5, color: muted }}>{q.supplier}</span>
-          {/* Why it came back, so the raiser can triage without opening each one. */}
+          {/* Why it came back, so the raiser can triage without opening each one;
+              otherwise when it was sent and by whom, since there is no number yet. */}
           <span style={{ fontSize: 11.5, color: dim, marginLeft: 'auto', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {q.sent_back_reason ? q.sent_back_reason : (q.prepared_by ? `from ${q.prepared_by}` : '')}
+            {q.sent_back_reason ? q.sent_back_reason
+              : [q.submitted_at ? `submitted ${String(q.submitted_at).slice(0, 10)}` : '', q.prepared_by ? `by ${q.prepared_by}` : ''].filter(Boolean).join(' ')}
           </span>
         </button>
       ))}

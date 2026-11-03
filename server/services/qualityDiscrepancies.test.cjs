@@ -667,7 +667,8 @@ test('editQdDetails returns false when the QD does not exist', async () => {
 });
 
 test('APPROVAL_STATES and the editable subset are the agreed values', () => {
-  assert.deepEqual(q.APPROVAL_STATES, ['Draft', 'Pending', 'Approved', 'SentBack']);
+  assert.deepEqual(q.APPROVAL_STATES, ['Draft', 'Pending', 'Approved', 'SentBack', 'Cancelled']);
+  assert.deepEqual(q.CANCELLABLE_APPROVAL_STATES, ['Draft', 'Pending', 'SentBack']);
   assert.deepEqual(q.EDITABLE_APPROVAL_STATES, ['Draft', 'SentBack']);
 });
 
@@ -771,7 +772,13 @@ test('missingForSubmit needs a profile image the form can print', () => {
   assert.deepEqual(q.missingForSubmit(COMPLETE_QD, [{ original_name: 'A.JPG', category: 'profile_image' }]), []);
 });
 
-test('submitForApproval refuses an incomplete QD and takes no number', async () => {
+const submitClient = (row, calls) => ({ query: async (sql, params) => {
+  calls.push({ sql, params });
+  if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, die_no: 'D-1', supplier: 'Phoenix', ...row }] };
+  return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
+} });
+
+test('submitForApproval refuses an incomplete QD', async () => {
   const calls = [];
   const client = { query: async (sql, params) => {
     calls.push({ sql, params });
@@ -780,10 +787,10 @@ test('submitForApproval refuses an incomplete QD and takes no number', async () 
     return { rows: [], rowCount: 1 };
   } };
   await assert.rejects(
-    () => q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 }),
+    () => q.submitForApproval(client, { id: 5, actor: 'Veera', userId: 2 }),
     /^Error: Cannot submit yet\. Still needed: Recommended action, Profile image \(PNG or JPG\)$/,
   );
-  assert.equal(calls.some(c => /SET qd_no = /.test(c.sql)), false);
+  assert.equal(calls.some(c => /^UPDATE/.test(c.sql.trim())), false);
 });
 
 test('approvalChecks says what will go wrong before it does', () => {
@@ -802,60 +809,66 @@ test('approvalChecks says what will go wrong before it does', () => {
   assert.match(bad.purchaseEmail.label, /will not be emailed/);
 });
 
-test('submitForApproval assigns a number to an unnumbered draft and moves it to Pending', async () => {
+// The number is issued on approval, so submitting only moves the QD along.
+test('submitForApproval moves a draft to Pending without touching the number', async () => {
   const calls = [];
-  const client = { query: async (sql, params) => {
-    calls.push({ sql, params });
-    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2 });
-  assert.deepEqual(out, { ok: true, qdNo: '2026PH-04', state: 'Pending' });
-  const upd = calls.find(c => /SET qd_no = \$1, approval_state = \$2/.test(c.sql));
-  assert.equal(upd.params[0], '2026PH-04');
-  assert.equal(upd.params[1], 'Pending');
+  const out = await q.submitForApproval(submitClient({ qd_no: null, approval_state: 'Draft' }, calls), { id: 5, actor: 'Veera', userId: 2 });
+  assert.deepEqual(out, { ok: true, state: 'Pending' });
+  const upd = calls.find(c => /^UPDATE/.test(c.sql.trim()));
+  assert.match(upd.sql, /SET approval_state = \$1/);
+  assert.equal(/qd_no/.test(upd.sql), false);
+  assert.equal(upd.params[0], 'Pending');
 });
 
-test('submitForApproval keeps an existing number when resubmitting a SentBack QD', async () => {
+test('submitForApproval records the approver the raiser sent it to, and names the die and approver in the timeline', async () => {
   const calls = [];
-  const client = { query: async (sql) => {
-    calls.push(sql);
-    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix' }] };
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  const out = await q.submitForApproval(client, { id: 5, newQdNo: '2026PH-99', actor: 'Veera', userId: 2 });
-  assert.equal(out.qdNo, '2026PH-04'); // not the freshly-computed candidate
-});
-
-test('submitForApproval records the approver the raiser sent it to, and names them in the timeline', async () => {
-  const calls = [];
-  const client = { query: async (sql, params) => {
-    calls.push({ sql, params });
-    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Draft', supplier: 'Phoenix' }] };
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  await q.submitForApproval(client, {
-    id: 5, newQdNo: '2026PH-04', actor: 'Veera', userId: 2, approverUserId: 9, approverName: 'Imran',
+  await q.submitForApproval(submitClient({ qd_no: null, approval_state: 'Draft' }, calls), {
+    id: 5, actor: 'Veera', userId: 2, approverUserId: 9, approverName: 'Imran',
   });
-  const upd = calls.find(c => /assigned_approver = \$4/.test(c.sql));
-  assert.equal(upd.params[3], 9);
+  const upd = calls.find(c => /assigned_approver = \$3/.test(c.sql));
+  assert.equal(upd.params[2], 9);
   const activity = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
-  assert.ok(activity.params.some(p => typeof p === 'string' && p.includes('to Imran')), 'the timeline does not say who it went to');
+  assert.ok(activity.params.some(p => p === 'submitted QD against die D-1 for approval to Imran'), 'the timeline does not name the die and approver');
 });
 
 // Resubmitting a sent-back QD may go to a different approver, so the new choice
 // has to replace the old one rather than being coalesced away.
 test('resubmitting can redirect the QD to a different approver', async () => {
   const calls = [];
-  const client = { query: async (sql, params) => {
-    calls.push({ sql, params });
-    if (/SELECT id, qd_no, approval_state/.test(sql)) {
-      return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'SentBack', supplier: 'Phoenix', assigned_approver: 9 }] };
-    }
-    return answerSubmitCheck(sql) || { rowCount: 1, rows: [] };
-  } };
-  await q.submitForApproval(client, { id: 5, actor: 'Veera', userId: 2, approverUserId: 12, approverName: 'Sara' });
-  assert.equal(calls.find(c => /assigned_approver = \$4/.test(c.sql)).params[3], 12);
+  await q.submitForApproval(submitClient({ qd_no: '2026PH-04', approval_state: 'SentBack', assigned_approver: 9 }, calls),
+    { id: 5, actor: 'Veera', userId: 2, approverUserId: 12, approverName: 'Sara' });
+  assert.equal(calls.find(c => /assigned_approver = \$3/.test(c.sql)).params[2], 12);
+});
+
+test('approveQD issues the next number under the prefix lock when the QD has none', async () => {
+  const calls = [];
+  const year = new Date().getFullYear();
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: null, approval_state: 'Pending', supplier: 'Phoenix' }] };
+    if (/FROM suppliers/.test(sql)) return { rows: [{ name: 'Phoenix', qd_code: 'PH' }] };
+    if (/SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE/.test(sql)) return { rows: [{ qd_no: `${year}PH-03` }] };
+    return { rows: [], rowCount: 1 }; } };
+  const out = await q.approveQD(client, { id: 5, actor: 'Imran', userId: 9 });
+  assert.equal(out.qdNo, `${year}PH-04`);
+  const lockIdx = calls.findIndex(c => /pg_advisory_xact_lock/.test(c.sql));
+  const scanIdx = calls.findIndex(c => /SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE/.test(c.sql));
+  assert.ok(lockIdx >= 0 && lockIdx < scanIdx, 'the lock must be taken before the number scan');
+  assert.equal(calls[lockIdx].params[0], `${year}PH`);
+  const upd = calls.find(c => /approval_state = 'Approved'/.test(c.sql));
+  assert.match(upd.sql, /qd_no = \$1/);
+  assert.equal(upd.params[0], out.qdNo);
+  const activity = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
+  assert.ok(activity.params.some(p => p === `approved QD ${year}PH-04`));
+});
+
+test('approveQD keeps an existing number', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-02', approval_state: 'Pending', supplier: 'Phoenix' }] };
+    return { rows: [], rowCount: 1 }; } };
+  const out = await q.approveQD(client, { id: 5, actor: 'Imran', userId: 9 });
+  assert.equal(out.qdNo, '2026PH-02');
+  assert.equal(calls.some(c => /pg_advisory_xact_lock/.test(c.sql)), false);
 });
 
 test('only the named approver — or an admin — can act on an assigned QD', () => {
@@ -883,6 +896,18 @@ test('the send-back email names the QD and quotes the reason verbatim', () => {
   assert.ok(html.includes('Imran'));
   // It must not read as an approval — this QD did not go to Purchase.
   assert.ok(/has not gone to Purchase/.test(html));
+});
+
+test('the cancel email names the QD by number or die, quotes the reason, and escapes it', () => {
+  assert.equal(q.cancelEmailSubject({ qd_no: '2026PH-04', die_no: '30601-201' }), 'QD 2026PH-04 cancelled');
+  assert.equal(q.cancelEmailSubject({ qd_no: null, die_no: '30601-201' }), 'QD against die 30601-201 cancelled');
+  const html = q.buildCancelEmailHtml({ qd_no: null, die_no: '30601-201', supplier: 'Phoenix' },
+    { reason: 'Raised <twice>', by: 'Imran' });
+  assert.ok(html.includes('30601-201'));
+  assert.ok(html.includes('Raised &lt;twice&gt;'));
+  assert.ok(!html.includes('<twice>'));
+  assert.ok(html.includes('Imran'));
+  assert.ok(/not approved/.test(html));
 });
 
 test('a reason containing HTML is escaped, not rendered', () => {
@@ -925,6 +950,77 @@ test('sendBack requires a reason and only works from Pending', async () => {
   assert.equal(out.ok, true);
   const upd = calls.find(c => /approval_state = 'SentBack'/.test(c.sql));
   assert.equal(upd.params[0], 'billet temps missing');
+});
+
+test('cancelQD needs a reason and only works before approval', async () => {
+  const row = (approval_state) => ({ query: async (sql) => (/SELECT id, qd_no, approval_state/.test(sql)
+    ? { rows: [{ id: 5, qd_no: '2026PH-04', approval_state }] } : { rows: [], rowCount: 1 }) });
+  await assert.rejects(() => q.cancelQD(row('Pending'), { id: 5, reason: ' ', actor: 'V', userId: 2 }), /Reason is required/);
+  await assert.rejects(() => q.cancelQD(row('Approved'), { id: 5, reason: 'dup', actor: 'V', userId: 2 }), /Cannot cancel a QD that is Approved/);
+  await assert.rejects(() => q.cancelQD(row('Cancelled'), { id: 5, reason: 'dup', actor: 'V', userId: 2 }), /Cannot cancel a QD that is Cancelled/);
+});
+
+test('cancelQD records who, when and why, keeps the number, and writes the timeline', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending' }] };
+    return { rows: [], rowCount: 1 }; } };
+  assert.deepEqual(await q.cancelQD(client, { id: 5, reason: 'Raised twice', actor: 'Veera', userId: 2 }), { ok: true });
+  const upd = calls.find(c => /approval_state = 'Cancelled'/.test(c.sql));
+  assert.match(upd.sql, /cancel_reason = \$1/);
+  assert.match(upd.sql, /cancelled_by = \$2/);
+  assert.match(upd.sql, /cancelled_at = CURRENT_TIMESTAMP/);
+  assert.equal(/qd_no/.test(upd.sql), false);
+  assert.deepEqual(upd.params, ['Raised twice', 2, 5]);
+  const act = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
+  assert.ok(act.params.some(p => p === 'cancelled QD — Raised twice'));
+});
+
+// The row read at the start of approve / cancel / send-back is unlocked, so the
+// UPDATE itself re-checks the state and refuses when another call got there first.
+const staleRow = (approval_state) => ({ query: async (sql) => {
+  if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state, supplier: 'Phoenix' }] };
+  if (/^\s*UPDATE/.test(sql)) return { rows: [], rowCount: 0 };
+  return { rows: [], rowCount: 1 };
+} });
+
+test('approveQD, cancelQD and sendBack refuse when the row changed state underneath them', async () => {
+  await assert.rejects(() => q.approveQD(staleRow('Pending'), { id: 5, actor: 'I', userId: 9 }), /^Error: QD changed while you were working on it/);
+  await assert.rejects(() => q.cancelQD(staleRow('Pending'), { id: 5, reason: 'dup', actor: 'V', userId: 2 }), /^Error: QD changed while you were working on it/);
+  await assert.rejects(() => q.sendBack(staleRow('Pending'), { id: 5, reason: 'why', actor: 'I', userId: 9 }), /^Error: QD changed while you were working on it/);
+});
+
+test('the guarded UPDATEs name the states they accept', async () => {
+  const sqls = [];
+  const client = { query: async (sql) => { sqls.push(sql);
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending', supplier: 'Phoenix' }] };
+    return { rows: [], rowCount: 1 }; } };
+  await q.approveQD(client, { id: 5, actor: 'I', userId: 9 });
+  await q.cancelQD(client, { id: 5, reason: 'dup', actor: 'V', userId: 2 });
+  await q.sendBack(client, { id: 5, reason: 'why', actor: 'I', userId: 9 });
+  const updates = sqls.filter((s) => /^\s*UPDATE/.test(s));
+  assert.match(updates[0], /approval_state = 'Pending'\s*$/m);
+  assert.match(updates[1], /approval_state IN \('Draft', 'Pending', 'SentBack'\)/);
+  assert.match(updates[2], /approval_state = 'Pending'\s*$/m);
+});
+
+test('the send-back email names an unnumbered QD by its die', () => {
+  const row = { qd_no: null, die_no: '30601-201', supplier: 'Phoenix' };
+  assert.equal(q.sendBackEmailSubject(row), 'QD against die 30601-201 sent back — changes needed');
+  const html = q.buildSendBackEmailHtml(row, { reason: 'x', by: 'Imran' });
+  assert.ok(html.includes('QD against die 30601-201 was sent back'));
+  assert.ok(!html.includes('null'));
+});
+
+test('excludeHidden drops drafts always and cancelled QDs unless asked for', () => {
+  const rows = [{ approval_state: 'Draft' }, { approval_state: 'Cancelled' }, { approval_state: 'Approved' }];
+  assert.deepEqual(q.excludeHidden(rows).map(r => r.approval_state), ['Approved']);
+  assert.deepEqual(q.excludeHidden(rows, { cancelled: true }).map(r => r.approval_state), ['Cancelled', 'Approved']);
+});
+
+test('listMyQueue never lists a cancelled QD', async () => {
+  const client = { query: async (sql) => { assert.match(sql, /approval_state IN \('Pending', 'SentBack'\)/); return { rows: [] }; } };
+  assert.deepEqual(await q.listMyQueue(client, 2, { isApprover: true }), { awaitingApproval: [], sentBack: [] });
 });
 
 test('excludeDrafts / onlyDrafts split rows by approval_state', () => {

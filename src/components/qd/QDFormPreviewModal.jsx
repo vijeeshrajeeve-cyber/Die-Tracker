@@ -81,7 +81,7 @@ export default function QDFormPreviewModal({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>QD form — {qd.qd_no || 'Draft'}</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>QD form — {qd.qd_no || 'Unnumbered'}</div>
             <div style={{ fontSize: 12.5, color: muted, marginTop: 2 }}>
               {qd.status}{qd.approval_state ? ` · ${qd.approval_state}` : ''} · Die {qd.die_no} · {qd.supplier}
             </div>

@@ -428,7 +428,9 @@ function drawPageOne(page, qd, billets, { font, bold }, spill) {
 
   drawLabel(page, 'Quality Discrepancy', { x0: LEFT, x1: RIGHT, y: 658.1, size: 20, f: bold });
   drawLabel(page, 'QD #', { x0: COL[9], x1: COL[10], y: 658.1, size: 12, f: bold });
-  drawCell(page, qd.qd_no, { x0: COL[10], x1: RIGHT, yB: P1.title + EDGE, yT: P1.header }, { size: 11, f: bold });
+  // The number is issued on approval; only the in-app preview and download can
+  // reach here without one.
+  drawCell(page, qd.qd_no || 'Not yet numbered', { x0: COL[10], x1: RIGHT, yB: P1.title + EDGE, yT: P1.header }, { size: 11, f: bold });
 
   drawLabel(page, 'Part-A (To be filled by Gulfex Team)', { x0: LEFT, x1: RIGHT, y: 636.2, size: 14, f: font });
 

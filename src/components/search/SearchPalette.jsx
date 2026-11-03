@@ -8,7 +8,7 @@ import { searchAPI } from '../../api';
 import {
   shouldSearch, buildOptions, moveIndex, isAbort, isSearchShortcut, highlightParts,
   toRecent, pushRecent, dropRecent, readRecents, writeRecents, recentsKey, DEBOUNCE_MS, GROUP_LABELS,
-  groupRecents, scopeResults, scopeRecents, SCOPES,
+  groupRecents, scopeResults, scopeRecents, SCOPES, qdLabel,
 } from '../../utils/searchPalette';
 
 const formatDate = (value) => {
@@ -280,7 +280,7 @@ export default function SearchPalette({ open, onClose, theme, userId, onOpenOrde
                       </>
                     ) : (
                       <>
-                        <span style={title}><Highlight text={item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : `QD #${item.id}`)} query={q} /></span>
+                        <span style={title}><Highlight text={qdLabel(item)} query={q} /></span>
                         {detail('qd', <Highlight text={item.die_no || '—'} query={q} />)}
                         <span style={{ ...muted, flexShrink: 0 }}>{formatDate(item.raised_date)}</span>
                         <span style={{ ...muted, fontWeight: 600, flexShrink: 0 }}>{item.approval_state === 'Draft' ? 'Draft' : item.status}</span>

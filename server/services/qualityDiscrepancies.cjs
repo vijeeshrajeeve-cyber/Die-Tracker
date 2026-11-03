@@ -25,21 +25,28 @@ const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
 const SETTLED_STATUSES = ['Closed', 'Rejected'];
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
-const APPROVAL_STATES = ['Draft', 'Pending', 'Approved', 'SentBack'];
+const APPROVAL_STATES = ['Draft', 'Pending', 'Approved', 'SentBack', 'Cancelled'];
 const EDITABLE_APPROVAL_STATES = ['Draft', 'SentBack'];
+// A QD can be withdrawn only while it is still the raiser's and the approver's
+// business. Once approved it has gone to Purchase, so withdrawing it is a
+// status (Rejected), not a cancellation.
+const CANCELLABLE_APPROVAL_STATES = ['Draft', 'Pending', 'SentBack'];
 
 // Legal approval transitions. Throwing here (rather than returning null) means
 // an illegal action surfaces as a 400 at the route, not a silent no-op.
 const APPROVAL_TRANSITIONS = {
-  Draft:    { submit: 'Pending' },
-  SentBack: { submit: 'Pending' },
-  Pending:  { approve: 'Approved', sendBack: 'SentBack' },
+  Draft:    { submit: 'Pending', cancel: 'Cancelled' },
+  SentBack: { submit: 'Pending', cancel: 'Cancelled' },
+  Pending:  { approve: 'Approved', sendBack: 'SentBack', cancel: 'Cancelled' },
 };
 function nextApprovalState(from, action) {
   const to = APPROVAL_TRANSITIONS[from] && APPROVAL_TRANSITIONS[from][action];
   if (!to) throw new Error(`Cannot ${action} a QD that is ${from}`);
   return to;
 }
+// Thrown when a state-guarded UPDATE finds the row no longer in the state it
+// was read in: someone else approved, sent back or cancelled it meanwhile.
+const STALE_ROW = 'QD changed while you were working on it — reload and try again';
 
 // What a QD must carry before it can go for approval. The form that reaches
 // Purchase and the supplier is printed from these, so a blank one here is a blank
@@ -719,15 +726,41 @@ async function recordFocTrial(client, { id, trialDate, result, notes, actor, use
 
 async function getApprovalRow(client, id) {
   const { rows } = await client.query(
-    `SELECT id, qd_no, approval_state, supplier, assigned_approver, created_by
+    `SELECT id, qd_no, approval_state, supplier, assigned_approver, created_by, die_no
        FROM quality_discrepancies WHERE id = $1`, [id]);
   return rows[0] || null;
 }
 
+// QD numbers run YYYY + supplier code + per-supplier sequence, e.g. 2026PD-01.
+// The code comes from the supplier master so collisions (PHOENIX/PHME) stay
+// resolved in one place; we only fall back to deriving it for suppliers that
+// have no row in the master yet. Issued on approval, so a number means an
+// approved discrepancy exists. The per-prefix advisory lock keeps two approvers
+// clicking at once from reading the same max; the UNIQUE on qd_no is only the
+// last line of defence.
+async function allocateQdNo(client, supplierName) {
+  const year = new Date().getFullYear();
+  const { rows: sup } = await client.query(
+    `SELECT name, qd_code FROM suppliers WHERE UPPER(name) = UPPER($1) LIMIT 1`,
+    [supplierName]
+  );
+  const code = sup[0]?.qd_code || deriveQdCode(sup[0]?.name || supplierName);
+  if (!code) {
+    throw new Error(`No QD code for supplier "${supplierName}" — set one in Settings → Suppliers`);
+  }
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${year}${code}`]);
+  const { rows } = await client.query(
+    `SELECT qd_no FROM quality_discrepancies WHERE qd_no LIKE $1`,
+    [`${year}${code}-%`]
+  );
+  return formatQdNo(year, code, nextSequence(rows.map(r => r.qd_no), year, code));
+}
+
 // `approverUserId` is the approver the raiser is sending this QD to. The route
 // checks they are actually eligible; resubmitting a sent-back QD may name a
-// different one, so this always overwrites rather than coalescing.
-async function submitForApproval(client, { id, newQdNo, actor, userId, approverUserId = null, approverName = '' }) {
+// different one, so this always overwrites rather than coalescing. No number is
+// issued here: that happens on approval.
+async function submitForApproval(client, { id, actor, userId, approverUserId = null, approverName = '' }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   const to = nextApprovalState(row.approval_state, 'submit');
@@ -738,17 +771,15 @@ async function submitForApproval(client, { id, newQdNo, actor, userId, approverU
     'SELECT original_name, category FROM quality_discrepancy_files WHERE qd_id = $1', [id]);
   const missing = missingForSubmit(detail[0], files);
   if (missing.length) throw new Error(`Cannot submit yet. Still needed: ${missing.join(', ')}`);
-  const qdNo = row.qd_no || newQdNo;
-  if (!qdNo) throw new Error('A QD number is required to submit');
   await client.query(
     `UPDATE quality_discrepancies
-        SET qd_no = $1, approval_state = $2, submitted_by = $3, assigned_approver = $4,
+        SET approval_state = $1, submitted_by = $2, assigned_approver = $3,
             submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5`,
-    [qdNo, to, userId || null, approverUserId, id]);
+      WHERE id = $4`,
+    [to, userId || null, approverUserId, id]);
   const to_whom = approverName ? ` to ${approverName}` : '';
-  await addActivity(client, { qdId: id, actor, action: `submitted QD ${qdNo} for approval${to_whom}`, icon: 'send', tone: 'send', userId });
-  return { ok: true, qdNo, state: to };
+  await addActivity(client, { qdId: id, actor, action: `submitted QD against die ${row.die_no} for approval${to_whom}`, icon: 'send', tone: 'send', userId });
+  return { ok: true, state: to };
 }
 
 // Who may act on this QD's approval. Anyone in the approver list can act on a
@@ -802,19 +833,25 @@ async function listMyQueue(client, userId, { isApprover = false } = {}) {
   };
 }
 
+// Approval is where the QD gets its number. A QD numbered before this rule
+// (submit used to issue it) keeps the one it has.
 async function approveQD(client, { id, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   nextApprovalState(row.approval_state, 'approve');
-  await client.query(
+  const qdNo = row.qd_no || await allocateQdNo(client, row.supplier);
+  // The row read above is unlocked, so the write re-checks the state: a second
+  // approver landing a moment later must not renumber an approved QD.
+  const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
-        SET approval_state = 'Approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP,
+        SET qd_no = $1, approval_state = 'Approved', approved_by = $2, approved_at = CURRENT_TIMESTAMP,
             sent_to_purchase_date = COALESCE(sent_to_purchase_date, CURRENT_DATE),
             updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2`,
-    [userId || null, id]);
-  await addActivity(client, { qdId: id, actor, action: `approved QD ${row.qd_no}`, icon: 'check', tone: 'good', userId });
-  return { ok: true, qdNo: row.qd_no };
+      WHERE id = $3 AND approval_state = 'Pending'`,
+    [qdNo, userId || null, id]);
+  if (!rowCount) throw new Error(STALE_ROW);
+  await addActivity(client, { qdId: id, actor, action: `approved QD ${qdNo}`, icon: 'check', tone: 'good', userId });
+  return { ok: true, qdNo };
 }
 
 async function sendBack(client, { id, reason, actor, userId }) {
@@ -823,17 +860,42 @@ async function sendBack(client, { id, reason, actor, userId }) {
   const row = await getApprovalRow(client, id);
   if (!row) return { ok: false };
   nextApprovalState(row.approval_state, 'sendBack');
-  await client.query(
+  const { rowCount } = await client.query(
     `UPDATE quality_discrepancies
         SET approval_state = 'SentBack', sent_back_reason = $1,
             sent_back_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2`,
+      WHERE id = $2 AND approval_state = 'Pending'`,
     [why, id]);
+  if (!rowCount) throw new Error(STALE_ROW);
   await addActivity(client, { qdId: id, actor, action: `sent QD back — ${why}`, icon: 'undo', tone: 'bad', userId });
   return { ok: true };
 }
 
-const excludeDrafts = (rows) => (rows || []).filter((r) => r.approval_state !== 'Draft');
+// Withdrawing a QD that never got approved. The number, if a pre-change submit
+// gave it one, stays: a cancelled 2026PD-05 is a gap you can look up and read
+// the reason for, which beats a gap that is simply missing.
+async function cancelQD(client, { id, reason, actor, userId }) {
+  const why = String(reason == null ? '' : reason).trim();
+  if (!why) throw new Error('Reason is required to cancel a QD');
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  nextApprovalState(row.approval_state, 'cancel');
+  const { rowCount } = await client.query(
+    `UPDATE quality_discrepancies
+        SET approval_state = 'Cancelled', cancel_reason = $1, cancelled_by = $2,
+            cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3 AND approval_state IN ('Draft', 'Pending', 'SentBack')`,
+    [why, userId || null, id]);
+  if (!rowCount) throw new Error(STALE_ROW);
+  await addActivity(client, { qdId: id, actor, action: `cancelled QD — ${why}`, icon: 'undo', tone: 'bad', userId });
+  return { ok: true };
+}
+
+// The register's default view: drafts are the owner's own unsubmitted work and
+// cancelled QDs are history, so neither shows unless asked for.
+const excludeHidden = (rows, { cancelled = false } = {}) => (rows || []).filter(
+  (r) => r.approval_state !== 'Draft' && (cancelled || r.approval_state !== 'Cancelled'));
+const excludeDrafts = (rows) => excludeHidden(rows);
 const onlyDrafts = (rows, userId) => (rows || []).filter(
   (r) => r.approval_state === 'Draft' && (userId == null || r.created_by === userId));
 
@@ -869,14 +931,14 @@ function buildPurchaseEmailHtml(qd, sender) {
 // carries no PDF: the QD is unfinished, and the point is to get them back into
 // the app to fix it.
 function sendBackEmailSubject(qd) {
-  return `QD ${qd.qd_no} sent back — changes needed`;
+  return `${qdName(qd)} sent back — changes needed`;
 }
 
 function buildSendBackEmailHtml(qd, { reason, by, sender } = {}) {
   const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
     `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
-    <h2 style="margin:0 0 6px">Quality Discrepancy ${escapeHtml(qd.qd_no)} was sent back</h2>
+    <h2 style="margin:0 0 6px">${escapeHtml(qdName(qd))} was sent back</h2>
     <p>${escapeHtml(by) || 'The approver'} has returned this QD to you for changes. It is not approved and has not gone to Purchase.</p>
     <table style="border-collapse:collapse;margin:8px 0">
       ${row('QD No', qd.qd_no)}${row('Die No', qd.die_no)}${row('Supplier', qd.supplier)}
@@ -889,6 +951,31 @@ function buildSendBackEmailHtml(qd, { reason, by, sender } = {}) {
   </div>`;
 }
 
+// A QD without a number (nothing approved yet) is named by its die.
+const qdName = (qd) => (qd.qd_no ? `QD ${qd.qd_no}` : `QD against die ${qd.die_no}`);
+
+function cancelEmailSubject(qd) {
+  return `${qdName(qd)} cancelled`;
+}
+
+// Sent to the raiser when someone else withdraws their QD, so a Pending QD
+// does not simply vanish from their queue.
+function buildCancelEmailHtml(qd, { reason, by, sender } = {}) {
+  const row = (k, v) => `<tr><td style="padding:3px 10px;color:#555">${k}</td>` +
+    `<td style="padding:3px 10px"><b>${escapeHtml(v) || '—'}</b></td></tr>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">
+    <h2 style="margin:0 0 6px">${escapeHtml(qdName(qd))} was cancelled</h2>
+    <p>${escapeHtml(by) || 'An approver'} has cancelled this QD. It was not approved and has not gone to Purchase. Nothing has been deleted; it stays readable in the QD Tracker under "Show cancelled".</p>
+    <table style="border-collapse:collapse;margin:8px 0">
+      ${row('QD No', qd.qd_no || 'Unnumbered')}${row('Die No', qd.die_no)}${row('Supplier', qd.supplier)}
+      ${row('Cancelled by', by)}
+    </table>
+    <p style="margin:12px 0 4px;color:#555">Reason given:</p>
+    <blockquote style="margin:0;padding:8px 12px;border-left:3px solid #71717a;background:#F4F4F5;white-space:pre-wrap">${escapeHtml(reason)}</blockquote>
+    ${signature.userSignature(sender)}
+  </div>`;
+}
+
 module.exports = {
   STATUSES, OPEN_STATUSES, NOT_OPEN_STATUSES, SETTLED_STATUSES, OUTCOMES, ACTIVITY_KINDS, EDITABLE_FIELDS, ISO_DATE,
   mapSheetStatus, ageDays, resolutionDays, etaDisplay, handoffDelays,
@@ -896,11 +983,11 @@ module.exports = {
   pendingFoc, focRecoveredInFy, hasFocClaim, TRIAL_RESULTS: focRounds.TRIAL_RESULTS,
   deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
-  APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
+  APPROVAL_STATES, EDITABLE_APPROVAL_STATES, CANCELLABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   NO_ISSUE_TEXT, missingForSubmit, approvalChecks,
-  submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
+  allocateQdNo, submitForApproval, approveQD, sendBack, cancelQD, canActOnApproval, excludeHidden, excludeDrafts, onlyDrafts,
   isInApprovalQueue, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,
-  sendBackEmailSubject, buildSendBackEmailHtml,
+  sendBackEmailSubject, buildSendBackEmailHtml, cancelEmailSubject, buildCancelEmailHtml,
   BILLETS, saveBilletParameters, listBilletParameters,
 };

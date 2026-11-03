@@ -70,6 +70,9 @@ test('toRecent keeps just what the empty-state row needs', () => {
     { kind: 'order', id: 3, label: 'D-3', detail: 'O-3 · ALPHA', openedAt: 100 });
   assert.deepEqual(toRecent('qd', { id: 9, qd_no: null, approval_state: 'Draft', die_no: 'D-1' }, 100),
     { kind: 'qd', id: 9, label: 'Draft QD', detail: 'D-1', openedAt: 100 });
+  // The number is issued on approval, so a pending QD has none yet.
+  assert.deepEqual(toRecent('qd', { id: 9, qd_no: null, approval_state: 'Pending', die_no: 'D-1' }, 100),
+    { kind: 'qd', id: 9, label: 'Unnumbered', detail: 'D-1', openedAt: 100 });
 });
 
 test('pushRecent moves a reopened entry to the front without duplicating, and caps the list', () => {

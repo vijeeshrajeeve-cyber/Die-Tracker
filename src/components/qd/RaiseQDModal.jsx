@@ -331,7 +331,7 @@ export default function RaiseQDModal({ theme = {}, suppliers = [], correctors = 
             {/* The server assigns the QD number on submit — no client-side guess. */}
             <div style={{ fontSize: 12.5, color: dim, marginTop: 2 }}>
               {isEdit
-                ? `${editQd.qd_no || 'Draft'}${isSentBack ? ' · sent back — fix and resubmit to the approver' : ' · changes save on this QD'}`
+                ? `${editQd.qd_no || (isSentBack ? 'Unnumbered' : 'Draft')}${isSentBack ? ' · sent back — fix and resubmit to the approver' : ' · changes save on this QD'}`
                 : 'Against a received die · QD no assigned on submit · Save Draft needs Die No + Supplier + Requested date'}
             </div>
           </div>
