@@ -47,7 +47,11 @@ export const recentsKey = (userId) => `dieTracker.search.recents.${userId ?? 'an
 // openedAt files the entry under Today / Yesterday / … in the empty state.
 export const toRecent = (kind, item, now = Date.now()) => (kind === 'order'
   ? { kind, id: item.id, label: item['DIE NO'] || '—', detail: [item['Order No'], item.Supplier].filter(Boolean).join(' · '), openedAt: now }
-  : { kind, id: item.id, label: item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : `QD #${item.id}`), detail: item.die_no || '', openedAt: now });
+  : { kind, id: item.id, label: qdLabel(item), detail: item.die_no || '', openedAt: now });
+
+// A QD is named by its number once approved; before that a draft is a draft
+// and anything else is simply not yet numbered.
+export const qdLabel = (item) => item.qd_no || (item.approval_state === 'Draft' ? 'Draft QD' : 'Unnumbered');
 
 const sameEntry = (a, b) => a.kind === b.kind && a.id === b.id;
 

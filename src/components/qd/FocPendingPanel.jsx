@@ -83,7 +83,7 @@ export default function FocPendingPanel({ foc, theme = {}, onOpen }) {
   );
 
   const identity = (r) => ([
-    <span key="qd" style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: text }}>{r.qd_no || '—'}</span>,
+    <span key="qd" style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: text }}>{r.qd_no || 'Unnumbered'}</span>,
     <span key="die" style={{ fontSize: 12.5, color: muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.die_no}</span>,
     <span key="sup" style={{ fontSize: 12.5, color: muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
       {r.supplier}
