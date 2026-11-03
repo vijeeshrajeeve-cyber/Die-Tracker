@@ -48,6 +48,15 @@ test('generateQdPdf returns a non-empty PDF for a fully-populated QD', async () 
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString(), '%PDF-');
 });
 
+// The number is issued on approval, so an approver previewing the form sees
+// why the box is empty rather than a blank certification record.
+test('an unnumbered QD prints "Not yet numbered" in the QD No box', async () => {
+  const bytes = await generateQdPdf({ ...baseQd, qd_no: null }, { files: [], billets: [], fileBytes: new Map() });
+  const [page1] = await textOf(bytes);
+  // The narrow box wraps the phrase, so the extracted runs carry extra spaces.
+  assert.match(page1, /Not yet\s+numbered/);
+});
+
 test('generateQdPdf tolerates missing optional fields and no images', async () => {
   const bytes = await generateQdPdf({ qd_no: '2026PH-05', die_no: 'x' }, { files: [], billets: [], fileBytes: new Map() });
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString(), '%PDF-');
