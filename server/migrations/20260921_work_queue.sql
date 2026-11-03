@@ -233,7 +233,7 @@ BEGIN
        'plant',s->>'plant','supplier',s->>'supplier','die_no',s->>'die_no');
    END IF;
    IF status IN ('Closed','Rejected','Reference') THEN RETURN jsonb_build_object('terminal','completed'); END IF;
-   IF s->>'approval_state'='Draft' THEN RETURN jsonb_build_object('terminal','cancelled'); END IF;
+   IF s->>'approval_state' IN ('Draft','Cancelled') THEN RETURN jsonb_build_object('terminal','cancelled'); END IF;
    IF s->>'approval_state'='Pending' THEN
      st:='qd_approval'; label:='QD Approval'; anchor:=s->>'submitted_at'; owner:=(s->>'assigned_approver')::int; omode:='source'; sig:=st||':'||COALESCE(s->>'submitted_at','legacy');
    ELSIF s->>'approval_state'='SentBack' THEN

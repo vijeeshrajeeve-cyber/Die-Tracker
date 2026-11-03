@@ -522,6 +522,15 @@ const initializeDatabase = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='sent_back_at') THEN
           ALTER TABLE quality_discrepancies ADD COLUMN sent_back_at TIMESTAMP;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='cancel_reason') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN cancel_reason TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='cancelled_by') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN cancelled_by INTEGER;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='cancelled_at') THEN
+          ALTER TABLE quality_discrepancies ADD COLUMN cancelled_at TIMESTAMP;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quality_discrepancies' AND column_name='prepared_by') THEN
           ALTER TABLE quality_discrepancies ADD COLUMN prepared_by TEXT;
         END IF;

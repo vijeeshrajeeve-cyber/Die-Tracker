@@ -26,9 +26,10 @@ const focState = {
 };
 
 // QDs that have been settled are nobody's to chase, whatever their last round
-// says. Drafts are not yet real QDs and must never reach a supplier.
+// says. Drafts are not yet real QDs and cancelled ones never became one, so
+// neither must reach a supplier.
 const CHASEABLE = `q.status NOT IN ('Closed', 'Rejected', 'Reference')
-                   AND q.approval_state <> 'Draft'`;
+                   AND q.approval_state NOT IN ('Draft', 'Cancelled')`;
 
 // Only the newest round is live; earlier ones are closed history.
 const LATEST_ROUND = `r.round_no = (SELECT MAX(r2.round_no) FROM qd_foc_rounds r2 WHERE r2.qd_id = q.id)`;

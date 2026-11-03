@@ -667,7 +667,8 @@ test('editQdDetails returns false when the QD does not exist', async () => {
 });
 
 test('APPROVAL_STATES and the editable subset are the agreed values', () => {
-  assert.deepEqual(q.APPROVAL_STATES, ['Draft', 'Pending', 'Approved', 'SentBack']);
+  assert.deepEqual(q.APPROVAL_STATES, ['Draft', 'Pending', 'Approved', 'SentBack', 'Cancelled']);
+  assert.deepEqual(q.CANCELLABLE_APPROVAL_STATES, ['Draft', 'Pending', 'SentBack']);
   assert.deepEqual(q.EDITABLE_APPROVAL_STATES, ['Draft', 'SentBack']);
 });
 
@@ -925,6 +926,41 @@ test('sendBack requires a reason and only works from Pending', async () => {
   assert.equal(out.ok, true);
   const upd = calls.find(c => /approval_state = 'SentBack'/.test(c.sql));
   assert.equal(upd.params[0], 'billet temps missing');
+});
+
+test('cancelQD needs a reason and only works before approval', async () => {
+  const row = (approval_state) => ({ query: async (sql) => (/SELECT id, qd_no, approval_state/.test(sql)
+    ? { rows: [{ id: 5, qd_no: '2026PH-04', approval_state }] } : { rows: [], rowCount: 1 }) });
+  await assert.rejects(() => q.cancelQD(row('Pending'), { id: 5, reason: ' ', actor: 'V', userId: 2 }), /Reason is required/);
+  await assert.rejects(() => q.cancelQD(row('Approved'), { id: 5, reason: 'dup', actor: 'V', userId: 2 }), /Cannot cancel a QD that is Approved/);
+  await assert.rejects(() => q.cancelQD(row('Cancelled'), { id: 5, reason: 'dup', actor: 'V', userId: 2 }), /Cannot cancel a QD that is Cancelled/);
+});
+
+test('cancelQD records who, when and why, keeps the number, and writes the timeline', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params });
+    if (/SELECT id, qd_no, approval_state/.test(sql)) return { rows: [{ id: 5, qd_no: '2026PH-04', approval_state: 'Pending' }] };
+    return { rows: [], rowCount: 1 }; } };
+  assert.deepEqual(await q.cancelQD(client, { id: 5, reason: 'Raised twice', actor: 'Veera', userId: 2 }), { ok: true });
+  const upd = calls.find(c => /approval_state = 'Cancelled'/.test(c.sql));
+  assert.match(upd.sql, /cancel_reason = \$1/);
+  assert.match(upd.sql, /cancelled_by = \$2/);
+  assert.match(upd.sql, /cancelled_at = CURRENT_TIMESTAMP/);
+  assert.equal(/qd_no/.test(upd.sql), false);
+  assert.deepEqual(upd.params, ['Raised twice', 2, 5]);
+  const act = calls.find(c => /INSERT INTO quality_discrepancy_activity/i.test(c.sql));
+  assert.ok(act.params.some(p => p === 'cancelled QD — Raised twice'));
+});
+
+test('excludeHidden drops drafts always and cancelled QDs unless asked for', () => {
+  const rows = [{ approval_state: 'Draft' }, { approval_state: 'Cancelled' }, { approval_state: 'Approved' }];
+  assert.deepEqual(q.excludeHidden(rows).map(r => r.approval_state), ['Approved']);
+  assert.deepEqual(q.excludeHidden(rows, { cancelled: true }).map(r => r.approval_state), ['Cancelled', 'Approved']);
+});
+
+test('listMyQueue never lists a cancelled QD', async () => {
+  const client = { query: async (sql) => { assert.match(sql, /approval_state IN \('Pending', 'SentBack'\)/); return { rows: [] }; } };
+  assert.deepEqual(await q.listMyQueue(client, 2, { isApprover: true }), { awaitingApproval: [], sentBack: [] });
 });
 
 test('excludeDrafts / onlyDrafts split rows by approval_state', () => {

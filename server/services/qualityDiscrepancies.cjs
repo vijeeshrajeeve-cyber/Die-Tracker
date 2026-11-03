@@ -25,15 +25,19 @@ const OPEN_STATUSES = STATUSES.filter((s) => !NOT_OPEN_STATUSES.includes(s));
 const SETTLED_STATUSES = ['Closed', 'Rejected'];
 const OUTCOMES = ['Supplier rework', 'FOC replacement', 'In-house correction', 'Credit note', 'Reference only'];
 
-const APPROVAL_STATES = ['Draft', 'Pending', 'Approved', 'SentBack'];
+const APPROVAL_STATES = ['Draft', 'Pending', 'Approved', 'SentBack', 'Cancelled'];
 const EDITABLE_APPROVAL_STATES = ['Draft', 'SentBack'];
+// A QD can be withdrawn only while it is still the raiser's and the approver's
+// business. Once approved it has gone to Purchase, so withdrawing it is a
+// status (Rejected), not a cancellation.
+const CANCELLABLE_APPROVAL_STATES = ['Draft', 'Pending', 'SentBack'];
 
 // Legal approval transitions. Throwing here (rather than returning null) means
 // an illegal action surfaces as a 400 at the route, not a silent no-op.
 const APPROVAL_TRANSITIONS = {
-  Draft:    { submit: 'Pending' },
-  SentBack: { submit: 'Pending' },
-  Pending:  { approve: 'Approved', sendBack: 'SentBack' },
+  Draft:    { submit: 'Pending', cancel: 'Cancelled' },
+  SentBack: { submit: 'Pending', cancel: 'Cancelled' },
+  Pending:  { approve: 'Approved', sendBack: 'SentBack', cancel: 'Cancelled' },
 };
 function nextApprovalState(from, action) {
   const to = APPROVAL_TRANSITIONS[from] && APPROVAL_TRANSITIONS[from][action];
@@ -833,7 +837,30 @@ async function sendBack(client, { id, reason, actor, userId }) {
   return { ok: true };
 }
 
-const excludeDrafts = (rows) => (rows || []).filter((r) => r.approval_state !== 'Draft');
+// Withdrawing a QD that never got approved. The number, if a pre-change submit
+// gave it one, stays: a cancelled 2026PD-05 is a gap you can look up and read
+// the reason for, which beats a gap that is simply missing.
+async function cancelQD(client, { id, reason, actor, userId }) {
+  const why = String(reason == null ? '' : reason).trim();
+  if (!why) throw new Error('Reason is required to cancel a QD');
+  const row = await getApprovalRow(client, id);
+  if (!row) return { ok: false };
+  nextApprovalState(row.approval_state, 'cancel');
+  await client.query(
+    `UPDATE quality_discrepancies
+        SET approval_state = 'Cancelled', cancel_reason = $1, cancelled_by = $2,
+            cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3`,
+    [why, userId || null, id]);
+  await addActivity(client, { qdId: id, actor, action: `cancelled QD — ${why}`, icon: 'undo', tone: 'bad', userId });
+  return { ok: true };
+}
+
+// The register's default view: drafts are the owner's own unsubmitted work and
+// cancelled QDs are history, so neither shows unless asked for.
+const excludeHidden = (rows, { cancelled = false } = {}) => (rows || []).filter(
+  (r) => r.approval_state !== 'Draft' && (cancelled || r.approval_state !== 'Cancelled'));
+const excludeDrafts = (rows) => excludeHidden(rows);
 const onlyDrafts = (rows, userId) => (rows || []).filter(
   (r) => r.approval_state === 'Draft' && (userId == null || r.created_by === userId));
 
@@ -896,9 +923,9 @@ module.exports = {
   pendingFoc, focRecoveredInFy, hasFocClaim, TRIAL_RESULTS: focRounds.TRIAL_RESULTS,
   deriveQdCode, formatQdNo, nextSequence,
   listQDs, createQD, addActivity, addActivityOfKind, updateStatus, recordFocTrial, updateFields, editQdDetails,
-  APPROVAL_STATES, EDITABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
+  APPROVAL_STATES, EDITABLE_APPROVAL_STATES, CANCELLABLE_APPROVAL_STATES, nextApprovalState, getApprovalRow,
   NO_ISSUE_TEXT, missingForSubmit, approvalChecks,
-  submitForApproval, approveQD, sendBack, canActOnApproval, excludeDrafts, onlyDrafts,
+  submitForApproval, approveQD, sendBack, cancelQD, canActOnApproval, excludeHidden, excludeDrafts, onlyDrafts,
   isInApprovalQueue, isSentBackToMe, listMyQueue,
   purchaseEmailSubject, buildPurchaseEmailHtml,
   sendBackEmailSubject, buildSendBackEmailHtml,

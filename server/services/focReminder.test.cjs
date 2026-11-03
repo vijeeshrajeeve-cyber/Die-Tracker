@@ -45,12 +45,12 @@ const fakeDb = () => {
   };
 };
 
-test('the overdue query looks only at live rounds of unsettled, non-draft QDs', async () => {
+test('the overdue query looks only at live rounds of unsettled, non-draft, non-cancelled QDs', async () => {
   const db = fakeDb();
   await foc.overdueReceipts(db);
   const { sql } = db.calls[0];
   assert.match(sql, /status NOT IN \('Closed', 'Rejected', 'Reference'\)/);
-  assert.match(sql, /approval_state <> 'Draft'/);
+  assert.match(sql, /approval_state NOT IN \('Draft', 'Cancelled'\)/);
   assert.match(sql, /r\.trial_result IS NULL/);
   assert.match(sql, /r\.received_date IS NULL/);
   assert.match(sql, /r\.promised_eta < CURRENT_DATE/);
