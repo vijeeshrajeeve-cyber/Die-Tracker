@@ -5,8 +5,9 @@ const day = (v) => (v ? String(v).slice(0, 10) : null);
 
 // One line per attempt at a free-of-charge replacement, so a QD on its third
 // die reads as a history rather than a single overwritten date. Renders nothing
-// when no FOC was ever accepted — most QDs never get here.
-export default function FocRounds({ qd, theme = {}, onRecordTrial, busy }) {
+// when no FOC was ever accepted — most QDs never get here. Recording a trial is
+// an action, so its button lives in the drawer's action row, not here.
+export default function FocRounds({ qd, theme = {} }) {
   const foc = qd.foc;
   if (!foc || !foc.roundCount) return null;
 
@@ -14,7 +15,6 @@ export default function FocRounds({ qd, theme = {}, onRecordTrial, busy }) {
   const text = theme.text || '#fafafa';
   const muted = theme.textMuted || '#a1a1aa';
   const dim = theme.textDim || '#71717a';
-  const bg = theme.cardBg || '#09090b';
 
   const sectionLabel = { fontSize: 11, fontWeight: 700, color: dim, textTransform: 'uppercase', letterSpacing: '0.06em' };
 
@@ -29,24 +29,14 @@ export default function FocRounds({ qd, theme = {}, onRecordTrial, busy }) {
     'trial-failed': { icon: XCircle, colour: '#F87171', text: 'Last replacement failed its trial' },
   }[foc.state];
 
-  const canTrial = foc.state === 'awaiting-trial';
-
   const cell = (value, colour) => (
     <span style={{ color: value ? (colour || muted) : dim, fontSize: 12.5 }}>{value || '—'}</span>
   );
 
   return (
     <div style={{ border: `1px solid ${border}`, borderRadius: 8, padding: 16, marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <div style={sectionLabel}>
-          FOC replacement · {foc.roundCount} {foc.roundCount === 1 ? 'attempt' : 'attempts'}
-        </div>
-        {canTrial && (
-          <button type="button" onClick={onRecordTrial} disabled={busy}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', background: bg, border: `1px solid ${border}`, borderRadius: 8, color: muted, fontWeight: 500, fontSize: 12.5, cursor: busy ? 'wait' : 'pointer' }}>
-            <FlaskConical size={14} /> Record trial
-          </button>
-        )}
+      <div style={{ ...sectionLabel, marginBottom: 12 }}>
+        FOC replacement · {foc.roundCount} {foc.roundCount === 1 ? 'attempt' : 'attempts'}
       </div>
 
       {banner && (

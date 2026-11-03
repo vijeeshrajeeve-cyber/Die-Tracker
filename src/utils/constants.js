@@ -300,11 +300,16 @@ export const QD_APPROVAL_BADGE = {
   Pending:  { label: 'Pending',   bg: 'rgba(234,179,8,0.15)',   fg: '#EAB308' },
   Approved: { label: 'Approved',  bg: 'rgba(34,197,94,0.15)',   fg: '#22C55E' },
   SentBack: { label: 'Sent back', bg: 'rgba(239,68,68,0.15)',   fg: '#EF4444' },
+  Cancelled: { label: 'Cancelled', bg: 'rgba(113,113,122,0.15)', fg: '#71717a' },
 };
 
 // Which of those the register marks. Approved is left out on purpose: most QDs
 // end up approved, and a pill on nearly every row teaches the eye to skip it.
-export const QD_LIST_BADGE_STATES = ['Draft', 'Pending', 'SentBack'];
+export const QD_LIST_BADGE_STATES = ['Draft', 'Pending', 'SentBack', 'Cancelled'];
+
+// What an unnumbered QD is called wherever a number would go. The number is
+// issued on approval, so every Draft, Pending and Sent-back QD reads this.
+export const QD_UNNUMBERED = 'Unnumbered';
 
 // Marks a QD brought in from an old, already-issued form rather than raised in
 // the app. Shared by the register and the drawer, like QD_APPROVAL_BADGE.
