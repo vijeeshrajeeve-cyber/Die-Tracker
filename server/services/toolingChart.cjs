@@ -35,10 +35,15 @@ function parseChartRows(rows, { sourceSheet, excludePresses = [], onSkip } = {})
     rec.baffle_ring = text(get(r, 'baffle_ring'));
     rec.bolster_holder = text(get(r, 'bolster_holder'));
     rec.remark = text(get(r, 'remark'));
-    // The 2014 sheet has no Remark header; "New" is written in the last column.
-    if (!('remark' in col) && rec.bolster_holder && /^new$/i.test(rec.bolster_holder)) {
-      rec.remark = rec.bolster_holder;
-      rec.bolster_holder = null;
+    // The 2014 sheet has no Remark header; notes such as "New" and "HOLD" are written in the
+    // last column. Anything there that is not a size or YES/NO is a remark, not a holder.
+    if (!('remark' in col) && rec.bolster_holder) {
+      const v = rec.bolster_holder;
+      const size = normalizeSizeClass(v);
+      if (!/^(NO|YES)$/i.test(v) && !(size && /^\d+(\.\d+)?X\d+(\.\d+)?$/.test(size))) {
+        rec.remark = v.toUpperCase();
+        rec.bolster_holder = null;
+      }
     }
     rec.source_sheet = sourceSheet;
     if (!rec.die_size) { skip(rec.press, 'no die size', i + 1); continue; }
@@ -59,7 +64,10 @@ function chartVerdict(rows, { press, dieSize, kind, sizeClass }) {
   const die = normalizeSizeClass(dieSize);
   const size = normalizeSizeClass(sizeClass);
   const field = kind === 'bolster' ? 'bolster_size' : 'insert_size';
-  const matches = size && die ? forPress.filter((r) => r.die_size === die && r[field] === size) : [];
+  // A row marked HOLD is not available to run, so it never counts as allowed.
+  const matches = size && die
+    ? forPress.filter((r) => r.die_size === die && r[field] === size && !/^hold$/i.test(String(r.remark || '').trim()))
+    : [];
   return matches.length ? { verdict: 'allowed', rows: matches } : { verdict: 'not_allowed', rows: [] };
 }
 

@@ -77,7 +77,8 @@ function parseGex2InventorySheet(rows, { sheetName = '', onSkip = () => {} } = {
         kind = 'insert';
         number = parsed.kind === 'insert' ? parsed.canonical : raw.toUpperCase();
         if (parsed.kind !== 'insert') {
-          parsed.cavities = /SINGLE/i.test(category) ? 1 : /TWO/i.test(category) ? 2 : null;
+          const fromRaw = /^(?:25|35)IC(\d+)/.exec(number);
+          parsed.cavities = fromRaw ? Number(fromRaw[1]) : /SINGLE/i.test(category) ? 1 : /TWO/i.test(category) ? 2 : null;
           const tail = /-(\d{5,6})$/.exec(number);
           parsed.madeForDie = tail ? tail[1] : null;
         }

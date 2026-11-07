@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const { pool } = require('../db.cjs');
-const { loadPresses } = require('../services/frozenDesigns.cjs');
+const { loadPresses, normalizePlant } = require('../services/frozenDesigns.cjs');
 const { resolvePress } = require('../services/dieListImport.cjs');
 const { normalizeSizeClass } = require('../services/toolingNumbers.cjs');
 
@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
     };
 
     add('t.status = ?', text(req.query.status) || 'active');
-    if (text(req.query.plant)) add('t.plant = ?', text(req.query.plant));
+    if (text(req.query.plant)) add('t.plant = ?', normalizePlant(req.query.plant));
     if (text(req.query.kind)) add('t.kind = ?', text(req.query.kind));
     if (text(req.query.sizeClass)) {
       add('t.size_class = ?', normalizeSizeClass(req.query.sizeClass) || text(req.query.sizeClass));
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
     // total query below.
     const list = await pool.query(
       `SELECT t.*, COALESCE(o.confidence, 'none') AS opening_confidence,
-              (SELECT count(1) FROM die_tooling_links l WHERE l.tooling_number = t.number)::int AS linked_dies
+              (SELECT count(DISTINCT l.die_no) FROM die_tooling_links l WHERE l.tooling_number = t.number)::int AS linked_dies
          FROM toolings t
          LEFT JOIN tooling_openings o ON o.tooling_id = t.id
          ${whereSql}
@@ -122,7 +122,7 @@ router.get('/:number', async (req, res) => {
               SELECT e.die_no, e.die_size, e.press, e.cavity, e.die_status
                 FROM existing_die_details e
                WHERE e.die_no = l.die_no
-               ORDER BY (e.plant IS NOT DISTINCT FROM l.plant) DESC
+               ORDER BY (regexp_replace(upper(trim(e.plant)), '\\m0+(\\d+)', '\\1', 'g') IS NOT DISTINCT FROM l.plant) DESC
                LIMIT 1
          ) d ON true
         WHERE l.tooling_number = $1

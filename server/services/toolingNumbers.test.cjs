@@ -64,3 +64,15 @@ test('GEX-2 inventory locations map to press names', () => {
   assert.equal(m.pressFromGex2Location('P35'), 'PRESS 8');
   assert.equal(m.pressFromGex2Location(''), null);
 });
+
+test('letter-variant inserts and BOL- bolsters stored by the inventory resolve against the master', () => {
+  const known = {
+    inserts: new Set(['35IC1A', '35IC1J-027555', 'AMBIG']),
+    bolsters: new Set(['BOL-35B1C1A', 'BOL-AMBIG']),
+  };
+  assert.deepEqual(m.resolveToolingRef('35IC1A', known), { kind: 'insert', toolingNumber: '35IC1A', raw: '35IC1A' });
+  assert.deepEqual(m.resolveToolingRef(' 35ic1j-027555 ', known), { kind: 'insert', toolingNumber: '35IC1J-027555', raw: ' 35ic1j-027555 ' });
+  assert.deepEqual(m.resolveToolingRef('35B1C1A', known), { kind: 'bolster', toolingNumber: 'BOL-35B1C1A', raw: '35B1C1A' });
+  assert.equal(m.resolveToolingRef('AMBIG', known).kind, 'unknown', 'present in both is ambiguous');
+  assert.equal(m.resolveToolingRef('35IC9Z', known).kind, 'unknown', 'present in neither');
+});

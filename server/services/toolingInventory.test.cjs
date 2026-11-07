@@ -132,3 +132,15 @@ test('skip report: warnings are separate, unparseable press header reports rows,
   assert.deepEqual(g2.map((r) => r.number), ['35IC1-120021']);
   assert.equal(s3.length, 0);
 });
+
+test('GEX-2 letter-variant inserts take cavities from the code, not the block title', () => {
+  const sheet = [
+    ['35MN PRESS INSERT  ( MULTI CAVITY ) ', '', '', ''],
+    ['Sr.No', 'Insert No', 'Size', 'Location'],
+    [1, '35IC8B', '300X100', '35MN'],
+    [2, '35IC12A', '300X100', '35MN'],
+  ];
+  const rows = m.parseGex2InventorySheet(sheet, { sheetName: '35MN PRESS' });
+  assert.equal(rows.find((r) => r.number === '35IC8B').cavities, 8);
+  assert.equal(rows.find((r) => r.number === '35IC12A').cavities, 12);
+});

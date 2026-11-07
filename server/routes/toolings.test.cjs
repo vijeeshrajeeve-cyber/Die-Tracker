@@ -48,6 +48,29 @@ test('detail joins the opening and the linked dies', async () => {
   assert.equal(res.body.links[0].die.die_size, '250X140');
 });
 
+test('detail query prefers the same-plant die by comparing normalised plants', async () => {
+  queries.length = 0;
+  await request(base, '/api/toolings/25IC2-110634');
+  const q = queries.find((x) => /FROM die_tooling_links/.test(x.sql));
+  assert.match(q.sql, /regexp_replace\(upper\(trim\(e\.plant\)\), '\\m0\+\(\\d\+\)', '\\1', 'g'\) IS NOT DISTINCT FROM l\.plant/);
+});
+
+test('list normalises the plant filter (GEX 01 -> GEX 1)', async () => {
+  queries.length = 0;
+  const res = await request(base, '/api/toolings?plant=GEX%2001');
+  assert.equal(res.status, 200);
+  const q = queries.find((x) => /FROM toolings t/.test(x.sql) && !/count\(\*\)/i.test(x.sql));
+  assert.ok(q.params.includes('GEX 1'));
+  assert.ok(!q.params.includes('GEX 01'));
+});
+
+test('linked_dies counts distinct dies', async () => {
+  queries.length = 0;
+  await request(base, '/api/toolings');
+  const q = queries.find((x) => /FROM toolings t/.test(x.sql) && !/count\(\*\)/i.test(x.sql));
+  assert.match(q.sql, /count\(DISTINCT l\.die_no\)/);
+});
+
 test('detail is 404 for an unknown number', async () => {
   const res = await request(base, '/api/toolings/NOPE');
   assert.equal(res.status, 404);

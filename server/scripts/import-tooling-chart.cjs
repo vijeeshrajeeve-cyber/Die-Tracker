@@ -1,7 +1,9 @@
 'use strict';
 // Loads the press combination chart into tooling_combinations.
-//   node server/scripts/import-tooling-chart.cjs <workbook.xlsx> [--sheet "14 Inch"] [--dry-run]
-// Replaces only rows carrying this script's own source_sheet; idempotent.
+//   node server/scripts/import-tooling-chart.cjs <workbook.xlsx> [--dry-run]
+// Always reads the "14 Inch" sheet (the authoritative chart) and replaces only rows
+// carrying this script's own source_sheet; idempotent. A live run that parsed 0 rows
+// is refused, so a wrong workbook can never wipe the chart.
 const path = require('path');
 const XLSX = require('xlsx');
 const chart = require('../services/toolingChart.cjs');
@@ -12,10 +14,9 @@ const EXCLUDE = [9];
 async function main() {
   const file = process.argv[2];
   const dryRun = process.argv.includes('--dry-run');
-  const sf = process.argv.indexOf('--sheet');
-  const sheetName = sf > -1 ? process.argv[sf + 1] : '14 Inch';
+  const sheetName = '14 Inch';
   if (!file || file.startsWith('--')) {
-    console.error('Usage: node server/scripts/import-tooling-chart.cjs <workbook.xlsx> [--sheet "14 Inch"] [--dry-run]');
+    console.error('Usage: node server/scripts/import-tooling-chart.cjs <workbook.xlsx> [--dry-run]');
     process.exit(1);
   }
   const wb = XLSX.readFile(path.resolve(file));
@@ -38,6 +39,10 @@ async function main() {
   for (const [k, n] of Object.entries(byReason)) console.log(`  ${k}: ${n}`);
 
   if (dryRun) { console.log('\nDry run, no changes were written.'); return; }
+  if (rows.length === 0) {
+    console.error('\nRefusing to replace the chart: 0 rows were parsed. Nothing was written.');
+    process.exit(1);
+  }
 
   const { pool } = require('../db.cjs'); // only opened for a live run
   const { statements } = chart.buildChartReplace(rows, SOURCE_SHEET);

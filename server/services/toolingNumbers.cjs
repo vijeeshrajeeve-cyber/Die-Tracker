@@ -73,6 +73,15 @@ function resolveToolingRef(raw, known) {
         const inBolsters = known.bolsters.has(asBolster);
         if (inInserts && !inBolsters) return { kind: 'insert', toolingNumber: asInsert, raw: rawText };
         if (inBolsters && !inInserts) return { kind: 'bolster', toolingNumber: asBolster, raw: rawText };
+    } else if (text) {
+        // The inventory stores GEX-2 letter variants as raw uppercased text (35IC1A) and
+        // bolster-block entries as BOL-<RAW>; resolve those against the master too.
+        const asInsert = text.toUpperCase();
+        const asBolster = `BOL-${asInsert}`;
+        const inInserts = known.inserts.has(asInsert);
+        const inBolsters = known.bolsters.has(asBolster);
+        if (inInserts && !inBolsters) return { kind: 'insert', toolingNumber: asInsert, raw: rawText };
+        if (inBolsters && !inInserts) return { kind: 'bolster', toolingNumber: asBolster, raw: rawText };
     }
     return { kind: 'unknown', toolingNumber: null, raw: rawText };
 }

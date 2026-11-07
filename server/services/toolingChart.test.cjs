@@ -58,3 +58,22 @@ test('replace statements delete only the same source sheet, then insert', () => 
   assert.equal(statements.length, 1 + rows.length);
   assert.match(statements[1].sql, /INSERT INTO tooling_combinations/);
 });
+
+test('HOLD in the Bol Holder column becomes a remark and the row is never allowed', () => {
+  const rows = m.parseChartRows([
+    HEADER,
+    [5, '320X200', '300X100', 'NO', 'NO', '', '', '', 'YES', 'HOLD'],
+    [5, '355X200', '300X100', 'NO', 'NO', '', '', '', 'YES', 'New'],
+    [5, '280X160', '300X100', 'NO', 'NO', '', '', '', 'YES', '302.5X160'],
+  ], { sourceSheet: 's' });
+  assert.equal(rows[0].remark, 'HOLD');
+  assert.equal(rows[0].bolster_holder, null);
+  assert.equal(rows[1].remark, 'NEW', 'existing New rule still holds');
+  assert.equal(rows[1].bolster_holder, null);
+  assert.equal(rows[2].bolster_holder, '302.5X160', 'a size token stays a holder');
+  assert.equal(rows[2].remark, null);
+  const v = m.chartVerdict(rows, { press: 'PRESS 5', dieSize: '320X200', kind: 'insert', sizeClass: '300X100' });
+  assert.equal(v.verdict, 'not_allowed');
+  assert.deepEqual(v.rows, []);
+  assert.equal(m.chartVerdict(rows, { press: 'PRESS 5', dieSize: '355X200', kind: 'insert', sizeClass: '300X100' }).verdict, 'allowed');
+});
