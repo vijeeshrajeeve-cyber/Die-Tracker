@@ -50,12 +50,13 @@ async function main() {
   if (gex1Bolsters) {
     const wb = XLSX.readFile(path.resolve(gex1Bolsters));
     const skipped = [];
+    const warnings = [];
     const rows = inv.mergeToolingRows(GEX1_BOLSTER_SHEETS.flatMap((name) => {
-      const parsed = inv.parseGex1BolsterSheet(sheetRows(wb, name, gex1Bolsters), { onSkip: (s) => skipped.push(s) });
+      const parsed = inv.parseGex1BolsterSheet(sheetRows(wb, name, gex1Bolsters), { onWarn: (s) => warnings.push(s) });
       console.log(`GEX-1 bolster sheet "${name}": ${parsed.length} rows`);
       return parsed;
     }));
-    sources.push({ label: 'GEX-1 bolsters P2-P6', rows, skipped });
+    sources.push({ label: 'GEX-1 bolsters P2-P6', rows, skipped, warnings });
   }
 
   console.log(`Tooling inventory import ${dryRun ? '(DRY RUN, nothing written)' : '(LIVE)'}`);
@@ -79,8 +80,11 @@ async function main() {
     }
     console.log(`\n${s.label}: parsed ${s.rows.length}` + (dryRun ? '' : `, new ${fresh}, updated ${s.rows.length - fresh}`));
     for (const [k, n] of Object.entries(counts)) console.log(`  ${k}: ${n}`);
-    console.log(`  skipped: ${s.skipped.length}`);
-    for (const k of s.skipped) console.log(`    ${k.sheet} row ${k.row}: "${k.raw}" (${k.reason})`);
+    console.log(`  skipped (not written): ${s.skipped.length}`);
+    for (const k of s.skipped) console.log(`    ${k.sheet} row ${k.row == null ? '-' : k.row}: "${k.raw}" (${k.reason})`);
+    const warns = s.warnings || [];
+    console.log(`  warnings (written anyway): ${warns.length}`);
+    for (const k of warns) console.log(`    ${k.sheet} row ${k.row}: "${k.raw}" (${k.reason})`);
   }
 
   if (dryRun) { console.log('\nDry run, no changes were written.'); return; }

@@ -100,3 +100,35 @@ test('GEX-2 letter-variant insert codes are kept as inserts', () => {
   assert.deepEqual(a.held_presses, ['PRESS 8']);
   assert.equal(rows.find((r) => r.number === '35IC1J-027555').made_for_die, '027555');
 });
+
+test('skip report: warnings are separate, unparseable press header reports rows, GEX-2 blanks and repeated headers are not skips', () => {
+  const warns = [];
+  const skips = [];
+  const bol = m.parseGex1BolsterSheet([
+    ['PRESS', 'BOL NO.', 'BOL SIZE', 'A(LEN)', 'B(WED)'],
+    ['', 777, '475X220', 1, 2],
+  ], { onSkip: (s) => skips.push(s), onWarn: (w) => warns.push(w) });
+  assert.deepEqual(bol.map((r) => r.number), ['BOL-777']);
+  assert.equal(warns.length, 1);
+  assert.equal(skips.length, 0);
+
+  const s2 = [];
+  const ins = m.parseGex1InsertSheet([
+    ['SN', 'Insert number', 'Press ?'],
+    [1, 13212, ''],
+  ], { onSkip: (s) => s2.push(s) });
+  assert.equal(ins.length, 0);
+  assert.equal(s2.length, 1);
+  assert.equal(s2[0].raw, '13212');
+
+  const s3 = [];
+  const g2 = m.parseGex2InventorySheet([
+    ['35MN PRESS INSERT  ( SINGLE CAVITY ) ', '', '', ''],
+    ['Sr.No', 'Insert No', 'Size', 'Location'],
+    [1, '', '', ''],
+    [2, 'Insert No', 'Size', 'Location'],
+    [3, '35IC1-120021', '300X100', 'P35'],
+  ], { sheetName: '35MN PRESS ', onSkip: (s) => s3.push(s) });
+  assert.deepEqual(g2.map((r) => r.number), ['35IC1-120021']);
+  assert.equal(s3.length, 0);
+});

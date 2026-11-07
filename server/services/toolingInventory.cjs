@@ -46,15 +46,26 @@ function parseGex2InventorySheet(rows, { sheetName = '', onSkip = () => {} } = {
   const out = [];
   for (let c = 0; c < headerRow.length; c++) {
     const header = text(headerRow[c]).toLowerCase();
-    if (header !== 'insert no' && header !== 'bolster no') continue; // Ring No and others are not read
+    if (header !== 'insert no' && header !== 'bolster no') {
+      if (header === 'ring no') {
+        let rt = c;
+        while (rt >= 0 && !text(titleRow[rt])) rt--;
+        onSkip({ sheet: sheetName, row: null, raw: rt >= 0 ? blockTitle(titleRow[rt]) : 'RING', reason: 'block skipped (rings are not read)' });
+      }
+      continue;
+    }
     let t = c;
     while (t >= 0 && !text(titleRow[t])) t--;
     const category = t >= 0 ? blockTitle(titleRow[t]) : '';
-    if (/INSERT HOLDER/i.test(category)) continue;
+    if (/INSERT HOLDER/i.test(category)) {
+      onSkip({ sheet: sheetName, row: null, raw: category, reason: 'block skipped (holders are not read)' });
+      continue;
+    }
     const isBolsterBlock = header === 'bolster no';
     for (let r = 2; r < rows.length; r++) {
       const raw = text(rows[r] && rows[r][c]);
       if (!raw) continue;
+      if (raw.toLowerCase() === header) continue; // a repeated header row inside the block is not data
       const parsed = parseToolingNumber(raw);
       let number;
       let kind;
@@ -99,11 +110,14 @@ function parseGex1InsertSheet(rows, { onSkip = () => {} } = {}) {
   const out = [];
   for (let c = 0; c < headerRow.length; c += 4) {
     const pressMatch = /(\d+)/.exec(text(headerRow[c + 2]));
-    if (!pressMatch) continue;
-    const press = `PRESS ${pressMatch[1]}`;
+    const press = pressMatch ? `PRESS ${pressMatch[1]}` : null;
     for (let r = 1; r < rows.length; r++) {
       const raw = text(rows[r] && rows[r][c + 1]);
       if (!raw) continue;
+      if (!press) {
+        onSkip({ sheet: 'GEX-1 inserts', row: r + 1, raw, reason: 'no press in the block header' });
+        continue;
+      }
       const parsed = parseToolingNumber(`I-${raw.padStart(5, '0')}`);
       if (parsed.kind !== 'insert' || parsed.plant !== 'GEX 1') {
         onSkip({ sheet: 'GEX-1 inserts', row: r + 1, raw, reason: 'not an insert number' });
@@ -129,7 +143,7 @@ function parseGex1InsertSheet(rows, { onSkip = () => {} } = {}) {
   return mergeToolingRows(out);
 }
 
-function parseGex1BolsterSheet(rows, { onSkip = () => {} } = {}) {
+function parseGex1BolsterSheet(rows, { onWarn = () => {} } = {}) {
   const headerIdx = rows.findIndex((r) => (r || []).some((v) => text(v).toUpperCase() === 'BOL NO.'));
   if (headerIdx < 0) return [];
   const headerRow = rows[headerIdx];
@@ -143,7 +157,7 @@ function parseGex1BolsterSheet(rows, { onSkip = () => {} } = {}) {
       const pressMatch = /(\d+)/.exec(text(row[c - 1]));
       const parsed = parseToolingNumber(raw);
       const number = parsed.kind === 'bolster' ? parsed.canonical : `BOL-${raw.toUpperCase()}`;
-      if (!pressMatch) onSkip({ sheet: 'GEX-1 bolsters', row: r + 1, raw, reason: 'no press, stored without one' });
+      if (!pressMatch) onWarn({ sheet: 'GEX-1 bolsters', row: r + 1, raw, reason: 'imported without a press' });
       const a = row[c + 2];
       const b = row[c + 3];
       const both = typeof a === 'number' && typeof b === 'number';
