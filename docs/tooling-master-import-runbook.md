@@ -85,8 +85,38 @@ The database port is not published, so run inside the backend container. It
 already has node, `xlsx` and the DB environment. In Git Bash, `MSYS_NO_PATHCONV=1`
 is required or the container paths get rewritten.
 
-The service files come with the image after a backend rebuild; otherwise
-`docker cp` them in too.
+**Getting the scripts into the container.**
+
+- After a backend rebuild from this branch (see below), the image already holds
+  every script and service module. Only the workbooks need `docker cp`.
+- If the container was **not** rebuilt from this branch, copy the three scripts
+  and the four service modules that are new on this branch. Run from the
+  checkout root. `db.cjs` and `frozenDesigns.cjs` already exist in any image, so
+  they are not copied.
+
+```bash
+docker cp server/scripts/import-tooling-chart.cjs die-ordering-backend:/app/server/scripts/import-tooling-chart.cjs
+docker cp server/scripts/import-tooling-inventory.cjs die-ordering-backend:/app/server/scripts/import-tooling-inventory.cjs
+docker cp server/scripts/backfill-die-tooling-links.cjs die-ordering-backend:/app/server/scripts/backfill-die-tooling-links.cjs
+docker cp server/services/toolingNumbers.cjs die-ordering-backend:/app/server/services/toolingNumbers.cjs
+docker cp server/services/toolingChart.cjs die-ordering-backend:/app/server/services/toolingChart.cjs
+docker cp server/services/toolingInventory.cjs die-ordering-backend:/app/server/services/toolingInventory.cjs
+docker cp server/services/dieToolingLinks.cjs die-ordering-backend:/app/server/services/dieToolingLinks.cjs
+```
+
+Example with the workbook copied to `/tmp` (chart dry run):
+
+```bash
+docker cp "C:\Users\vijee\Desktop\18.06.2026\New folder\14.Die Toolings\Tooling stack combination for all Presses-Updated_16_April_2014.xlsx" die-ordering-backend:/tmp/chart.xlsx
+MSYS_NO_PATHCONV=1 docker exec die-ordering-backend node server/scripts/import-tooling-chart.cjs /tmp/chart.xlsx --dry-run
+```
+
+For the inventory, copy the three workbooks to `/tmp/gex2.xlsx`,
+`/tmp/gex1-inserts.xlsx` and `/tmp/gex1-bolsters.xlsx`, then use
+`--gex2 /tmp/gex2.xlsx --gex1-inserts /tmp/gex1-inserts.xlsx --gex1-bolsters /tmp/gex1-bolsters.xlsx`
+as `<args>`. The backfill takes no workbook.
+
+Generic form:
 
 ```bash
 docker cp "<workbook>" die-ordering-backend:/tmp/<name>.xlsx
