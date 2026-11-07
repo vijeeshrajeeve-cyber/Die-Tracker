@@ -61,12 +61,15 @@ function parseGex2InventorySheet(rows, { sheetName = '', onSkip = () => {} } = {
       if (isBolsterBlock) {
         kind = 'bolster';
         number = parsed.kind === 'bolster' ? parsed.canonical : `BOL-${raw.toUpperCase()}`;
-      } else if (parsed.kind === 'insert') {
-        kind = 'insert';
-        number = parsed.canonical;
       } else {
-        onSkip({ sheet: sheetName, row: r + 1, raw, reason: 'not an insert number' });
-        continue;
+        // The block is the authority on kind: a letter-variant code (35IC1A, 25IC1-G-23483) is still an insert.
+        kind = 'insert';
+        number = parsed.kind === 'insert' ? parsed.canonical : raw.toUpperCase();
+        if (parsed.kind !== 'insert') {
+          parsed.cavities = /SINGLE/i.test(category) ? 1 : /TWO/i.test(category) ? 2 : null;
+          const tail = /-(\d{5,6})$/.exec(number);
+          parsed.madeForDie = tail ? tail[1] : null;
+        }
       }
       const location = text(rows[r][c + 2]) || null;
       const sizeClass = normalizeSizeClass(rows[r][c + 1]);

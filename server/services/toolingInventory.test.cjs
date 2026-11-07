@@ -83,3 +83,20 @@ test('upsert never writes status and keeps an existing size class', () => {
   assert.match(updateClause, /held_presses = \(SELECT ARRAY\(SELECT DISTINCT unnest\(toolings\.held_presses \|\| EXCLUDED\.held_presses\)\)\)/);
   assert.equal(params[0], 'BOL-15109');
 });
+
+test('GEX-2 letter-variant insert codes are kept as inserts', () => {
+  const sheet = [
+    ['25MN PRESS INSERT  ( SINGLE CAVITY ) ', '', '', ''],
+    ['Sr.No', 'Insert No', 'Size', 'Location'],
+    [1, '35IC1A', '300X100', '35MN'],
+    [2, '35IC1J-027555', '300X100', '35MN'],
+  ];
+  const rows = m.parseGex2InventorySheet(sheet, { sheetName: '25MN PRESS' });
+  const a = rows.find((r) => r.number === '35IC1A');
+  assert.equal(a.kind, 'insert');
+  assert.equal(a.plant, 'GEX 2');
+  assert.equal(a.cavities, 1);
+  assert.equal(a.made_for_die, null);
+  assert.deepEqual(a.held_presses, ['PRESS 8']);
+  assert.equal(rows.find((r) => r.number === '35IC1J-027555').made_for_die, '027555');
+});

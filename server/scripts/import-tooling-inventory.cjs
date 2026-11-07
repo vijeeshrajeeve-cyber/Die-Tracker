@@ -10,7 +10,7 @@ const inv = require('../services/toolingInventory.cjs');
 
 const GEX2_SHEETS = ['35MN PRESS ', '25MN PRESS'];
 const GEX1_INSERT_SHEET = 'Tooling inventoy 27.12.2024'; // sic
-const GEX1_BOLSTER_SHEET = 'ALL BOLSTER';
+const GEX1_BOLSTER_SHEETS = ['BOLSTER', 'ALL BOLSTER'];
 
 function flag(name) {
   const i = process.argv.indexOf(name);
@@ -50,7 +50,11 @@ async function main() {
   if (gex1Bolsters) {
     const wb = XLSX.readFile(path.resolve(gex1Bolsters));
     const skipped = [];
-    const rows = inv.parseGex1BolsterSheet(sheetRows(wb, GEX1_BOLSTER_SHEET, gex1Bolsters), { onSkip: (s) => skipped.push(s) });
+    const rows = inv.mergeToolingRows(GEX1_BOLSTER_SHEETS.flatMap((name) => {
+      const parsed = inv.parseGex1BolsterSheet(sheetRows(wb, name, gex1Bolsters), { onSkip: (s) => skipped.push(s) });
+      console.log(`GEX-1 bolster sheet "${name}": ${parsed.length} rows`);
+      return parsed;
+    }));
     sources.push({ label: 'GEX-1 bolsters P2-P6', rows, skipped });
   }
 
