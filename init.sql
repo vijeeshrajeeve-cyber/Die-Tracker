@@ -409,6 +409,74 @@ CREATE TABLE IF NOT EXISTS existing_die_details (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_plant ON existing_die_details(plant);
+CREATE TABLE IF NOT EXISTS toolings (
+    id SERIAL PRIMARY KEY,
+    number TEXT UNIQUE NOT NULL,                 -- canonical, see toolingNumbers.cjs
+    kind TEXT NOT NULL CHECK (kind IN ('insert', 'bolster')),
+    plant TEXT NOT NULL,                         -- 'GEX 1' | 'GEX 2'
+    held_presses TEXT[] NOT NULL DEFAULT '{}',   -- canonical press names; a location, not a gate
+    size_class TEXT,                             -- normalised, diameter X thickness
+    size_class_source TEXT,                      -- 'inventory' | 'drawing' | 'manual'
+    size_class_confidence TEXT,                  -- 'confirmed' | 'likely' | 'uncertain'
+    cavities INTEGER,
+    category TEXT,                               -- inventory block title, e.g. 'INSERT (TWO CAVITY)', 'BOLSTER HOLDER'
+    location TEXT,                               -- rack / press as written in the inventory
+    made_for_die TEXT,
+    inventory_dims JSONB,                        -- e.g. {"a_len": 350, "b_wid": 110} from the bolster sheet
+    source TEXT NOT NULL,                        -- 'inventory-2025' | 'inventory-2024-12' | 'bolster-inventory-p2-p6' | 'order-form' | 'manual'
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired', 'unverified')),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_toolings_plant_kind ON toolings (plant, kind);
+
+CREATE TABLE IF NOT EXISTS tooling_openings (
+    id SERIAL PRIMARY KEY,
+    tooling_id INTEGER NOT NULL UNIQUE REFERENCES toolings(id) ON DELETE CASCADE,
+    outer_outline JSONB,                         -- [[x,y],...] mm
+    pockets JSONB,                               -- [[[x,y],...], ...] mm, one per cavity
+    pocket_gap_mm NUMERIC,
+    extraction_source TEXT,                      -- 'dxf' | 'pdf-vector' | 'pdf-raster' | 'manual'
+    confidence TEXT NOT NULL DEFAULT 'none' CHECK (confidence IN ('confirmed', 'likely', 'uncertain', 'none')),
+    drawing_file TEXT,
+    reviewed_by INTEGER REFERENCES users(id),
+    reviewed_at TIMESTAMP,
+    review_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tooling_combinations (
+    id SERIAL PRIMARY KEY,
+    press TEXT NOT NULL,                         -- canonical press name
+    die_size TEXT NOT NULL,                      -- normalised
+    insert_size TEXT,                            -- normalised or NULL for 'NO'
+    bolster_size TEXT,
+    sub_bolster_size TEXT,
+    die_ring_size TEXT,
+    total_stack TEXT,
+    insert_holder TEXT,
+    baffle_ring TEXT,
+    bolster_holder TEXT,
+    remark TEXT,
+    source_sheet TEXT NOT NULL,                  -- '2014/14 Inch' | 'manual'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_tooling_combinations_press_size ON tooling_combinations (press, die_size);
+
+CREATE TABLE IF NOT EXISTS die_tooling_links (
+    id SERIAL PRIMARY KEY,
+    die_no TEXT NOT NULL,
+    plant TEXT,
+    tooling_number TEXT,                         -- canonical; NULL when kind = 'unknown'
+    kind TEXT NOT NULL CHECK (kind IN ('insert', 'bolster', 'unknown')),
+    raw_value TEXT,                              -- what the source actually said
+    source TEXT NOT NULL,                        -- 'die-list' | 'order-pdf' | 'new-order-form' | 'manual'
+    seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_die_tooling_links_die ON die_tooling_links (die_no);
+CREATE INDEX IF NOT EXISTS idx_die_tooling_links_tooling ON die_tooling_links (tooling_number);
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_die_no ON existing_die_details(die_no);
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_profile ON existing_die_details(profile_number);
 
