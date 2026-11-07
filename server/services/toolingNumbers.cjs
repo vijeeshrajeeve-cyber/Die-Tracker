@@ -4,7 +4,7 @@
 const GEX2_INSERT = /^(25|35)IC(\d+)(E)?(?:-(\d+))?$/;
 const GEX1_INSERT = /^I[-\s]?(\d{1,5})$/;
 const GEX1_INSERT_CODE = /^I-(\w+)$/;
-const BOLSTER = /^(BOL|B)[-\s]*(.+)$/;
+const BOLSTER = /^(?:BOL[-\s]*|B[-\s]+)(.+)$/;
 const SIZE_TOKEN = /^(?:∅|Ø|DIA)?\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$/;
 
 function unknownNumber(raw) {
@@ -40,7 +40,7 @@ function parseToolingNumber(raw) {
 
     match = BOLSTER.exec(text);
     if (match) {
-        const rest = match[2].replace(/\s+/g, '-');
+        const rest = match[1].replace(/\s+/g, '-');
         return { kind: 'bolster', canonical: `BOL-${rest}`, plant: null, cavities: null, madeForDie: null, raw: rawText };
     }
 

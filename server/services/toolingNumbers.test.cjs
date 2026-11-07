@@ -27,6 +27,9 @@ test('bolster codes normalise to BOL- prefix', () => {
   assert.equal(m.parseToolingNumber('B-6-1-C').canonical, 'BOL-6-1-C');
   assert.equal(m.parseToolingNumber('bol 2-1-c').canonical, 'BOL-2-1-C');
   assert.equal(m.parseToolingNumber('BOL-4-6-A').kind, 'bolster');
+  assert.equal(m.parseToolingNumber('BOL4-6-A').canonical, 'BOL-4-6-A');
+  assert.equal(m.parseToolingNumber('b 6-1-c').canonical, 'BOL-6-1-C');
+  for (const text of ['BLANK', 'BOTTOM', 'B12345']) assert.equal(m.parseToolingNumber(text).kind, 'unknown', text);
 });
 
 test('bare numbers and free text are unknown but keep the raw value', () => {
