@@ -756,6 +756,11 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
       orders.push(createSubOrder(insertNo, insertSize));
     }
 
+    // The form's own numbers ride on the main order only. Set here, not in mainOrder,
+    // because sub-orders spread mainOrder and would otherwise link the same numbers to themselves.
+    orders[0]['Insert No'] = insertNo || null;
+    orders[0]['Bolster No'] = bolsterNo || null;
+
     return orders;
   }, [existingOrders, suppliers]);
 

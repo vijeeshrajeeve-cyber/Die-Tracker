@@ -4,6 +4,7 @@ const { resolveToolingRef } = require('./toolingNumbers.cjs');
 const { normalizePlant } = require('./frozenDesigns.cjs');
 
 const SOURCE = 'die-list';
+const ORDER_SOURCE = 'order-pdf';
 const BATCH = 1000; // 6 params per row, well under Postgres' 65535 cap
 
 async function loadKnownToolings(client) {
@@ -58,4 +59,23 @@ async function replaceDieListLinks(client, plant, links) {
   return insertDieListLinks(client, links);
 }
 
-module.exports = { loadKnownToolings, linksFromDieList, replaceDieListLinks, insertDieListLinks };
+// Records the INSERT No / BOLSTER No printed on a die order form for one die,
+// replacing only that die's earlier order-pdf links.
+async function recordOrderToolingLinks(client, { dieNo, plant, insertNo, bolsterNo }) {
+  const raws = [insertNo, bolsterNo]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  const die = dieNo == null ? '' : String(dieNo).trim();
+  if (!raws.length || !die) return [];
+  const known = await loadKnownToolings(client);
+  const normPlant = normalizePlant(plant);
+  const links = raws.map((raw) => {
+    const ref = resolveToolingRef(raw, known);
+    return { die_no: die, plant: normPlant, tooling_number: ref.toolingNumber, kind: ref.kind, raw_value: raw, source: ORDER_SOURCE };
+  });
+  await client.query("DELETE FROM die_tooling_links WHERE source = 'order-pdf' AND die_no = $1", [die]);
+  await insertDieListLinks(client, links);
+  return links;
+}
+
+module.exports = { loadKnownToolings, linksFromDieList, replaceDieListLinks, insertDieListLinks, recordOrderToolingLinks };

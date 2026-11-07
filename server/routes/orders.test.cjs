@@ -11,6 +11,8 @@ const { installFakeDb, listen, request } = require('./testSupport.cjs');
 // The stored ETA the next request will find; undefined means no such order.
 let storedEta;
 let log = [];
+// While a create test runs, the follow-on queries of POST / get an empty answer.
+let createDefaults = false;
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   log.push({ q, params });
@@ -24,6 +26,10 @@ installFakeDb(async (sql, params = []) => {
   if (/^UPDATE backup_die_requests/.test(q)) return { rows: [] };
   if (/^SELECT stored_path FROM die_order_files WHERE order_id = \$1/.test(q)) return { rows: [] };
   if (/^DELETE FROM die_orders WHERE id = \$1/.test(q)) return { rows: [], rowCount: storedEta === undefined ? 0 : 1 };
+  if (/^INSERT INTO die_orders/.test(q)) return { rows: [{ id: 501 }] };
+  if (/^SELECT number, kind FROM toolings/.test(q)) return { rows: [] };
+  if (/^(INSERT INTO|DELETE FROM) die_tooling_links/.test(q)) return { rowCount: 1, rows: [] };
+  if (createDefaults) return { rows: [], rowCount: 0 };
   throw new Error(`orders test: unexpected query ${q}`);
 });
 
@@ -39,7 +45,7 @@ let base;
 let close;
 test.before(async () => { ({ base, close } = await listen(app)); });
 test.after(() => close());
-test.beforeEach(() => { log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
+test.beforeEach(() => { createDefaults = false; log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
 
 const kinds = () => log.map(({ q }) => q.split(/\s+/).slice(0, 3).join(' '));
 const events = () => log.filter(({ q }) => q.startsWith('INSERT INTO die_delivery_events'));
@@ -135,4 +141,15 @@ test('an admin deleting an unknown order gets a 404', async () => {
   storedEta = undefined;
   const { status } = await remove();
   assert.equal(status, 404);
+});
+
+test('an unrecognised insert number still creates the order and records an unknown link', async () => {
+  createDefaults = true;
+  const res = await request(base, '/api/orders', { body: { Plant: 'GEX 2', 'DIE NO': '30725-201', 'Insert No': 'old', 'Bolster No': 'B-12345', STATUS: 'PENDING FOR ORDERING' } });
+  assert.equal(res.status, 201);
+  const linkInsert = log.find(({ q }) => /INSERT INTO die_tooling_links/.test(q));
+  assert.ok(linkInsert, 'links were written');
+  assert.ok(linkInsert.params.includes('BOL-12345'));
+  assert.ok(linkInsert.params.includes('old'));
+  assert.ok(log.some(({ q, params }) => /^DELETE FROM die_tooling_links WHERE source = 'order-pdf' AND die_no = \$1/.test(q) && params[0] === '30725-201'));
 });

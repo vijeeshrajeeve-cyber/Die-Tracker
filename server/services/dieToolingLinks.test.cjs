@@ -47,3 +47,23 @@ test('no links means delete only, insert count zero', async () => {
   assert.equal(await m.replaceDieListLinks(client, 'GEX 2', []), 0);
   assert.equal(calls.length, 1);
 });
+
+test('order links replace the die\'s order-pdf links and type each value', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/FROM toolings/.test(sql)) return { rows: [{ number: 'I-05138', kind: 'insert' }] };
+    return { rowCount: 1, rows: [] };
+  } };
+  const links = await m.recordOrderToolingLinks(client, { dieNo: '30725-201', plant: 'GEX 2', insertNo: 'I-05138', bolsterNo: 'old' });
+  assert.deepEqual(links.map((l) => [l.kind, l.tooling_number, l.raw_value]), [['insert', 'I-05138', 'I-05138'], ['unknown', null, 'old']]);
+  assert.ok(calls.some((c) => /DELETE FROM die_tooling_links WHERE source = 'order-pdf' AND die_no = \$1/.test(c.sql)));
+  assert.ok(calls.every((c) => !/DELETE FROM die_tooling_links WHERE source = 'order-pdf'\s*$/.test(c.sql)), 'never an unscoped delete');
+});
+
+test('order links with neither number do nothing', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [], rowCount: 0 }; } };
+  assert.deepEqual(await m.recordOrderToolingLinks(client, { dieNo: 'x', plant: 'GEX 1', insertNo: '', bolsterNo: null }), []);
+  assert.equal(calls.length, 0);
+});
