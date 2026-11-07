@@ -7,7 +7,10 @@ const {
     clean, getField, extractProfile, mapRow, isEmptyRow,
     DIE_NO_ALIASES, PROFILE_ALIASES, CUSTOMER_ALIASES, PRESS_ALIASES,
 } = require('../services/dieListImport.cjs');
-const { loadPresses } = require('../services/frozenDesigns.cjs');
+const { loadPresses, normalizePlant } = require('../services/frozenDesigns.cjs');
+const {
+    loadKnownToolings, linksFromDieList, replaceDieListLinks, insertDieListLinks,
+} = require('../services/dieToolingLinks.cjs');
 const { findDieListMatch, findRecentOrderMatch } = require('../services/dieOrderPrefill.cjs');
 
 // Rows per INSERT statement. Postgres caps a statement at 65535 bound
@@ -112,6 +115,7 @@ router.post('/die-details/import', authMiddleware, adminMiddleware, async (req, 
         const presses = await loadPresses(client);
 
         const values = [];
+        const linkRows = [];
         let skipped = 0;
         for (const row of rows) {
             const m = mapRow(row, presses);
@@ -119,6 +123,7 @@ router.post('/die-details/import', authMiddleware, adminMiddleware, async (req, 
                 skipped++;
                 continue;
             }
+            linkRows.push({ dieNo: m.dieNo, plant, bolsterNo: m.bolsterNo });
 
             values.push([
                 plant, m.dieNo, m.profile, m.customer, m.dieSize, m.press,
@@ -136,8 +141,16 @@ router.post('/die-details/import', authMiddleware, adminMiddleware, async (req, 
         ], values);
         const imported = values.length;
 
+        // The IDBolster column also feeds the tooling master: each value becomes
+        // a typed die-to-tooling link. The first chunk clears this plant's
+        // die-list links, later chunks append.
+        const links = linksFromDieList(linkRows, await loadKnownToolings(client));
+        const linksWritten = replace
+            ? await replaceDieListLinks(client, normalizePlant(plant), links)
+            : await insertDieListLinks(client, links);
+
         await client.query('COMMIT');
-        res.json({ imported, skipped, total: rows.length, meta: await getMeta() });
+        res.json({ imported, skipped, total: rows.length, linksWritten, meta: await getMeta() });
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Existing die details import error:', error);
