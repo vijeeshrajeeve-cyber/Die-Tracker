@@ -11,6 +11,8 @@ Run the four steps in order: **convert, export known toolings, build bundle,
 apply**. Run this after the master import (see `docs/tooling-master-import-runbook.md`),
 because the bundle builder uses the master's toolings as matching hints.
 
+**Next: profiles.** The profile shapes are loaded separately: `docs/profile-library-import-runbook.md`.
+
 Steps 1 and 3 run on the PC (they read the archive and AutoCAD). Steps 2 and 4 need
 the database, so they run inside the backend container. The server never needs
 AutoCAD.

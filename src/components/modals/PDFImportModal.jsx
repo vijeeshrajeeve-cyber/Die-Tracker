@@ -4,10 +4,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { MONTHS } from '../../utils/constants';
 import { parseDateDMY, formatDate } from '../../utils/helpers';
-import { extractBolsterInsertNos, readDieType } from '../../utils/pdfImportFields';
+import { extractBolsterInsertNos, readDieType, readScales, readTitleBlockNumbers } from '../../utils/pdfImportFields';
 import { isBlankValue } from '../../utils/orderDetailEdits';
 import { mergeExistingForPreview, planPdfFills } from '../../utils/pdfImportFills';
-import { captureProfileImage } from '../../utils/profileImage';
+import { captureProfileImage, PROFILE_RENDER_DPI } from '../../utils/profileImage';
 import ProfileThumb from '../orders/ProfileThumb';
 
 import useDialog from '../../hooks/useDialog';
@@ -37,6 +37,14 @@ const parseSimulationFlag = (value) => {
   if (!normalized || /^NO\b/.test(normalized)) return false;
   return /^(REQUIRED|OK|YES)\b/.test(normalized);
 };
+
+// What goes up beside a preview row's profile PNG: the drawing's scale and title-block
+// numbers, plus this row's own die size and cavity count (a bolster row has its own size).
+const profileMetaOf = (order) => ({
+  ...order._profileImage?.meta,
+  dieSize: order['Die Size'] && order['Die Size'] !== 'N/A' ? order['Die Size'] : null,
+  cavities: Number(order.Cavity) > 0 ? Number(order.Cavity) : null,
+});
 
 // PDF Import Modal Component
 const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [], canFillExisting = false, theme = {} }) => {
@@ -652,7 +660,13 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
 
     // The profile drawn on the sheet, cut out for the order (and its bolster/insert).
     const profileBlob = await captureProfileImage(page1);
-    const profileImage = profileBlob ? { blob: profileBlob, url: URL.createObjectURL(profileBlob) } : null;
+    // The drawing's stated scales and title-block numbers let the server true-size the traced shape.
+    const titleBlock = readTitleBlockNumbers(lines);
+    const profileMeta = {
+      renderDpi: PROFILE_RENDER_DPI, scales: readScales(lines), ccdStated: titleBlock.ccd,
+      externalPerimeter: titleBlock.externalPerimeter, internalPerimeter: titleBlock.internalPerimeter,
+    };
+    const profileImage = profileBlob ? { blob: profileBlob, url: URL.createObjectURL(profileBlob), meta: profileMeta } : null;
     if (profileImage) previewUrls.current.add(profileImage.url);
 
     const mainOrder = {
@@ -845,12 +859,13 @@ const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], supplie
           delete cleanOrder._reorderNote;
           delete cleanOrder._existing;
           cleanOrder._profileImage = order._profileImage?.blob || null;
+          cleanOrder._profileMeta = order._profileImage ? profileMetaOf(order) : null;
           return cleanOrder;
         });
         // Existing dies get the image only where they have none; the server decides.
         const profileImages = preview.orders
           .filter((order) => order._existing && order._profileImage)
-          .map((order) => ({ id: order.id, dieNo: order['DIE NO'], blob: order._profileImage.blob }));
+          .map((order) => ({ id: order.id, dieNo: order['DIE NO'], blob: order._profileImage.blob, meta: profileMetaOf(order) }));
         const planned = preview.orders
           .filter((order) => order._existing)
           .map((order) => ({ id: order.id, dieNo: order['DIE NO'], fields: planPdfFills(order._existing, order).fields }));

@@ -18,7 +18,7 @@ const columnsOf = (text, table) => {
     .map((l) => l.replace(/,$/, '').replace(/\s+/g, ' '));
 };
 
-for (const table of ['toolings', 'tooling_drawings', 'tooling_openings', 'tooling_combinations', 'die_tooling_links']) {
+for (const table of ['toolings', 'tooling_drawings', 'tooling_openings', 'tooling_combinations', 'die_tooling_links', 'profile_shapes']) {
   test(`${table} has the same columns in init.sql and db.cjs`, () => {
     assert.deepEqual(columnsOf(dbCjs, table), columnsOf(initSql, table));
   });
@@ -48,5 +48,13 @@ test('tooling_drawings is created before tooling_openings in both files', () => 
     const a = text.indexOf('CREATE TABLE IF NOT EXISTS tooling_drawings');
     const b = text.indexOf('CREATE TABLE IF NOT EXISTS tooling_openings');
     assert.ok(a >= 0 && b >= 0 && a < b);
+  }
+});
+
+test('profile_shapes constrains source and is unique per source reference in both files', () => {
+  for (const text of [initSql, dbCjs]) {
+    const cols = columnsOf(text, 'profile_shapes');
+    assert.ok(cols.includes("source TEXT NOT NULL CHECK (source IN ('image-check-xlsx', 'order-pdf', 'profile-drawing', 'manual'))"));
+    assert.ok(cols.includes('UNIQUE (die_no, plant, source, source_ref)'));
   }
 });

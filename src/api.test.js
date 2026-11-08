@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { toolingsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { toolingsAPI, profileShapesAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -341,4 +341,60 @@ test('toolingsAPI.reviewQueue and downloadDrawing hit the right paths', async ()
     globalThis.fetch = realFetch;
     globalThis.localStorage = realStorage;
   }
+});
+
+// The PDF import sends the drawing's scale and title-block numbers beside the profile PNG,
+// so the server can size the traced shape. Blank values are left out.
+test('uploadProfileImage sends the drawing meta as form fields beside the PNG', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ file: { id: 3 } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  };
+  const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+  await ordersAPI.uploadProfileImage(7, blob, '30533_201_profile.png', {
+    renderDpi: 200, scales: [1, 1 / 3], ccdStated: 183.2, externalPerimeter: null, internalPerimeter: '', cavities: 2, dieSize: 'DIA320X160',
+  });
+  assert.match(seen.url, /\/orders\/7\/profile-image$/);
+  const form = seen.options.body;
+  assert.ok(form instanceof FormData);
+  assert.equal(form.get('file').name, '30533_201_profile.png');
+  assert.equal(form.get('renderDpi'), '200');
+  assert.deepEqual(JSON.parse(form.get('scales')), [1, 1 / 3]);
+  assert.equal(form.get('ccdStated'), '183.2');
+  assert.equal(form.get('cavities'), '2');
+  assert.equal(form.get('dieSize'), 'DIA320X160');
+  assert.equal(form.has('externalPerimeter'), false);
+  assert.equal(form.has('internalPerimeter'), false);
+});
+
+test('uploadProfileImage without meta sends only the PNG', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ kept: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+  assert.deepEqual(await ordersAPI.uploadProfileImage(7, blob, 'p.png'), { kept: true });
+  assert.deepEqual([...seen.options.body.keys()], ['file']);
+});
+
+test('profileShapesAPI encodes die numbers and plants, and posts the polygon', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || 'GET', body: options.body });
+    return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  await profileShapesAPI.forDie('110634_25-01', 'GEX 1');
+  assert.ok(calls[0].url.endsWith('/profile-shapes/110634_25-01?plant=GEX+1'));
+  assert.equal(calls[0].method, 'GET');
+  await profileShapesAPI.similar('A/B 1', { plant: 'GEX 2', limit: 5 });
+  assert.ok(calls[1].url.endsWith('/profile-shapes/A%2FB%201/similar?plant=GEX+2&limit=5'));
+  await profileShapesAPI.similar('D1', { plant: 'GEX 1' });
+  assert.ok(calls[2].url.endsWith('/profile-shapes/D1/similar?plant=GEX+1'), 'no limit when none is given');
+  const outer = [[0, 0], [10, 0], [10, 10]];
+  await profileShapesAPI.similarTo({ plant: 'GEX 1', outer, holes: [], cavities: 2, limit: 10 });
+  assert.ok(calls[3].url.endsWith('/profile-shapes/similar'));
+  assert.equal(calls[3].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[3].body), { plant: 'GEX 1', outer, holes: [], cavities: 2, limit: 10 });
 });

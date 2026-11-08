@@ -16,6 +16,8 @@ const {
 } = require('../services/orderDetailEdits.cjs');
 const orderFiles = require('../services/orderFiles.cjs');
 const { recordOrderToolingLinks } = require('../services/dieToolingLinks.cjs');
+const orderProfileShape = require('../services/orderProfileShape.cjs');
+const { sha256Of } = require('../services/toolingDrawings.cjs');
 const { adminMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -687,9 +689,32 @@ const canAttachProfileImage = async (req, res, next) => {
     }
 };
 
+// The stored profile PNG -> its profile_shapes row. Never fails the upload: a picture
+// that cannot be traced is logged and reported back as `shape.ok false`.
+async function recordProfileShape(client, order, png, storedPath, form) {
+    try {
+        const meta = orderProfileShape.metaFromForm(form);
+        const dieListCcd = await orderProfileShape.readDieListCcd(client, order.die_no, order.plant);
+        const fields = await orderProfileShape.shapeFromProfilePng(png, {
+            ...meta, dieListCcd, dieSize: meta.dieSize ?? order.die_size, dieType: order.die_type,
+        });
+        await orderProfileShape.recordOrderProfileShape(client, {
+            orderId: order.id, dieNo: order.die_no, plant: order.plant, profileNumber: null,
+            imageSha: sha256Of(png), imagePath: storedPath, dieType: order.die_type,
+            cavities: meta.cavities ?? order.cavity, fields,
+        });
+        return { ok: true, trueSize: fields.true_size, holeCount: fields.hole_count };
+    } catch (error) {
+        console.warn(`Profile shape for order ${order.id} not recorded:`, error.message);
+        return { ok: false, error: error.message };
+    }
+}
+
 // Attach the profile cut from the die drawing (multipart, field "file", PNG).
 // It only fills a blank: an order that already has one keeps it and the answer
-// says so with `kept: true`, the PDF import's rule for every other field.
+// says so with `kept: true`, the PDF import's rule for every other field. Text
+// fields beside the file (renderDpi, scales, ccdStated, …) let the traced shape be
+// true-sized from the drawing's stated scale.
 router.post('/:id/profile-image', orderIdValidation, handleValidationErrors, canAttachProfileImage, (req, res, next) => {
     profileImageUpload.single('file')(req, res, (err) => {
         if (!err) return next();
@@ -706,7 +731,7 @@ router.post('/:id/profile-image', orderIdValidation, handleValidationErrors, can
     let dest = null;
     try {
         await client.query('BEGIN');
-        const { rows } = await client.query('SELECT id, die_no, status FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+        const { rows } = await client.query('SELECT id, die_no, status, plant, die_type, die_size, cavity FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
         if (rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Order not found' });
@@ -727,17 +752,21 @@ router.post('/:id/profile-image', orderIdValidation, handleValidationErrors, can
         await fsp.mkdir(path.dirname(dest), { recursive: true });
         await fsp.writeFile(dest, file.buffer);
 
+        const storedPath = path.relative(root, dest);
         const inserted = await client.query(
             `INSERT INTO die_order_files (order_id, slot, original_name, stored_path, mime_type, size_bytes, uploaded_by)
                VALUES ($1, $2, $3, $4, $5, $6, $7)
                RETURNING id, slot, original_name, size_bytes, uploaded_at`,
-            [id, slot, fileName, path.relative(root, dest), 'image/png', file.size, req.user?.id || null]
+            [id, slot, fileName, storedPath, 'image/png', file.size, req.user?.id || null]
         );
         await insertChangeLog(client, id, [{
             field: orderFiles.PROFILE_IMAGE_LABEL, oldValue: null, newValue: fileName, reason: 'From the die drawing PDF', stage: order.status,
         }], req.user);
         await client.query('COMMIT');
-        res.status(201).json({ file: { ...inserted.rows[0], uploaded_by: req.user?.username || null } });
+        dest = null; // committed: the stored file stays whatever happens next
+        // After the commit, so a failed shape write cannot abort the upload's transaction.
+        const shape = await recordProfileShape(client, order, file.buffer, storedPath, req.body);
+        res.status(201).json({ file: { ...inserted.rows[0], uploaded_by: req.user?.username || null }, shape });
     } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
         if (dest) await fsp.unlink(dest).catch(() => {});

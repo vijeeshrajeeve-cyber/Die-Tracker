@@ -22,4 +22,7 @@ const formatOf = (fileName) => FORMATS[path.extname(String(fileName)).slice(1).t
 
 const sha256Of = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 
-module.exports = { getRoot, storedRelativePath, absolutePath, formatOf, sha256Of };
+// Profile pictures are sharded by hash prefix so no directory holds tens of thousands of files.
+const profileImagePath = (sha256, ext) => `profiles/${sha256.slice(0, 2)}/${sha256}.${ext}`;
+
+module.exports = { getRoot, storedRelativePath, absolutePath, formatOf, sha256Of, profileImagePath };

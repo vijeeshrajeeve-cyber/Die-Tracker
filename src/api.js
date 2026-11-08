@@ -291,9 +291,16 @@ export const ordersAPI = {
     },
 
     // The profile cut from the die drawing (a PNG Blob). Fills only: the answer
-    // is { kept: true } when the order already has one.
-    uploadProfileImage: async (id, blob, fileName) => {
+    // is { kept: true } when the order already has one. `meta` (optional) carries the
+    // drawing's scale and title-block numbers so the server can true-size the traced
+    // shape; blank values are left out and `scales` goes as JSON.
+    uploadProfileImage: async (id, blob, fileName, meta = {}) => {
         const form = new FormData();
+        for (const key of ['renderDpi', 'scales', 'ccdStated', 'externalPerimeter', 'internalPerimeter', 'cavities', 'dieSize']) {
+            const value = meta?.[key];
+            if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) continue;
+            form.append(key, key === 'scales' ? JSON.stringify(value) : String(value));
+        }
         form.append('file', blob, fileName);
         return apiRequest(`/orders/${id}/profile-image`, { method: 'POST', body: form, isMultipart: true });
     },
@@ -986,6 +993,21 @@ export const toolingsAPI = {
         return response.blob();
     },
     combinations: async ({ press, dieSize }) => apiRequest(`/toolings/combinations?${new URLSearchParams({ press: press ?? '', dieSize: dieSize ?? '' })}`),
+};
+
+// Profile library: a die's stored shapes and its nearest neighbours by shape.
+export const profileShapesAPI = {
+    forDie: async (dieNo, plant) => apiRequest(`/profile-shapes/${encodeURIComponent(dieNo)}?${new URLSearchParams({ plant: plant ?? '' })}`),
+    similar: async (dieNo, { plant, limit } = {}) => {
+        const params = new URLSearchParams({ plant: plant ?? '' });
+        if (limit !== undefined && limit !== null && limit !== '') params.set('limit', String(limit));
+        return apiRequest(`/profile-shapes/${encodeURIComponent(dieNo)}/similar?${params}`);
+    },
+    // Any-frame polygon; the server normalises and signs it.
+    similarTo: async ({ plant, outer, holes, cavities, limit }) => apiRequest('/profile-shapes/similar', {
+        method: 'POST',
+        body: JSON.stringify({ plant, outer, holes, cavities, limit }),
+    }),
 };
 
 // Quality Discrepancies (QD Tracker) API
