@@ -66,6 +66,7 @@ async function buildBundle({ files, known, io, extractors, limit = null, onProgr
   const report = {
     skipped, unmatched,
     extractionFailures: [],
+    readFailures: [],
     warnings: [],
     byConfidence: { confirmed: 0, likely: 0, uncertain: 0, none: 0 },
     limited: false,
@@ -83,49 +84,45 @@ async function buildBundle({ files, known, io, extractors, limit = null, onProgr
     // One entry per file: what is stored, and whether it can be extracted from.
     const entries = [];
     const seen = new Set();
+    const fileName = (file) => file.relPath.split('/').pop();
+    const readFailed = (file, err) => report.readFailures.push({ toolingNumber: number, file: file.relPath, error: err.message });
+    const addStored = (file, readFrom, originalName, ext) => {
+      try {
+        const buffer = io.readFile(readFrom);
+        const sha256 = sha256Of(buffer);
+        if (seen.has(sha256)) return;
+        const bundleFile = `files/${storedRelativePath({ number, sha256, originalName })}`;
+        io.copyFile(readFrom, bundleFile);
+        seen.add(sha256);
+        entries.push({ file, extract: { ext, buffer }, row: {
+          toolingNumber: number, bundleFile, originalName, archivePath: file.relPath, format: formatOf(originalName),
+          matchBasis: match.basis, sha256, byteSize: buffer.length,
+        } });
+      } catch (err) { readFailed(file, err); }
+    };
     for (const file of group.files) {
       if (file.ext === 'dwg') {
         const dxfAbs = io.dxfFor(file);
         if (!dxfAbs) {
-          entries.push({ file, isPrimary: file === group.primary, row: {
-            toolingNumber: number, bundleFile: null, originalName: file.relPath.split('/').pop(), archivePath: file.relPath,
+          entries.push({ file, extract: null, row: {
+            toolingNumber: number, bundleFile: null, originalName: fileName(file), archivePath: file.relPath,
             format: 'dwg', matchBasis: match.basis, sha256: null, byteSize: null,
-          }, extract: null });
+          } });
+          if (file === group.primary) report.extractionFailures.push({ toolingNumber: number, file: file.relPath, error: NO_DXF });
           continue;
         }
-        entries.push(await stored(file, dxfAbs, file.relPath.split('/').pop().replace(/\.dwg$/i, '.dxf'), 'dxf'));
+        addStored(file, dxfAbs, fileName(file).replace(/\.dwg$/i, '.dxf'), 'dxf');
       } else {
-        entries.push(await stored(file, file.absPath, file.relPath.split('/').pop(), file.ext));
+        addStored(file, file.absPath, fileName(file), file.ext);
       }
-    }
-    async function stored(file, readFrom, originalName, ext) {
-      const buffer = io.readFile(readFrom);
-      const sha256 = sha256Of(buffer);
-      const bundleFile = `files/${storedRelativePath({ number, sha256, originalName })}`;
-      return { file, isPrimary: file === group.primary, copyFrom: readFrom, extract: { ext, buffer }, row: {
-        toolingNumber: number, bundleFile, originalName, archivePath: file.relPath, format: formatOf(originalName),
-        matchBasis: match.basis, sha256, byteSize: buffer.length,
-      } };
-    }
-    for (const e of entries) {
-      if (e.row.sha256) {
-        if (seen.has(e.row.sha256)) { e.duplicate = true; continue; }
-        seen.add(e.row.sha256);
-        io.copyFile(e.copyFrom, e.row.bundleFile);
-      }
-    }
-    for (const e of entries) {
-      if (e.duplicate) continue;
-      drawings.push({ ...e.row, isPrimary: e.isPrimary });
     }
 
-    // Extraction source: the primary, else the next best extractable file (dxf before pdf).
-    const candidates = entries.filter((e) => e.extract && !e.duplicate)
-      .sort((a, b) => (b.isPrimary - a.isPrimary) || (EXTRACT_RANK[a.extract.ext] - EXTRACT_RANK[b.extract.ext]));
-    const primaryEntry = entries.find((e) => e.isPrimary);
-    if (primaryEntry && !primaryEntry.extract) {
-      report.extractionFailures.push({ toolingNumber: number, file: primaryEntry.file.relPath, error: NO_DXF });
-    }
+    // Extraction source: the matcher's primary first, then dxf before pdf, non-FIN, shortest stem.
+    const candidates = entries.filter((e) => e.extract).sort((a, b) =>
+      ((b.file === group.primary) - (a.file === group.primary))
+      || (EXTRACT_RANK[a.extract.ext] - EXTRACT_RANK[b.extract.ext])
+      || ((a.file.variant === 'FIN') - (b.file.variant === 'FIN'))
+      || (a.file.stem.length - b.file.stem.length));
     let extraction = null;
     const source = candidates[0];
     if (source) {
@@ -133,20 +130,22 @@ async function buildBundle({ files, known, io, extractors, limit = null, onProgr
         extraction = source.extract.ext === 'dxf'
           ? await extractors.dxf(source.extract.buffer.toString('utf8'), hints)
           : await extractors.pdf(source.extract.buffer, hints);
-        openings.push({ toolingNumber: number, drawingSha256: source.row.sha256, extraction });
+        if (!extraction || typeof extraction !== 'object') throw new Error('extractor returned no result');
         const c = report.byConfidence[extraction.confidence] === undefined ? 'none' : extraction.confidence;
+        const warn = mismatch(number, extraction.numbersInDrawing)
+          ? { toolingNumber: number, file: source.file.relPath,
+              warning: `number mismatch: drawing names ${extraction.numbersInDrawing.join(', ')}` }
+          : null;
         report.byConfidence[c]++;
-        if (mismatch(number, extraction.numbersInDrawing)) {
-          report.warnings.push({
-            toolingNumber: number, file: source.file.relPath,
-            warning: `number mismatch: drawing names ${extraction.numbersInDrawing.join(', ')}`,
-          });
-        }
+        if (warn) report.warnings.push(warn);
+        openings.push({ toolingNumber: number, drawingSha256: source.row.sha256, extraction });
       } catch (err) {
         extraction = null;
         report.extractionFailures.push({ toolingNumber: number, file: source.file.relPath, error: err.message });
       }
     }
+    // The primary is the stored row that was (or would have been) extracted; an unstored DWG row never is.
+    for (const e of entries) drawings.push({ ...e.row, isPrimary: e === source });
 
     if (!isKnown) {
       let sizeClass = null; let sizeSource = null; let confidence = null;

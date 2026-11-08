@@ -154,3 +154,42 @@ test('matchFiles lists skips and unrecognised stems', () => {
   assert.deepEqual(m.unmatched, ['WHATEVER']);
   assert.deepEqual(m.skipped.map((s) => s.reason).sort(), ['scrap', 'unrecognised']);
 });
+
+test('an unreadable file is reported and skipped; the run completes and other toolings are intact', async () => {
+  const io = fakeIo();
+  const realRead = io.readFile;
+  io.readFile = (p) => { if (p === BOL.absPath) throw new Error('EBUSY'); return realRead(p); };
+  const extractors = { dxf: async () => result(), pdf: async () => pdfResult() };
+  const r = await buildBundle({ files: ALL, known: known(), io, extractors });
+  assert.equal(r.report.readFailures.length, 1);
+  assert.equal(r.report.readFailures[0].toolingNumber, 'BOL-14017');
+  assert.equal(r.report.readFailures[0].error, 'EBUSY');
+  assert.equal(r.drawings.filter((d) => d.toolingNumber === 'BOL-14017').length, 0);
+  assert.equal(r.openings.length, 2);
+  assert.equal(r.drawings.filter((d) => d.toolingNumber === 'I-21599').length, 2);
+});
+
+test('identical bytes under two names leave one stored row, and it is primary', async () => {
+  const a = mk('Toolings/Dieshop - Insert Drawings/PDF & Tiff/21599.pdf', 'GEX 1', 'insert');
+  const b = mk('Toolings/Dieshop - Insert Drawings/PDF & Tiff/21599 FIN.pdf', 'GEX 1', 'insert');
+  const io = fakeIo(); io.readFile = () => Buffer.from('same');
+  const extractors = { dxf: async () => result(), pdf: async () => pdfResult() };
+  const r = await buildBundle({ files: [b, a], known: known(), io, extractors });
+  const rows = r.drawings.filter((d) => d.toolingNumber === 'I-21599');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].isPrimary, true);
+  assert.equal(r.openings[0].drawingSha256, rows[0].sha256);
+});
+
+test('a DWG without a DXF is never primary; the PDF beside it is', async () => {
+  const extractors = { dxf: async () => result(), pdf: async () => pdfResult() };
+  const r = await buildBundle({ files: [DWG, DIE_PDF], known: known(), io: fakeIo({ dxfs: {} }), extractors });
+  assert.equal(r.drawings.find((d) => d.format === 'dwg').isPrimary, false);
+  assert.equal(r.drawings.find((d) => d.format === 'pdf').isPrimary, true);
+});
+
+test('a null extraction result is a reported failure, not a null opening', async () => {
+  const r = await buildBundle({ files: [DIE_PDF], known: known(), io: fakeIo(), extractors: { dxf: async () => null, pdf: async () => null } });
+  assert.equal(r.openings.length, 0);
+  assert.equal(r.report.extractionFailures.length, 1);
+});

@@ -100,7 +100,7 @@ async function main() {
   console.log(`Unmatched stems: ${r.report.unmatched.length}`);
   for (const [s, n] of Object.entries(stems).sort((a, b) => b[1] - a[1]).slice(0, 20)) console.log(`  ${n}x ${s}`);
   const missingDxf = r.report.extractionFailures.filter((f) => /no DXF/.test(f.error)).length;
-  console.log(`Extraction failures: ${r.report.extractionFailures.length} (no DXF: ${missingDxf})  warnings: ${r.report.warnings.length}`);
+  console.log(`Extraction failures: ${r.report.extractionFailures.length} (no DXF: ${missingDxf})  warnings: ${r.report.warnings.length}  unreadable files: ${r.report.readFailures.length}`);
   console.log(`Bundle written to ${out}`);
 }
 
