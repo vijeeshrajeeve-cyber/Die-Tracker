@@ -255,7 +255,8 @@ function insertTransform(groups, base) {
 }
 
 function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
-  const tol = chordTolerance;
+  const insunits = dxf.header.insunits;
+  const unitScale = insunits === 1 ? 25.4 : insunits === 2 ? 304.8 : 1;
   const chains = [];
   const texts = [];
 
@@ -264,7 +265,10 @@ function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
     chains.push({ layer, points: points.map((p) => apply(m, p)), closed, source });
   };
 
-  const walk = (ents, m, depth, parentLayer) => {
+  // `scale` is the cumulative INSERT scale; the tolerance is a millimetre figure, so
+  // express it in the units of the geometry being flattened.
+  const walk = (ents, m, depth, parentLayer, scale) => {
+    const tol = chordTolerance / (unitScale * scale);
     for (let i = 0; i < ents.length; i++) {
       const e = ents[i];
       const g = e.groups;
@@ -328,7 +332,8 @@ function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
           const block = name && dxf.blocks.get(name);
           if (!block) break;
           const base = (dxf.blockBases && dxf.blockBases.get(name)) || [0, 0];
-          walk(block, compose(m, insertTransform(g, base)), depth + 1, layer);
+          const k = Math.max(Math.abs(first(g, 41, 1)), Math.abs(first(g, 42, 1))) || 1;
+          walk(block, compose(m, insertTransform(g, base)), depth + 1, layer, scale * k);
           break;
         }
         default:
@@ -337,9 +342,7 @@ function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
     }
   };
 
-  walk(dxf.entities, IDENTITY, 0, null);
-  const insunits = dxf.header.insunits;
-  const unitScale = insunits === 1 ? 25.4 : insunits === 2 ? 304.8 : 1;
+  walk(dxf.entities, IDENTITY, 0, null, 1);
   return { chains, texts, unitScale };
 }
 
