@@ -1093,6 +1093,40 @@ const initializeDatabase = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_die_tooling_links_die ON die_tooling_links (die_no);
       CREATE INDEX IF NOT EXISTS idx_die_tooling_links_tooling ON die_tooling_links (tooling_number);
+      CREATE TABLE IF NOT EXISTS profile_shapes (
+          id SERIAL PRIMARY KEY,
+          die_no TEXT NOT NULL,
+          plant TEXT NOT NULL,
+          profile_number TEXT,
+          source TEXT NOT NULL CHECK (source IN ('image-check-xlsx', 'order-pdf', 'profile-drawing', 'manual')),
+          source_ref TEXT,                             -- xlsx cell GEX1!E1234, order id or file sha
+          image_sha TEXT,
+          image_path TEXT,
+          style TEXT,                                  -- 'silhouette' | 'outline' | 'vector'
+          outer_unit JSONB NOT NULL,
+          holes_unit JSONB NOT NULL DEFAULT '[]',
+          signature JSONB NOT NULL,
+          hole_count INTEGER NOT NULL,
+          cavities INTEGER,
+          die_type TEXT,
+          aspect_ratio NUMERIC,
+          solidity NUMERIC,
+          true_size BOOLEAN NOT NULL DEFAULT FALSE,
+          outer_mm JSONB,
+          holes_mm JSONB,
+          ccd_mm NUMERIC,
+          true_size_source TEXT,
+          true_size_confidence TEXT,
+          needs_review BOOLEAN NOT NULL DEFAULT FALSE,
+          review_reason TEXT,
+          reviewed_by INTEGER REFERENCES users(id),
+          reviewed_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE (die_no, plant, source, source_ref)
+      );
+      CREATE INDEX IF NOT EXISTS idx_profile_shapes_plant_die ON profile_shapes (plant, die_no);
+      CREATE INDEX IF NOT EXISTS idx_profile_shapes_plant_holes ON profile_shapes (plant, hole_count);
       CREATE INDEX IF NOT EXISTS idx_existing_die_details_die_no ON existing_die_details(die_no);
       CREATE INDEX IF NOT EXISTS idx_existing_die_details_profile ON existing_die_details(profile_number);
 
