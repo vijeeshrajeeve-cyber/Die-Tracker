@@ -101,7 +101,7 @@ const BOLSTER_CODE = /(?<![\d-])(\d-\d-[A-Z])\b/;
 // "BOL", "BOLS", "BO", "BOLSTER" as a word, a trailing BOL / BOL1, BOL glued to digits, or a "B-" prefix.
 const BOL_WORD = /\b(?:BOLS?|BO|BOLSTER)\b|BOL\d?$|\bBOL(?=\d{3,5}\b)|\bB(?=[- ]\d{3,5}\b)/;
 const LEADING_KIND = /^(?:I-|INS\b|BOLS?\b|BOL(?=\d)|BO\b|B-|(?:TLX-)?(?:25|35)(?:IC|B\d))/;
-const TRAILING_GROUP = /\s*-?\s*\(([^)]*)\)\s*$/;
+const PAREN_GROUP = /\(([^)]*)\)/g;
 const SIZE_OR_PRESS_GROUP = /^\s*(?:P-?\d|PR-?\d|PRESS\s*\d|\d{3,4}\s*X\s*\d{2,3})\s*$/;
 const DIGIT_TOKEN = /(?<!\d)\d{3,5}(?!\d)/g;
 
@@ -126,12 +126,11 @@ function detectPress(text) {
 
 function interpretStem(stem, { plant, kindHint }) {
     let text = normaliseStem(stem);
-    // A leading token that carries a kind (I-, INS, BOL, BO, B-, TALEX code) decides the part; a trailing
-    // cross-reference group (one that is not a size or press token) then only names the mating part and is ignored.
+    // A leading token that carries a kind (I-, INS, BOL, BO, B-, TALEX code) decides the part; every
+    // parenthesised cross-reference group (not a size or press token) only names the mating part and is ignored.
     if (LEADING_KIND.test(text)) {
-        for (let m = TRAILING_GROUP.exec(text); m && !SIZE_OR_PRESS_GROUP.test(m[1]); m = TRAILING_GROUP.exec(text)) {
-            text = text.slice(0, m.index).trim();
-        }
+        text = text.replace(PAREN_GROUP, (group, inner) => (SIZE_OR_PRESS_GROUP.test(inner) ? group : ' '))
+            .replace(/\s+/g, ' ').trim();
     }
     if (text.includes('SCRAP')) return { skip: 'scrap' };
 

@@ -38,6 +38,8 @@ const CASES = [
   ['BOL-14017(475x220)', G1B, { toolingNumber: 'BOL-14017', sizeClass: '475X220' }],
   ['INS-30610 (P6)', G1I, { toolingNumber: 'I-30610', press: 'PRESS 6' }],
   ['I-12345 (P4)', G1I, { toolingNumber: 'I-12345', press: 'PRESS 4' }],
+  ['I-29651 (BOL-29651) (700X200)', ROOT, { toolingNumber: 'I-29651', kind: 'insert', sizeClass: '700X200' }],
+  ['I-29651 (BOL-29651) (P6)', ROOT, { toolingNumber: 'I-29651', kind: 'insert', press: 'PRESS 6' }],
 ];
 for (const [stem, ctx, expected] of CASES) test(`interprets "${stem}"`, () => {
   const got = interpretStem(stem, ctx);
