@@ -297,9 +297,33 @@ test('die list miss is counted and the row still inserted', async () => {
   assert.deepEqual([r.dieListMisses, r.inserted, p[12], p[16], p[13]], [1, 1, null, false, 'Hollow']);
 });
 
+// What the database holds after applying SHAPE() against the default die list row.
+const storedRow = (s) => ({
+  signature: s.signature, holes_unit: s.holes_unit, hole_count: s.hole_count, style: s.style, profile_number: s.profile_number,
+  cavities: 4, die_type: s.die_type, aspect_ratio: String(s.aspect_ratio), solidity: String(s.solidity),
+  true_size: true, ccd_mm: '123.4', needs_review: false, review_reason: null, image_path: `profiles/ab/${'ab'.repeat(32)}.gif`,
+});
+
+test('a die list cavity change on an otherwise identical row is an update carrying the new cavities', async () => {
+  const s = SHAPE();
+  const client = fakeClient({ existing: storedRow(s), inserted: false, dieRow: { cavity: 6, die_type: 'HOLLOW', profile_number: '090019', ccd: '123.4' } });
+  const r = await applyOf(client, [s], fakeIo([`${'ab'.repeat(32)}.gif`]));
+  assert.deepEqual([r.unchanged, r.updated, r.inserted], [0, 1, 0]);
+  assert.equal(upsertOf(client).params[12], 6);
+});
+
+test('a changed hole count or hole outline is an update', async () => {
+  const s = SHAPE();
+  for (const stored of [{ ...storedRow(s), hole_count: 2 }, { ...storedRow(s), holes_unit: [] }]) {
+    const client = fakeClient({ existing: stored, inserted: false });
+    const r = await applyOf(client, [s], fakeIo());
+    assert.deepEqual([r.unchanged, r.updated], [0, 1]);
+  }
+});
+
 test('an unchanged row is neither written nor re-copied when the file exists', async () => {
   const s = SHAPE();
-  const existing = { signature: s.signature, true_size: true, ccd_mm: '123.4', needs_review: false, review_reason: null, image_path: `profiles/ab/${'ab'.repeat(32)}.gif` };
+  const existing = { ...storedRow(s), true_size: true, ccd_mm: '123.4', needs_review: false, review_reason: null, image_path: `profiles/ab/${'ab'.repeat(32)}.gif` };
   const client = fakeClient({ existing });
   const r = await applyOf(client, [s], fakeIo([`${'ab'.repeat(32)}.gif`]));
   assert.deepEqual([r.unchanged, r.inserted, r.filesCopied], [1, 0, 0]);

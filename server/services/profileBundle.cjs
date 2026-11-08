@@ -215,7 +215,8 @@ const PLANT_SPELLINGS = { 'GEX 1': ['GEX 1', 'GEX 01'], 'GEX 2': ['GEX 2'] };
 
 const SELECT_DIE_LIST = `SELECT cavity, die_type, profile_number, raw_data->>'ProfileCCD' AS ccd
   FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2)`;
-const SELECT_EXISTING = `SELECT signature, true_size, ccd_mm, needs_review, review_reason, image_path
+const SELECT_EXISTING = `SELECT signature, holes_unit, hole_count, style, profile_number, cavities, die_type, aspect_ratio, solidity,
+    true_size, ccd_mm, needs_review, review_reason, image_path
   FROM profile_shapes WHERE die_no = $1 AND plant = $2 AND source = $3 AND source_ref = $4`;
 const UPSERT_SHAPE = `INSERT INTO profile_shapes
     (die_no, plant, profile_number, source, source_ref, image_sha, image_path, style, outer_unit, holes_unit, signature,
@@ -257,7 +258,7 @@ function trueSizeFromCcd({ outer_unit: outerUnit, holes_unit: holesUnit = [] }, 
   return { outer_mm: mm(outerUnit), holes_mm: holesUnit.map(mm), ccd_mm: ccdMm, source: 'ccd-scaled', confidence: 'likely' };
 }
 
-const sameCcd = (a, b) => (a == null || b == null ? (a == null) === (b == null) : Math.abs(Number(a) - Number(b)) < 1e-9);
+const sameNum = (a, b) => (a == null || b == null ? (a == null) === (b == null) : Math.abs(Number(a) - Number(b)) < 1e-9);
 const jsonOrNull = (v) => (v == null ? null : JSON.stringify(v));
 
 // Writes a profile bundle into profile_shapes in one transaction. A row a person has reviewed is never
@@ -275,14 +276,23 @@ async function applyProfileBundle(client, bundle, { root, io, dryRun = false, lo
       const ccd = dieRow && dieRow.ccd != null && dieRow.ccd !== '' ? Number(dieRow.ccd) : NaN;
       const sized = Number.isFinite(ccd) && ccd >= MIN_CCD_MM ? trueSizeFromCcd(s, ccd) : null;
       const imagePath = s.image_file ? s.image_file.replace(/^files\//, '') : null;
+      const dieType = s.die_type || (dieRow && dieRow.die_type) || null;
       const incoming = {
-        signature: s.signature, true_size: sized != null, ccd_mm: sized ? sized.ccd_mm : null,
+        signature: s.signature, holes_unit: s.holes_unit || [], hole_count: s.hole_count, style: s.style ?? null,
+        profile_number: s.profile_number ?? null, cavities: cavity, die_type: dieType,
+        aspect_ratio: s.aspect_ratio ?? null, solidity: s.solidity ?? null,
+        true_size: sized != null, ccd_mm: sized ? sized.ccd_mm : null,
         needs_review: !!s.needs_review, review_reason: s.review_reason ?? null, image_path: imagePath,
       };
       const old = (await client.query(SELECT_EXISTING, [s.die_no, s.plant, s.source, s.source_ref])).rows[0];
       const same = old
         && JSON.stringify(old.signature) === JSON.stringify(incoming.signature)
-        && old.true_size === incoming.true_size && sameCcd(old.ccd_mm, incoming.ccd_mm)
+        && JSON.stringify(old.holes_unit) === JSON.stringify(incoming.holes_unit)
+        && Number(old.hole_count) === Number(incoming.hole_count)
+        && (old.style ?? null) === incoming.style && (old.profile_number ?? null) === incoming.profile_number
+        && sameNum(old.cavities, incoming.cavities) && (old.die_type ?? null) === incoming.die_type
+        && sameNum(old.aspect_ratio, incoming.aspect_ratio) && sameNum(old.solidity, incoming.solidity)
+        && old.true_size === incoming.true_size && sameNum(old.ccd_mm, incoming.ccd_mm)
         && old.needs_review === incoming.needs_review && (old.review_reason ?? null) === incoming.review_reason
         && (old.image_path ?? null) === incoming.image_path;
       if (same) {
@@ -291,7 +301,7 @@ async function applyProfileBundle(client, bundle, { root, io, dryRun = false, lo
         const res = await client.query(UPSERT_SHAPE, [
           s.die_no, s.plant, s.profile_number ?? null, s.source, s.source_ref, s.image_sha ?? null, imagePath, s.style ?? null,
           jsonOrNull(s.outer_unit), jsonOrNull(s.holes_unit || []), jsonOrNull(s.signature), s.hole_count, cavity,
-          s.die_type || (dieRow && dieRow.die_type) || null, s.aspect_ratio ?? null, s.solidity ?? null,
+          incoming.die_type, incoming.aspect_ratio, incoming.solidity,
           incoming.true_size, jsonOrNull(sized && sized.outer_mm), jsonOrNull(sized && sized.holes_mm), incoming.ccd_mm,
           sized ? sized.source : null, sized ? sized.confidence : null, incoming.needs_review, incoming.review_reason,
         ]);
