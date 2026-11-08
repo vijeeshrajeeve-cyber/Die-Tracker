@@ -74,9 +74,10 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
         role: initialUser.role || 'user',
         pageAccess: initialUser.page_access ?? null,
         canEditOrderDetails: !!initialUser.can_edit_order_details,
+        canReviewToolings: !!initialUser.can_review_toolings,
       };
     }
-    return { username: '', password: '', fullName: '', email: '', phone: '', role: 'user', pageAccess: null, canEditOrderDetails: false };
+    return { username: '', password: '', fullName: '', email: '', phone: '', role: 'user', pageAccess: null, canEditOrderDetails: false, canReviewToolings: false };
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -121,6 +122,11 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
   const toggleOrderEdit = () => {
     if (newUser.role === 'admin') return;
     setNewUser((prev) => ({ ...prev, canEditOrderDetails: !prev.canEditOrderDetails }));
+  };
+
+  const toggleToolingReview = () => {
+    if (newUser.role === 'admin') return;
+    setNewUser((prev) => ({ ...prev, canReviewToolings: !prev.canReviewToolings }));
   };
 
   const handleSubmit = (e) => {
@@ -651,6 +657,32 @@ const AddUserModal = ({ onClose, onSubmit, theme, mode = 'create', initialUser =
                         {newUser.role === 'admin'
                           ? 'Admins can always edit.'
                           : 'Opens Edit in the Order Details drawer. A reason is required when changing existing values.'}
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    onClick={toggleToolingReview}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: '12px',
+                      padding: '10px 12px', borderRadius: '10px',
+                      cursor: newUser.role === 'admin' ? 'default' : 'pointer',
+                    }}
+                    onMouseEnter={e => { if (newUser.role !== 'admin') e.currentTarget.style.background = theme.inputBg; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Checkbox theme={theme}
+                      checked={newUser.role === 'admin' || newUser.canReviewToolings}
+                      color="#8B5CF6"
+                      disabled={newUser.role === 'admin'}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500, color: theme.text }}>
+                        Can review toolings
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: theme.textDim, lineHeight: 1.4 }}>
+                        {newUser.role === 'admin'
+                          ? 'Admins can always review.'
+                          : 'Confirms and edits the toolings master and profile library.'}
                       </div>
                     </div>
                   </div>

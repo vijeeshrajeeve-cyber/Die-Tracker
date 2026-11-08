@@ -59,6 +59,9 @@ export default function UsersPage({
                           {u.role !== 'admin' && u.can_edit_order_details && (
                             <span title="Can edit order details" style={{ display: 'inline-block', marginLeft: '6px', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600, whiteSpace: 'nowrap', background: '#F59E0B20', color: '#F59E0B' }}>Edits orders</span>
                           )}
+                          {u.role !== 'admin' && u.can_review_toolings && (
+                            <span title="Can review toolings" style={{ display: 'inline-block', marginLeft: '6px', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600, whiteSpace: 'nowrap', background: '#8B5CF620', color: '#8B5CF6' }}>Reviews toolings</span>
+                          )}
                         </td>
                         <td style={td}>
                           {u.role === 'admin' ? (
@@ -114,7 +117,7 @@ export default function UsersPage({
                   onClose={() => setShowAddUser(false)}
                   onSubmit={async (userData) => {
                     try {
-                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess, userData.email, userData.fullName, userData.phone, userData.role === 'admin' ? false : userData.canEditOrderDetails);
+                      await usersAPI.create(userData.username, userData.password, userData.role, userData.pageAccess, userData.email, userData.fullName, userData.phone, userData.role === 'admin' ? false : userData.canEditOrderDetails, userData.role === 'admin' ? false : userData.canReviewToolings);
                       setShowAddUser(false);
                       fetchUsers();
                     } catch (error) {
@@ -141,6 +144,7 @@ export default function UsersPage({
                         phone: userData.phone ?? '',
                         pageAccess: userData.role === 'admin' ? null : userData.pageAccess,
                         canEditOrderDetails: userData.role === 'admin' ? false : !!userData.canEditOrderDetails,
+                        canReviewToolings: userData.role === 'admin' ? false : !!userData.canReviewToolings,
                       });
                       setEditingUser(null);
                       fetchUsers();

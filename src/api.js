@@ -154,12 +154,13 @@ export const usersAPI = {
 
     // email is optional but is where QD notifications (e.g. a QD sent back to
     // this user) are delivered — without it they get none.
-    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null, canEditOrderDetails = false) => {
+    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null, canEditOrderDetails = false, canReviewToolings = false) => {
         return apiRequest('/users', {
             method: 'POST',
             body: JSON.stringify({
                 username, password, role, page_access: pageAccess, email, full_name: fullName, phone,
                 can_edit_order_details: canEditOrderDetails,
+                can_review_toolings: canReviewToolings,
             }),
         });
     },
@@ -177,7 +178,7 @@ export const usersAPI = {
         });
     },
 
-    update: async (id, { username, role, pageAccess, email, fullName, phone, canEditOrderDetails } = {}) => {
+    update: async (id, { username, role, pageAccess, email, fullName, phone, canEditOrderDetails, canReviewToolings } = {}) => {
         const body = {};
         if (username !== undefined) body.username = username;
         if (role !== undefined) body.role = role;
@@ -186,6 +187,7 @@ export const usersAPI = {
         if (fullName !== undefined) body.full_name = fullName;
         if (phone !== undefined) body.phone = phone;
         if (canEditOrderDetails !== undefined) body.can_edit_order_details = canEditOrderDetails;
+        if (canReviewToolings !== undefined) body.can_review_toolings = canReviewToolings;
         return apiRequest(`/users/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(body),
