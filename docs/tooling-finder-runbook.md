@@ -49,6 +49,7 @@ Behind the normal login (`authMiddleware`; a user with `password_must_change` ge
   "cavities": 2,
   "dieNo": "02061_201",
   "profile": { "outer": [[x, y], ...], "holes": [[[x, y], ...], ...] },
+  "minClearance": 5,
   "limit": 20
 }
 ```
@@ -59,15 +60,16 @@ Behind the normal login (`authMiddleware`; a user with `password_must_change` ge
 | `press` | Required; resolved by the presses master (`normalizePress`: `P25` → `PRESS 25`, `P7` → `PRESS 7`). |
 | `dieSize` | Required; `normalizeSizeClass` (`250x200` → `250X200`). |
 | `cavities` | Required positive integer (an integer string such as `"2"` is accepted). The order's count, not the die list's. |
-| `profile` | Optional: `outer` of at least 3 finite `[x, y]` pairs in mm (any position; it is recentred on its centroid), `holes` optional polygons. Wins over `dieNo`. |
-| `dieNo` | Used when `profile` is absent: the die's newest `true_size` `profile_shapes` row for the plant. The die is left out of its own similar list. |
+| `profile` | Optional: `outer` of at least 3 finite `[x, y]` pairs in mm (any position; it is recentred on its centroid), `holes` optional polygons. At most 5,000 points in the outer and in each hole (`MAX_PROFILE_POINTS`). Wins over `dieNo` for the shape. |
+| `dieNo` | Used when `profile` is absent: the die's newest `true_size` `profile_shapes` row for the plant. Given with a `profile` (a drawn shape for a known die, e.g. a backup die), it is not read for the shape and only keeps that die out of its own similar list (as it always is). |
+| `minClearance` | Optional number of mm, 0–10 (a numeric string is accepted), default 5 (`MIN_CLEARANCE_MM`). It is the fit gate and drives the size pre-filter; echoed as `query.minClearance`. |
 | `limit` | Candidates returned, clamped to 1–50, default 20. The similar list is always 20. |
 
 ### Response (200)
 
 ```json
 {
-  "query": { "plant": "GEX 1", "press": "PRESS 25", "dieSize": "250X200", "cavities": 1,
+  "query": { "plant": "GEX 1", "press": "PRESS 25", "dieSize": "250X200", "cavities": 1, "minClearance": 5,
              "profile": { "points": [[35,0],[34.9,2.4],"..."], "area": 3842.8, "perimeter": 219.9, "ccd": 70, "holeCount": 0 } },
   "chart": { "basis": "chart", "rowsForDieSize": [{ "press": "PRESS 25", "die_size": "250X200", "insert_size": "300X100", "...": "..." }] },
   "candidates": [{
@@ -79,7 +81,7 @@ Behind the normal login (`authMiddleware`; a user with `password_must_change` ge
     "linkedDies": [{ "dieNo": "D-1", "source": "die-list" }],
     "pockets": [[[45,0],"..."]]
   }],
-  "rejected": { "cavities": 1, "cavities-unknown": 0, "no-size-class": 0, "chart": 0, "size-prefilter": 1, "no-fit": 1 },
+  "rejected": { "cavities": 1, "cavities-unknown": 0, "pocket-count": 0, "no-size-class": 0, "chart": 0, "size-prefilter": 1, "no-fit": 1 },
   "fitted": 3, "truncated": false,
   "similar": [{ "dieNo": "N-1", "profileNumber": "P-1", "distance": 0.0, "cavityMatch": true, "trueSize": true, "shapeId": 11,
     "toolings": [{ "number": "GOOD", "kind": "insert", "sizeClass": "300X100", "inScope": true, "hasGeometry": true, "chartVerdict": "allowed", "reason": null }] }],
@@ -99,10 +101,16 @@ Behind the normal login (`authMiddleware`; a user with `password_must_change` ge
   (`clearanceCapped: true` above that).
 - `needsTransfer`: `true` when the tooling is held at other presses only, `false`
   when it is held at the query press, `null` when its held presses are unknown.
-- `rejected` counts each narrowing reason and `no-fit`; `fitted` is how many
-  candidates were fitted; `truncated` says the fit list was cut at 400.
+- `rejected` counts each narrowing reason and `no-fit`, every key always present.
+  The vocabulary, in gate order: `cavities` (the tooling's count differs from the
+  query's), `cavities-unknown` (the tooling's count is NULL), `pocket-count` (the
+  tooling's stored pockets differ from its own cavities), `no-size-class` (NULL size
+  class under a press with chart rows), `chart` (`not_allowed`), `size-prefilter`,
+  `no-fit`. `fitted` is how many candidates were fitted; `truncated` says the fit
+  list was cut at 400.
 - `similar[].toolings[].reason`: why that tooling is not a candidate here, the first
-  that applies: `not-in-scope` (retired, unknown, other plant), `no-geometry`,
+  that applies: `not-in-scope` (retired, unknown, other plant), `no-geometry`
+  (opening confidence `none`, no opening, or an opening with NULL pockets),
   `cavities` (different or unknown), `chart`; `null` when none applies (it is then a
   candidate, or failed only the fit). `cavityMatch` is `null` when either count is
   unknown.
@@ -115,7 +123,9 @@ Behind the normal login (`authMiddleware`; a user with `password_must_change` ge
 |---|---|---|
 | 400 | `{ error: '<field> is required' }` | `plant`, `press` or `dieSize` missing, or `dieSize` not parseable |
 | 400 | `{ error: 'cavities must be a positive integer' }` | |
-| 400 | `{ error: 'profile.outer must be at least 3 [x, y] number pairs' }` / `profile.holes ...` | bad polygon |
+| 400 | `{ error: 'profile.outer must be at least 3 [x, y] number pairs' }` / `profile.holes ...` | bad polygon, or a non-finite coordinate (e.g. `1e999`) |
+| 400 | `{ error: 'profile has too many points (max 5000)' }` | the outer or any hole has more than 5,000 points |
+| 400 | `{ error: 'minClearance must be a number from 0 to 10' }` | |
 | 400 | `{ error: 'profile or dieNo is required' }` | neither given |
 | 400 | `{ error: 'press is not recognised' }` | the press does not resolve to `PRESS n` |
 | 401 | `{ error: 'No token provided' }` / `'Invalid or expired token'` | |
@@ -135,14 +145,24 @@ Code: `server/services/toolingFinder.cjs` (candidates, narrowing, ranking,
    of confidence other than `none` and pockets present; it is cached per plant and
    reloaded only when the newest `updated_at` or the row count changes. The pocket
    grids built by the fit live on the cached candidates, so a repeat query reuses
-   them.
+   them. A row is skipped, with a `tooling finder: …` warning in the backend log once
+   per load, when its pockets are unreadable (bad JSON, a pocket that is not at least
+   3 finite `[x, y]` points), empty, or have a bbox side over 1,000 mm
+   (`MAX_POCKET_MM`, a units error). On the test server GEX 1 skips I-16974, I-28820
+   and I-25551 (oversize); GEX 2 skips none.
 3. **Narrowing**, in this order, each rejection counted: cavities equal to the
-   query's (`cavities`; NULL is `cavities-unknown`); gate two, `chartVerdict` on the
-   press's chart rows with the tooling's kind and size class (`not_allowed` →
-   `chart`; a NULL size class → `no-size-class` only when the press has chart rows);
-   the size pre-filter on every pocket: area ≥ profile area + 5 × perimeter + 25π,
-   and bbox diagonal ≥ profile CCD + 10 (`size-prefilter`). What passes is sorted by
-   total pocket area and cut at 400 (`truncated`).
+   query's (`cavities`; NULL is `cavities-unknown`); the stored pocket count equal to
+   the tooling's cavities (`pocket-count`: a two-cavity profile needs a two-pocket
+   tooling); gate two, `chartVerdict` on the press's chart rows with the tooling's
+   kind and size class (`not_allowed` → `chart`; a NULL size class →
+   `no-size-class` only when the press has chart rows); the size pre-filter on every
+   pocket, with `c` = `minClearance`: area ≥ profile area + c × **hull** perimeter +
+   πc², and bbox diagonal ≥ profile CCD + 2c (`size-prefilter`). The hull perimeter,
+   not the outline's: where two walls of the profile are closer than 2c their grown
+   bands overlap, so the outline perimeter (exact only for a convex shape) overstates
+   the area needed and rejected pockets the profile fits (a 100 × 50 heat sink with 20
+   fins needed 11,779 mm² by the outline, 4,164 by the hull, and fits a 120 × 70
+   pocket). What passes is sorted by total pocket area and cut at 400 (`truncated`).
 4. **Fit (gate one)**, per pocket, every pocket must pass:
    - the profile outline is resampled at **2 mm** (every vertex kept);
    - the pocket gets a signed-distance grid at a **2 mm** cell with a 6 mm margin;
@@ -154,7 +174,7 @@ Code: `server/services/toolingFinder.cjs` (candidates, narrowing, ranking,
    - **exact verification**: each refined seed is measured with segment distances in
      both directions (profile points to pocket edges, pocket vertices to profile
      edges); the best exact value wins. The grid never decides.
-   - The pocket passes when that exact clearance is ≥ **5 mm**.
+   - The pocket passes when that exact clearance is ≥ `minClearance` (default **5 mm**).
 5. **Clearance** of a tooling = the smallest pocket's clearance; above **50 mm** it is
    reported as 50 with `clearanceCapped: true`.
 6. **Ranking:** uncapped before capped, then clearance ascending (tightest fit
@@ -164,15 +184,25 @@ Code: `server/services/toolingFinder.cjs` (candidates, narrowing, ranking,
    fails gate two: candidates are fitted and flagged `no_chart` for the UI to warn.
 8. **`needsTransfer`** is a note, not a gate (see the response).
 9. **Similar profiles:** the 20 nearest dies by signature in the plant's profile
-   index (same hole count), excluding the queried die, each with the toolings it is
-   linked to and the reason each is not a candidate.
+   index (same hole count), excluding the queried die (also when a polygon was
+   posted with a `dieNo`), each with the toolings it is linked to and the reason each
+   is not a candidate.
+
+**Precision.** Clearances within about 0.5 mm of each other are search noise, not a
+real difference: the pattern search stops at a 0.25° step, and 0.25° on a 300 mm
+bar moves its end by about 0.65 mm (and the translation step stops at 0.25 mm). The
+exact check measures the placement found, not the best one possible, so a pair at
+4.8 mm may fit at 5.1 with a finer search, and two candidates 0.3 mm apart rank in
+an order that means nothing.
 
 ## Tuning constants
 
 | Constant | Value | Where | What it costs |
 |---|---|---|---|
-| `MIN_CLEARANCE_MM` | 5 | `toolingFinder.cjs`, `DEFAULTS.minClearance` | The gate. On GEX 1, 354 of the 1,206 failing die-list pairs fit at 0–5 mm (157 at ≥ 3 mm, 292 at ≥ 1 mm): pockets cut to follow the profile closely. Lowering it admits those; it also drives the pre-filter. |
+| `MIN_CLEARANCE_MM` | 5 | `toolingFinder.cjs`, `DEFAULTS.minClearance` | The default gate; a request can set `minClearance` 0–10. On GEX 1, 354 of the 1,206 failing die-list pairs fit at 0–5 mm (157 at ≥ 3 mm, 292 at ≥ 1 mm): pockets cut to follow the profile closely. Lowering it admits those; it also drives the pre-filter. |
 | `CLEARANCE_CAP_MM` | 50 | `toolingFinder.cjs` | Display and ranking only: 56 of 2,726 GEX 1 passes were capped. |
+| `MAX_POCKET_MM` | 1,000 | `toolingFinder.cjs` | A candidate with any pocket bbox side above it is skipped at load (a units error: a 7,620 mm inch drawing built a 14.5 M-cell grid, 2.3 s and 58 MB kept for the process lifetime). No real pocket comes near it. |
+| `MAX_PROFILE_POINTS` | 5,000 | `routes/toolings.cjs` | Cap on a posted outer and each hole. Fit time is linear in the points: 10,000 points cost about 41 ms per pocket, 16 s over 400 candidates on the event loop. Stored profiles average 74 points. |
 | `MAX_FITTED` | 400 | `toolingFinder.cjs` | Bounds the fit time (≈ 1.2 ms per candidate warm, measured: 400 fitted in 486 ms). Cuts by smallest total pocket area, so a large-pocket candidate can be dropped before it is fitted (die `28318_401`: `truncated`, 400 fitted, 309 passed). |
 | resample step | 2 mm | `DEFAULTS.resampleStepMm`, `findToolings` | Points per profile (≈ perimeter / 2); time is linear in it. Coarser steps can miss a pocket spike between samples. |
 | grid cell | 2 mm | `DEFAULTS.cellMm` | Grid build ∝ (pocket area / cell²) × pocket vertices, once per pocket per cache load. A pocket drawn in inches as mm (5,334 × 1,397 mm) took 2.3 s. The search is only as good as ±half a cell; the exact check removes that error from the result. |
@@ -190,7 +220,7 @@ first fit of a tooling includes its grid build). Route `totalMs` warm: 51–536 
 
 ```bash
 MSYS_NO_PATHCONV=1 docker exec -w /app die-ordering-backend node server/scripts/check-finder-fit.cjs --plant "GEX 1" [--confidence confirmed,likely] [--limit N] [--out /tmp/finder-check-gex1.json]
-docker cp die-ordering-backend:/tmp/finder-check-gex1.json <scratch folder>
+MSYS_NO_PATHCONV=1 docker cp die-ordering-backend:/tmp/finder-check-gex1.json <scratch folder>
 ```
 
 Read-only (one `SELECT`). For every distinct (die, tooling) pair in
@@ -200,7 +230,14 @@ tooling is `active` with an opening of the requested confidences (default
 chart or size gate**) and records `{ dieNo, tooling, kind, confidence, dieCavities,
 toolingCavities, pockets, clearance, rawClearance, reason, ms }`. For a failure it
 also measures every pocket with the gate off and keeps the worst
-(`exactClearance`, `worstPocket`). It prints progress every 500 pairs and a
+(`exactClearance`, `worstPocket`). Each pair also records whether the two cheap
+gates the check skips would have passed it: `passesSizePrefilter` (the finder's
+hull-based pre-filter at 5 mm) and `pocketCountMatches` (`pockets === toolingCavities`;
+`null` when the tooling's cavities are unknown). The summary's `gates` counts how many
+*fitting* pairs each gate would remove (`sizePrefilterRejectsFits`,
+`pocketCountRejectsFits`; these should be 0) and how many non-fitting pairs it
+pre-rejects (`…RejectsNonFits`). A tooling whose pockets cannot be read is skipped
+with a warning (`unreadableToolings`). It prints progress every 500 pairs and a
 summary, and `--out` writes `{ summary, records }`. The profile is recentred as
 `findToolings` does (two lines replicated in the script; the finder's helper is
 not exported).
@@ -209,9 +246,10 @@ The pairs are the die shop's real choices, so a pair that does not fit is either
 finder problem or a data problem; the check is for telling which, not a target to
 tune to.
 
-### Results, test server, 2026-11-08
+### Results, test server, 2026-11-08 (re-run after the final-review fixes)
 
-GEX 1, `confirmed,likely` (21 s wall):
+GEX 1, `confirmed,likely` (21 s wall). The pass rates are unchanged by the fixes
+(the check applies no gate):
 
 | | Pairs | Pass (≥ 5 mm) | Rate |
 |---|---|---|---|
@@ -229,7 +267,12 @@ GEX 1, `confirmed,likely` (21 s wall):
 - Failures: 1,206, all `no-fit`: 852 outside the pocket (worst pocket < 0), 354 too
   tight (0–5 mm). Spread: below −20 mm 312, −20 to −10 68, −10 to −5 142, −5 to 0
   330, 0 to 2.5 161, 2.5 to 5 193.
-- Time per fit: mean 2.48 ms, max 48.3 ms.
+- Time per fit: mean 2.49 ms, max 40.7 ms (first run 2.48 / 48.3).
+- **Gates the check skips:** the hull-based size pre-filter would remove **0** of the
+  2,726 fitting pairs and pre-reject 610 of the 1,206 non-fitting ones; the
+  pocket-count gate would remove **0** fitting pairs and pre-reject 0 (every GEX 1
+  confirmed/likely tooling with known cavities stores exactly that many pockets).
+  No tooling's pockets were unreadable.
 - By die cavities: 1 → 80.0 %, 2 → 80.6 %, 3 → 96.8 % (31), 4 → 51.8 %, 6 → 44.5 %,
   8 → 32.8 % (61). The low 4- and 6-cavity rates are almost all I-12495 and I-11377;
   without them, 4-pocket toolings pass 79.1 % and 6-pocket 81.6 %.
@@ -248,7 +291,11 @@ The 70 % trigger (confirmed openings with agreeing cavities) is not hit: 78.7 %.
 failures were looked at anyway, by plotting the profile and the pockets on one
 picture at the same scale (profile at the origin, its best gate-off placement in
 each pocket, a 5 mm ring around it), and by refitting every failing pair with one
-change at a time (diagnostic scripts, nothing changed in the finder):
+change at a time (diagnostic scripts, nothing changed in the finder). Overlays were
+drawn for 26 pairs (the 20 worst confirmed-agreeing failures plus 6 from I-12495 and
+I-11377); the six looked at closely were `28470_501`/I-09655, `17024_501`/I-05041,
+`26461_501`/I-12495, `25193_401`/I-11377, `12298_166`/I-12298 and
+`21494_405`/I-21494.
 
 | Refit of the 1,206 failures | Now pass |
 |---|---|
@@ -294,6 +341,19 @@ the die list (GEX 1) or the die's order (GEX 2, not in the die list).
 | `05031_214` | PRESS 2, 355X200, 3 cav, CCD 71, 1 hole | 200 | 1 (2) | I-15803 12.81 (confirmed, allowed, 3 placements) | I-15803: #1, 12.81 | cavities 727, cavities-unknown 284, no-fit 1, rest 0 | 20 | 55 / 66 |
 | `012987-702` (GEX 2) | P7 → PRESS 7, 280X160, 2 cav, CCD 74.6 | 200, `chart.basis: no_chart` | 17 (17) | 25IC2-019480 5.98, 35IC2D 14.9 (likely), 35IC2C 50 capped (uncertain); all `no_chart` | none linked | cavities 184, cavities-unknown 15, size-prefilter 42, rest 0 | 20 | 259 / 51 |
 
+After the final-review fixes (backend rebuilt, same bodies):
+
+| Die | Query | Status | Candidates (fitted) | `rejected` | totalMs cold / warm |
+|---|---|---|---|---|---|
+| `02061_201` | as above | 200 | 20 (88); top three unchanged (I-14886 5.21, I-17190 5.33, I-14139 5.45) | cavities 633, cavities-unknown 281, **pocket-count 0**, no-size-class 3, chart 5, size-prefilter 0, no-fit 15 | 951 / 208 |
+| `02061_201` | + `minClearance: 3` | 200, `query.minClearance` 3 | 20 (88); top I-12984 3.17, I-23807 3.21, I-17239 3.99 | as above, no-fit 8 | — / 179 |
+| `02061_201` | + `minClearance: 11` | 400 `minClearance must be a number from 0 to 10` | | | |
+| `012987-702` (GEX 2) | as above | 200, `no_chart` | **2** (2): 25IC2-019480 5.98, 35IC2D 14.9 | cavities 184, cavities-unknown 15, **pocket-count 56**, size-prefilter 1, rest 0 | — / 104 |
+
+`cavities-unknown` fell from 284 to 281 because the three oversize GEX 1 toolings are
+now skipped at load. On GEX 2 the pocket-count gate removes 56 two-cavity toolings
+(35IC2C among them) and the list drops from 17 to 2; see Known gaps.
+
 Every warm `totalMs` is under the 2,000 ms target; the slowest is the 400-candidate
 query (486 ms of fit). The die's own insert is always a passing candidate, but the
 tightest-first ranking puts the inserts the shop actually uses behind tighter
@@ -322,10 +382,11 @@ has 4 `order-pdf` rows (027340-702, 012987-702, 005192-802, 026004-802).
 - **Cavity counts disagree between the die list and the toolings** in 362 of 3,932
   GEX 1 pairs. The finder's cavities gate uses the order's count, so a tooling whose
   stored count is wrong is rejected (`cavities`) even when it would fit.
-- **The stored pocket count is not checked against `cavities`.** An `uncertain`
-  opening whose drawing gave fewer pockets than the tooling's cavities is fitted on
-  the pockets it has: `35IC2C` (2 cavities) appeared for a 2-cavity query with one
-  placement.
+- **The pocket-count gate empties much of GEX 2.** 138 of GEX 2's 243 candidates
+  with known cavities store a different number of pockets, all `uncertain` openings
+  (1 cavity with 2–6 pockets: 78; 2 cavities with 1 pocket: 15, with 3–6: 41; a few
+  4- and 8-cavity). They are rejected `pocket-count` until the geometry import
+  extracts the right pockets (or the cavities are corrected). GEX 1 has none.
 - **GEX 2 presses 7/8 have no chart rows**: every candidate is `no_chart`.
 - **GEX 2 profiles are almost all unsized** (4 true-size shapes), so a GEX 2 query by
   `dieNo` usually 404s and the corpus check has nothing to measure; a posted polygon
@@ -341,17 +402,21 @@ has 4 `order-pdf` rows (027340-702, 012987-702, 005192-802, 026004-802).
   outer Ø110, half size or less). They are fitted as stored and fail most of their
   own dies.
 - **Inch drawings read as mm**: I-25551 and I-28820 (uncertain, outer 7,619.8 mm =
-  300 in) carry 5 m pockets; their grid build took 2.3 s and 1.9 s. Their NULL
-  cavities keep them out of the finder (`cavities-unknown`), but a cavities value
-  written later would bring them in.
+  300 in) carry 5 m pockets; their grid build took 2.3 s and 1.9 s. They, and
+  I-16974, are now skipped at load by `MAX_POCKET_MM` (1,000 mm) with a log warning,
+  whatever their cavities; the geometry import should rescale them.
+- **The size pre-filter's hull bound is not a proven lower bound** for every
+  non-convex shape (a wide, deep notch bridged by the hull can make it slightly too
+  strict); on the GEX 1 corpus it removes no fitting pair.
 - **Form-following pockets cut closer than 5 mm** fail the gate (354 die-list pairs).
 - **Tightest-first ranking hides the shop's usual insert** (#67 and #237 in the
   smoke); Plan 5 may want to surface the die's linked toolings separately.
 
 ## For Plan 5 (the Find tooling panel)
 
-- Post `{ plant, press, dieSize, cavities, profile | dieNo }`; cavities come from the
-  order form, not the die list.
+- Post `{ plant, press, dieSize, cavities, profile | dieNo, minClearance? }`; cavities
+  come from the order form, not the die list. Send `dieNo` with a drawn `profile`
+  when the die is known, so it stays out of its own similar list.
 - Show `chart.basis === 'no_chart'` and per-candidate `chart.verdict === 'no_chart'`
   as a warning ("press has no chart; size not checked"), not an error.
 - `needsTransfer: true` → "held at another press"; `null` → "location unknown".
