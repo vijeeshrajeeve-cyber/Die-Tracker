@@ -7,11 +7,11 @@
 // then size-class hint), or from the inventory dimensions of the pocket. Nothing here is ever 'confirmed'.
 
 const {
-  chainLoops, classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, circleFit, isCircleLike, bbox,
+  chainLoops, circleFit, isCircleLike, bbox, centroid,
 } = require('./openingGeometry.cjs');
+const { buildExtractionResult, hintDiameter } = require('./openingResult.cjs');
 const { sizeFromTexts, numbersFromTexts } = require('./dxfOpenings.cjs');
-const { normalizeSizeClass } = require('./toolingNumbers.cjs');
-const { toGray, otsuThreshold, inkMask, closeMask, enclosedRegions, traceBoundary, simplify } = require('./rasterTrace.cjs');
+const { toGray, traceLoops } = require('./rasterTrace.cjs');
 
 const STROKING = new Set(['stroke', 'closeStroke', 'fillStroke', 'closeFillStroke', 'eoFillStroke', 'closeEOFillStroke']);
 const CLOSING = new Set(['closeStroke', 'closeFillStroke', 'closeEOFillStroke']);
@@ -19,7 +19,9 @@ const CURVE_SEGMENTS = 16;
 const INK_MAX_CHANNEL = 0.63;
 const INK_MAX_SPREAD = 0.25;
 const NO_SCALE_NOTE = 'scale unknown: no size text, size class or inventory dims';
-const TOLERANCE_MM = 2;
+const IMAGE_TIMEOUT_MS = 30000;
+const BORDER_SPAN = 0.8; // a loop longer than this share of the sheet's short side is its border or title frame
+const NO_CIRCLE_NOTE = 'scale circle does not contain the drawing';
 
 async function openFirstPage(buffer) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -74,10 +76,9 @@ function sheetMatrix(page) {
   return [t[0], -t[1], t[2], -t[3], t[4], -t[5]];
 }
 
-// Returns the stroked ink chains (points in sheet space, CTM applied) plus the stroked-path count.
+// Returns the stroked ink chains (points in sheet space, CTM applied).
 function walkPaths(opList, opNames, base) {
   const chains = [];
-  let strokedPaths = 0;
   let ctm = base;
   let stroke = [0, 0, 0];
   const stack = [];
@@ -100,7 +101,6 @@ function walkPaths(opList, opNames, base) {
     } else if (name === 'constructPath') {
       const paint = opNames[args[0]];
       if (!STROKING.has(paint)) continue;
-      strokedPaths++;
       if (!isInk(stroke)) continue;
       const data = args[1][0];
       const apply = (x, y) => [ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]];
@@ -142,7 +142,7 @@ function walkPaths(opList, opNames, base) {
       flush();
     }
   }
-  return { chains, strokedPaths };
+  return chains;
 }
 
 function countOps(opList, opNames) {
@@ -190,13 +190,6 @@ async function classifyPdf(buffer) {
 
 // ---- shared result building -----------------------------------------------------
 
-const fmt = (n) => String(Math.round(n * 10) / 10);
-
-function diameterOf(sizeClass) {
-  const m = /^(\d+(?:\.\d+)?)X\d/.exec(normalizeSizeClass(sizeClass) || '');
-  return m ? Number(m[1]) : null;
-}
-
 function noneResult(source, notes, extra = {}) {
   return {
     source, outer: null, outerSynthesised: false, pockets: [], pocketGapMm: null, cavities: null,
@@ -240,74 +233,12 @@ function circlePolygon({ cx, cy, r }, n = 64) {
   return Array.from({ length: n }, (_, i) => [cx + r * Math.cos((2 * Math.PI * i) / n), cy + r * Math.sin((2 * Math.PI * i) / n)]);
 }
 
-// loops are already in millimetres. stated = sizeFromTexts() result or null.
-function buildResult({ source, loops, bridged, stated, hints, scaleBasis, texts, notes }) {
-  const { sizeClass: hintSize = null, cavities: knownCavities = null, inventoryDims = null } = hints || {};
-  const normHint = hintSize ? normalizeSizeClass(hintSize) : null;
-  const validHint = normHint && diameterOf(normHint) != null ? normHint : null;
-  if (normHint && !validHint) notes.push('ignored malformed size hint');
-  const hinted = stated ? null : validHint;
-  const expectedDiameter = stated ? stated.diameter : hinted ? diameterOf(hinted) : null;
-
-  const cls = classifyLoops(loops, { expectedOuterDiameter: expectedDiameter });
-  const framed = normaliseFrame({ outer: cls.outer, pockets: cls.pockets });
-  const outer = framed.outer ? framed.outer.points : null;
-  const pockets = framed.pockets.map((p) => p.points);
-
-  const drawnCircle = !!(cls.outer && !cls.outerSynthesised && isCircleLike(cls.outer.points));
-  const graded = gradeConfidence({
-    outer: cls.outer,
-    outerSynthesised: cls.outerSynthesised,
-    pockets,
-    bridged,
-    source,
-    statedDiameter: drawnCircle || cls.outerSynthesised ? expectedDiameter : null,
-    knownCavities,
-    scaleBasis,
-  });
-  let confidence = graded.confidence;
-  notes.push(...graded.notes);
-
-  let sizeClass = null;
-  let sizeClassSource = null;
-  let sizeClassConfidence = null;
-  if (stated || hinted) {
-    sizeClass = stated ? stated.sizeClass : hinted;
-    sizeClassSource = stated ? 'drawing-text' : 'hint';
-    sizeClassConfidence = 'likely'; // a PDF is scaled from its own size text, so the drawn circle cannot confirm it
-  }
-
-  if (inventoryDims && pockets.length) {
-    const b = bbox(pockets[0]);
-    const long = Math.max(b.width, b.height);
-    const short = Math.min(b.width, b.height);
-    // Scaling to inventory dims fixes the long side by construction; only the short side is a check then.
-    const longOk = scaleBasis === 'inventory-dims' || Math.abs(long - inventoryDims.a_len) <= TOLERANCE_MM;
-    if (longOk && Math.abs(short - inventoryDims.b_wid) <= TOLERANCE_MM) {
-      notes.push('inventory dims agree');
-    } else {
-      notes.push(`pocket ${fmt(long)} x ${fmt(short)} mm disagrees with inventory dims ${inventoryDims.a_len} x ${inventoryDims.b_wid}`);
-      if (confidence !== 'none') confidence = 'uncertain';
-    }
-  }
-
-  return {
-    source,
-    outer,
-    outerSynthesised: cls.outerSynthesised,
-    pockets,
-    pocketGapMm: pocketGapMm(framed.pockets),
-    cavities: pockets.length || null,
-    sizeClass,
-    sizeClassSource,
-    sizeClassConfidence,
-    scaleBasis,
-    confidence,
-    numbersInDrawing: numbersFromTexts(texts),
-    texts,
-    notes,
-  };
+// A circle-like loop (fit) that contains the centroid of at least one other loop: the scale circle must hold the drawing.
+function containsOther(fit, loops, self) {
+  return loops.some((l) => l !== self && Math.hypot(...centroid(l.points).map((v, i) => v - [fit.cx, fit.cy][i])) < fit.r);
 }
+
+const isBorder = (points, shortSide) => longSide(points) > BORDER_SPAN * shortSide;
 
 const asLoops = (rings) => rings.map((points) => ({ points, layer: '', bridgedGaps: 0, sources: [] }));
 
@@ -317,71 +248,79 @@ async function extractFromVectorPdf(buffer, hints = {}) {
   const { doc, page, opNames } = await openFirstPage(buffer);
   let chains;
   let texts;
-  let pageSize;
+  let shortSide;
   try {
-    ({ chains } = walkPaths(await page.getOperatorList(), opNames, sheetMatrix(page)));
+    chains = walkPaths(await page.getOperatorList(), opNames, sheetMatrix(page));
     texts = await pageTexts(page);
     const viewport = page.getViewport({ scale: 1 });
-    pageSize = [viewport.width, viewport.height];
+    shortSide = Math.min(viewport.width, viewport.height);
   } finally {
     await doc.destroy();
   }
   const source = 'pdf-vector';
   const notes = [];
   const safeHints = hints || {};
+  const numbers = numbersFromTexts(texts);
   const stated = sizeFromTexts(texts);
-  const hintDia = safeHints.sizeClass ? diameterOf(safeHints.sizeClass) : null;
+  const hintDia = safeHints.sizeClass ? hintDiameter(safeHints.sizeClass) : null;
   const diameter = stated ? stated.diameter : hintDia;
+  const none = (extraNotes) => noneResult(source, extraNotes, { numbersInDrawing: numbers, texts });
 
   // Pass 1, in PDF points: find the scale circle (the largest circle-like loop) and the unscaled loops.
   const first = chainLoops(chains, { joinTol: 0.5, bridgeTol: 2 });
   let mmPerUnit = null;
   let scaleBasis = null;
-  const circles = first.loops.map((l) => robustCircle(l.points)).filter(Boolean).sort((a, b) => b.r - a.r);
+  let dropped = [];
+  const circles = first.loops.map((l) => ({ loop: l, fit: robustCircle(l.points) })).filter((c) => c.fit)
+    .sort((x, y) => y.fit.r - x.fit.r);
   if (circles.length && diameter) {
-    mmPerUnit = diameter / (2 * circles[0].r);
+    if (!containsOther(circles[0].fit, first.loops, circles[0].loop)) return none([NO_CIRCLE_NOTE]);
+    mmPerUnit = diameter / (2 * circles[0].fit.r);
     scaleBasis = stated ? 'text-diameter' : 'hint-diameter';
   } else if (!circles.length && safeHints.inventoryDims && safeHints.inventoryDims.a_len) {
-    // Ignore a loop spanning the whole sheet (the drawing border).
-    const candidates = first.loops.filter((l) => {
-      const b = bbox(l.points);
-      return !(b.width >= 0.9 * pageSize[0] && b.height >= 0.9 * pageSize[1]);
-    });
+    dropped = first.loops.filter((l) => isBorder(l.points, shortSide));
+    const candidates = first.loops.filter((l) => !dropped.includes(l));
     if (candidates.length) {
       const largest = candidates.reduce((m, l) => (longSide(l.points) > longSide(m.points) ? l : m));
       mmPerUnit = safeHints.inventoryDims.a_len / longSide(largest.points);
       scaleBasis = 'inventory-dims';
     }
   }
-  if (!scaleBasis) {
-    return noneResult(source, [NO_SCALE_NOTE, `${first.loops.length} unscaled loops found`], {
-      numbersInDrawing: numbersFromTexts(texts), texts,
-    });
-  }
+  if (!scaleBasis) return none([NO_SCALE_NOTE, `${first.loops.length} unscaled loops found`]);
 
   // Pass 2: scale the raw chains, then chain again so the 0.5 mm / 2 mm tolerances mean millimetres.
   const scaled = chains.map((c) => ({ ...c, points: c.points.map(([x, y]) => [x * mmPerUnit, y * mmPerUnit]) }));
   const second = chainLoops(scaled);
-  const bridged = second.bridged;
-  // A rim drawn with its key slot is one loop that is not quite a circle: use the circle it is drawn on.
+  let keyed = false;
   const loops = second.loops.map((l) => {
-    if (isCircleLike(l.points)) return l;
+    // The scale circle drawn with its key slot is one loop that is not quite a circle: use the circle it is drawn on.
+    // Only a loop matching the stated diameter is ever replaced; a pocket never is.
+    if (keyed || !diameter || isCircleLike(l.points)) return l;
     const fit = robustCircle(l.points);
-    if (!fit || fit.r * 2 < 100) return l;
+    if (!fit || Math.abs(fit.r * 2 - diameter) > 0.1 * diameter) return l;
+    keyed = true;
     notes.push('key slot cut into the outer circle ignored');
     return { ...l, points: circlePolygon(fit) };
   });
-  return buildResult({ source, loops, bridged, stated, hints: safeHints, scaleBasis, texts, notes });
+  if (scaleBasis === 'inventory-dims') {
+    // The border was identified in points; drop its scaled twin by size.
+    const limit = BORDER_SPAN * shortSide * mmPerUnit;
+    for (let i = loops.length - 1; i >= 0; i--) if (longSide(loops[i].points) > limit) loops.splice(i, 1);
+  }
+  return buildExtractionResult({
+    source, loops, bridged: second.bridged, scaleBasis, texts, numbers, hints: safeHints, stated, canConfirm: false, notes,
+  });
 }
 
 // ---- scanned PDF ------------------------------------------------------------------
 
+// pdfjs hands decoded images over through a callback, and never calls back for an object that fails to decode.
 function getImageObject(page, name) {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out waiting for the page image')), IMAGE_TIMEOUT_MS);
     try {
-      const store = name.startsWith('g_') ? page.commonObjs : page.objs;
-      store.get(name, resolve);
-    } catch (err) { reject(err); }
+      (name.startsWith('g_') ? page.commonObjs : page.objs).get(name, (img) => { clearTimeout(timer); resolve(img); });
+    } catch (err) { clearTimeout(timer); reject(err); }
   });
 }
 
@@ -395,43 +334,42 @@ async function extractFromScannedPdf(buffer, hints = {}) {
   } finally {
     await doc.destroy();
   }
+  if (!image || !image.data || !image.width || !image.height) return noneResult('pdf-raster', ['page image could not be decoded']);
   const source = 'pdf-raster';
   const safeHints = hints || {};
   const { width, height } = image;
-  const gray = toGray({ data: image.data, width, height, kind: image.kind });
-  const mask = closeMask(inkMask(gray, otsuThreshold(gray)), width, height, 3);
-  const minArea = 0.002 * width * height;
-  const regions = enclosedRegions(mask, width, height).filter((r) => r.area >= minArea).sort((a, b) => b.area - a.area);
   // Pixel y grows downward: negate it so the loops are in a y-up frame.
-  const pxLoops = regions.map((r) => {
-    const rm = new Uint8Array(width * height);
-    for (let y = r.bbox.minY; y <= r.bbox.maxY; y++) {
-      for (let x = r.bbox.minX; x <= r.bbox.maxX; x++) if (r.labels[y * width + x] === r.id) rm[y * width + x] = 1;
-    }
-    return simplify(traceBoundary(rm, width, height), 1).map(([x, y]) => [x, -y]);
-  }).filter((l) => l.length >= 3);
+  const pxLoops = traceLoops(image).loops.map((l) => l.map(([x, y]) => [x, -y])).filter((l) => l.length >= 3);
 
-  const hintDia = safeHints.sizeClass ? diameterOf(safeHints.sizeClass) : null;
+  const hintDia = safeHints.sizeClass ? hintDiameter(safeHints.sizeClass) : null;
   const notes = [];
   let mmPerPx = null;
   let scaleBasis = null;
+  let usable = pxLoops;
   const shortSide = Math.min(width, height);
-  const bigCircle = pxLoops.map((l) => (isCircleLike(l) ? circleFit(l) : null)).filter((f) => f && f.r * 2 >= 0.4 * shortSide)
-    .sort((a, b) => b.r - a.r)[0];
+  const bigCircle = pxLoops.map((l) => ({ loop: l, fit: isCircleLike(l) ? circleFit(l) : null }))
+    .filter((c) => c.fit && c.fit.r * 2 >= 0.4 * shortSide).sort((x, y) => y.fit.r - x.fit.r)[0];
+  const noneRaster = (n) => noneResult(source, n);
   if (bigCircle && hintDia) {
-    mmPerPx = hintDia / (2 * bigCircle.r);
+    if (!containsOther(bigCircle.fit, pxLoops, bigCircle.loop)) return noneRaster([NO_CIRCLE_NOTE]);
+    mmPerPx = hintDia / (2 * bigCircle.fit.r);
     scaleBasis = 'hint-diameter';
-  } else if (pxLoops.length && safeHints.inventoryDims && safeHints.inventoryDims.a_len) {
-    mmPerPx = safeHints.inventoryDims.a_len / longSide(pxLoops[0]);
-    scaleBasis = 'inventory-dims';
+  } else if (safeHints.inventoryDims && safeHints.inventoryDims.a_len) {
+    usable = pxLoops.filter((l) => !isBorder(l, shortSide)); // largest first, minus any sheet border
+    if (usable.length) {
+      mmPerPx = safeHints.inventoryDims.a_len / longSide(usable[0]);
+      scaleBasis = 'inventory-dims';
+    }
   }
   if (!scaleBasis) {
-    return noneResult(source, pxLoops.length
+    return noneRaster(pxLoops.length
       ? [NO_SCALE_NOTE, `${pxLoops.length} unscaled loops found`]
       : ['no enclosed outline found (an outline cut off by the scan edge is not enclosed)']);
   }
-  const loops = asLoops(pxLoops.map((l) => l.map(([x, y]) => [x * mmPerPx, y * mmPerPx])));
-  return buildResult({ source, loops, bridged: 0, stated: null, hints: safeHints, scaleBasis, texts: [], notes });
+  const loops = asLoops(usable.map((l) => l.map(([x, y]) => [x * mmPerPx, y * mmPerPx])));
+  return buildExtractionResult({
+    source, loops, bridged: 0, scaleBasis, texts: [], numbers: [], hints: safeHints, stated: null, canConfirm: false, notes,
+  });
 }
 
 async function extractFromPdf(buffer, hints = {}) {

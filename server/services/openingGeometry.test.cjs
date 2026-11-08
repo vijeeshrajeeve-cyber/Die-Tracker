@@ -108,3 +108,10 @@ test('chains 3000 shuffled, half-reversed segments into 300 loops quickly', () =
   assert.equal(loops.length, 300); assert.equal(open.length, 0);
   assert.ok(elapsedMs < 2000, `took ${elapsedMs} ms`);
 });
+
+test('noOuterFallback keeps the only loop as a pocket instead of promoting it to outer', () => {
+  const only = loop(roundedRect(250, 150, 15));
+  const r = classifyLoops([only], { noOuterFallback: true });
+  assert.equal(r.outer, null);
+  assert.deepEqual(r.pockets, [only]);
+});

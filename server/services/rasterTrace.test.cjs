@@ -31,7 +31,7 @@ function strokeCircle(img, cx, cy, r, pen, rgb = BLACK) {
   }
 }
 
-test('traces a drawn rounded rectangle as one enclosed loop with the right size', () => {
+test('traces a drawn rectangle as one enclosed loop with the right size', () => {
   const img = canvasRgb(400, 300);
   strokeRect(img, 100, 75, 200, 150, 2);
   const { loops } = traceLoops(img);

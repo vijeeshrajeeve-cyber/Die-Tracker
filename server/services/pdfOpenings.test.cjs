@@ -10,20 +10,21 @@ const { bbox, circleFit } = require('./openingGeometry.cjs');
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', 'tooling', name));
 
-async function syntheticVectorPdf({ withText = true } = {}) {
+async function syntheticVectorPdf({ withText = true, pocket = true } = {}) {
   const doc = await PDFDocument.create();
   const page = doc.addPage([600, 500]);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   page.drawCircle({ x: 300, y: 250, size: 150, borderColor: rgb(0, 0, 0), borderWidth: 1 });
-  page.drawRectangle({ x: 250, y: 225, width: 100, height: 50, borderColor: rgb(0, 0, 0), borderWidth: 1 });
-  page.drawRectangle({ x: 260, y: 235, width: 80, height: 30, borderColor: rgb(1, 0.5, 0), borderWidth: 1 });
+  if (pocket) page.drawRectangle({ x: 250, y: 225, width: 100, height: 50, borderColor: rgb(0, 0, 0), borderWidth: 1 });
+  // Orange loop beside the pocket (inside the circle, not nested in it): only the ink rule can exclude it.
+  page.drawRectangle({ x: 365, y: 235, width: 40, height: 30, borderColor: rgb(1, 0.5, 0), borderWidth: 1 });
   // pdf-lib's standard fonts are WinAnsi, which has no U+00D8 problem (Ã˜ is 0xD8 in Latin-1).
   if (withText) page.drawText('\u00d8300x100 INSERT', { x: 20, y: 20, size: 12, font });
   return Buffer.from(await doc.save());
 }
 
 // A letter-size scan: white page with a blue-ink rectangle (4 px pen, 2 px gap in the top edge), as a PNG in a PDF.
-async function syntheticScanPdf({ x, y, w, h }) {
+async function syntheticScanPdf({ x, y, w, h, border = false }) {
   const W = 1275;
   const H = 1760;
   const raw = Buffer.alloc((W * 3 + 1) * H, 255);
@@ -33,6 +34,10 @@ async function syntheticScanPdf({ x, y, w, h }) {
     for (let t = 0; t < 4; t++) { if (px < x + 150 || px > x + 151) dot(px, y + t); dot(px, y + h - 1 - t); }
   }
   for (let py = y; py < y + h; py++) for (let t = 0; t < 4; t++) { dot(x + t, py); dot(x + w - 1 - t, py); }
+  if (border) { // a sheet border 20 px in from the edge
+    for (let px = 20; px < W - 20; px++) for (let t = 0; t < 4; t++) { dot(px, 20 + t); dot(px, H - 21 - t); }
+    for (let py = 20; py < H - 20; py++) for (let t = 0; t < 4; t++) { dot(20 + t, py); dot(W - 21 - t, py); }
+  }
   const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
   const crc = (b) => { let c = ~0; for (const v of b) c = crcTable[(c ^ v) & 255] ^ (c >>> 8); return (~c) >>> 0; };
   const chunk = (type, data) => {
@@ -100,4 +105,28 @@ test('15109 scan: a pocket cut off by the scan edge is not an enclosed outline â
 test('a scan with no size hint and no drawn outer is none', async () => {
   const r = await extractFromScannedPdf(await syntheticScanPdf({ x: 300, y: 300, w: 330, h: 1000 }), {});
   assert.equal(r.confidence, 'none'); assert.equal(r.scaleBasis, null);
+});
+
+test('the scale circle must contain the drawing', async () => {
+  const r = await extractFromVectorPdf(await syntheticVectorPdf({ pocket: false }), { sizeClass: '300X100', cavities: 1 });
+  // the orange rectangle is not geometry, so the circle is the only loop and holds nothing
+  assert.equal(r.confidence, 'none'); assert.ok(r.notes.includes('scale circle does not contain the drawing'));
+});
+
+test('inventory dims only: the pocket is never promoted to outer', async () => {
+  const r = await extractFromScannedPdf(await syntheticScanPdf({ x: 300, y: 300, w: 330, h: 1000 }), { inventoryDims: { a_len: 350, b_wid: 115 } });
+  assert.equal(r.outer, null); assert.equal(r.pockets.length, 1);
+  assert.equal(r.scaleBasis, 'inventory-dims'); assert.equal(r.confidence, 'uncertain');
+});
+
+test('inventory dims: a sheet border is not scaled to the pocket length', async () => {
+  const r = await extractFromScannedPdf(await syntheticScanPdf({ x: 300, y: 300, w: 330, h: 1000, border: true }), { inventoryDims: { a_len: 350, b_wid: 115 } });
+  assert.equal(r.pockets.length, 1);
+  const b = bbox(r.pockets[0]);
+  assert.ok(Math.abs(Math.max(b.width, b.height) - 350) < 1);
+});
+
+test('inventory dims: a short side that disagrees with b_wid is none, not uncertain', async () => {
+  const r = await extractFromScannedPdf(await syntheticScanPdf({ x: 300, y: 300, w: 330, h: 1000 }), { inventoryDims: { a_len: 350, b_wid: 60 } });
+  assert.equal(r.confidence, 'none'); assert.ok(r.notes.some((n) => /disagrees with inventory dims/.test(n)));
 });

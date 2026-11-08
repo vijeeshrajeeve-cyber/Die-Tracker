@@ -235,7 +235,9 @@ function synthesiseCircle(cx, cy, diameter, n = 64) {
   });
 }
 
-function classifyLoops(loops, { expectedOuterDiameter = null } = {}) {
+// noOuterFallback: with no expected diameter and no circle, do not promote the largest loop to outer
+// (an outline-only drawing, e.g. a scan, has pockets and no outer).
+function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = false } = {}) {
   const ignored = [];
   let outer = null;
   let outerSynthesised = false;
@@ -261,7 +263,7 @@ function classifyLoops(loops, { expectedOuterDiameter = null } = {}) {
       const b = bbox(loops.flatMap((l) => l.points));
       outer = { points: synthesiseCircle(b.cx, b.cy, expectedOuterDiameter), layer: '', bridgedGaps: 0, sources: [] };
       outerSynthesised = true;
-    } else {
+    } else if (!noOuterFallback) {
       const largest = loops.reduce((m, l) => (polygonArea(l.points) > polygonArea(m.points) ? l : m));
       if (loops.every((l) => l === largest || polygonContains(largest.points, l.points))) outer = largest;
     }
