@@ -55,8 +55,11 @@ node server/scripts/build-profile-bundle.cjs [--workbook <xlsx>] [--out <bundleD
 
 Defaults: the workbook above; `--out`
 `C:/Users/vijee/Desktop/18.06.2026/tooling-bundle/profiles-<today>`; both sheets; no
-limit. It never deletes anything in `--out` and refuses to run over an existing
-`manifest.json` unless `--force`. `--dry-run` reads and traces everything and
+limit. It refuses to run over an existing `manifest.json` unless `--force`; on a
+live run it deletes that one `manifest.json` (and nothing else in `--out`) before
+writing any shape, so an interrupted rebuild leaves a folder without a manifest,
+which the applier refuses. The applier also rolls back when `shapes.ndjson` holds a
+different number of shapes than the manifest's `counts.shapes`. `--dry-run` reads and traces everything and
 writes nothing. Use `--limit 200` for a smoke bundle first (4.6 s).
 
 Each distinct picture is decoded and traced once, however many dies share it, and
@@ -66,8 +69,8 @@ per die picture, appended as the shapes are traced), `report.json`,
 (`version: 2`); the build is complete when `manifest.json` exists. The applier
 refuses a version-1 bundle (a single `shapes.json`): rebuild it.
 
-Test-server result (`profiles-full-2026-11-08`, about 24 minutes, 271 MB, 19,939
-picture files, `shapes.ndjson` 78 MB):
+Test-server result (`profiles-full-2026-11-08-v2`, rebuilt after the final-review
+fixes: 1,403 s ≈ 23 minutes, 273 MB, 19,939 picture files, `shapes.ndjson` 80 MB):
 
 | | GEX1 | GEX2 | total |
 |---|---|---|---|
@@ -75,20 +78,31 @@ picture files, `shapes.ndjson` 78 MB):
 | Rows with a picture | 24,963 | 1,521 | 26,484 |
 | Rows without a picture | 131 | 4,138 (+3 blank IDDie) | 4,269 |
 | Picture anchors | 24,969 | 1,525 | 26,494 |
-| Shapes written | 24,408 | 1,506 | 25,914 |
-| Flagged `needs_review` | 229 | 7 | 236 |
+| Traced to no shape (`nullShape`) | 50 | 1 | 51 |
+| Shapes written | 24,919 | 1,524 | 26,443 |
+| Flagged `needs_review` | 234 | 7 | 241 |
 
 - Pictures decoded: 19,939; shared by more than one die: 3,943.
-- Traced to no shape (not written, `nullShape`): 580, so 26,494 − 580 = 25,914 shapes.
-- `needsReview` counters: verdictMismatch 173, noteMismatch 221, noImage 125,
-  blankOrUnclear 11, nullShape 580. The note counters count sheet rows, picture or
-  not; 236 written shapes carry a flag.
-- `styles`: silhouette 25,903, outline 11. `styleResolvedBy`: geometry 18,423,
-  verdict 7,490, default 1.
+- Traced to no shape (not written, `nullShape`): 51, so 26,494 − 51 = 26,443 shapes.
+  `report.json` lists each one in `nullTraces` (sheet, row, `source_ref`, die,
+  media; capped at 2,000, with `nullTracesTruncated`). They are 26 distinct
+  pictures: 4 blank (no ink at all; 6 rows), 2 holding only faint specks (2 rows),
+  and 20 (43 rows) where the section itself fills the picture edge to edge, e.g. a
+  wide U-channel or a tightly cropped rectangular tube, so the picture-frame rule
+  drops it as a frame.
+- `needsReview` counters: verdictMismatch 174, noteMismatch 221, noImage 125,
+  blankOrUnclear 11, nullShape 51. The note counters count sheet rows, picture or
+  not; 241 written shapes carry a flag.
+- `styles`: silhouette 26,429, outline 14. `styleResolvedBy`: geometry 18,780,
+  verdict 7,662, default 1.
 - Errors: 3, all `blank IDDie` (GEX2 rows 4568, 4737, 4836).
 
-GEX1 took about 18 minutes and GEX2 about 6: GEX2 has far fewer pictures, but its
-large scans are slow to trace (see Known gaps).
+The first build (before the final-review fixes) traced 580 pictures to no shape:
+most were real thin-walled sections whose ink covered under 2 % of the picture. A
+root now qualifies by its bounding box (at least 2 % of the picture), not its ink.
+
+The per-sheet split of the build time was not measured; GEX2 has far fewer
+pictures, but its large scans are slow to trace (see Known gaps).
 
 ## 2. Apply (backend container)
 
@@ -98,23 +112,26 @@ MSYS_NO_PATHCONV=1 docker exec -w /app die-ordering-backend node server/scripts/
 MSYS_NO_PATHCONV=1 docker exec -w /app die-ordering-backend node server/scripts/apply-profile-bundle.cjs /tmp/profile-bundle
 ```
 
-The `docker cp` of the 19,939-file folder took 12 s on the test server.
+The `docker cp` of the 19,939-file folder took 12 s on the test server (timed on
+the v2 bundle).
 
 Always read the dry run first. It runs the whole transaction and rolls back, and
 prints a `would copy <path>` line for every picture not yet stored (one per
 picture on a first apply, so redirect it to a file). The result is a JSON block:
 `inserted`, `updated`, `unchanged`, `skippedReviewed`, `filesCopied`, `trueSized`,
-`dieListMisses`.
+`dieListMisses`, `ccdBelowMin`, `ccdImplausible`.
 
 What the apply does, per shape (one transaction):
 
 - Looks the die up in the die list (plant spellings `GEX 1`/`GEX 01`, `GEX 2`).
   A miss is counted in `dieListMisses` and the shape is still written, without
   true size or cavities.
-- **True size:** when the die list's `ProfileCCD` is a number of at least 20 mm, the
+- **True size:** when the die list's `ProfileCCD` is a number from 20 to 600 mm, the
   unit outline is scaled so its minimal enclosing circle measures that CCD
   (`true_size_source = 'ccd-scaled'`, `true_size_confidence = 'likely'`). Below
-  20 mm (die list placeholders) or blank: `true_size = false`, mm columns NULL. GEX 2
+  20 mm (die list placeholders, counted in `ccdBelowMin`), above 600 mm (typing
+  errors: the largest die in use is about 500 mm across, counted in
+  `ccdImplausible`) or blank: `true_size = false`, mm columns NULL. GEX 2
   has no CCD in the die list, so none of its workbook shapes is true-sized.
 - Upserts on `(die_no, plant, source, source_ref)`; `source_ref` is the picture's
   cell (`GEX1!E1234`, `#2` for a row's second picture). A row identical in every
@@ -123,20 +140,26 @@ What the apply does, per shape (one transaction):
 
 The applier reads `shapes.ndjson` line by line and keeps only counters and the list
 of pictures still to copy, so it runs inside the stock 512 MB backend container:
-peak container memory during the full live apply was 140 MiB (sampled every ~2 s
-with `docker stats`). A line that is not JSON fails the whole transaction with its
+peak container memory was 140 MiB during the first full live apply (inserting
+every shape) and 109 MiB during the v2 re-apply (15 `docker stats` samples; 67 MiB
+before it started). A line that is not JSON fails the whole transaction with its
 line number.
 
-Test-server results, 2026-11-08 (the 200-shape smoke bundle had been applied
-before, so its rows count as `unchanged`):
+Test-server results, 2026-11-08. The first bundle (`profiles-full-2026-11-08`,
+25,914 shapes, built before the final-review fixes) had been applied already; the
+table is the v2 bundle applied over it:
 
-| Run | inserted | updated | unchanged | skippedReviewed | filesCopied | trueSized | dieListMisses | time |
-|---|---|---|---|---|---|---|---|---|
-| dry run | 25,714 | 0 | 200 | 0 | 0 (19,383 `would copy`) | 20,725 | 177 | 54 s |
-| live | 25,714 | 0 | 200 | 0 | 19,383 | 20,725 | 177 | 56 s |
-| live again | 0 | 0 | 25,914 | 0 | 0 | 20,725 | 177 | 25 s |
+| Run | inserted | updated | unchanged | skippedReviewed | filesCopied | trueSized | dieListMisses | ccdBelowMin | ccdImplausible | time |
+|---|---|---|---|---|---|---|---|---|---|---|
+| dry run | 529 | 168 | 25,746 | 0 | 0 (380 `would copy`) | 20,939 | 184 | 1,441 | 168 | 27 s |
+| live | 529 | 168 | 25,746 | 0 | 380 | 20,939 | 184 | 1,441 | 168 | 28 s |
+| live again | 0 | 0 | 26,443 | 0 | 0 | 20,939 | 184 | 1,441 | 168 | 26 s |
 
-`trueSized` counts every true-size shape in the bundle, written or unchanged.
+The 529 inserts are the pictures the old tracer dropped (580 − 51); the 168 updates
+are the shapes whose die-list CCD is over 600 mm, which lost their true size.
+`trueSized` counts every true-size shape in the bundle, written or unchanged. (The
+first bundle's own first apply inserted 25,714 and found the 200 smoke-bundle rows
+unchanged.)
 
 ## Re-running
 
@@ -165,7 +188,7 @@ cavities.
 When it is true size (`true_size_source = 'pdf-scale'`):
 
 - **`confirmed`**: a reference CCD exists (the drawing's own stated CCD first, else
-  the die list's; values under 20 mm are ignored) and one of the stated scales puts
+  the die list's; values under 20 mm or over 600 mm are ignored) and one of the stated scales puts
   the traced outline's CCD within 3 % of it (the closest wins).
 - **`likely`**: there is no reference CCD, and the main scale makes the profile fit
   the die with at least 40 mm to spare (traced CCD ≤ die diameter − 40).
@@ -179,8 +202,9 @@ the PNG is kept. Pictures crossed by dimension lines, typically thin-walled line
 drawings, often trace to no profile at all (`no profile found in the picture`):
 one of the three stored order PNGs on the test server did.
 
-The posted bytes are decoded with `server/services/pngDecode.cjs` (pure JS, 40 MP
-cap), not `@napi-rs/canvas`: the canvas decoder crashes the Node process on a
+The posted bytes are decoded with `server/services/pngDecode.cjs` (pure JS, 6 MP
+cap: decoding plus tracing holds roughly 30+ bytes per pixel, and the PDF import's
+A4 crop at 200 dpi is under 4 MP), not `@napi-rs/canvas`: the canvas decoder crashes the Node process on a
 corrupt PNG with a valid signature.
 
 For a die with several rows, the API lists the newest first and `hasTrueSize`
@@ -197,29 +221,30 @@ select hole_count, count(*) from profile_shapes group by 1 order by 1;
 select die_no, review_reason from profile_shapes where needs_review and plant = 'GEX 1' limit 20;
 ```
 
-Test-server output after the live apply (2026-11-08; the two `order-pdf` rows are
-from the Task 6 smoke):
+Test-server output after the v2 live apply (2026-11-08; the two `order-pdf` rows
+are from the Task 6 smoke):
 
 | plant | source | true_size | needs_review | count |
 |---|---|---|---|---|
-| GEX 1 | image-check-xlsx | f | f | 3,647 |
-| GEX 1 | image-check-xlsx | f | t | 36 |
-| GEX 1 | image-check-xlsx | t | f | 20,532 |
-| GEX 1 | image-check-xlsx | t | t | 193 |
-| GEX 2 | image-check-xlsx | f | f | 1,499 |
+| GEX 1 | image-check-xlsx | f | f | 3,941 |
+| GEX 1 | image-check-xlsx | f | t | 39 |
+| GEX 1 | image-check-xlsx | t | f | 20,744 |
+| GEX 1 | image-check-xlsx | t | t | 195 |
+| GEX 2 | image-check-xlsx | f | f | 1,517 |
 | GEX 2 | image-check-xlsx | f | t | 7 |
 | GEX 2 | order-pdf | t | f | 2 |
 
 | plant | sized | total | avg_ccd |
 |---|---|---|---|
-| GEX 1 | 20,725 | 24,408 | 122 |
-| GEX 2 | 2 | 1,508 | 60 |
+| GEX 1 | 20,939 | 24,919 | 115 |
+| GEX 2 | 2 | 1,526 | 60 |
 
-GEX 1: 20,725 of 24,408 workbook shapes (84.9 %) are true-sized. The 3,683 that
-are not: die list CCD blank 2,106, CCD under 20 mm 1,404, no die list row 173.
-Median true-size CCD 86 mm.
+GEX 1: 20,939 of 24,919 workbook shapes (84.0 %) are true-sized. The 3,980 that
+are not: die list CCD blank 2,191, CCD under 20 mm 1,441, no die list row 180,
+CCD over 600 mm 168. Median true-size CCD 86.0 mm (measured with
+`percentile_cont(0.5)`).
 
-Hole counts: 0 → 11,135; 1 → 10,942; 2 → 2,133; 3 → 846; 4 → 332; 5 → 275;
+Hole counts: 0 → 11,400; 1 → 11,150; 2 → 2,181; 3 → 849; 4 → 334; 5 → 278;
 6 → 74; 7 → 61; 8 → 15; 9 → 33; 10 → 11; 11 → 10; 12 → 8; 13 → 26; 14 → 8;
 16 → 1; 17 → 4; 19 → 2.
 
@@ -233,7 +258,11 @@ Also worth running:
 ```sql
 select profile_number, die_no from profile_shapes where plant = 'GEX 2' limit 5;
 select count(*) from profile_shapes where true_size and ccd_mm > 400;
+select count(*) from profile_shapes where true_size and ccd_mm > 600;
 ```
+
+After the v2 apply: 394 true-size shapes have a CCD over 400 mm and none over
+600 mm.
 
 GEX 2 profile numbers keep their leading zero (`090019` / `090019-2501`): the
 workbook stores them as text. 76 GEX 2 rows (sheet rows ~896–967) have a
@@ -274,29 +303,34 @@ row instead.
 
 ## Known gaps
 
-- **GEX 2 has no CCD in the die list**, so none of its 1,506 workbook shapes is
+- **GEX 2 has no CCD in the die list**, so none of its 1,524 workbook shapes is
   true-sized. GEX 2 shapes become true-sized only as order PDFs arrive (each one
   records an `order-pdf` row; the newest true-size row wins).
-- **GEX 1 shapes without a usable CCD** (3,683): blank 2,106, under 20 mm 1,404, die
-  not in the die list 173.
-- **Implausible die-list CCDs are taken as given.** 558 true-sized shapes have a CCD
-  over 400 mm and 38 over 1,000 mm (`07078_301`: 11,785 mm), larger than any die.
-  They are `likely`, not checked against the die size.
+- **GEX 1 shapes without a usable CCD** (3,980): blank 2,191, under 20 mm 1,441, die
+  not in the die list 180, over 600 mm 168.
+- **Die-list CCDs over 600 mm are refused** (`ccdImplausible`: 168 shapes, e.g.
+  `07078_301` at 11,785 mm). Between 400 and 600 mm (394 shapes) the CCD is still
+  taken as given (`likely`), not checked against the die size.
 - **Outline-style hollow pictures are the weakest.** A thin-walled section with one
   large enclosed region cannot be told from an outline drawing by geometry; the
-  sheet's verdict decides (7,490 pictures were resolved that way). With no verdict
-  the default is `outline` (1 picture). Only 11 shapes came out `outline`.
+  sheet's verdict decides (7,662 pictures were resolved that way). With no verdict
+  the default is `outline` (1 picture). Only 14 shapes came out `outline`.
 - **Pictures crossed by dimension lines** are traced as one shape and the largest
-  closed shape is kept, so they can come out wrong or as nothing. 580 workbook
-  pictures traced to no shape and are not in the library (the build does not break
-  down why). Order PDFs whose profile picture carries dimension lines often fail
+  closed shape is kept, so they can come out wrong. 51 workbook pictures traced to
+  no shape and are not in the library; `nullTraces` in `report.json` lists them
+  (mostly sections that fill their picture edge to edge and are taken for a frame;
+  see step 1). Order PDFs whose profile picture carries dimension lines often fail
   the same way (the upload is kept).
-- **Rows without pictures:** 131 in GEX1 (the sheet's 125 "No image in Column E"
-  rows plus in-cell pictures) and 4,138 in GEX2 (`Image not found`). 14 rows (GEX1
-  13756, 14309, 15111, 15253, 15382, 15956, 16327, plus an in-cell picture at I15955;
-  GEX2 127, 134, 884, 944, 948, 962, 991) hold a "Place in Cell" picture stored
-  under `xl/richData`, which the reader does not follow. One GEX2 anchor (row 1084)
-  has no image data.
+- **Rows without pictures:** 131 in GEX1 = 124 rows noted "No image in Column E"
+  (with `Image not found` in column E) + 6 rows holding an in-cell picture
+  (`#VALUE!` in E: 13756, 14309, 15111, 15382, 15956, 16327; 14309 is also noted
+  "No image", so the `noImage` counter is 124 + 1 = 125) + 1 row with an empty E and
+  no note (5896). 4,138 in GEX2 = 4,122 `Image not found` + 7 in-cell pictures (127,
+  134, 884, 944, 948, 962, 991) + 7 other "no image" spellings (690, 692, 1020,
+  1355, 1956, 1959, 1960) + 2 with an empty E (883, 1084; row 1084's anchor has no
+  image data). In-cell ("Place in Cell") pictures are stored under `xl/richData`,
+  which the reader does not follow; GEX1 15253 and I15955 also hold one, beside a
+  normal anchor.
 - **The `GEX1 Profiles` and `GEX2 Profiles` sheets are ignored** (no pictures), as
   are the two GEX1 copies, `Summary` and `Sheet1`.
 - **About 106 GEX2 pictures are large scans** (8 MP or more, most 5975×2619, about
@@ -350,6 +384,12 @@ All behind the normal login (`authMiddleware`), mounted at `/api/profile-shapes`
 | `GET /:dieNo?plant=` | `{ shapes, hasTrueSize }`: every stored row for the die, newest first, without `signature`. 404 when the die has none. |
 | `GET /:dieNo/similar?plant=&limit=` | `{ items }`: the nearest dies by signature, same hole count only, excluding the die itself and every `needs_review` row; one item per die (its best row). The query is the die's newest row. `limit` 1–100, default 20. Item: `{ die_no, profile_number, distance, cavityMatch, trueSize, shapeId }`; `cavityMatch` is null when either cavity count is unknown. |
 | `POST /similar` | Body `{ plant, outer, holes?, cavities?, limit? }` (polygons as `[x, y]` arrays, any scale). `{ items, signature }`. 400 on a bad polygon. |
+
+**Hole counts, for Plan 4:** the library's `hole_count` counts only holes of at least
+1 % of the outer area (the raster tracer's rule), and similarity matches hole count
+exactly, while `POST /similar` takes `holes.length` as posted. Callers must drop
+holes under 1 % of the outer area before posting, or a profile with a tiny hole
+(a screw port) finds no match.
 | `GET /:dieNo/image/:shapeId?plant=` | The stored picture (`image/gif` or `image/png`). Order-PDF rows read from the order-files root, the rest from the tooling-files root; 404 when missing. |
 
 The similarity index is held in memory per plant and reloaded only when the plant's
