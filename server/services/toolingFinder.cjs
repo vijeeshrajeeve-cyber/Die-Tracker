@@ -7,7 +7,7 @@
 // frame; see fitGeometry.cjs for the placement convention.
 
 const { chartVerdict } = require('./toolingChart.cjs');
-const { shapeStats, signatureOf } = require('./profileShape.cjs');
+const { shapeStats, signatureOf, convexHull } = require('./profileShape.cjs');
 const { polygonArea, bbox, centroid } = require('./openingGeometry.cjs');
 const { resampleClosed, signedDistanceGrid, bestPlacement, DEFAULTS } = require('./fitGeometry.cjs');
 const { loadIndex, nearest } = require('./profileSimilarity.cjs');
@@ -17,6 +17,9 @@ const { normalizeSizeClass } = require('./toolingNumbers.cjs');
 const MIN_CLEARANCE_MM = 5;
 const CLEARANCE_CAP_MM = 50;
 const MAX_FITTED = 400;
+// A pocket side beyond this is a units error (an inch drawing read as mm), not
+// a real opening; its grid would be millions of cells. The candidate is skipped.
+const MAX_POCKET_MM = 1000;
 
 const confidenceRank = Object.freeze({ confirmed: 0, likely: 1, uncertain: 2 });
 
@@ -32,9 +35,12 @@ function perimeterOf(points) {
   return s;
 }
 
+// perimeter is reported; hullPerimeter (of the convex hull) drives the size
+// pre-filter, because the outline perimeter overstates the grown area of a
+// non-convex profile (fins, notches) and would reject pockets it fits.
 function profileStats(outerMm) {
   const { area, ccd } = shapeStats({ outer: outerMm });
-  return { area, perimeter: perimeterOf(outerMm), ccd, bbox: bbox(outerMm) };
+  return { area, perimeter: perimeterOf(outerMm), hullPerimeter: perimeterOf(convexHull(outerMm)), ccd, bbox: bbox(outerMm) };
 }
 
 function pocketStats(pocket) {
@@ -67,9 +73,23 @@ const stampKey = (r) => {
 
 const numOrNull = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
+const isPoint = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]);
+
+// Index of the first pocket that is not a polygon of at least 3 finite [x, y]
+// pairs, or -1 when every pocket is one.
+function badPocketIndex(pockets) {
+  return pockets.findIndex((p) => !(Array.isArray(p) && p.length >= 3 && p.every(isPoint)));
+}
+
+const isOversize = (c) => c.pocketStats.some((p) => p.bbox.width > MAX_POCKET_MM || p.bbox.height > MAX_POCKET_MM);
+
+// Throws on malformed pockets (bad JSON, a pocket that is not a polygon);
+// loadCandidates catches per row so one bad row cannot fail the plant.
 function candidateFromRow(row) {
   const raw = typeof row.pockets === 'string' ? JSON.parse(row.pockets) : row.pockets;
   const pockets = Array.isArray(raw) ? raw : [];
+  const bad = badPocketIndex(pockets);
+  if (bad >= 0) throw new Error(`pocket ${bad} is not a polygon of at least 3 finite [x, y] points`);
   return {
     id: row.id,
     number: row.number,
@@ -90,7 +110,8 @@ function candidateFromRow(row) {
 }
 
 // The cheap stamp runs every call; the full load only when it moved.
-// onWarn(message) is an optional hook for data oddities (a row with no pockets).
+// onWarn(message) is an optional hook for data oddities: a row with no pockets,
+// malformed pockets, or a pocket side over MAX_POCKET_MM. Each is skipped.
 async function loadCandidates(client, { plant, onWarn } = {}) {
   const { rows: [stampRow] } = await client.query(STAMP_SQL, [plant]);
   const stamp = stampKey(stampRow);
@@ -98,10 +119,21 @@ async function loadCandidates(client, { plant, onWarn } = {}) {
   if (cached && cached.stamp === stamp) return cached.candidates;
   const { rows } = await client.query(CANDIDATE_SQL, [plant]);
   const candidates = [];
+  const warn = (m) => { if (onWarn) onWarn(m); };
   for (const row of rows) {
-    const c = candidateFromRow(row);
+    let c;
+    try {
+      c = candidateFromRow(row);
+    } catch (err) {
+      warn(`tooling ${row.number} (id ${row.id}) has unreadable pockets (${err.message}); skipped`);
+      continue;
+    }
     if (!c.pockets.length) {
-      if (onWarn) onWarn(`tooling ${c.number} (id ${c.id}) has an empty pockets array; skipped`);
+      warn(`tooling ${c.number} (id ${c.id}) has an empty pockets array; skipped`);
+      continue;
+    }
+    if (isOversize(c)) {
+      warn(`tooling ${c.number} (id ${c.id}) has a pocket side over ${MAX_POCKET_MM} mm (a units error?); skipped`);
       continue;
     }
     candidates.push(c);
@@ -116,12 +148,14 @@ function invalidate(plant) {
 
 // ---- narrowing -------------------------------------------------------------
 
-// Smallest pocket that could hold the profile with MIN_CLEARANCE_MM all round:
-// the profile grown by the clearance (area + clearance × perimeter + π clearance²),
-// and a bbox diagonal at least the profile's enclosing circle plus twice the clearance.
-function passesSizePrefilter(stats, profile) {
-  const minArea = profile.area + MIN_CLEARANCE_MM * profile.perimeter + Math.PI * MIN_CLEARANCE_MM ** 2;
-  const minDiag = profile.ccd + 2 * MIN_CLEARANCE_MM;
+// Smallest pocket that could hold the profile with clearance c all round: the
+// profile grown by c (area + c × hull perimeter + π c²), and a bbox diagonal at
+// least the profile's enclosing circle plus 2c. The hull perimeter, not the
+// outline's: where two walls are closer than 2c the grown bands overlap, so the
+// outline perimeter (Steiner, exact only for convex shapes) overstates the area.
+function passesSizePrefilter(stats, profile, c = MIN_CLEARANCE_MM) {
+  const minArea = profile.area + c * profile.hullPerimeter + Math.PI * c ** 2;
+  const minDiag = profile.ccd + 2 * c;
   return stats.every((p) => p.area >= minArea && p.diag >= minDiag);
 }
 
@@ -133,12 +167,14 @@ function needsTransferFor(heldPresses, press) {
 // Plant and status are already in CANDIDATE_SQL. Kept candidates are copies
 // (the cached ones are shared between queries) that share the cached grids array.
 function narrow(candidates, query, chartRows) {
-  const { press, dieSize, cavities, profile } = query;
-  const rejected = { cavities: 0, 'cavities-unknown': 0, 'no-size-class': 0, chart: 0, 'size-prefilter': 0 };
+  const { press, dieSize, cavities, profile, minClearance = MIN_CLEARANCE_MM } = query;
+  const rejected = { cavities: 0, 'cavities-unknown': 0, 'pocket-count': 0, 'no-size-class': 0, chart: 0, 'size-prefilter': 0 };
   const passed = [];
   for (const c of candidates) {
     if (c.cavities == null) { rejected['cavities-unknown']++; continue; }
     if (c.cavities !== Number(cavities)) { rejected.cavities++; continue; }
+    // A two-cavity profile needs a two-pocket tooling (one pocket per cavity).
+    if (c.pockets.length !== c.cavities) { rejected['pocket-count']++; continue; }
     // Gate two. A press with no chart rows decides nothing (no_chart), so the
     // size class is only required when there is a chart to check it against.
     const chart = chartVerdict(chartRows, { press, dieSize, kind: c.kind, sizeClass: c.size_class });
@@ -146,7 +182,7 @@ function narrow(candidates, query, chartRows) {
       if (c.size_class == null) { rejected['no-size-class']++; continue; }
       if (chart.verdict === 'not_allowed') { rejected.chart++; continue; }
     }
-    if (!passesSizePrefilter(c.pocketStats, profile)) { rejected['size-prefilter']++; continue; }
+    if (!passesSizePrefilter(c.pocketStats, profile, minClearance)) { rejected['size-prefilter']++; continue; }
     passed.push({ ...c, chart, needsTransfer: needsTransferFor(c.held_presses, press) });
   }
   passed.sort((a, b) => totalPocketArea(a) - totalPocketArea(b));
@@ -204,7 +240,8 @@ const CHART_SQL = 'SELECT * FROM tooling_combinations WHERE press = $1';
 const LINKED_DIES_SQL = `SELECT tooling_number, die_no, plant, source FROM die_tooling_links
   WHERE tooling_number = ANY($1) ORDER BY die_no`;
 const NEIGHBOUR_TOOLINGS_SQL = `SELECT l.die_no, l.tooling_number, l.kind, t.number, t.kind AS t_kind, t.size_class,
-  t.status, t.plant, t.cavities, COALESCE(o.confidence, 'none') AS confidence
+  t.status, t.plant, t.cavities, COALESCE(o.confidence, 'none') AS confidence,
+  (o.confidence IS NOT NULL AND o.confidence <> 'none' AND o.pockets IS NOT NULL) AS has_geometry
   FROM die_tooling_links l
   LEFT JOIN toolings t ON t.number = l.tooling_number
   LEFT JOIN tooling_openings o ON o.tooling_id = t.id
@@ -268,7 +305,7 @@ function annotateNeighbourTooling(r, { plant, press, dieSize, cavities, chartRow
   const kind = r.t_kind ?? r.kind;
   const sizeClass = r.size_class ?? null;
   const inScope = known && r.status === 'active' && normalizePlant(r.plant) === plant;
-  const hasGeometry = known && r.confidence !== 'none';
+  const hasGeometry = known && r.has_geometry === true;
   const { verdict } = chartVerdict(chartRows, { press, dieSize, kind, sizeClass });
   const toolingCavities = numOrNull(r.cavities);
   let reason = null;
@@ -305,7 +342,11 @@ async function similarProfiles(client, { outer, holes, limit, excludeDieNo, ...s
   }));
 }
 
-async function findToolings(client, { plant, press, dieSize, cavities, profile, dieNo, limit = 20, similarLimit = 20 }) {
+// minClearance (mm) applies to the pre-filter and the fit. A posted profile
+// wins over dieNo for the shape; dieNo still keeps that die out of similar.
+async function findToolings(client, {
+  plant, press, dieSize, cavities, profile, dieNo, minClearance = MIN_CLEARANCE_MM, limit = 20, similarLimit = 20,
+}) {
   const t0 = performance.now();
   if (!/^PRESS \d+$/.test(String(press ?? ''))) {
     throw Object.assign(new Error(`press is not canonical: ${press}`), { code: 'BAD_PRESS' });
@@ -316,17 +357,18 @@ async function findToolings(client, { plant, press, dieSize, cavities, profile, 
   const stats = profileStats(outer);
 
   const { rows: chartRows } = await client.query(CHART_SQL, [query.press]);
-  const candidates = await loadCandidates(client, { plant: query.plant });
+  // Skipped rows are logged once per cache load (the load only reruns when the stamp moves).
+  const candidates = await loadCandidates(client, { plant: query.plant, onWarn: (m) => console.warn(`tooling finder: ${m}`) });
 
   const tNarrow = performance.now();
-  const { kept, rejected, truncated } = narrow(candidates, { ...query, profile: stats }, chartRows);
+  const { kept, rejected, truncated } = narrow(candidates, { ...query, profile: stats, minClearance }, chartRows);
   const narrowMs = elapsed(tNarrow);
 
   const tFit = performance.now();
   const fitted = [];
   rejected['no-fit'] = 0;
   for (const c of kept) {
-    const fit = fitCandidate(c, profilePts);
+    const fit = fitCandidate(c, profilePts, { minClearance });
     if (fit.reason) rejected['no-fit']++;
     else fitted.push({ ...c, ...fit });
   }
@@ -342,6 +384,7 @@ async function findToolings(client, { plant, press, dieSize, cavities, profile, 
   return {
     query: {
       ...query,
+      minClearance,
       profile: { points: outer, area: stats.area, perimeter: stats.perimeter, ccd: stats.ccd, holeCount: holes.length },
     },
     chart: {
@@ -358,7 +401,7 @@ async function findToolings(client, { plant, press, dieSize, cavities, profile, 
 }
 
 module.exports = {
-  MIN_CLEARANCE_MM, CLEARANCE_CAP_MM, MAX_FITTED, confidenceRank,
-  profileStats, pocketStats, CANDIDATE_SQL, STAMP_SQL, candidateFromRow, loadCandidates, invalidate,
+  MIN_CLEARANCE_MM, CLEARANCE_CAP_MM, MAX_FITTED, MAX_POCKET_MM, confidenceRank,
+  profileStats, pocketStats, passesSizePrefilter, CANDIDATE_SQL, STAMP_SQL, candidateFromRow, loadCandidates, invalidate,
   narrow, fitCandidate, rankCandidates, findToolings,
 };

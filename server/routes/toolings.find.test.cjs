@@ -13,6 +13,13 @@ const TOOLING = (number, r) => ({
   confidence: 'confirmed', pocket_gap_mm: null,
 });
 const TOOLINGS = [TOOLING('SNUG', 45), TOOLING('WIDE', 50)];
+const { signatureOf } = require('../services/profileShape.cjs');
+const rect = (w, h) => [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+// GEX 7 has a similarity index: the die SELF and one neighbour.
+const INDEX_GEX7 = [
+  { id: 1, die_no: 'SELF', plant: 'GEX 7', profile_number: null, signature: signatureOf({ outer: circle(1) }), hole_count: 0, cavities: 1, true_size: true },
+  { id: 2, die_no: 'N-1', plant: 'GEX 7', profile_number: null, signature: signatureOf({ outer: rect(2, 1) }), hole_count: 0, cavities: 1, true_size: true },
+];
 const queries = [];
 installFakeDb(async (sql, params = []) => {
   queries.push({ sql, params });
@@ -28,8 +35,8 @@ installFakeDb(async (sql, params = []) => {
   if (/FROM profile_shapes\s+WHERE die_no/.test(sql)) {
     return { rows: params[0] === 'DIE-1' ? [{ outer_mm: circle(35, 90, 40, 40), holes_mm: [], cavities: 1, hole_count: 0 }] : [] };
   }
-  if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'v1', n: 0 }] };
-  if (/FROM profile_shapes WHERE plant/.test(sql)) return { rows: [] };
+  if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'v1', n: params[0] === 'GEX 7' ? INDEX_GEX7.length : 0 }] };
+  if (/FROM profile_shapes WHERE plant/.test(sql)) return { rows: params[0] === 'GEX 7' ? INDEX_GEX7 : [] };
   if (/FROM die_tooling_links/.test(sql)) return { rows: [] };
   if (/FROM toolings t/.test(sql) && /WHERE t\.number = \$1/.test(sql)) return { rows: [] };
   throw new Error(`unexpected query ${sql}`);
@@ -37,7 +44,7 @@ installFakeDb(async (sql, params = []) => {
 
 const router = require('./toolings.cjs');
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // as server/index.cjs
 app.use('/api/toolings', router);
 let base; let close;
 test.before(async () => { ({ base, close } = await listen(app)); });
@@ -126,4 +133,52 @@ test('POST /find answers 500 JSON when the finder fails', async () => {
   }
   assert.equal(logged.length, 1);
   assert.match(String(logged[0][1] && logged[0][1].message), /database went away/);
+});
+
+test('POST /find caps the posted polygon at 5000 points, for the outer and for each hole', async () => {
+  const many = circle(30, 5001);
+  const outer = await find({ ...BODY, profile: { outer: many } });
+  assert.equal(outer.status, 400);
+  assert.deepEqual(outer.body, { error: 'profile has too many points (max 5000)' });
+  const hole = await find({ ...BODY, profile: { outer: circle(35), holes: [circle(5), circle(10, 5001)] } });
+  assert.equal(hole.status, 400);
+  assert.deepEqual(hole.body, { error: 'profile has too many points (max 5000)' });
+});
+
+test('POST /find is 400 for a non-finite coordinate', async () => {
+  // JSON.parse reads 1e999 as Infinity.
+  const raw = JSON.stringify({ ...BODY, profile: { outer: [[0, 0], [10, 0], [5, 'INF']] } }).replace('"INF"', '1e999');
+  const response = await fetch(`${base}/api/toolings/find`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /profile\.outer/);
+});
+
+test('POST /find takes minClearance from 0 to 10 and echoes it; 400 otherwise', async () => {
+  for (const minClearance of [11, -1, 'abc', true, '']) {
+    const res = await find({ ...BODY, minClearance });
+    assert.equal(res.status, 400, JSON.stringify(minClearance));
+    assert.deepEqual(res.body, { error: 'minClearance must be a number from 0 to 10' });
+  }
+  const dflt = await find(BODY);
+  assert.equal(dflt.body.query.minClearance, 5);
+  const ten = await find({ ...BODY, minClearance: 10 });
+  assert.equal(ten.status, 200);
+  assert.equal(ten.body.query.minClearance, 10);
+  // SNUG's 90-gon gives just under 10 mm, so the gate drops it; WIDE has 15.
+  assert.deepEqual(ten.body.candidates.map((c) => c.number), ['WIDE']);
+  const tight = await find({ ...BODY, minClearance: '10.5' });
+  assert.equal(tight.status, 400);
+  const three = await find({ ...BODY, minClearance: '3' });
+  assert.equal(three.status, 200);
+  assert.equal(three.body.query.minClearance, 3);
+});
+
+test('POST /find with a polygon and a dieNo keeps that die out of similar', async () => {
+  queries.length = 0;
+  const res = await find({ ...BODY, plant: 'GEX 7', dieNo: 'SELF' });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.similar.map((x) => x.dieNo), ['N-1']);
+  assert.ok(!queries.some((q) => /FROM profile_shapes\s+WHERE die_no/.test(q.sql)), 'the polygon is the profile');
+  const without = await find({ ...BODY, plant: 'GEX 7' });
+  assert.deepEqual(without.body.similar.map((x) => x.dieNo), ['SELF', 'N-1'], 'without dieNo it would be listed');
 });

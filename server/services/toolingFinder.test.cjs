@@ -80,6 +80,34 @@ test('loadCandidates parses pockets, computes pocketStats and caches by stamp', 
   assert.equal(client.queries.length, 7, 'invalidate forces a reload');
 });
 
+test('loadCandidates skips malformed and oversize pockets with a warning and keeps the other rows', async () => {
+  const state = {
+    stamp: 'v1',
+    rows: [
+      row({ number: 'GOOD-1', plant: 'BAD ROWS' }),
+      row({ number: 'NULL-POCKET', plant: 'BAD ROWS', pockets: [null] }),
+      row({ number: 'EMPTY-POCKET', plant: 'BAD ROWS', pockets: '[[]]' }),
+      row({ number: 'TWO-POINTS', plant: 'BAD ROWS', pockets: [[[0, 0], [10, 0]]] }),
+      row({ number: 'NAN', plant: 'BAD ROWS', pockets: [[[0, 0], [10, 0], ['x', 5]]] }),
+      row({ number: 'BAD-JSON', plant: 'BAD ROWS', pockets: '[[' }),
+      row({ number: 'INCH', plant: 'BAD ROWS', pockets: [rect(7620, 3000)] }),
+      row({ number: 'GOOD-2', plant: 'BAD ROWS', pockets: [rect(999, 400)] }),
+    ],
+  };
+  const warnings = [];
+  const got = await f.loadCandidates(fakeClient(state), { plant: 'BAD ROWS', onWarn: (m) => warnings.push(m) });
+  assert.deepEqual(got.map((c) => c.number), ['GOOD-1', 'GOOD-2']);
+  assert.equal(warnings.length, 6);
+  for (const n of ['NULL-POCKET', 'EMPTY-POCKET', 'TWO-POINTS', 'NAN', 'BAD-JSON']) {
+    assert.ok(warnings.some((w) => w.includes(n) && /unreadable pockets/.test(w)), n);
+  }
+  assert.ok(warnings.some((w) => w.includes('INCH') && /over 1000 mm/.test(w)));
+  assert.equal(f.MAX_POCKET_MM, 1000);
+  assert.throws(() => f.candidateFromRow(row({ pockets: [null] })), /pocket 0 is not a polygon/);
+  f.invalidate('BAD ROWS');
+  assert.equal((await f.loadCandidates(fakeClient(state), { plant: 'BAD ROWS' })).length, 2, 'no onWarn: still skipped, never thrown');
+});
+
 test('narrow rejects by cavities, unknown cavities, NULL size class, chart, size pre-filter — and counts each', () => {
   const kept = cand({ number: 'KEEP' });
   const candidates = [
@@ -92,7 +120,7 @@ test('narrow rejects by cavities, unknown cavities, NULL size class, chart, size
   ];
   const r = f.narrow(candidates, query(circle(35)), CHART);
   assert.deepEqual(r.kept.map((c) => c.number), ['KEEP']);
-  assert.deepEqual(r.rejected, { cavities: 1, 'cavities-unknown': 1, 'no-size-class': 1, chart: 1, 'size-prefilter': 1 });
+  assert.deepEqual(r.rejected, { cavities: 1, 'cavities-unknown': 1, 'pocket-count': 0, 'no-size-class': 1, chart: 1, 'size-prefilter': 1 });
   assert.equal(r.truncated, false);
   assert.equal(r.kept[0].chart.verdict, 'allowed');
   assert.equal(r.kept[0].chart.rows.length, 1);
@@ -104,6 +132,54 @@ test('NULL size class fails gate two with reason no-size-class', () => {
   assert.equal(r.kept.length, 0);
   assert.equal(r.rejected['no-size-class'], 1);
   assert.equal(r.rejected.chart, 0);
+});
+
+// 100 x 50 bar: a 10 mm base with 20 fins 2 mm wide, 40 mm tall, on a 5 mm pitch.
+// Area 2,600 mm², outline perimeter 1,820 mm.
+function heatSink() {
+  const pts = [[-50, -25], [50, -25], [50, -15]];
+  for (let i = 19; i >= 0; i--) {
+    const x0 = -50 + i * 5 + 3; // fin i spans [x0, x0 + 2]; the last one is flush with x = 50
+    if (i < 19) pts.push([x0 + 2, -15]);
+    pts.push([x0 + 2, 25], [x0, 25], [x0, -15]);
+  }
+  pts.push([-50, -15]);
+  return pts;
+}
+
+test('a non-convex profile is sized by its hull: the 20-fin heat sink is kept for a 120 x 70 pocket', () => {
+  const { resampleClosed } = require('./fitGeometry.cjs');
+  const sink = heatSink();
+  const stats = f.profileStats(sink);
+  assert.ok(Math.abs(stats.area - 2600) < 1e-6, String(stats.area));
+  assert.ok(Math.abs(stats.perimeter - 1820) < 1e-6, String(stats.perimeter));
+  assert.ok(stats.hullPerimeter > 280 && stats.hullPerimeter < 300, String(stats.hullPerimeter));
+  // The outline-perimeter bound (2,600 + 5 x 1,820 + 25 pi = 11,779 mm²) would reject this 8,400 mm² pocket.
+  assert.ok(stats.area + 5 * stats.perimeter + 25 * Math.PI > 120 * 70);
+  const keep = f.narrow([cand({ number: 'POCKET', pockets: [rect(120, 70)] })], query(sink), CHART);
+  assert.deepEqual(keep.kept.map((c) => c.number), ['POCKET']);
+  assert.ok(!f.fitCandidate(keep.kept[0], resampleClosed(sink, 2)).reason, 'and the fit agrees');
+  // 4,000 mm² with a 201 mm diagonal: too small for the hull grown by 5 mm (about 2,600 + 5 x 297 + 25 pi = 4,164 mm²).
+  const small = f.narrow([cand({ number: 'TIGHT', pockets: [rect(200, 20)] })], query(sink), CHART);
+  assert.equal(small.kept.length, 0);
+  assert.equal(small.rejected['size-prefilter'], 1);
+});
+
+test('pocket-count: a tooling whose stored pockets differ from its cavities is rejected', () => {
+  const candidates = [
+    cand({ number: 'ONE-OF-TWO', cavities: 2, pockets: [circle(60)] }),
+    cand({ number: 'TWO-OF-TWO', cavities: 2, pockets: [circle(60, 90, -130, 0), circle(60, 90, 130, 0)] }),
+  ];
+  const r = f.narrow(candidates, query(circle(35), { cavities: 2 }), CHART);
+  assert.deepEqual(r.kept.map((c) => c.number), ['TWO-OF-TWO']);
+  assert.equal(r.rejected['pocket-count'], 1);
+  assert.equal(r.rejected.cavities, 0);
+});
+
+test('minClearance drives the pre-filter: a pocket too small at 5 mm passes at 3 mm', () => {
+  const c = cand({ pockets: [circle(39)] }); // about 4 mm all round a 35 mm circle
+  assert.equal(f.narrow([c], query(circle(35)), CHART).kept.length, 0);
+  assert.equal(f.narrow([c], query(circle(35), { minClearance: 3 }), CHART).kept.length, 1);
 });
 
 test('no_chart keeps candidates and marks the verdict', () => {
@@ -322,7 +398,7 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
   const plant = 'FIND E';
   const link = (number, over = {}) => ({
     die_no: 'N-1', tooling_number: number, kind: 'insert', number, t_kind: 'insert', size_class: '300X100',
-    status: 'active', plant, cavities: 1, confidence: 'confirmed', ...over,
+    status: 'active', plant, cavities: 1, confidence: 'confirmed', has_geometry: true, ...over,
   });
   const client = finderClient({
     toolings: [],
@@ -334,9 +410,10 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
     neighbourLinks: [
       link('GOOD'),
       link('RET', { status: 'retired' }),
-      link('GHOST', { number: null, t_kind: null, size_class: null, status: null, plant: null, cavities: null, confidence: 'none' }),
+      link('GHOST', { number: null, t_kind: null, size_class: null, status: null, plant: null, cavities: null, confidence: 'none', has_geometry: false }),
       link('ELSEWHERE', { plant: 'GEX 2' }),
-      link('NOOP', { confidence: 'none' }),
+      link('NOOP', { confidence: 'none', has_geometry: false }),
+      link('NOPOCKETS', { confidence: 'confirmed', has_geometry: false }), // confidence set, o.pockets NULL
       link('CAV2', { cavities: 2 }),
       link('BADCHART', { size_class: '999X999' }),
       link('NOCAV', { cavities: null }),
@@ -365,6 +442,8 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
   assert.equal(by.ELSEWHERE.reason, 'not-in-scope');
   assert.equal(by.NOOP.reason, 'no-geometry');
   assert.equal(by.NOOP.hasGeometry, false);
+  assert.equal(by.NOPOCKETS.reason, 'no-geometry');
+  assert.equal(by.NOPOCKETS.hasGeometry, false);
   assert.equal(by.CAV2.reason, 'cavities');
   assert.equal(by.BADCHART.reason, 'chart');
   assert.equal(by.BADCHART.chartVerdict, 'not_allowed');
@@ -376,6 +455,7 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
   const q = client.queries.find((x) => /FROM die_tooling_links l/.test(x.sql));
   assert.deepEqual(q.params, [['N-1', 'N-2']]);
   assert.match(q.sql, /l\.kind <> 'unknown'/);
+  assert.match(q.sql, /o\.confidence <> 'none' AND o\.pockets IS NOT NULL\) AS has_geometry/);
 });
 
 test('timings and rejected counts are reported', async () => {
@@ -389,7 +469,7 @@ test('timings and rejected counts are reported', async () => {
     ],
   });
   const r = await f.findToolings(client, { plant: 'FIND F', press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) }, limit: 1 });
-  assert.deepEqual(r.rejected, { cavities: 1, 'cavities-unknown': 0, 'no-size-class': 0, chart: 0, 'size-prefilter': 1, 'no-fit': 1 });
+  assert.deepEqual(r.rejected, { cavities: 1, 'cavities-unknown': 0, 'pocket-count': 0, 'no-size-class': 0, chart: 0, 'size-prefilter': 1, 'no-fit': 1 });
   assert.equal(r.fitted, 3, 'every kept candidate is fitted');
   assert.equal(r.truncated, false);
   assert.deepEqual(r.candidates.map((c) => c.number), ['A'], 'limit cuts the list after ranking');
@@ -424,4 +504,52 @@ test('a press that is not canonical is refused with BAD_PRESS', async () => {
     );
   }
   assert.equal(client.queries.length, 0, 'refused before any query');
+});
+
+test('a posted polygon with a dieNo: the polygon is the profile and the die is still left out of similar', async () => {
+  const plant = 'FIND I';
+  const client = finderClient({
+    toolings: [],
+    shapes: [{ die_no: 'SELF', plant, outer_mm: rect(300, 10), holes_mm: [], cavities: 1, hole_count: 0 }],
+    index: [
+      { id: 31, die_no: 'SELF', plant, profile_number: null, signature: signatureOf({ outer: circle(1) }), hole_count: 0, cavities: 1, true_size: true },
+      { id: 32, die_no: 'N-1', plant, profile_number: null, signature: signatureOf({ outer: rect(2, 1) }), hole_count: 0, cavities: 1, true_size: true },
+    ],
+  });
+  const r = await f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) }, dieNo: 'SELF', similarLimit: 1 });
+  assert.deepEqual(r.similar.map((s) => s.dieNo), ['N-1']);
+  assert.ok(Math.abs(r.query.profile.ccd - 70) < 0.5, 'the polygon, not the stored 300 x 10 shape, is the profile');
+  assert.ok(!client.queries.some((q) => /FROM profile_shapes\s+WHERE die_no/.test(q.sql)), 'the stored shape is not read');
+});
+
+test('minClearance reaches the fit and is echoed: a pocket that fails at 5 mm passes at 3 mm', async () => {
+  const client = finderClient({ toolings: [row({ number: 'NEAR', pockets: [circle(39)] })] });
+  const at = (extra) => f.findToolings(client, { plant: 'FIND J', press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) }, ...extra });
+  const five = await at({});
+  assert.equal(five.query.minClearance, 5);
+  assert.deepEqual(five.candidates, []);
+  const three = await at({ minClearance: 3 });
+  assert.equal(three.query.minClearance, 3);
+  assert.deepEqual(three.candidates.map((c) => c.number), ['NEAR']);
+  assert.ok(Math.abs(three.candidates[0].clearance - 4) < 0.3, String(three.candidates[0].clearance));
+  // The fit gate on its own, past the pre-filter.
+  const c = () => f.candidateFromRow(row({ pockets: [circle(39)] }));
+  assert.equal(f.fitCandidate(c(), circle(35)).reason, 'no-fit');
+  assert.ok(!f.fitCandidate(c(), circle(35), { minClearance: 3 }).reason);
+});
+
+test('findToolings logs a skipped tooling (an inch drawing) and still answers with the rest', async () => {
+  const client = finderClient({ toolings: [row({ number: 'INCH', pockets: [rect(7620, 3000)] }), row({ number: 'SNUG', pockets: [circle(45)] })] });
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (m) => { warned.push(m); };
+  let r;
+  try {
+    r = await f.findToolings(client, { plant: 'FIND K', press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) } });
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.deepEqual(r.candidates.map((c) => c.number), ['SNUG']);
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /^tooling finder: tooling INCH .* over 1000 mm/);
 });

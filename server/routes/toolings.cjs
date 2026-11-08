@@ -5,7 +5,7 @@ const { loadPresses, normalizePlant } = require('../services/frozenDesigns.cjs')
 const { resolvePress } = require('../services/dieListImport.cjs');
 const { normalizeSizeClass } = require('../services/toolingNumbers.cjs');
 const drawingStore = require('../services/toolingDrawings.cjs');
-const { findToolings } = require('../services/toolingFinder.cjs');
+const { findToolings, MIN_CLEARANCE_MM } = require('../services/toolingFinder.cjs');
 
 const router = express.Router();
 
@@ -164,6 +164,10 @@ router.get('/review-queue', async (req, res) => {
 const FIND_DEFAULT_LIMIT = 20;
 const FIND_MAX_LIMIT = 50;
 const FIND_SIMILAR_LIMIT = 20;
+// Fit cost grows with the point count (10,000 points: about 41 ms per pocket),
+// so a posted polygon is capped well above any drawn or extracted profile.
+const MAX_PROFILE_POINTS = 5000;
+const MAX_MIN_CLEARANCE_MM = 10;
 
 const str = (v) => (v == null ? '' : String(v).trim());
 const isPolygon = (poly) => Array.isArray(poly) && poly.length >= 3
@@ -184,6 +188,10 @@ router.post('/find', async (req, res) => {
   let profile = null;
   if (body.profile != null) {
     const { outer, holes } = body.profile;
+    const tooMany = (poly) => Array.isArray(poly) && poly.length > MAX_PROFILE_POINTS;
+    if (tooMany(outer) || (Array.isArray(holes) && holes.some(tooMany))) {
+      return bad(`profile has too many points (max ${MAX_PROFILE_POINTS})`);
+    }
     if (!isPolygon(outer)) return bad('profile.outer must be at least 3 [x, y] number pairs');
     if (holes != null && !(Array.isArray(holes) && holes.every(isPolygon))) {
       return bad('profile.holes must be polygons of at least 3 [x, y] number pairs');
@@ -194,6 +202,14 @@ router.post('/find', async (req, res) => {
   if (!profile && !dieNo) return bad('profile or dieNo is required');
   const dieSize = normalizeSizeClass(body.dieSize);
   if (!dieSize) return bad('dieSize is required');
+  let minClearance = MIN_CLEARANCE_MM;
+  if (body.minClearance != null) {
+    const v = typeof body.minClearance === 'string' && body.minClearance.trim() !== '' ? Number(body.minClearance) : body.minClearance;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_MIN_CLEARANCE_MM) {
+      return bad(`minClearance must be a number from 0 to ${MAX_MIN_CLEARANCE_MM}`);
+    }
+    minClearance = v;
+  }
   const parsedLimit = parseInt(body.limit, 10);
   const limit = Number.isFinite(parsedLimit)
     ? Math.min(Math.max(parsedLimit, 1), FIND_MAX_LIMIT)
@@ -206,7 +222,9 @@ router.post('/find', async (req, res) => {
       dieSize,
       cavities,
       profile,
-      dieNo: profile ? null : dieNo,
+      // With a polygon posted, dieNo only keeps that die out of its own similar list.
+      dieNo: dieNo || null,
+      minClearance,
       limit,
       similarLimit: FIND_SIMILAR_LIMIT,
     });

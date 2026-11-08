@@ -51,6 +51,10 @@ test('buildSummary counts pass rates, cavity agreement, failure buckets and the 
   assert.deepEqual(s.worstConfirmedFailures.map((w) => w.dieNo), ['C', 'D']);
   assert.deepEqual(s.worstConfirmedAgreeingFailures.map((w) => w.dieNo), ['C']);
   assert.equal(s.msPerFit.mean, 2.4);
+  assert.deepEqual(s.gates, {
+    sizePrefilterRejectsFits: 0, sizePrefilterRejectsNonFits: 0, sizePrefilterUnknown: 5,
+    pocketCountRejectsFits: 0, pocketCountRejectsNonFits: 0, pocketCountUnknown: 5,
+  });
   assert.equal(s.msPerFit.max, 4);
 });
 
@@ -71,4 +75,46 @@ test('checkPair recentres the profile and measures a failure with the gate off',
   assert.equal(fail.clearance, null);
   assert.ok(fail.exactClearance > 1.5 && fail.exactClearance < 2.1, String(fail.exactClearance));
   assert.equal(fail.worstPocket, 0);
+});
+
+test('buildSummary counts the fitting and non-fitting pairs the size pre-filter and the pocket-count gate would remove', () => {
+  const r = (o) => ({ kind: 'insert', confidence: 'confirmed', dieCavities: 1, toolingCavities: 1, pockets: 1, ms: 1, passesSizePrefilter: true, pocketCountMatches: true, ...o });
+  const fit = { clearance: 8, rawClearance: 8, clearanceCapped: false };
+  const noFit = { clearance: null, reason: 'no-fit', exactClearance: -2 };
+  const s = buildSummary([
+    r({ ...fit }),
+    r({ ...fit, passesSizePrefilter: false }),
+    r({ ...fit, passesSizePrefilter: false, pocketCountMatches: false }),
+    r({ ...fit, pocketCountMatches: null }),
+    r({ ...noFit, passesSizePrefilter: false }),
+    r({ ...noFit, pocketCountMatches: false }),
+    r({ ...noFit, passesSizePrefilter: null, pocketCountMatches: false }),
+  ]);
+  assert.equal(s.gates.sizePrefilterRejectsFits, 2);
+  assert.equal(s.gates.sizePrefilterRejectsNonFits, 1);
+  assert.equal(s.gates.sizePrefilterUnknown, 1);
+  assert.equal(s.gates.pocketCountRejectsFits, 1);
+  assert.equal(s.gates.pocketCountRejectsNonFits, 2);
+  assert.equal(s.gates.pocketCountUnknown, 1);
+});
+
+test('checkPair records the size pre-filter and pocket-count verdicts and keeps the diagnostic grids', () => {
+  const row = (over) => ({
+    id: 1, number: 'T', kind: 'insert', plant: 'GEX 1', cavities: '1', status: 'active', confidence: 'confirmed',
+    pockets: JSON.stringify([circle(30)]), die_no: 'D', die_cavities: 1, outer_mm: circle(20), ...over,
+  });
+  const ok = checkPair(row(), candidateFromRow(row()));
+  assert.equal(ok.passesSizePrefilter, true);
+  assert.equal(ok.pocketCountMatches, true);
+  const twoCav = row({ cavities: 2 });
+  assert.equal(checkPair(twoCav, candidateFromRow(twoCav)).pocketCountMatches, false);
+  const unk = row({ cavities: null });
+  assert.equal(checkPair(unk, candidateFromRow(unk)).pocketCountMatches, null);
+  const small = row({ pockets: JSON.stringify([circle(22, 72, -200, 0), circle(22, 72, 200, 0)]), cavities: 2 });
+  const c = candidateFromRow(small);
+  const fail = checkPair(small, c);
+  assert.equal(fail.passesSizePrefilter, false);
+  assert.equal(fail.pocketCountMatches, true);
+  assert.equal(fail.reason, 'no-fit');
+  assert.ok(c.grids[0] && c.grids[1], 'both pockets keep their grids, the one after the failing pocket too');
 });
