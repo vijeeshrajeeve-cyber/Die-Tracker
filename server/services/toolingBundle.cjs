@@ -56,10 +56,24 @@ function hintsFor(number, match, known) {
   };
 }
 
-// The drawing's own (non-size) numbers when they exist and exclude the tooling number; null otherwise.
+// Comparison key of a tooling number: kind prefix, punctuation and leading zeros dropped (BOL-S_05256 -> S5256,
+// I-05256 -> 5256, 25IC1-028851 -> 25IC128851).
+const numberKey = (n) => String(n).toUpperCase().replace(/^(?:I|BOL)-/, '')
+  .replace(/\d+/g, (d) => String(Number(d))).replace(/[^A-Z0-9]/g, '');
+// The same tooling written another way: equal keys, or one key holding the other (a 5-digit die number read as an
+// insert in a bolster drawing, a GEX-2 prefix like 35IC1 on a 35IC1-090371 drawing, a letter suffix).
+function sameTooling(a, b) {
+  const ka = numberKey(a);
+  const kb = numberKey(b);
+  if (ka === kb) return true;
+  const [short, long] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
+  return short.length >= 4 && long.includes(short);
+}
+
+// The drawing's own (non-size) numbers when they exist and none of them is this tooling; null otherwise.
 const mismatch = (number, numbers) => {
   const usable = (numbers || []).filter((n) => !SIZE_IN_NUMBER.test(n));
-  return usable.length > 0 && !usable.includes(number) ? usable : null;
+  return usable.length > 0 && !usable.some((n) => sameTooling(n, number)) ? usable : null;
 };
 
 async function buildBundle({ files, known, io, extractors, limit = null, onProgress = null }) {
@@ -314,4 +328,4 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
   }
 }
 
-module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle, readBundle, applyBundle };
+module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle, readBundle, applyBundle, sameTooling };

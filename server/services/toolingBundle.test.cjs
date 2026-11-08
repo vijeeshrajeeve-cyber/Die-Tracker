@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { knownFromExport, buildBundle, matchFiles, readBundle, applyBundle } = require('./toolingBundle.cjs');
+const { knownFromExport, buildBundle, matchFiles, readBundle, applyBundle, sameTooling } = require('./toolingBundle.cjs');
 
 const mk = (relPath, plant, kindHint) => {
   const base = relPath.split('/').pop();
@@ -464,4 +464,11 @@ test('a failing ROLLBACK does not mask the original error', async () => {
   const logged = [];
   await assert.rejects(apply(bad, bundleOf(), fakeApplyIo().io, { log: (m) => logged.push(m) }), /boom/);
   assert.ok(logged.some((m) => /rollback failed: connection lost/.test(m)));
+});
+
+test('sameTooling: the same number written another way is not a mismatch; a different number is', () => {
+  for (const [a, b] of [['I-14093', 'BOL-14093'], ['25IC1-28851', '25IC1-028851'], ['35IC1', '35IC1-090371'], ['BOL-S_05256', 'BOL-05256'],
+    ['BOL-302A', 'BOL-302-A'], ['I-29361C', 'I-29361'], ['BOL-IB17928', 'I-17928']]) assert.equal(sameTooling(a, b), true, `${a} ~ ${b}`);
+  for (const [a, b] of [['35IC2-120187', '35IC1-120187'], ['25IC1-120670', '25IC1-090670'], ['I-15289', 'I-15278'], ['I-30547', 'I-30546'],
+    ['BOL-1', 'BOL-14017'], ['I-45228', 'I-09861']]) assert.equal(sameTooling(a, b), false, `${a} vs ${b}`);
 });
