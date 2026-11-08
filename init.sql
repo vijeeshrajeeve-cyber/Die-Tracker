@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS users (
     page_access TEXT DEFAULT NULL,
     -- Who may edit an order from the Order Details drawer (admins always can).
     can_edit_order_details BOOLEAN NOT NULL DEFAULT false,
+    -- Who may confirm/edit the toolings master and profile library (admins always can).
+    can_review_toolings BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -530,6 +532,28 @@ CREATE TABLE IF NOT EXISTS profile_shapes (
 );
 CREATE INDEX IF NOT EXISTS idx_profile_shapes_plant_die ON profile_shapes (plant, die_no);
 CREATE INDEX IF NOT EXISTS idx_profile_shapes_plant_holes ON profile_shapes (plant, hole_count);
+CREATE TABLE IF NOT EXISTS new_die_order_forms (
+    id SERIAL PRIMARY KEY,
+    plant TEXT NOT NULL,
+    die_no TEXT NOT NULL,
+    profile_number TEXT,
+    customer TEXT,
+    press TEXT,
+    die_size TEXT,
+    cavities INTEGER,
+    form_values JSONB NOT NULL,
+    chosen_tooling TEXT,
+    chosen_kind TEXT CHECK (chosen_kind IN ('insert', 'bolster')),
+    chosen_from_finder BOOLEAN NOT NULL DEFAULT FALSE,
+    candidates JSONB,
+    profile_shape_id INTEGER REFERENCES profile_shapes(id) ON DELETE SET NULL,
+    drawing_path TEXT NOT NULL,
+    form_pdf_path TEXT NOT NULL,
+    generated_by INTEGER REFERENCES users(id),
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_new_die_order_forms_die ON new_die_order_forms (plant, die_no);
+CREATE INDEX IF NOT EXISTS idx_new_die_order_forms_generated ON new_die_order_forms (generated_at);
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_die_no ON existing_die_details(die_no);
 CREATE INDEX IF NOT EXISTS idx_existing_die_details_profile ON existing_die_details(profile_number);
 

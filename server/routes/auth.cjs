@@ -113,7 +113,7 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
         const { username, password } = req.body;
 
         const result = await pool.query(
-            'SELECT id, username, full_name, email, phone, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access, can_edit_order_details FROM users WHERE username = $1',
+            'SELECT id, username, full_name, email, phone, password_hash, role, password_must_change, failed_login_attempts, locked_until, page_access, can_edit_order_details, can_review_toolings FROM users WHERE username = $1',
             [username]
         );
         const user = result.rows[0];
@@ -156,7 +156,8 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
                 username: user.username,
                 role: user.role,
                 passwordMustChange: user.password_must_change,
-                pageAccess
+                pageAccess,
+                canReviewToolings: !!user.can_review_toolings
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
@@ -174,7 +175,8 @@ router.post('/login', authLimiter, loginValidation, handleValidationErrors, asyn
                 role: user.role,
                 passwordMustChange: user.password_must_change,
                 pageAccess,
-                canEditOrderDetails: !!user.can_edit_order_details
+                canEditOrderDetails: !!user.can_edit_order_details,
+                canReviewToolings: !!user.can_review_toolings
             }
         });
     } catch (error) {
@@ -235,7 +237,8 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
                 username: user.username,
                 role: user.role,
                 passwordMustChange: false,
-                pageAccess: cpPageAccess
+                pageAccess: cpPageAccess,
+                canReviewToolings: !!user.can_review_toolings
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
@@ -250,7 +253,8 @@ router.post('/change-password', changePasswordValidation, handleValidationErrors
                 role: user.role,
                 passwordMustChange: false,
                 pageAccess: cpPageAccess,
-                canEditOrderDetails: !!user.can_edit_order_details
+                canEditOrderDetails: !!user.can_edit_order_details,
+                canReviewToolings: !!user.can_review_toolings
             }
         });
     } catch (error) {
@@ -271,7 +275,7 @@ router.get('/me', async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         const result = await pool.query(
-            'SELECT id, username, full_name, email, phone, role, password_must_change, page_access, can_edit_order_details, created_at FROM users WHERE id = $1',
+            'SELECT id, username, full_name, email, phone, role, password_must_change, page_access, can_edit_order_details, can_review_toolings, created_at FROM users WHERE id = $1',
             [decoded.id]
         );
         const user = result.rows[0];
@@ -291,6 +295,7 @@ router.get('/me', async (req, res) => {
                 passwordMustChange: user.password_must_change,
                 pageAccess: parsePageAccess(user.page_access),
                 canEditOrderDetails: !!user.can_edit_order_details,
+                canReviewToolings: !!user.can_review_toolings,
                 createdAt: user.created_at
             }
         });
@@ -336,7 +341,7 @@ const authMiddleware = async (req, res, next) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         const result = await pool.query(
-            'SELECT id, username, role, password_must_change, page_access, can_edit_order_details FROM users WHERE id = $1',
+            'SELECT id, username, role, password_must_change, page_access, can_edit_order_details, can_review_toolings FROM users WHERE id = $1',
             [decoded.id]
         );
         const currentUser = result.rows[0];
@@ -363,7 +368,8 @@ const authMiddleware = async (req, res, next) => {
             passwordMustChange: currentUser.password_must_change,
             pageAccess: parsePageAccess(currentUser.page_access),
             // Re-read on every request, so switching it off applies at once.
-            canEditOrderDetails: !!currentUser.can_edit_order_details
+            canEditOrderDetails: !!currentUser.can_edit_order_details,
+            canReviewToolings: !!currentUser.can_review_toolings
         };
         next();
     } catch (error) {
@@ -386,4 +392,22 @@ const adminMiddleware = (req, res, next) => {
     next();
 };
 
-module.exports = { router, authMiddleware, adminMiddleware, pageAccessMiddleware };
+// Gate for the tooling write routes: admins, or users an admin switched
+// can_review_toolings on for. The flag normally arrives on req.user (the token
+// payload, or authMiddleware's fresh read); a request without it falls back to
+// one lookup.
+const reviewerMiddleware = async (req, res, next) => {
+    try {
+        if (req.user.role === 'admin' || req.user.canReviewToolings === true) return next();
+        if (req.user.canReviewToolings === undefined) {
+            const { rows } = await pool.query('SELECT can_review_toolings FROM users WHERE id = $1', [req.user.id]);
+            if (rows[0] && rows[0].can_review_toolings === true) return next();
+        }
+        return res.status(403).json({ error: 'Tooling review permission required' });
+    } catch (error) {
+        console.error('Reviewer check error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+module.exports = { router, authMiddleware, adminMiddleware, reviewerMiddleware, pageAccessMiddleware };

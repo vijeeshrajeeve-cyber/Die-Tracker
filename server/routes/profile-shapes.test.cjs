@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const { installFakeDb, listen, request } = require('./testSupport.cjs');
+const { createCanvas } = require('@napi-rs/canvas');
 const { signatureOf } = require('../services/profileShape.cjs');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-shapes-'));
@@ -43,6 +44,16 @@ const ROWS = [
 const queries = [];
 installFakeDb(async (sql, params = []) => {
   queries.push({ sql, params });
+  if (/raw_data->>'ProfileCCD'/.test(sql)) return { rows: params[0] === 'D-CCD' ? [{ ccd: '20.3' }] : [] };
+  if (/FROM die_tooling_links l/.test(sql)) {
+    return { rows: params[0].includes('D-SQ') ? [{
+      die_no: 'D-SQ', tooling_number: 'I-1', kind: 'insert', number: 'I-1', t_kind: 'insert', size_class: '300X100',
+      status: 'active', plant: 'GEX 1', cavities: 2, confidence: 'likely', has_geometry: true,
+    }] : [] };
+  }
+  if (/FROM existing_die_details/.test(sql)) {
+    return { rows: params[0].includes('D-SQ') ? [{ die_no: 'D_SQ', die_size: '250X160', press: 'PRESS 5', cavity: 2 }] : [] };
+  }
   if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'stamp', n: ROWS.length }] };
   if (/needs_review = false/.test(sql)) return { rows: ROWS.filter((r) => r.plant === params[0] && !r.needs_review) };
   if (/WHERE id = \$1 AND die_no = \$2/.test(sql)) {
@@ -106,6 +117,20 @@ test('POST similar normalises an arbitrary-frame polygon', async () => {
   assert.equal(res.body.items[0].cavityMatch, false);
 });
 
+test('POST similar items carry the die toolings and the die-list press, die size and cavity', async () => {
+  queries.length = 0;
+  const res = await request(base, '/api/profile-shapes/similar', { body: { plant: 'GEX 01', outer: SQUARE, cavities: 4 } });
+  assert.equal(res.status, 200);
+  const sq = res.body.items.find((i) => i.die_no === 'D-SQ');
+  assert.deepEqual([sq.press, sq.dieSize, sq.cavity], ['PRESS 5', '250X160', 2]);
+  assert.deepEqual(sq.toolings.map((t) => [t.number, t.reason, t.chartVerdict]), [['I-1', 'cavities', 'no_chart']],
+    'asked for 4 cavities, the tooling has 2; no press posted, so no chart');
+  const other = res.body.items.find((i) => i.die_no !== 'D-SQ');
+  assert.deepEqual([other.press, other.dieSize, other.cavity, other.toolings], [null, null, null, []]);
+  const meta = queries.find((q) => /FROM existing_die_details/.test(q.sql));
+  assert.deepEqual(meta.params[1], ['GEX 1', 'GEX 01'], 'the plant spelling list');
+});
+
 test('POST /similar is reachable (not swallowed by /:dieNo)', async () => {
   const bad = await request(base, '/api/profile-shapes/similar', { body: { plant: 'GEX 1', outer: [[0, 0], [1, 1]] } });
   assert.equal(bad.status, 400);
@@ -135,4 +160,81 @@ test('image download refuses a path outside the root', async () => {
   assert.equal((await request(base, '/api/profile-shapes/D-SQ/image/3')).status, 404, 'no image_path');
   assert.equal((await request(base, '/api/profile-shapes/D-SQ/image/2')).status, 404, 'id belongs to another die');
   assert.equal((await request(base, '/api/profile-shapes/D-SQ/image/x')).status, 404);
+});
+
+// --- POST /trace -----------------------------------------------------------------------------
+
+// A black ring on white (R 80 px, r 40 px): the Plan 3 tests' profile picture.
+function ringPng({ ring = true } = {}) {
+  const canvas = createCanvas(200, 200);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 200, 200);
+  if (ring) {
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(100, 100, 80, 0, 2 * Math.PI);
+    ctx.arc(100, 100, 40, 0, 2 * Math.PI);
+    ctx.fill('evenodd');
+  }
+  return canvas.toBuffer('image/png');
+}
+
+const TRACE_KEYS = [
+  'ccd_mm', 'hole_count', 'holes_mm', 'holes_unit', 'needs_review', 'outer_mm', 'outer_unit', 'review_reason',
+  'style', 'true_size', 'true_size_confidence', 'true_size_source',
+];
+
+const trace = async (bytes, fields = {}) => {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  if (bytes) form.append('file', new Blob([bytes]), 'profile.png');
+  const res = await fetch(`${base}/api/profile-shapes/trace`, { method: 'POST', body: form });
+  return { status: res.status, body: await res.json() };
+};
+
+const writes = () => queries.filter((q) => /^\s*(INSERT|UPDATE|DELETE)/.test(q.sql));
+
+test('trace without scale answers true_size false', async () => {
+  queries.length = 0;
+  const { status, body } = await trace(ringPng(), { plant: 'GEX 01', scales: '[]', renderDpi: '200', dieType: 'HOLLOW' });
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.deepEqual(Object.keys(body).sort(), TRACE_KEYS);
+  assert.equal(body.true_size, false);
+  assert.equal(body.outer_mm, null);
+  assert.equal(body.ccd_mm, null);
+  assert.ok(Array.isArray(body.outer_unit) && body.outer_unit.length >= 3);
+  assert.equal(body.hole_count, 1);
+  assert.equal(body.holes_unit.length, 1);
+  assert.deepEqual(writes(), [], 'trace stores nothing');
+  assert.ok(!queries.some((q) => /ProfileCCD/.test(q.sql)), 'no die number, no die list read');
+});
+
+test('trace with SCALE 1:1 and a die-list CCD agreeing → confirmed', async () => {
+  queries.length = 0;
+  const { status, body } = await trace(ringPng(), { plant: 'GEX 1', dieNo: 'D-CCD', scales: '[1]', renderDpi: '200' });
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.true_size, true);
+  assert.equal(body.true_size_source, 'pdf-scale');
+  assert.equal(body.true_size_confidence, 'confirmed');
+  assert.ok(Math.abs(body.ccd_mm - 20.3) < 0.6, `ccd ${body.ccd_mm}`);
+  assert.equal(body.holes_mm.length, 1);
+  const ccdRead = queries.find((q) => /ProfileCCD/.test(q.sql));
+  assert.deepEqual(ccdRead.params, ['D-CCD', ['GEX 1', 'GEX 01']]);
+  assert.deepEqual(writes(), []);
+});
+
+test('trace refuses a non-PNG, a missing file or plant, and answers 422 for an empty picture', async () => {
+  const gif = await trace(Buffer.from('GIF89a....'), { plant: 'GEX 1' });
+  assert.equal(gif.status, 400);
+  assert.equal((await trace(null, { plant: 'GEX 1' })).status, 400);
+  const noPlant = await trace(ringPng(), {});
+  assert.equal(noPlant.status, 400);
+  assert.equal(noPlant.body.error, 'plant is required');
+  const blank = await trace(ringPng({ ring: false }), { plant: 'GEX 1' });
+  assert.equal(blank.status, 422);
+  assert.deepEqual(blank.body, { error: 'no profile found in the picture' });
+  const big = await trace(Buffer.concat([ringPng(), Buffer.alloc(2 * 1024 * 1024)]), { plant: 'GEX 1' });
+  assert.equal(big.status, 400);
+  assert.equal(big.body.error, 'Profile image too large');
 });

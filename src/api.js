@@ -154,12 +154,13 @@ export const usersAPI = {
 
     // email is optional but is where QD notifications (e.g. a QD sent back to
     // this user) are delivered — without it they get none.
-    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null, canEditOrderDetails = false) => {
+    create: async (username, password, role = 'user', pageAccess = null, email = null, fullName = null, phone = null, canEditOrderDetails = false, canReviewToolings = false) => {
         return apiRequest('/users', {
             method: 'POST',
             body: JSON.stringify({
                 username, password, role, page_access: pageAccess, email, full_name: fullName, phone,
                 can_edit_order_details: canEditOrderDetails,
+                can_review_toolings: canReviewToolings,
             }),
         });
     },
@@ -177,7 +178,7 @@ export const usersAPI = {
         });
     },
 
-    update: async (id, { username, role, pageAccess, email, fullName, phone, canEditOrderDetails } = {}) => {
+    update: async (id, { username, role, pageAccess, email, fullName, phone, canEditOrderDetails, canReviewToolings } = {}) => {
         const body = {};
         if (username !== undefined) body.username = username;
         if (role !== undefined) body.role = role;
@@ -186,6 +187,7 @@ export const usersAPI = {
         if (fullName !== undefined) body.full_name = fullName;
         if (phone !== undefined) body.phone = phone;
         if (canEditOrderDetails !== undefined) body.can_edit_order_details = canEditOrderDetails;
+        if (canReviewToolings !== undefined) body.can_review_toolings = canReviewToolings;
         return apiRequest(`/users/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(body),
@@ -998,6 +1000,24 @@ export const toolingsAPI = {
         method: 'POST',
         body: JSON.stringify(body),
     }),
+    // The toolings a die is recorded with, each with its master row (null when the master lacks the number).
+    forDie: async (dieNo, plant) => {
+        const qs = plant ? `?${new URLSearchParams({ plant })}` : '';
+        return apiRequest(`/toolings/for-die/${encodeURIComponent(dieNo)}${qs}`);
+    },
+    // Reviewer-only writes (admins, or users with the tooling review switch).
+    // patch: { location, status: 'active'|'retired', sizeClass, cavities, notes }
+    update: async (number, patch) => apiRequest(`/toolings/${encodeURIComponent(number)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    // body: { action: 'confirm'|'correct'|'none', pockets?, outer?, note? }
+    reviewOpening: async (number, body) => apiRequest(`/toolings/${encodeURIComponent(number)}/opening/review`, { method: 'POST', body: JSON.stringify(body) }),
+    // body: { number, plant, kind?, sizeClass?, cavities?, location?, notes? }
+    create: async (body) => apiRequest('/toolings', { method: 'POST', body: JSON.stringify(body) }),
+    // One .dxf or .pdf; answers with the tooling detail plus openingKept.
+    uploadDrawing: async (number, file) => {
+        const form = new FormData();
+        form.append('file', file);
+        return apiRequest(`/toolings/${encodeURIComponent(number)}/drawing`, { method: 'POST', body: form, isMultipart: true });
+    },
 };
 
 // Profile library: a die's stored shapes and its nearest neighbours by shape.
@@ -1013,6 +1033,90 @@ export const profileShapesAPI = {
         method: 'POST',
         body: JSON.stringify({ plant, outer, holes, cavities, limit }),
     }),
+    // Shapes flagged needs_review, newest first: { items, total }.
+    reviewQueue: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/profile-shapes/review-queue${qs ? `?${qs}` : ''}`);
+    },
+    // A stored profile picture's bytes. The route needs the Bearer header, so an <img src> cannot fetch it.
+    image: async (dieNo, shapeId, plant) => {
+        const token = getToken();
+        const qs = plant ? `?${new URLSearchParams({ plant })}` : '';
+        const response = await fetch(`${API_BASE_URL}/profile-shapes/${encodeURIComponent(dieNo)}/image/${encodeURIComponent(shapeId)}${qs}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Could not load the picture (HTTP ${response.status})`);
+        return response.blob();
+    },
+    // Reviewer-only. body: { action: 'clear'|'keep', note? }
+    review: async (id, body) => apiRequest(`/profile-shapes/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify(body) }),
+    // Traces a profile PNG (cut from a drawing) without storing it. meta: { plant, dieNo?, dieType?,
+    // renderDpi, scales, ccdStated, externalPerimeter, internalPerimeter, cavities, dieSize }; blank
+    // values are left out and `scales` goes as JSON. Answers the traced shape (true_size, outer_mm, ...).
+    trace: async (blob, meta = {}) => {
+        const form = new FormData();
+        for (const [key, value] of Object.entries(meta || {})) {
+            if (value == null || value === '') continue;
+            form.append(key, key === 'scales' ? JSON.stringify(value) : String(value));
+        }
+        form.append('file', blob, 'profile.png');
+        return apiRequest('/profile-shapes/trace', { method: 'POST', body: form, isMultipart: true });
+    },
+};
+
+// New-die-order forms: the stamped order PDF for a new die, recorded with its chosen tooling.
+export const newDieOrderFormsAPI = {
+    // pdfFileOrBlob = the drawing; values = the form (template keys + PLANT, DIE_NO, PROFILE_NO, CUSTOMER);
+    // finder = { chosen: { tooling, kind, fromFinder }, candidates, profile } or null.
+    // Returns { blob, formId, chosenTooling } - the stamped PDF and the recorded form's id.
+    generate: async (pdfFileOrBlob, values, finder) => {
+        const form = new FormData();
+        form.append('values', JSON.stringify(values || {}));
+        if (finder) form.append('finder', JSON.stringify(finder));
+        form.append('file', pdfFileOrBlob, pdfFileOrBlob?.name || 'drawing.pdf');
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/new-die-order-forms/generate`, {
+            method: 'POST',
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+            body: form,
+        });
+        if (!response.ok) {
+            if (response.status === 401) {
+                logout();
+                window.location.reload();
+            }
+            let errMsg = `Die order form failed (HTTP ${response.status})`;
+            try {
+                const j = await response.json();
+                if (j?.error) errMsg = j.error;
+                if (j?.detail) errMsg += `: ${j.detail}`;
+            } catch { /* response wasn't JSON */ }
+            throw new Error(errMsg);
+        }
+        const formId = Number(response.headers.get('X-Form-Id'));
+        const chosen = response.headers.get('X-Chosen-Tooling');
+        return {
+            blob: await response.blob(),
+            formId: Number.isInteger(formId) && formId > 0 ? formId : null,
+            chosenTooling: chosen ? decodeURIComponent(chosen) : null,
+        };
+    },
+    // params: { dieNo, plant, limit, full }
+    list: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/new-die-order-forms${qs ? `?${qs}` : ''}`);
+    },
+    // The stored form PDF. The route needs the Bearer header, so a plain link cannot fetch it.
+    pdfBlob: async (id) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/new-die-order-forms/${encodeURIComponent(id)}/pdf`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Could not open the die order form (HTTP ${response.status})`);
+        return response.blob();
+    },
 };
 
 // Quality Discrepancies (QD Tracker) API

@@ -165,6 +165,7 @@ export const CONTROLLABLE_PAGES = [
   { id: 'orders', label: 'Orders' },
   { id: 'backup-requests', label: 'Backup Die Requests' },
   { id: 'frozen-designs', label: 'Frozen Designs' },
+  { id: 'toolings', label: 'Toolings' },
   { id: 'qd-tracker', label: 'QD Tracker' },
   // Individual Process Flow pages
   { id: 'flow-pending-order', label: 'Pending Order', group: 'Process Flow' },
@@ -208,6 +209,7 @@ export const PAGE_SEARCH_HINTS = {
   'work-queue': 'Search die, profile, supplier or stage…',
   'backup-requests': 'Search by die no or customer…',
   'frozen-designs': 'Search by profile, supplier, press or file…',
+  'toolings': 'Search toolings by number…',
   'qd-tracker': 'Search by QD no, die number, corrector or issue…',
   'flow-sample-followup': 'Search die, profile, customer or corrector…',
   ...Object.fromEntries(CONTROLLABLE_PAGES

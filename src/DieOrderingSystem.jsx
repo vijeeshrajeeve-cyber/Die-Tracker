@@ -42,6 +42,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
 import FrozenDesignsPage from './pages/FrozenDesignsPage';
+import ToolingsPage from './pages/ToolingsPage';
 import QDTrackerPage from './pages/QDTrackerPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
 import useQdQueue from './hooks/useQdQueue';
@@ -62,6 +63,7 @@ const SimulationPage = lazy(() => import('./pages/SimulationPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const PDFImportModal = lazy(() => import('./components/modals/PDFImportModal'));
 const PIImportModal = lazy(() => import('./components/modals/PIImportModal'));
+const NewDieOrderModal = lazy(() => import('./components/tooling/NewDieOrderModal'));
 
 // Shown while a split chunk is in flight. Deliberately quiet: on a LAN these
 // arrive in well under a second, and a spinner that flashes for 200ms reads as
@@ -1667,6 +1669,17 @@ export default function DieOrderingSystem() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showPDFImportModal, setShowPDFImportModal] = useState(false);
+  // Prepare New Die Order PDF (top bar). The shell holds suppliers; presses load on first open.
+  const [showNewDieOrder, setShowNewDieOrder] = useState(false);
+  const [newOrderPresses, setNewOrderPresses] = useState(null);
+  const openNewDieOrder = useCallback(() => {
+    setShowNewDieOrder(true);
+    if (newOrderPresses === null) {
+      pressesAPI.getAll()
+        .then((rows) => setNewOrderPresses(rows || []))
+        .catch((err) => { console.error('Failed to load presses:', err); setNewOrderPresses([]); });
+    }
+  }, [newOrderPresses]);
   const [showPIImportModal, setShowPIImportModal] = useState(false);
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
   const [revisionOrder, setRevisionOrder] = useState(null); // For revision modal
@@ -3282,6 +3295,7 @@ export default function DieOrderingSystem() {
           onLogout={handleLogout}
           onChangePassword={() => setShowPasswordChangeModal(true)}
           onManageSignature={() => setShowSignatureModal(true)}
+          onNewDieOrder={!forcePasswordChange && (hasPageAccess('orders') || hasPageAccess('backup-requests')) ? openNewDieOrder : undefined}
         />
 
         <main id="main-content" tabIndex={-1} style={styles.main}>
@@ -3411,6 +3425,10 @@ export default function DieOrderingSystem() {
             <FrozenDesignsPage user={user} theme={theme} search={searchTerm} />
           )}
 
+          {activeTab === 'toolings' && hasPageAccess('toolings') && (
+            <ToolingsPage user={user} theme={theme} search={searchTerm} />
+          )}
+
           {activeTab === 'qd-tracker' && hasPageAccess('qd-tracker') && (
             <QDTrackerPage
               user={user}
@@ -3499,6 +3517,11 @@ export default function DieOrderingSystem() {
         {showPDFImportModal && (
           <Suspense fallback={<ChunkFallback theme={theme} />}>
             <PDFImportModal onClose={() => setShowPDFImportModal(false)} onImportRecords={handlePIImport} existingOrders={data} suppliers={suppliers} canFillExisting={canEditOrderDetails(user)} theme={theme} />
+          </Suspense>
+        )}
+        {showNewDieOrder && (
+          <Suspense fallback={<ChunkFallback theme={theme} />}>
+            <NewDieOrderModal user={user} theme={theme} presses={newOrderPresses || []} suppliers={suppliers} onClose={() => setShowNewDieOrder(false)} />
           </Suspense>
         )}
         {showPIImportModal && (

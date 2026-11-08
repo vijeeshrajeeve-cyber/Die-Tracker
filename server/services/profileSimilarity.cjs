@@ -36,12 +36,15 @@ function invalidate(plant) {
 
 const knownCount = (v) => v != null && Number.isFinite(Number(v));
 
+// '_' and '-' are the same die-number separator (die list 13794_525, requests 13794-525).
+const sameDieNo = (a, b) => String(a).replace(/_/g, '-') === String(b).replace(/_/g, '-');
+
 function nearest(index, { signature, holeCount, cavities = null, limit = DEFAULT_LIMIT, excludeDieNo = null }) {
   const best = new Map(); // die_no -> item
   for (const r of index.rows) {
     if (r.needs_review) continue;
     if (r.hole_count !== holeCount) continue;
-    if (excludeDieNo != null && r.die_no === excludeDieNo) continue;
+    if (excludeDieNo != null && sameDieNo(r.die_no, excludeDieNo)) continue;
     if (!Array.isArray(r.signature) || r.signature.length !== signature.length) continue;
     const distance = signatureDistance(signature, r.signature);
     const prev = best.get(r.die_no);

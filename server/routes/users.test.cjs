@@ -136,3 +136,23 @@ test('the user list says who can edit order details', async () => {
   assert.equal(status, 200);
   assert.equal(body.users[0].can_edit_order_details, true);
 });
+
+test('the reviewer switch is stored on create, forced off for admins, and settable on update', async () => {
+  await request(base, '/api/users', {
+    body: { username: 'rev1', password: 'Start-pass-1', role: 'user', can_review_toolings: true },
+  });
+  assert.match(lastInsert.sql, /can_review_toolings/);
+  assert.equal(lastInsert.params[9], true);
+  await request(base, '/api/users', {
+    body: { username: 'boss2', password: 'Start-pass-1', role: 'admin', can_review_toolings: true },
+  });
+  assert.equal(lastInsert.params[9], false);
+  targetRole = 'user';
+  await request(base, '/api/users/7', { method: 'PATCH', body: { can_review_toolings: true } });
+  assert.equal(setValue(lastUpdate, 'can_review_toolings'), true);
+  await request(base, '/api/users/7', { method: 'PATCH', body: { email: 'a@example.com' } });
+  assert.equal(setValue(lastUpdate, 'can_review_toolings'), undefined);
+  await request(base, '/api/users/7', { method: 'PATCH', body: { role: 'admin', can_review_toolings: true } });
+  assert.equal(setValue(lastUpdate, 'can_review_toolings'), false);
+  targetRole = 'user';
+});

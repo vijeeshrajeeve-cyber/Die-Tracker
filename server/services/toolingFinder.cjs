@@ -13,6 +13,7 @@ const { resampleClosed, signedDistanceGrid, bestPlacement, DEFAULTS } = require(
 const { loadIndex, nearest } = require('./profileSimilarity.cjs');
 const { normalizePlant } = require('./frozenDesigns.cjs');
 const { normalizeSizeClass } = require('./toolingNumbers.cjs');
+const { PLANT_SPELLINGS } = require('./profileBundle.cjs');
 
 const MIN_CLEARANCE_MM = 5;
 const CLEARANCE_CAP_MM = 50;
@@ -56,7 +57,7 @@ const FILTER = `FROM toolings t JOIN tooling_openings o ON o.tooling_id = t.id
   WHERE t.plant = $1 AND t.status = 'active' AND o.confidence <> 'none' AND o.pockets IS NOT NULL`;
 
 const CANDIDATE_SQL = `SELECT t.id, t.number, t.kind, t.plant, t.held_presses, t.size_class, t.size_class_confidence,
-  t.cavities, t.location, t.status, o.pockets, o.confidence, o.pocket_gap_mm
+  t.cavities, t.location, t.status, o.pockets, o.confidence, o.extraction_source AS extraction_source, o.pocket_gap_mm
   ${FILTER}`;
 
 const STAMP_SQL = `SELECT max(GREATEST(t.updated_at, o.updated_at)) AS max_updated, count(*)::int AS n
@@ -102,6 +103,7 @@ function candidateFromRow(row) {
     location: row.location ?? null,
     status: row.status,
     confidence: row.confidence,
+    extraction_source: row.extraction_source ?? null,
     pocket_gap_mm: numOrNull(row.pocket_gap_mm),
     pockets,
     pocketStats: pockets.map(pocketStats),
@@ -234,8 +236,10 @@ function rankCandidates(fitted) {
 // The caller canonicalises the press (PRESS n); plant and die size are
 // normalised again here because it is cheap.
 
+// '_' and '-' are the same die-number separator: the GEX 1 die list writes 13794_525 where requests
+// and orders write 13794-525.
 const PROFILE_SQL = `SELECT outer_mm, holes_mm, cavities, hole_count FROM profile_shapes
-  WHERE die_no = $1 AND plant = $2 AND true_size ORDER BY updated_at DESC LIMIT 1`;
+  WHERE translate(die_no, '_', '-') = translate($1, '_', '-') AND plant = $2 AND true_size ORDER BY updated_at DESC LIMIT 1`;
 const CHART_SQL = 'SELECT * FROM tooling_combinations WHERE press = $1';
 const LINKED_DIES_SQL = `SELECT tooling_number, die_no, plant, source FROM die_tooling_links
   WHERE tooling_number = ANY($1) ORDER BY die_no`;
@@ -291,6 +295,7 @@ const toCandidate = (c, linkedDies) => ({
   needsTransfer: c.needsTransfer,
   location: c.location,
   confidence: c.confidence,
+  extractionSource: c.extraction_source ?? null,
   clearance: c.clearance,
   clearanceCapped: c.clearanceCapped,
   placements: c.placements,
@@ -312,18 +317,39 @@ function annotateNeighbourTooling(r, { plant, press, dieSize, cavities, chartRow
   if (!inScope) reason = 'not-in-scope';
   else if (!hasGeometry) reason = 'no-geometry';
   // Unknown cavities fail narrow's gate too (cavities-unknown), so they count as a cavities reason.
-  else if (toolingCavities == null || toolingCavities !== Number(cavities)) reason = 'cavities';
+  // With no cavity count asked (the similarity-only route may not send one) cavities decide nothing.
+  else if (cavities != null && (toolingCavities == null || toolingCavities !== Number(cavities))) reason = 'cavities';
   else if (verdict === 'not_allowed') reason = 'chart';
   return { number: known ? r.number : r.tooling_number, kind, sizeClass, inScope, hasGeometry, chartVerdict: verdict, reason };
 }
 
-async function similarProfiles(client, { outer, holes, limit, excludeDieNo, ...scope }) {
-  const index = await loadIndex(client, { plant: scope.plant });
-  const near = nearest(index, {
-    signature: signatureOf({ outer, holes }), holeCount: holes.length, cavities: scope.cavities, limit, excludeDieNo,
-  });
+// The die list's press, die size and cavity count of the neighbour dies, for the
+// strip's "PRESS n · size · n cav" line. Same plant spellings and separator
+// tolerance as the profile lookup; the first row per die (plant, id order) wins.
+const DIE_META_SQL = `SELECT die_no, die_size, press, cavity FROM existing_die_details
+  WHERE translate(die_no, '_', '-') = ANY($1) AND plant = ANY($2) ORDER BY plant, id`;
+const dieKey = (dieNo) => String(dieNo).replace(/_/g, '-');
+const textOrNull = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
+
+async function dieListMetaFor(client, dieNos, plant) {
+  const byKey = new Map();
+  if (!dieNos.length) return byKey;
+  const keys = [...new Set(dieNos.map(dieKey))];
+  const { rows } = await client.query(DIE_META_SQL, [keys, PLANT_SPELLINGS[plant] || [plant]]);
+  for (const r of rows) {
+    const k = dieKey(r.die_no);
+    if (!byKey.has(k)) byKey.set(k, { dieSize: textOrNull(r.die_size), press: textOrNull(r.press), cavity: numOrNull(r.cavity) });
+  }
+  return byKey;
+}
+
+// `near` is profileSimilarity.nearest's output. Each neighbour gets its toolings
+// (annotated against `scope`: plant, press, dieSize, cavities, chartRows) and its
+// die-list facts (dieSize, press, cavity; null when the die list does not know).
+async function neighbourDetails(client, near, scope) {
   if (!near.length) return [];
-  const { rows } = await client.query(NEIGHBOUR_TOOLINGS_SQL, [near.map((n) => n.die_no)]);
+  const dieNos = near.map((n) => n.die_no);
+  const { rows } = await client.query(NEIGHBOUR_TOOLINGS_SQL, [dieNos]);
   const byDie = new Map();
   for (const r of rows) {
     const list = byDie.get(r.die_no) || [];
@@ -331,15 +357,30 @@ async function similarProfiles(client, { outer, holes, limit, excludeDieNo, ...s
     if (!list.some((x) => x.number === t.number)) list.push(t); // one die may list a tooling from several sources
     byDie.set(r.die_no, list);
   }
-  return near.map((n) => ({
-    dieNo: n.die_no,
-    profileNumber: n.profile_number,
-    distance: n.distance,
-    cavityMatch: n.cavityMatch,
-    trueSize: n.trueSize,
-    shapeId: n.shapeId,
-    toolings: byDie.get(n.die_no) || [],
-  }));
+  const meta = await dieListMetaFor(client, dieNos, scope.plant);
+  return near.map((n) => {
+    const m = meta.get(dieKey(n.die_no)) || { dieSize: null, press: null, cavity: null };
+    return {
+      dieNo: n.die_no,
+      profileNumber: n.profile_number,
+      distance: n.distance,
+      cavityMatch: n.cavityMatch,
+      trueSize: n.trueSize,
+      shapeId: n.shapeId,
+      toolings: byDie.get(n.die_no) || [],
+      dieSize: m.dieSize,
+      press: m.press,
+      cavity: m.cavity,
+    };
+  });
+}
+
+async function similarProfiles(client, { outer, holes, limit, excludeDieNo, ...scope }) {
+  const index = await loadIndex(client, { plant: scope.plant });
+  const near = nearest(index, {
+    signature: signatureOf({ outer, holes }), holeCount: holes.length, cavities: scope.cavities, limit, excludeDieNo,
+  });
+  return neighbourDetails(client, near, scope);
 }
 
 // minClearance (mm) applies to the pre-filter and the fit. A posted profile
@@ -403,5 +444,5 @@ async function findToolings(client, {
 module.exports = {
   MIN_CLEARANCE_MM, CLEARANCE_CAP_MM, MAX_FITTED, MAX_POCKET_MM, confidenceRank,
   profileStats, pocketStats, passesSizePrefilter, CANDIDATE_SQL, STAMP_SQL, candidateFromRow, loadCandidates, invalidate,
-  narrow, fitCandidate, rankCandidates, findToolings,
+  narrow, fitCandidate, rankCandidates, findToolings, neighbourDetails, DIE_META_SQL,
 };

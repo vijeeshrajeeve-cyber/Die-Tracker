@@ -12,6 +12,9 @@ backend is built from this branch. This runbook covers the contract (for Plan 5)
 the algorithm, the tuning constants, the corpus check that measures it against the
 die list, and the order-picture backfill.
 
+The pages that use it (Toolings page, review queue, New die order, Find tooling in the
+backup modal), who sees them and the UI smoke are in `docs/tooling-ui-runbook.md`.
+
 It reads what the two imports load: openings from
 `docs/tooling-geometry-import-runbook.md`, profiles from
 `docs/profile-library-import-runbook.md`, and the chart rows and links from

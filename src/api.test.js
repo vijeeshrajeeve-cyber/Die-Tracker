@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { toolingsAPI, profileShapesAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { toolingsAPI, profileShapesAPI, newDieOrderFormsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -417,5 +417,160 @@ test('toolingsAPI.find posts the query as JSON to /toolings/find', async () => {
     assert.equal(calls[0].opts.headers['Content-Type'], 'application/json');
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+
+test('toolingsAPI write calls and profileShapesAPI.review hit the right paths with the right bodies', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || 'GET', body: options.body, headers: options.headers || {} });
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  await toolingsAPI.update('BOL-4/6', { location: 'RACK 2' });
+  assert.ok(calls[0].url.endsWith('/toolings/BOL-4%2F6'));
+  assert.equal(calls[0].method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls[0].body), { location: 'RACK 2' });
+
+  await toolingsAPI.reviewOpening('I-21599', { action: 'confirm', note: 'ok' });
+  assert.ok(calls[1].url.endsWith('/toolings/I-21599/opening/review'));
+  assert.equal(calls[1].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[1].body), { action: 'confirm', note: 'ok' });
+
+  await toolingsAPI.create({ number: 'I-30000', plant: 'GEX 1' });
+  assert.ok(calls[2].url.endsWith('/toolings'));
+  assert.equal(calls[2].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[2].body), { number: 'I-30000', plant: 'GEX 1' });
+
+  const file = new File(['0\nSECTION'], 'I-21599.dxf');
+  await toolingsAPI.uploadDrawing('I-21599', file);
+  assert.ok(calls[3].url.endsWith('/toolings/I-21599/drawing'));
+  assert.equal(calls[3].method, 'POST');
+  assert.ok(calls[3].body instanceof FormData);
+  assert.equal(calls[3].body.get('file').name, 'I-21599.dxf');
+  assert.equal(calls[3].headers['Content-Type'], undefined, 'the browser sets the multipart boundary');
+
+  await toolingsAPI.forDie('110634_25-01', 'GEX 2');
+  assert.ok(calls[4].url.endsWith('/toolings/for-die/110634_25-01?plant=GEX+2'));
+  await toolingsAPI.forDie('A/1');
+  assert.ok(calls[5].url.endsWith('/toolings/for-die/A%2F1'), 'no plant when none is given');
+
+  await profileShapesAPI.review(4, { action: 'clear', note: 'fine' });
+  assert.ok(calls[6].url.endsWith('/profile-shapes/4/review'));
+  assert.equal(calls[6].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[6].body), { action: 'clear', note: 'fine' });
+});
+
+test('profileShapesAPI.trace posts the PNG and each meta field, scales as JSON', async () => {
+  const realFetch = globalThis.fetch;
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url: String(url), options };
+    return new Response(JSON.stringify({ true_size: false, outer_mm: null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+    const out = await profileShapesAPI.trace(blob, { plant: 'GEX 1', dieNo: 'D-1', renderDpi: 200, scales: [1, 0.5], ccdStated: null, dieType: '' });
+    assert.deepEqual(out, { true_size: false, outer_mm: null });
+    assert.ok(seen.url.endsWith('/profile-shapes/trace'));
+    assert.equal(seen.options.method, 'POST');
+    const form = seen.options.body;
+    assert.ok(form instanceof FormData);
+    assert.ok(form.get('file') instanceof Blob);
+    assert.equal(form.get('plant'), 'GEX 1');
+    assert.equal(form.get('dieNo'), 'D-1');
+    assert.equal(form.get('renderDpi'), '200');
+    assert.deepEqual(JSON.parse(form.get('scales')), [1, 0.5]);
+    assert.equal(form.has('ccdStated'), false);
+    assert.equal(form.has('dieType'), false);
+    assert.equal(seen.options.headers['Content-Type'], undefined, 'the browser sets the multipart boundary');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('newDieOrderFormsAPI.generate posts the drawing, values and finder and reads the headers', async () => {
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (calls.length === 2) return new Response(JSON.stringify({ error: 'PLANT and DIE_NO are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    return new Response(new Blob(['%PDF-stamped']), { status: 200, headers: { 'Content-Type': 'application/pdf', 'X-Form-Id': '41', 'X-Chosen-Tooling': 'BOL-4%2F6' } });
+  };
+  try {
+    const pdf = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    const values = { PLANT: 'GEX 1', DIE_NO: 'D-1' };
+    const finder = { chosen: { tooling: 'BOL-4/6', kind: 'bolster', fromFinder: true }, candidates: [], profile: null };
+    const out = await newDieOrderFormsAPI.generate(pdf, values, finder);
+    assert.equal(out.formId, 41);
+    assert.equal(out.chosenTooling, 'BOL-4/6');
+    assert.equal(await out.blob.text(), '%PDF-stamped');
+    assert.ok(calls[0].url.endsWith('/new-die-order-forms/generate'));
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer tok123');
+    const form = calls[0].options.body;
+    assert.deepEqual(JSON.parse(form.get('values')), values);
+    assert.deepEqual(JSON.parse(form.get('finder')), finder);
+    assert.ok(form.get('file') instanceof Blob);
+    await assert.rejects(() => newDieOrderFormsAPI.generate(pdf, {}, null), /PLANT and DIE_NO are required/);
+    assert.equal(calls[1].options.body.has('finder'), false);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
+  }
+});
+
+test('newDieOrderFormsAPI.list drops empty params and pdfBlob fetches with the Bearer header', async () => {
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), auth: options.headers && options.headers.Authorization });
+    if (String(url).includes('/9/pdf')) return new Response('nope', { status: 404 });
+    if (String(url).includes('/pdf')) return new Response(new Blob(['%PDF-form']), { status: 200 });
+    return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    assert.deepEqual(await newDieOrderFormsAPI.list({ dieNo: 'D 1', plant: 'GEX 1', limit: '' }), { items: [] });
+    assert.ok(calls[0].url.endsWith('/new-die-order-forms?dieNo=D+1&plant=GEX+1'));
+    await newDieOrderFormsAPI.list();
+    assert.ok(calls[1].url.endsWith('/new-die-order-forms'));
+    const blob = await newDieOrderFormsAPI.pdfBlob(7);
+    assert.ok(calls[2].url.endsWith('/new-die-order-forms/7/pdf'));
+    assert.equal(calls[2].auth, 'Bearer tok123');
+    assert.equal(await blob.text(), '%PDF-form');
+    await assert.rejects(() => newDieOrderFormsAPI.pdfBlob(9), /404/);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
+  }
+});
+
+test('profileShapesAPI.reviewQueue and image hit the right paths with the Bearer header', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), auth: opts.headers && opts.headers.Authorization });
+    if (String(url).includes('/image/8')) return new Response('nope', { status: 404 });
+    if (String(url).includes('/image/')) return new Response(new Blob(['PNG']), { status: 200 });
+    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    await profileShapesAPI.reviewQueue({ plant: 'GEX 1', limit: 50, offset: 0, kind: '' });
+    assert.ok(calls[0].url.endsWith('/profile-shapes/review-queue?plant=GEX+1&limit=50&offset=0'));
+    const blob = await profileShapesAPI.image('A/B', 7, 'GEX 2');
+    assert.ok(calls[1].url.endsWith('/profile-shapes/A%2FB/image/7?plant=GEX+2'));
+    assert.equal(calls[1].auth, 'Bearer tok123');
+    assert.equal(await blob.text(), 'PNG');
+    await profileShapesAPI.image('D', 7);
+    assert.ok(calls[2].url.endsWith('/profile-shapes/D/image/7'), 'no plant, no query');
+    await assert.rejects(() => profileShapesAPI.image('D', 8), /404/);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
   }
 });

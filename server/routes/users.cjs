@@ -52,6 +52,9 @@ const createUserValidation = [
     body('can_edit_order_details')
         .optional()
         .isBoolean().withMessage('can_edit_order_details must be true or false'),
+    body('can_review_toolings')
+        .optional()
+        .isBoolean().withMessage('can_review_toolings must be true or false'),
 ];
 
 const updateUserValidation = [
@@ -69,6 +72,9 @@ const updateUserValidation = [
     body('can_edit_order_details')
         .optional()
         .isBoolean().withMessage('can_edit_order_details must be true or false'),
+    body('can_review_toolings')
+        .optional()
+        .isBoolean().withMessage('can_review_toolings must be true or false'),
 ];
 
 const resetPasswordValidation = [
@@ -88,7 +94,7 @@ const userIdValidation = [
 // Valid page IDs for validation
 const VALID_PAGE_IDS = [
     'work-queue',
-    'dashboard', 'orders', 'backup-requests', 'frozen-designs', 'qd-tracker', 'analytics',
+    'dashboard', 'orders', 'backup-requests', 'frozen-designs', 'toolings', 'qd-tracker', 'analytics',
     'process-flow', // backward compat: old users may still have this
     'flow-pending-order', 'flow-awaiting-design', 'flow-simulation',
     'flow-design-approval', 'flow-pending-pr', 'flow-oracle-entry',
@@ -100,7 +106,7 @@ const VALID_PAGE_IDS = [
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, full_name, email, phone, role, page_access, can_edit_order_details, created_at FROM users ORDER BY created_at DESC'
+            'SELECT id, username, full_name, email, phone, role, page_access, can_edit_order_details, can_review_toolings, created_at FROM users ORDER BY created_at DESC'
         );
         res.json({
             users: result.rows.map(u => ({
@@ -117,7 +123,7 @@ router.get('/', async (req, res) => {
 // Create new user (admin only)
 router.post('/', createUserValidation, handleValidationErrors, async (req, res) => {
     try {
-        const { username, password, email, full_name, phone, role = 'user', page_access, can_edit_order_details } = req.body;
+        const { username, password, email, full_name, phone, role = 'user', page_access, can_edit_order_details, can_review_toolings } = req.body;
 
         // Validate page_access if provided
         if (page_access != null) {
@@ -139,11 +145,12 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
         const storedPageAccess = role === 'admin' ? null : (page_access ? JSON.stringify(page_access) : null);
         // Admins edit orders through their role; the switch is for everyone else.
         const canEditOrders = role !== 'admin' && toFlag(can_edit_order_details);
+        const canReview = role !== 'admin' && toFlag(can_review_toolings);
 
         const passwordHash = await bcrypt.hash(password, 12);
         const result = await pool.query(
-            'INSERT INTO users (username, password_hash, email, full_name, phone, role, password_must_change, page_access, can_edit_order_details) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
-            [username, passwordHash, normalizeEmail(email), blankToNull(full_name), blankToNull(phone), role, true, storedPageAccess, canEditOrders]
+            'INSERT INTO users (username, password_hash, email, full_name, phone, role, password_must_change, page_access, can_edit_order_details, can_review_toolings) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+            [username, passwordHash, normalizeEmail(email), blankToNull(full_name), blankToNull(phone), role, true, storedPageAccess, canEditOrders, canReview]
         );
 
         res.status(201).json({
@@ -155,6 +162,7 @@ router.post('/', createUserValidation, handleValidationErrors, async (req, res) 
                 phone: blankToNull(phone),
                 role,
                 can_edit_order_details: canEditOrders,
+                can_review_toolings: canReview,
                 page_access: storedPageAccess ? JSON.parse(storedPageAccess) : null
             }
         });
@@ -205,7 +213,7 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
     try {
         const { id } = req.params;
         const userId = parseInt(id, 10);
-        const { username, email, full_name, phone, role, page_access, can_edit_order_details } = req.body;
+        const { username, email, full_name, phone, role, page_access, can_edit_order_details, can_review_toolings } = req.body;
 
         if (page_access != null) {
             if (!Array.isArray(page_access) || !page_access.every(p => VALID_PAGE_IDS.includes(p))) {
@@ -261,6 +269,12 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
         } else if (can_edit_order_details !== undefined) {
             fields.push(`can_edit_order_details = $${idx++}`); values.push(toFlag(can_edit_order_details));
         }
+        // Same for reviewing toolings: admins review through their role.
+        if (nextRole === 'admin') {
+            fields.push(`can_review_toolings = $${idx++}`); values.push(false);
+        } else if (can_review_toolings !== undefined) {
+            fields.push(`can_review_toolings = $${idx++}`); values.push(toFlag(can_review_toolings));
+        }
         fields.push('updated_at = CURRENT_TIMESTAMP');
 
         if (fields.length === 1) {
@@ -269,7 +283,7 @@ router.patch('/:id', userIdValidation, updateUserValidation, handleValidationErr
 
         values.push(userId);
         const result = await pool.query(
-            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, username, full_name, email, phone, role, page_access, can_edit_order_details, created_at`,
+            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, username, full_name, email, phone, role, page_access, can_edit_order_details, can_review_toolings, created_at`,
             values
         );
 

@@ -48,6 +48,18 @@ test('list returns items with opening confidence and link counts', async () => {
   assert.ok(listQuery.params.includes('PRESS 7'));
 });
 
+test('list status=all drops the status clause; other statuses filter', async () => {
+  queries.length = 0;
+  const res = await request(base, '/api/toolings?status=all');
+  assert.equal(res.status, 200);
+  const listQuery = queries.find((q) => /FROM toolings t/.test(q.sql) && !/count\(\*\)/i.test(q.sql));
+  assert.doesNotMatch(listQuery.sql, /t\.status = /);
+  assert.ok(!listQuery.params.includes('all'));
+  queries.length = 0;
+  await request(base, '/api/toolings?status=unverified');
+  assert.ok(queries[0].params.includes('unverified'));
+});
+
 test('detail joins the opening and the linked dies', async () => {
   const res = await request(base, '/api/toolings/25IC2-110634');
   assert.equal(res.status, 200);
