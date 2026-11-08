@@ -7,7 +7,10 @@
 const { shapeFromImage } = require('./profileRaster.cjs');
 const { decodePng } = require('./pngDecode.cjs');
 const { toUnitFrame, signatureOf, shapeStats } = require('./profileShape.cjs');
+const path = require('node:path');
 const { normalizePlant } = require('./frozenDesigns.cjs');
+const { isInsideRoot } = require('./orderFiles.cjs');
+const { sha256Of } = require('./toolingDrawings.cjs');
 const { MIN_CCD_MM, MAX_CCD_MM, PLANT_SPELLINGS } = require('./profileBundle.cjs');
 
 const MM_PER_INCH = 25.4;
@@ -140,6 +143,22 @@ async function readDieListCcd(client, dieNo, plant) {
   return Number.isFinite(n) ? n : null;
 }
 
+// The die list's CCD and cavity count in one read (same lookup as readDieListCcd).
+async function readDieListFacts(client, dieNo, plant) {
+  const p = normalizePlant(plant);
+  const { rows } = await client.query(
+    "SELECT raw_data->>'ProfileCCD' AS ccd, cavity FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2) ORDER BY plant, id LIMIT 1",
+    [dieNo, PLANT_SPELLINGS[p] || [p]]
+  );
+  const row = rows[0] || {};
+  const num = (v) => {
+    if (v == null || String(v).trim() === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return { ccd: num(row.ccd), cavity: num(row.cavity) };
+}
+
 const UPSERT_SHAPE = `INSERT INTO profile_shapes
     (die_no, plant, profile_number, source, source_ref, image_sha, image_path, style, outer_unit, holes_unit, signature,
      hole_count, cavities, die_type, aspect_ratio, solidity, true_size, outer_mm, holes_mm, ccd_mm,
@@ -171,4 +190,61 @@ async function recordOrderProfileShape(client, {
   ]);
 }
 
-module.exports = { chooseScale, dieDiameterOf, shapeFromProfilePng, metaFromForm, readDieListCcd, recordOrderProfileShape };
+// One-time backfill: traces the stored profile pictures of orders that have no order-pdf shape row.
+// Assumes what the PDF import does: the client renders page 1 at 200 DPI and every sample drawing's
+// main view is SCALE 1:1, so the meta is { renderDpi: 200, scales: [1], ccdStated: null } and the die
+// list's CCD is the only reference (confirmed within 3 %, likely when the main scale fits the die
+// size, else not true size) - the live path's rule. One transaction; a dry run traces and upserts,
+// then rolls back, so the counts are real. A bad row goes to `failed` and the loop goes on.
+async function backfillOrderProfileShapes(client, { root, io, dryRun = false, limit = null, log = () => {} }) {
+  const result = { scanned: 0, traced: 0, trueSized: 0, skippedExisting: 0, failed: [] };
+  const lim = Number.isInteger(limit) && limit > 0 ? limit : null;
+  await client.query('BEGIN');
+  try {
+    const { rows: skipped } = await client.query(
+      "SELECT count(*)::int AS n FROM die_order_files f WHERE f.slot = 'profile_image' AND f.replaced_at IS NULL AND EXISTS (SELECT 1 FROM profile_shapes p WHERE p.source = 'order-pdf' AND p.source_ref = f.order_id::text)"
+    );
+    result.skippedExisting = skipped[0] ? skipped[0].n : 0;
+    const { rows } = await client.query(
+      `SELECT f.id, f.order_id, f.stored_path, o.die_no, o.plant, o.die_size, o.die_type
+         FROM die_order_files f JOIN die_orders o ON o.id = f.order_id
+        WHERE f.slot = 'profile_image' AND f.replaced_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM profile_shapes p WHERE p.source = 'order-pdf' AND p.source_ref = f.order_id::text)
+        ORDER BY f.id${lim ? ' LIMIT $1' : ''}`,
+      lim ? [lim] : []
+    );
+    for (const row of rows) {
+      result.scanned += 1;
+      try {
+        const file = path.join(root, row.stored_path);
+        if (!isInsideRoot(root, file)) throw new Error('picture path outside the storage root');
+        if (!io.exists(file)) throw new Error('picture file is missing');
+        const buffer = await io.readFile(file);
+        const facts = await readDieListFacts(client, row.die_no, row.plant);
+        const fields = await shapeFromProfilePng(buffer, {
+          renderDpi: 200, scales: [1], ccdStated: null, dieListCcd: facts.ccd, dieSize: row.die_size, dieType: row.die_type,
+        });
+        await recordOrderProfileShape(client, {
+          orderId: row.order_id, dieNo: row.die_no, plant: row.plant, profileNumber: null,
+          imageSha: sha256Of(buffer), imagePath: row.stored_path, dieType: row.die_type, cavities: facts.cavity, fields,
+        });
+        result.traced += 1;
+        if (fields.true_size) result.trueSized += 1;
+        log(`order ${row.order_id} ${row.die_no}: traced${fields.true_size ? ` (${fields.true_size_confidence})` : ' (no true size)'}`);
+      } catch (e) {
+        result.failed.push({ orderId: row.order_id, dieNo: row.die_no, error: e.message });
+        log(`order ${row.order_id} ${row.die_no}: FAILED ${e.message}`);
+      }
+    }
+    await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  }
+  return result;
+}
+
+module.exports = {
+  chooseScale, dieDiameterOf, shapeFromProfilePng, metaFromForm, readDieListCcd, readDieListFacts, recordOrderProfileShape,
+  backfillOrderProfileShapes,
+};
