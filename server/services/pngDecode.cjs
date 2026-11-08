@@ -53,10 +53,25 @@ function decodePng(buffer) {
   if (interlace !== 0) throw new Error('interlaced PNG not supported');
   if (color === 3 && !palette) throw new Error('palette PNG without a palette');
 
-  let raw;
-  try { raw = zlib.inflateSync(Buffer.concat(idat)); } catch (e) { throw new Error(`PNG image data is corrupt: ${e.message}`); }
+  // tRNS on greyscale / RGB names one transparent key colour (2 bytes per sample; at 8 bits the
+  // low byte). Those pixels are blended to white below, as the canvas decoder shows them.
+  let key = null;
+  if (trns && color === 0) {
+    if (trns.length < 2) throw new Error('bad PNG tRNS chunk');
+    key = [trns[1]];
+  } else if (trns && color === 2) {
+    if (trns.length < 6) throw new Error('bad PNG tRNS chunk');
+    key = [trns[1], trns[3], trns[5]];
+  }
+
+  // The inflated size is known from the header: cap it, so a small file cannot inflate to gigabytes.
   const stride = width * channels;
-  if (raw.length < height * (stride + 1)) throw new Error('PNG image data is short');
+  const expected = height * (stride + 1);
+  let raw;
+  try {
+    raw = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: expected });
+  } catch (e) { throw new Error(`PNG image data is corrupt: ${e.message}`); }
+  if (raw.length < expected) throw new Error('PNG image data is short');
 
   const px = Buffer.alloc(height * stride);
   for (let y = 0; y < height; y++) {
@@ -85,8 +100,13 @@ function decodePng(buffer) {
   for (let p = 0; p < width * height; p++) {
     let r; let g; let b; let alpha = 255;
     const s = p * channels;
-    if (color === 0) { r = g = b = px[s]; }
-    else if (color === 2) { r = px[s]; g = px[s + 1]; b = px[s + 2]; }
+    if (color === 0) {
+      r = g = b = px[s];
+      if (key && px[s] === key[0]) alpha = 0;
+    } else if (color === 2) {
+      r = px[s]; g = px[s + 1]; b = px[s + 2];
+      if (key && r === key[0] && g === key[1] && b === key[2]) alpha = 0;
+    }
     else if (color === 3) {
       const k = px[s];
       if (3 * k + 2 >= palette.length) throw new Error('PNG palette index out of range');

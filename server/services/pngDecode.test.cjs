@@ -24,15 +24,34 @@ function chunk(type, body) {
   const len = Buffer.alloc(4); len.writeUInt32BE(body.length);
   return Buffer.concat([len, Buffer.from(type, 'latin1'), body, Buffer.alloc(4)]);
 }
-function pngOf({ width, height, color, rows, plte }) {
+function pngOf({ width, height, color, rows, plte, trns, raw }) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = color;
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr), ...(plte ? [chunk('PLTE', Buffer.from(plte))] : []),
-    chunk('IDAT', zlib.deflateSync(Buffer.from(rows.flat()))), chunk('IEND', Buffer.alloc(0)),
+    ...(trns ? [chunk('tRNS', Buffer.from(trns))] : []),
+    chunk('IDAT', zlib.deflateSync(raw || Buffer.from(rows.flat()))), chunk('IEND', Buffer.alloc(0)),
   ]);
 }
+// Real CRCs, so the canvas decoder accepts the hand-built PNG too (zlib.crc32 needs Node 20.15+).
+const crc32 = (bytes) => {
+  let c = ~0;
+  for (const byte of bytes) {
+    c ^= byte;
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return ~c >>> 0;
+};
+const withCrcs = (png) => {
+  const out = Buffer.from(png);
+  for (let off = 8; off + 12 <= out.length;) {
+    const len = out.readUInt32BE(off);
+    out.writeUInt32BE(crc32(out.subarray(off + 4, off + 8 + len)), off + 8 + len);
+    off += 12 + len;
+  }
+  return out;
+};
 
 test('decodes a canvas PNG to the same pixels as the canvas decoder', async () => {
   const png = drawingPng();
@@ -76,4 +95,23 @@ test('unsupported formats are refused by name', () => {
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IEND', Buffer.alloc(0)),
   ]);
   assert.throws(() => decodePng(png), /unsupported PNG format \(bit depth 16/);
+});
+
+test('a small PNG that inflates far past its header size is refused without inflating it all', () => {
+  // 1x1 greyscale needs 2 inflated bytes; this IDAT is ~200 KB of deflated zeros that would inflate to 200 MB.
+  const bomb = pngOf({ width: 1, height: 1, color: 0, raw: Buffer.alloc(200 * 1024 * 1024) });
+  assert.ok(bomb.length < 1024 * 1024, `bomb is ${bomb.length} bytes`);
+  const before = process.memoryUsage().arrayBuffers;
+  assert.throws(() => decodePng(bomb), /PNG image data is corrupt/);
+  assert.ok(process.memoryUsage().arrayBuffers - before < 50 * 1024 * 1024, 'inflated output was not capped');
+});
+
+test('a tRNS key colour on greyscale and RGB pictures shows white, as the canvas decoder shows it', async () => {
+  // Greyscale 2x1: [0, 40] with key 40. RGB 2x1: [(10,20,30), (0,0,0)] with key (10,20,30).
+  const grey = withCrcs(pngOf({ width: 2, height: 1, color: 0, trns: [0, 40], rows: [[0, 0, 40]] }));
+  const rgb = withCrcs(pngOf({ width: 2, height: 1, color: 2, trns: [0, 10, 0, 20, 0, 30], rows: [[0, 10, 20, 30, 0, 0, 0]] }));
+  assert.deepEqual([...decodePng(grey).data], [0, 0, 0, 255, 255, 255, 255, 255]);
+  assert.deepEqual([...decodePng(rgb).data], [255, 255, 255, 255, 0, 0, 0, 255]);
+  assert.deepEqual([...decodePng(grey).data], [...(await decodeImage(grey)).data]);
+  assert.deepEqual([...decodePng(rgb).data], [...(await decodeImage(rgb)).data]);
 });
