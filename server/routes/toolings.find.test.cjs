@@ -32,7 +32,7 @@ installFakeDb(async (sql, params = []) => {
   if (/FROM tooling_combinations/.test(sql)) {
     return { rows: params[0] === 'PRESS 25' ? [{ press: 'PRESS 25', die_size: '250X200', insert_size: '300X100', bolster_size: '600X150', remark: null }] : [] };
   }
-  if (/FROM profile_shapes\s+WHERE die_no/.test(sql)) {
+  if (/FROM profile_shapes\s+WHERE translate\(die_no/.test(sql)) {
     return { rows: params[0] === 'DIE-1' ? [{ outer_mm: circle(35, 90, 40, 40), holes_mm: [], cavities: 1, hole_count: 0 }] : [] };
   }
   if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'v1', n: params[0] === 'GEX 7' ? INDEX_GEX7.length : 0 }] };
@@ -103,7 +103,7 @@ test('POST /find takes the profile from a die when no polygon is given', async (
   const res = await find({ ...BODY, profile: undefined, dieNo: 'DIE-1' });
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.candidates.map((c) => c.number), ['SNUG', 'WIDE']);
-  const q = queries.find((x) => /FROM profile_shapes\s+WHERE die_no/.test(x.sql));
+  const q = queries.find((x) => /FROM profile_shapes\s+WHERE translate\(die_no/.test(x.sql));
   assert.deepEqual(q.params, ['DIE-1', 'GEX 1']);
 });
 
@@ -178,7 +178,7 @@ test('POST /find with a polygon and a dieNo keeps that die out of similar', asyn
   const res = await find({ ...BODY, plant: 'GEX 7', dieNo: 'SELF' });
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.similar.map((x) => x.dieNo), ['N-1']);
-  assert.ok(!queries.some((q) => /FROM profile_shapes\s+WHERE die_no/.test(q.sql)), 'the polygon is the profile');
+  assert.ok(!queries.some((q) => /FROM profile_shapes\s+WHERE translate\(die_no/.test(q.sql)), 'the polygon is the profile');
   const without = await find({ ...BODY, plant: 'GEX 7' });
   assert.deepEqual(without.body.similar.map((x) => x.dieNo), ['SELF', 'N-1'], 'without dieNo it would be listed');
 });

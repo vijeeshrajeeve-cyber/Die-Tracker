@@ -41,7 +41,9 @@ router.get('/', async (req, res) => {
       where.push(clause.replace('?', `$${params.length}`));
     };
 
-    add('t.status = ?', text(req.query.status) || 'active');
+    // status=all lists every status; no status means active.
+    const status = text(req.query.status) || 'active';
+    if (status !== 'all') add('t.status = ?', status);
     if (text(req.query.plant)) add('t.plant = ?', normalizePlant(req.query.plant));
     if (text(req.query.kind)) add('t.kind = ?', text(req.query.kind));
     if (text(req.query.sizeClass)) {
@@ -52,7 +54,7 @@ router.get('/', async (req, res) => {
       add("t.number ILIKE ? ESCAPE '\\'", `%${text(req.query.q).replace(/[\\%_]/g, '\\$&')}%`);
     }
 
-    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
@@ -106,6 +108,7 @@ router.get('/combinations', async (req, res) => {
   }
 });
 
+// '_' and '-' match as the same separator (the GEX 1 die list writes 13794_525, requests 13794-525).
 // Registered before '/:number'. The toolings a die is recorded with (die list, order PDF, new-order form), each with
 // its master row when the master has the number.
 router.get('/for-die/:dieNo', async (req, res) => {
@@ -118,7 +121,7 @@ router.get('/for-die/:dieNo', async (req, res) => {
          FROM die_tooling_links l
          LEFT JOIN toolings t ON t.number = l.tooling_number
          LEFT JOIN tooling_openings o ON o.tooling_id = t.id
-        WHERE l.die_no = $1 AND ($2::text IS NULL OR l.plant = $2)
+        WHERE translate(l.die_no, '_', '-') = translate($1, '_', '-') AND ($2::text IS NULL OR l.plant = $2)
         ORDER BY l.tooling_number NULLS LAST, l.id`,
       [req.params.dieNo, plant],
     );

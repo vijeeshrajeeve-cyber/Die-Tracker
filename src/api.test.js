@@ -547,3 +547,30 @@ test('newDieOrderFormsAPI.list drops empty params and pdfBlob fetches with the B
     globalThis.localStorage = realStorage;
   }
 });
+
+test('profileShapesAPI.reviewQueue and image hit the right paths with the Bearer header', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), auth: opts.headers && opts.headers.Authorization });
+    if (String(url).includes('/image/8')) return new Response('nope', { status: 404 });
+    if (String(url).includes('/image/')) return new Response(new Blob(['PNG']), { status: 200 });
+    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    await profileShapesAPI.reviewQueue({ plant: 'GEX 1', limit: 50, offset: 0, kind: '' });
+    assert.ok(calls[0].url.endsWith('/profile-shapes/review-queue?plant=GEX+1&limit=50&offset=0'));
+    const blob = await profileShapesAPI.image('A/B', 7, 'GEX 2');
+    assert.ok(calls[1].url.endsWith('/profile-shapes/A%2FB/image/7?plant=GEX+2'));
+    assert.equal(calls[1].auth, 'Bearer tok123');
+    assert.equal(await blob.text(), 'PNG');
+    await profileShapesAPI.image('D', 7);
+    assert.ok(calls[2].url.endsWith('/profile-shapes/D/image/7'), 'no plant, no query');
+    await assert.rejects(() => profileShapesAPI.image('D', 8), /404/);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
+  }
+});

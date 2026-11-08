@@ -98,6 +98,35 @@ router.post('/similar', async (req, res) => {
   }
 });
 
+// Literal path, registered before '/:dieNo'. The shapes flagged for review (needs_review), newest first,
+// without their geometry; the picture comes from the image route.
+const QUEUE_DEFAULT_LIMIT = 50;
+const QUEUE_MAX_LIMIT = 200;
+router.get('/review-queue', async (req, res) => {
+  try {
+    const plant = plantOf(req.query.plant);
+    const where = ['needs_review = true'];
+    const params = [];
+    if (plant) { params.push(plant); where.push(`plant = $${params.length}`); }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || QUEUE_DEFAULT_LIMIT, 1), QUEUE_MAX_LIMIT);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const list = await pool.query(
+      `SELECT id, die_no, plant, profile_number, source, source_ref, review_reason, style, hole_count,
+              image_path IS NOT NULL AS has_image, updated_at
+         FROM profile_shapes ${whereSql}
+        ${NEWEST_FIRST}
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset],
+    );
+    const count = await pool.query(`SELECT count(*) FROM profile_shapes ${whereSql}`, params);
+    res.json({ items: list.rows, total: Number(count.rows[0].count) });
+  } catch (err) {
+    console.error('profile review queue failed', err);
+    res.status(500).json({ error: 'Failed to load the profile review queue' });
+  }
+});
+
 router.get('/:dieNo', async (req, res) => {
   try {
     const plant = plantOf(req.query.plant);

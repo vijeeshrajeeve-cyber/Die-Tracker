@@ -234,8 +234,10 @@ function rankCandidates(fitted) {
 // The caller canonicalises the press (PRESS n); plant and die size are
 // normalised again here because it is cheap.
 
+// '_' and '-' are the same die-number separator: the GEX 1 die list writes 13794_525 where requests
+// and orders write 13794-525.
 const PROFILE_SQL = `SELECT outer_mm, holes_mm, cavities, hole_count FROM profile_shapes
-  WHERE die_no = $1 AND plant = $2 AND true_size ORDER BY updated_at DESC LIMIT 1`;
+  WHERE translate(die_no, '_', '-') = translate($1, '_', '-') AND plant = $2 AND true_size ORDER BY updated_at DESC LIMIT 1`;
 const CHART_SQL = 'SELECT * FROM tooling_combinations WHERE press = $1';
 const LINKED_DIES_SQL = `SELECT tooling_number, die_no, plant, source FROM die_tooling_links
   WHERE tooling_number = ANY($1) ORDER BY die_no`;

@@ -45,6 +45,8 @@ test('nearest returns same-hole-count shapes by ascending distance, one per die'
   assert.deepEqual(Object.keys(items[0]).sort(), ['cavityMatch', 'die_no', 'distance', 'profile_number', 'shapeId', 'trueSize']);
   assert.equal(items[0].trueSize, false);
   assert.equal(nearest(index, { signature: sig(0), holeCount: 0, limit: 2 }).length, 2);
+  assert.ok(!nearest(index, { signature: sig(0), holeCount: 0, excludeDieNo: 'D_SELF' }).some((i) => i.die_no === 'D-SELF'),
+    '_ and - are the same die-number separator');
 });
 
 test('needs_review rows are never returned', async () => {

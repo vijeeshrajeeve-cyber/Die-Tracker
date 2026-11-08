@@ -42,6 +42,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
 import FrozenDesignsPage from './pages/FrozenDesignsPage';
+import ToolingsPage from './pages/ToolingsPage';
 import QDTrackerPage from './pages/QDTrackerPage';
 import FrozenDesignBanner from './components/FrozenDesignBanner';
 import useQdQueue from './hooks/useQdQueue';
@@ -3422,6 +3423,10 @@ export default function DieOrderingSystem() {
 
           {activeTab === 'frozen-designs' && hasPageAccess('frozen-designs') && (
             <FrozenDesignsPage user={user} theme={theme} search={searchTerm} />
+          )}
+
+          {activeTab === 'toolings' && hasPageAccess('toolings') && (
+            <ToolingsPage user={user} theme={theme} search={searchTerm} />
           )}
 
           {activeTab === 'qd-tracker' && hasPageAccess('qd-tracker') && (

@@ -1033,6 +1033,22 @@ export const profileShapesAPI = {
         method: 'POST',
         body: JSON.stringify({ plant, outer, holes, cavities, limit }),
     }),
+    // Shapes flagged needs_review, newest first: { items, total }.
+    reviewQueue: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/profile-shapes/review-queue${qs ? `?${qs}` : ''}`);
+    },
+    // A stored profile picture's bytes. The route needs the Bearer header, so an <img src> cannot fetch it.
+    image: async (dieNo, shapeId, plant) => {
+        const token = getToken();
+        const qs = plant ? `?${new URLSearchParams({ plant })}` : '';
+        const response = await fetch(`${API_BASE_URL}/profile-shapes/${encodeURIComponent(dieNo)}/image/${encodeURIComponent(shapeId)}${qs}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Could not load the picture (HTTP ${response.status})`);
+        return response.blob();
+    },
     // Reviewer-only. body: { action: 'clear'|'keep', note? }
     review: async (id, body) => apiRequest(`/profile-shapes/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify(body) }),
     // Traces a profile PNG (cut from a drawing) without storing it. meta: { plant, dieNo?, dieType?,

@@ -158,6 +158,7 @@ test('GET for-die lists the links with their tooling, null when the master lacks
   ]);
   const q = queries.find((x) => /FROM die_tooling_links l\s+LEFT JOIN toolings/.test(x.sql));
   assert.deepEqual(q.params, ['21599-01', 'GEX 1']);
+  assert.match(q.sql, /translate\(l\.die_no, '_', '-'\) = translate\(\$1, '_', '-'\)/, '_ and - are the same separator');
   const all = await request(base, '/api/toolings/for-die/21599-01');
   assert.equal(all.status, 200);
   assert.deepEqual(queries.filter((x) => /LEFT JOIN toolings/.test(x.sql)).at(-1).params, ['21599-01', null]);

@@ -113,7 +113,8 @@ app.use('/api/correctors', correctorsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/backup-requests', authMiddleware, pageAccessMiddleware('backup-requests'), backupRequestsRouter);
 app.use('/api/frozen-designs', authMiddleware, pageAccessMiddleware('frozen-designs'), frozenDesignsRouter);
-// Reads need a login only; the write routes add reviewerMiddleware each. Drawing uploads (50 MB) rely on the
+// Reads need a login only, not the 'toolings' page access: the finder panel reads them from the Orders and
+// Backup pages too. The write routes add reviewerMiddleware each. Drawing uploads (50 MB) rely on the
 // 60m client_max_body_size of nginx.conf's location /api/toolings/.
 app.use('/api/toolings', authMiddleware, toolingsRouter);
 app.use('/api/profile-shapes', authMiddleware, profileShapesRouter);

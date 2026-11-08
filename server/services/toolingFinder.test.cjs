@@ -280,7 +280,9 @@ function finderClient(s) {
       if (/max\(GREATEST/.test(sql)) return { rows: [{ max_updated: 'v1', n: s.toolings.length }] };
       if (/FROM toolings t JOIN tooling_openings o/.test(sql)) return { rows: s.toolings };
       if (/FROM tooling_combinations/.test(sql)) return { rows: (s.chart || CHART).filter((r) => r.press === params[0]) };
-      if (/FROM profile_shapes\s+WHERE die_no/.test(sql)) return { rows: (s.shapes || []).filter((r) => r.die_no === params[0] && r.plant === params[1]) };
+      if (/FROM profile_shapes\s+WHERE translate\(die_no/.test(sql)) {
+        return { rows: (s.shapes || []).filter((r) => r.die_no.replace(/_/g, '-') === params[0].replace(/_/g, '-') && r.plant === params[1]) };
+      }
       if (/max\(updated_at\)/.test(sql) && /FROM profile_shapes/.test(sql)) return { rows: [{ max_updated: 'v1', n: (s.index || []).length }] };
       if (/FROM profile_shapes WHERE plant/.test(sql)) return { rows: s.index || [] };
       if (/FROM die_tooling_links l/.test(sql)) return { rows: (s.neighbourLinks || []).filter((r) => params[0].includes(r.die_no)) };
@@ -359,8 +361,11 @@ test("resolves the profile from a die's newest true-size row", async () => {
     shapes: [{ die_no: 'DIE-9', plant, outer_mm: circle(35, 90, 200, -80), holes_mm: [], cavities: 1, hole_count: 0 }],
   });
   const r = await f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, dieNo: 'DIE-9' });
-  const q = client.queries.find((x) => /FROM profile_shapes\s+WHERE die_no/.test(x.sql));
+  const q = client.queries.find((x) => /FROM profile_shapes\s+WHERE translate\(die_no/.test(x.sql));
   assert.deepEqual(q.params, ['DIE-9', plant]);
+  assert.match(q.sql, /translate\(die_no, '_', '-'\) = translate\(\$1, '_', '-'\)/, 'the die list writes 13794_525, requests 13794-525');
+  const underscored = await f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, dieNo: 'DIE_9' });
+  assert.deepEqual(underscored.candidates.map((c) => c.number), ['SNUG'], '_ and - name the same die');
   assert.match(q.sql, /AND true_size\s+ORDER BY updated_at DESC LIMIT 1/);
   assert.deepEqual(r.candidates.map((c) => c.number), ['SNUG']);
   assert.ok(Math.abs(r.candidates[0].placements[0].tx) < 0.5);
