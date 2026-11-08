@@ -1,8 +1,11 @@
 'use strict';
 // Profile shape bundle. The build half runs on the PC: it reads the image-check workbook, traces
-// every picture into a shape and writes a bundle folder (manifest.json, shapes.json, report.json,
+// every picture into a shape and writes a bundle folder (manifest.json, shapes.ndjson, report.json,
 // files/profiles/…). The apply half (server side, Task 5) loads that bundle into profile_shapes.
+// shapes.ndjson holds one shape per line, so neither half ever holds every shape in memory: the
+// applier has to fit the backend's 512 MB container.
 const nodePath = require('node:path');
+const readline = require('node:readline');
 const { sha256Of, profileImagePath, absolutePath } = require('./toolingDrawings.cjs');
 const { decodeImage, shapeFromImage } = require('./profileRaster.cjs');
 const { toUnitFrame, signatureOf, shapeStats, minEnclosingCircle } = require('./profileShape.cjs');
@@ -19,6 +22,8 @@ const SHEETS = {
   GEX2: { plant: 'GEX 2', parse: parseGex2Row },
 };
 const IMAGE_EXTS = new Set(['gif', 'png']);
+const BUNDLE_VERSION = 2;
+const SHAPES_FILE = 'shapes.ndjson';
 const NEARLY_BLANK = 'image nearly blank'; // profileRaster's review reason for an empty picture
 
 // 'Hollow' / 'HOLOW' -> true, 'SOLID' / 'solid' / 'SOLD' -> false, anything else -> null.
@@ -140,7 +145,8 @@ async function buildProfileBundle({
     return entry;
   };
 
-  const shapes = [];
+  // Each shape is appended to shapes.ndjson as it is produced; only the counts stay in memory.
+  let flagged = 0;
   let done = 0;
   for (const { sheet, row, r, note, anchors, expectHollow } of items) {
     for (let i = 0; i < anchors.length; i++) {
@@ -163,7 +169,7 @@ async function buildProfileBundle({
       report.styles[shape.style]++;
       report.styleResolvedBy[shape.styleResolvedBy]++;
       const reasons = [note.reason, shape.reviewReason].filter(Boolean);
-      shapes.push({
+      const shapeRow = {
         die_no: r.dieNo,
         plant: sheet.plant,
         profile_number: r.profileNumber,
@@ -181,27 +187,28 @@ async function buildProfileBundle({
         solidity: finiteOrNull(stats.solidity),
         needs_review: note.needsReview || shape.needsReview,
         review_reason: reasons.length ? reasons.join('; ') : null,
-      });
+      };
+      io.appendLine(SHAPES_FILE, JSON.stringify(shapeRow));
+      if (shapeRow.needs_review) flagged++;
       report.shapesWritten++;
     }
   }
   report.picturesShared = [...media.values()].filter((m) => m.used > 1).length;
 
-  io.writeJson('shapes.json', shapes);
   io.writeJson('report.json', report);
   // The manifest goes last: a bundle folder without one is an interrupted build.
   io.writeJson('manifest.json', {
-    version: 1,
+    version: BUNDLE_VERSION,
     kind: 'profile-shapes',
     createdAt: new Date().toISOString(),
     counts: {
-      shapes: shapes.length,
+      shapes: report.shapesWritten,
       files: report.picturesDecoded,
-      needsReview: shapes.filter((s) => s.needs_review).length,
+      needsReview: flagged,
       errors: report.errors.length,
     },
   });
-  return { shapes, report };
+  return { shapesWritten: report.shapesWritten, flagged, report };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -234,7 +241,26 @@ const UPSERT_SHAPE = `INSERT INTO profile_shapes
   WHERE profile_shapes.reviewed_at IS NULL
   RETURNING (xmax = 0) AS inserted`;
 
+// Yields the shapes of a shapes.ndjson file one line at a time. Blank lines are skipped; a line that
+// is not JSON throws with its line number.
+async function* readShapeLines(file, fsLike) {
+  const lines = readline.createInterface({ input: fsLike.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+  let n = 0;
+  try {
+    for await (const line of lines) {
+      n++;
+      if (!line.trim()) continue;
+      let shape;
+      try { shape = JSON.parse(line); } catch (err) { throw new Error(`${SHAPES_FILE} line ${n}: ${err.message}`); }
+      yield shape;
+    }
+  } finally {
+    lines.close();
+  }
+}
+
 // readProfileBundle(dir, fsLike) reads and validates a bundle folder written by buildProfileBundle.
+// `shapes` is a one-pass async iterable over shapes.ndjson, never an array.
 function readProfileBundle(dir, fsLike = require('node:fs')) {
   const read = (name, optional = false) => {
     try { return JSON.parse(fsLike.readFileSync(nodePath.join(dir, name), 'utf8')); } catch (err) {
@@ -243,12 +269,16 @@ function readProfileBundle(dir, fsLike = require('node:fs')) {
     }
   };
   const manifest = read('manifest.json');
-  if (!manifest || manifest.version !== 1 || manifest.kind !== 'profile-shapes') {
-    throw new Error(`Not a profile-shapes bundle of version 1 (version ${manifest && manifest.version}, kind ${manifest && manifest.kind})`);
+  if (!manifest || manifest.kind !== 'profile-shapes') {
+    throw new Error(`Not a profile-shapes bundle (version ${manifest && manifest.version}, kind ${manifest && manifest.kind})`);
   }
-  const shapes = read('shapes.json');
-  if (!Array.isArray(shapes)) throw new Error('shapes.json must be an array');
-  return { dir, manifest, shapes, report: read('report.json', true) };
+  if (manifest.version === 1) {
+    throw new Error('Bundle version 1 is no longer supported: rebuild it with build-profile-bundle.cjs (shapes.ndjson)');
+  }
+  if (manifest.version !== BUNDLE_VERSION) throw new Error(`Unsupported profile-shapes bundle version ${manifest.version}`);
+  const shapesPath = nodePath.join(dir, SHAPES_FILE);
+  if (!fsLike.existsSync(shapesPath)) throw new Error(`The bundle has no ${SHAPES_FILE}`);
+  return { dir, manifest, shapes: readShapeLines(shapesPath, fsLike), report: read('report.json', true) };
 }
 
 // Scales the unit-frame outline so the smallest circle around it measures `ccdMm` across.
@@ -263,12 +293,14 @@ const jsonOrNull = (v) => (v == null ? null : JSON.stringify(v));
 
 // Writes a profile bundle into profile_shapes in one transaction. A row a person has reviewed is never
 // rewritten; a picture is copied only when it is not already stored. All file IO is injected.
+// `bundle.shapes` is any (async) iterable and is consumed once; only counters and the pictures still
+// to copy are kept, so memory stays flat however large the bundle is.
 async function applyProfileBundle(client, bundle, { root, io, dryRun = false, log = () => {} }) {
   const counts = { inserted: 0, updated: 0, unchanged: 0, skippedReviewed: 0, filesCopied: 0, trueSized: 0, dieListMisses: 0 };
   await client.query('BEGIN');
   try {
     const toCopy = new Map(); // imagePath -> source file
-    for (const s of bundle.shapes) {
+    for await (const s of bundle.shapes) {
       const spellings = PLANT_SPELLINGS[s.plant] || [s.plant];
       const dieRow = (await client.query(SELECT_DIE_LIST, [s.die_no, spellings])).rows[0];
       if (!dieRow) counts.dieListMisses++;
@@ -329,4 +361,6 @@ async function applyProfileBundle(client, bundle, { root, io, dryRun = false, lo
   }
 }
 
-module.exports = { buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle, MIN_CCD_MM, PLANT_SPELLINGS };
+module.exports = {
+  buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle, MIN_CCD_MM, PLANT_SPELLINGS, BUNDLE_VERSION, SHAPES_FILE,
+};

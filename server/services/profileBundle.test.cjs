@@ -1,6 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { Readable } = require('node:stream');
 const { makeXlsx } = require('./fixtures/syntheticXlsx.cjs');
 const { sha256Of, profileImagePath } = require('./toolingDrawings.cjs');
 const { buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle } = require('./profileBundle.cjs');
@@ -36,16 +37,22 @@ async function run(sheets, opts = {}) {
   const decoded = [];
   const copied = [];
   const written = {};
+  const lines = {};
   const progress = [];
   const result = await buildProfileBundle({
     zip,
     sheets: opts.sheets || sheets.map((s) => s.name),
-    io: { copyBytes: (rel, buf) => copied.push([rel, buf]), writeJson: (name, obj) => { written[name] = obj; } },
+    io: {
+      copyBytes: (rel, buf) => copied.push([rel, buf]),
+      writeJson: (name, obj) => { written[name] = obj; },
+      appendLine: (name, text) => { (lines[name] = lines[name] || []).push(text); },
+    },
     decode: async (buf) => { decoded.push(buf.toString()); return ring(200, 200, 80, 40); },
     limit: opts.limit ?? null,
     onProgress: (p) => progress.push(p),
   });
-  return { ...result, decoded, copied, written, progress };
+  const shapes = (lines['shapes.ndjson'] || []).map((l) => JSON.parse(l));
+  return { ...result, shapes, decoded, copied, written, lines, progress };
 }
 
 const byRef = (shapes, ref) => shapes.find((s) => s.source_ref === ref);
@@ -83,10 +90,10 @@ test('a shared picture is decoded once and attached to every die', async () => {
   assert.ok(a.outer_unit.length > 8);
   assert.ok(Math.abs(a.aspect_ratio - 1) < 0.05);
   assert.ok(a.solidity > 0.95);
-  // The bundle files go through io.writeJson.
-  assert.deepEqual(r.written['shapes.json'], r.shapes);
+  // The shapes go line by line through io.appendLine; report and manifest through io.writeJson.
+  assert.equal(r.written['shapes.json'], undefined);
   assert.deepEqual(r.written['report.json'], r.report);
-  assert.equal(r.written['manifest.json'].version, 1);
+  assert.equal(r.written['manifest.json'].version, 2);
   assert.equal(r.written['manifest.json'].kind, 'profile-shapes');
   assert.equal(r.written['manifest.json'].counts.shapes, 3);
   assert.deepEqual(r.report.styles, { silhouette: 3, outline: 0 });
@@ -156,11 +163,12 @@ test('decode errors are caught per picture and reported', async () => {
     media: { 'image1.gif': GIF_A, 'image2.gif': GIF_B },
   });
   const copied = [];
-  const { shapes, report } = await buildProfileBundle({
-    zip, sheets: ['GEX1'], io: { copyBytes: (rel) => copied.push(rel), writeJson: () => {} },
+  const lines = [];
+  const { report } = await buildProfileBundle({
+    zip, sheets: ['GEX1'], io: { copyBytes: (rel) => copied.push(rel), writeJson: () => {}, appendLine: (n, t) => lines.push(t) },
     decode: async (buf) => { if (buf.equals(GIF_A)) throw new Error('bad gif'); return ring(200, 200, 80, 40); },
   });
-  assert.deepEqual(shapes.map((s) => s.source_ref), ['GEX1!E3']);
+  assert.deepEqual(lines.map((l) => JSON.parse(l).source_ref), ['GEX1!E3']);
   assert.deepEqual(report.errors, [{ row: 'GEX1!E2', error: 'decode failed: bad gif' }]);
   assert.equal(report.picturesDecoded, 1);
   assert.equal(copied.length, 1);
@@ -171,10 +179,13 @@ test('a picture that traces to no shape is counted as nullShape and not written'
     sheets: [gex1([{ r: 2, cells: { A: '1', B: '1_101', C: 'Hollow' } }], [{ row: 2, media: 'image1.gif' }])],
     media: { 'image1.gif': GIF_A },
   });
-  const { shapes, report } = await buildProfileBundle({
-    zip, sheets: ['GEX1'], io: { copyBytes: () => {}, writeJson: () => {} }, decode: async () => paint(50, 50, () => false),
+  const lines = [];
+  const { shapesWritten, report } = await buildProfileBundle({
+    zip, sheets: ['GEX1'], io: { copyBytes: () => {}, writeJson: () => {}, appendLine: (n, t) => lines.push(t) },
+    decode: async () => paint(50, 50, () => false),
   });
-  assert.equal(shapes.length, 0);
+  assert.equal(lines.length, 0);
+  assert.equal(shapesWritten, 0);
   assert.equal(report.needsReview.nullShape, 1);
   assert.equal(report.shapesWritten, 0);
 });
@@ -207,6 +218,23 @@ test('GEX2 rows carry plant GEX 2 and no verdict', async () => {
   assert.equal(r.shapes[1].needs_review, true);
   assert.equal(r.report.rowsWithoutPicture, 1);
   assert.deepEqual(r.decoded, ['GIF89a-picture-B']);
+});
+
+test('the builder writes one line per shape and a version-2 manifest', async () => {
+  const r = await run([gex1([
+    { r: 2, cells: { A: '1', B: '1_101', C: 'Hollow' } },
+    { r: 3, cells: { A: '2', B: '2_101', C: 'Solid', F: 'Solid' } },
+    { r: 4, cells: { A: '3', B: '3_101', C: 'Hollow' } },
+  ], [{ row: 2, media: 'image1.gif' }, { row: 3, media: 'image2.gif' }, { row: 4, media: 'image3.png' }])]);
+  assert.deepEqual(Object.keys(r.lines), ['shapes.ndjson']);
+  assert.equal(r.lines['shapes.ndjson'].length, 3);
+  for (const line of r.lines['shapes.ndjson']) assert.ok(!line.includes('\n'), 'one shape per line');
+  assert.deepEqual(r.shapes.map((s) => s.source_ref), ['GEX1!E2', 'GEX1!E3', 'GEX1!E4']);
+  // Only counts come back: the builder keeps no array of shapes.
+  assert.deepEqual([r.shapesWritten, r.flagged], [3, 1]);
+  const m = r.written['manifest.json'];
+  assert.deepEqual([m.version, m.kind, m.counts], [2, 'profile-shapes', { shapes: 3, files: 3, needsReview: 1, errors: 0 }]);
+  assert.ok(!Number.isNaN(Date.parse(m.createdAt)));
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -339,6 +367,50 @@ test('trueSizeFromCcd scales so the enclosing circle equals the CCD', () => {
 });
 
 test('readProfileBundle rejects a bundle of the wrong kind', () => {
-  const fsLike = { readFileSync: () => JSON.stringify({ version: 1, kind: 'tooling' }) };
+  const fsLike = { readFileSync: () => JSON.stringify({ version: 2, kind: 'tooling' }), existsSync: () => true };
   assert.throws(() => readProfileBundle('/b', fsLike), /profile-shapes/);
+});
+
+// A bundle folder in memory: files by name, read through readFileSync / existsSync / createReadStream.
+function fakeBundleFs(files) {
+  const at = (p) => files[p.replace(/\\/g, '/').split('/').pop()];
+  return {
+    readFileSync: (p) => {
+      const v = at(p);
+      if (v === undefined) { const e = new Error(`ENOENT: ${p}`); e.code = 'ENOENT'; throw e; }
+      return v;
+    },
+    existsSync: (p) => at(p) !== undefined,
+    createReadStream: (p) => Readable.from([at(p)]),
+  };
+}
+const MANIFEST_V2 = JSON.stringify({ version: 2, kind: 'profile-shapes', createdAt: '2026-11-08T00:00:00Z', counts: { shapes: 3 } });
+
+test('a version-1 bundle is refused', () => {
+  const fsLike = fakeBundleFs({ 'manifest.json': JSON.stringify({ version: 1, kind: 'profile-shapes' }), 'shapes.json': '[]' });
+  assert.throws(() => readProfileBundle('/b', fsLike),
+    { message: 'Bundle version 1 is no longer supported: rebuild it with build-profile-bundle.cjs (shapes.ndjson)' });
+  assert.throws(() => readProfileBundle('/b', fakeBundleFs({ 'manifest.json': MANIFEST_V2 })), /no shapes\.ndjson/);
+});
+
+test('the applier streams shapes.ndjson (a 3-line file yields 3 upserts; a bad line fails with its number)', async () => {
+  const lines = [SHAPE({ source_ref: 'GEX1!E2' }), SHAPE({ source_ref: 'GEX1!E3' }), SHAPE({ source_ref: 'GEX1!E4' })]
+    .map((s) => JSON.stringify(s));
+  const good = fakeBundleFs({ 'manifest.json': MANIFEST_V2, 'shapes.ndjson': `${lines[0]}\r\n\n${lines[1]}\n${lines[2]}\n` });
+  const bundle = readProfileBundle('/b', good);
+  assert.equal(bundle.report, null);
+  assert.ok(!Array.isArray(bundle.shapes));
+  const client = fakeClient();
+  const r = await applyProfileBundle(client, bundle, { root: '/root', io: fakeIo() });
+  const upserts = client.calls.filter((c) => /INSERT INTO profile_shapes/.test(c.sql));
+  assert.deepEqual(upserts.map((c) => c.params[4]), ['GEX1!E2', 'GEX1!E3', 'GEX1!E4']);
+  assert.equal(r.inserted, 3);
+  assert.equal(client.calls.at(-1).sql, 'COMMIT');
+
+  const bad = fakeBundleFs({ 'manifest.json': MANIFEST_V2, 'shapes.ndjson': `${lines[0]}\n\n{not json\n${lines[2]}\n` });
+  const client2 = fakeClient();
+  await assert.rejects(applyProfileBundle(client2, readProfileBundle('/b', bad), { root: '/root', io: fakeIo() }),
+    /shapes\.ndjson line 3:/);
+  assert.equal(client2.calls.at(-1).sql, 'ROLLBACK');
+  assert.ok(!client2.calls.some((c) => c.sql === 'COMMIT'));
 });

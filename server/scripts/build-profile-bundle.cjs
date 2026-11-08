@@ -7,7 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { openZip } = require('../services/zipReader.cjs');
-const { buildProfileBundle } = require('../services/profileBundle.cjs');
+const { buildProfileBundle, SHAPES_FILE } = require('../services/profileBundle.cjs');
 
 const DEFAULT_WORKBOOK = 'C:/Users/vijee/Desktop/18.06.2026/Dies List ExtractedNew - Image Check - Final 30.10.2026.xlsx';
 const DEFAULT_OUT_BASE = 'C:/Users/vijee/Desktop/18.06.2026/tooling-bundle';
@@ -44,7 +44,7 @@ async function main() {
   console.log(`Workbook: ${workbook}\nOut:      ${out}\nSheets:   ${sheets.join(', ')}${limit ? `\nLimit:    ${limit} pictures` : ''}`);
 
   const io = dryRun
-    ? { copyBytes: () => {}, writeJson: () => {} }
+    ? { copyBytes: () => {}, writeJson: () => {}, appendLine: () => {} }
     : {
       copyBytes: (rel, buffer) => {
         const dest = path.join(out, ...rel.split('/'));
@@ -52,20 +52,24 @@ async function main() {
         fs.writeFileSync(dest, buffer);
       },
       writeJson: (name, obj) => fs.writeFileSync(path.join(out, name), JSON.stringify(obj)),
+      appendLine: (name, text) => fs.appendFileSync(path.join(out, name), `${text}
+`),
     };
-  if (!dryRun) fs.mkdirSync(out, { recursive: true });
+  if (!dryRun) {
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, SHAPES_FILE), ''); // a --force rebuild starts the shape lines afresh
+  }
 
   const started = Date.now();
   const zip = openZip(workbook);
-  const { shapes, report } = await buildProfileBundle({
+  const { shapesWritten, flagged, report } = await buildProfileBundle({
     zip, sheets, io, limit,
     onProgress: ({ done, total }) => { if (done % 500 === 0 || done === total) console.log(`${done}/${total} pictures`); },
   });
 
-  const flagged = shapes.filter((s) => s.needs_review).length;
   const { errors, ...counts } = report;
   console.log(`\n${JSON.stringify(counts, null, 2)}`);
-  console.log(`Shapes: ${shapes.length}  flagged for review: ${flagged}  errors: ${errors.length}`);
+  console.log(`Shapes: ${shapesWritten}  flagged for review: ${flagged}  errors: ${errors.length}`);
   for (const e of errors.slice(0, 20)) console.log(`  ${e.row}: ${e.error}`);
   if (errors.length > 20) console.log(`  … ${errors.length - 20} more in report.json`);
   console.log(`Elapsed: ${((Date.now() - started) / 1000).toFixed(1)} s`);
