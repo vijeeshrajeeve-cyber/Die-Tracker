@@ -13,7 +13,8 @@ const dbCjs = fs.readFileSync(path.join(__dirname, '..', 'db.cjs'), 'utf8');
 const columnsOf = (text, table) => {
   const m = text.match(new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([\\s\\S]*?)\\n\\s*\\);`));
   assert.ok(m, `${table} is defined`);
-  return m[1].split('\n').map((l) => l.replace(/--.*$/, '').trim()).filter(Boolean)
+  // Split on either line ending: core.autocrlf rewrites the files as CRLF on Windows checkouts.
+  return m[1].split(/\r?\n/).map((l) => l.replace(/--.*$/, '').trim()).filter(Boolean)
     .map((l) => l.replace(/,$/, '').replace(/\s+/g, ' '));
 };
 
