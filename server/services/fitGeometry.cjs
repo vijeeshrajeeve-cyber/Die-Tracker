@@ -12,13 +12,14 @@
 // look-ups); the returned clearance is always the exact segment distance at
 // the returned placement, because the grid is only good to about half a cell.
 
-const { pointInPolygon, bbox, centroid } = require('./openingGeometry.cjs');
+const { bbox, centroid } = require('./openingGeometry.cjs');
 
 const DEFAULTS = Object.freeze({
   minClearance: 5,
   angleStepDeg: 10,
   cellMm: 2,
   marginMm: 6,
+  resampleStepMm: 2,
   maxEvaluations: 4000,
   seeds: 3,
   startStep: Object.freeze({ mm: 4, deg: 4 }),
@@ -73,20 +74,66 @@ function boundaryDistance(p, polygon) {
   return best;
 }
 
-// Negative (minus the distance of the worst outside point) when any point is
-// outside, else the smallest wall distance.
-function exactClearance(points, polygon) {
-  let worstOutside = -1;
-  let minInside = Infinity;
-  for (const p of points) {
-    const d = boundaryDistance(p, polygon);
-    if (pointInPolygon(p, polygon)) {
-      if (d < minInside) minInside = d;
-    } else if (d > worstOutside) {
-      worstOutside = d;
-    }
+// Signed distance from (x, y) to the closed polygon (xs, ys): positive inside,
+// negative outside. One pass over the edges: squared segment distance plus the
+// even-odd crossing test (same rule as openingGeometry.pointInPolygon).
+function signedDistance(x, y, xs, ys) {
+  const n = xs.length;
+  let best2 = Infinity;
+  let inside = false;
+  for (let a = 0, b = n - 1; a < n; b = a++) {
+    const xa = xs[a]; const ya = ys[a]; const xb = xs[b]; const yb = ys[b];
+    if ((ya > y) !== (yb > y) && x < ((xb - xa) * (y - ya)) / (yb - ya) + xa) inside = !inside;
+    const dx = xb - xa; const dy = yb - ya;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 === 0 ? 0 : ((x - xa) * dx + (y - ya) * dy) / len2;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    const ex = x - (xa + t * dx); const ey = y - (ya + t * dy);
+    const d2 = ex * ex + ey * ey;
+    if (d2 < best2) best2 = d2;
   }
-  return worstOutside >= 0 ? -worstOutside : minInside;
+  const d = Math.sqrt(best2);
+  return inside ? d : -d;
+}
+
+/**
+ * Exact clearance of the closed polygon `points` (already placed in the pocket
+ * frame) inside `polygon`, measured both ways:
+ * - each of `points` against the pocket's edges, and
+ * - each pocket vertex against the edges of `points`,
+ * so a pocket corner reaching towards a profile edge between two points is
+ * measured at its true distance.
+ * Returns minus the worst overlap distance when any point lies outside the
+ * pocket or any pocket vertex lies inside `points` (negative), else the smallest
+ * distance found in either direction (positive).
+ *
+ * It measures the points it is given: an edge of `points` that crosses a thin
+ * pocket spike without either side having a vertex in the other is not seen,
+ * so pass a resampled outline (bestPlacement resamples for you).
+ */
+function exactClearance(points, polygon) {
+  const px = Float64Array.from(points, (p) => p[0]);
+  const py = Float64Array.from(points, (p) => p[1]);
+  const qx = Float64Array.from(polygon, (p) => p[0]);
+  const qy = Float64Array.from(polygon, (p) => p[1]);
+  let worstOverlap = -1;
+  let minGap = Infinity;
+  const take = (sd) => {
+    if (sd >= 0) { if (sd < minGap) minGap = sd; } else if (-sd > worstOverlap) worstOverlap = -sd;
+  };
+  for (let k = 0; k < px.length; k++) take(signedDistance(px[k], py[k], qx, qy));
+  // Reverse direction: a pocket vertex inside the profile is an overlap; one
+  // outside may be the nearest approach. Vertices outside the profile's
+  // bounding box and at least the gap found away from it cannot matter.
+  const b = bbox(points);
+  for (let k = 0; k < qx.length; k++) {
+    const ex = Math.max(b.minX - qx[k], 0, qx[k] - b.maxX);
+    const ey = Math.max(b.minY - qy[k], 0, qy[k] - b.maxY);
+    const away = Math.hypot(ex, ey);
+    if (away > 0 && away >= minGap) continue;
+    take(-signedDistance(qx[k], qy[k], px, py));
+  }
+  return worstOverlap >= 0 ? -worstOverlap : minGap;
 }
 
 // ---- signed-distance grid --------------------------------------------------
@@ -98,30 +145,12 @@ function signedDistanceGrid(polygon, { cellMm = DEFAULTS.cellMm, marginMm = DEFA
   const nx = Math.ceil((b.width + 2 * marginMm) / cellMm) + 1;
   const ny = Math.ceil((b.height + 2 * marginMm) / cellMm) + 1;
   const data = new Float32Array(nx * ny);
-  const n = polygon.length;
   const ax = Float64Array.from(polygon, (p) => p[0]);
   const ay = Float64Array.from(polygon, (p) => p[1]);
   for (let j = 0; j < ny; j++) {
     const y = y0 + j * cellMm;
     for (let i = 0; i < nx; i++) {
-      const x = x0 + i * cellMm;
-      // One pass per cell: squared distance to every edge plus the even-odd
-      // crossing test (same rule as openingGeometry.pointInPolygon).
-      let best2 = Infinity;
-      let inside = false;
-      for (let a = 0, b = n - 1; a < n; b = a++) {
-        const xa = ax[a]; const ya = ay[a]; const xb = ax[b]; const yb = ay[b];
-        if ((ya > y) !== (yb > y) && x < ((xb - xa) * (y - ya)) / (yb - ya) + xa) inside = !inside;
-        const dx = xb - xa; const dy = yb - ya;
-        const len2 = dx * dx + dy * dy;
-        let t = len2 === 0 ? 0 : ((x - xa) * dx + (y - ya) * dy) / len2;
-        if (t < 0) t = 0; else if (t > 1) t = 1;
-        const ex = x - (xa + t * dx); const ey = y - (ya + t * dy);
-        const d2 = ex * ex + ey * ey;
-        if (d2 < best2) best2 = d2;
-      }
-      const d = Math.sqrt(best2);
-      data[j * nx + i] = inside ? d : -d;
+      data[j * nx + i] = signedDistance(x0 + i * cellMm, y, ax, ay);
     }
   }
   return { x0, y0, cell: cellMm, nx, ny, data };
@@ -246,10 +275,13 @@ function bestPlacement(profilePts, pocket, {
   maxEvaluations = DEFAULTS.maxEvaluations,
   grid = null,
 } = {}) {
-  if (!profilePts.length || pocket.length < 3) return null;
+  if (profilePts.length < 3 || pocket.length < 3) return null;
   const g = grid || signedDistanceGrid(pocket, { cellMm });
-  const xs = Float64Array.from(profilePts, (p) => p[0]);
-  const ys = Float64Array.from(profilePts, (p) => p[1]);
+  // Resample so no stretch of the outline goes unmeasured (a long raw edge can
+  // straddle a thin pocket spike); a no-op on input already at this spacing.
+  const pts = resampleClosed(profilePts, DEFAULTS.resampleStepMm);
+  const xs = Float64Array.from(pts, (p) => p[0]);
+  const ys = Float64Array.from(pts, (p) => p[1]);
   const budget = { left: maxEvaluations };
   const score = (theta, tx, ty, floor) => placementScore(xs, ys, g, theta, tx, ty, floor);
 
@@ -267,17 +299,17 @@ function bestPlacement(profilePts, pocket, {
   }
   candidates.sort((p, q) => q.value - p.value);
 
+  // Refine every seed, then let the exact measure pick among them: the grid is
+  // only good to about half a cell, so its ranking is not trusted at the end.
+  const refined = candidates.slice(0, DEFAULTS.seeds).map((seed) => refine(seed, score, budget, DEFAULTS));
   let best = null;
-  for (const seed of candidates.slice(0, DEFAULTS.seeds)) {
-    const r = refine(seed, score, budget, DEFAULTS);
-    if (!best || r.value > best.value) best = r;
+  for (const r of refined) {
+    const placement = { theta: normaliseAngle(r.theta), tx: r.tx, ty: r.ty };
+    const clearance = exactClearance(transformPoints(pts, placement), pocket);
+    if (!best || clearance > best.clearance) best = { clearance, placement };
   }
-  if (!best) return null;
-
-  const placement = { theta: normaliseAngle(best.theta), tx: best.tx, ty: best.ty };
-  const clearance = exactClearance(transformPoints(profilePts, placement), pocket);
-  if (!(clearance >= minClearance)) return null;
-  return { clearance, placement, evaluations: maxEvaluations - budget.left };
+  if (!best || !(best.clearance >= minClearance)) return null;
+  return { clearance: best.clearance, placement: best.placement, evaluations: maxEvaluations - budget.left };
 }
 
 module.exports = {

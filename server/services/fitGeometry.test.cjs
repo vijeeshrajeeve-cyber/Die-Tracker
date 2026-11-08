@@ -52,3 +52,20 @@ test('speed: 150-point profile against a 100-point pocket under 60 ms', () => {
   const profile = resampleClosed(lShape(60), 2); const pocket = circle(60, 100);
   const t0 = performance.now(); bestPlacement(profile, pocket); assert.ok(performance.now() - t0 < 60);
 });
+test('an unresampled profile cannot straddle a thin pocket spike', () => {
+  // 80 x 30 pocket with a 2 mm wide spike rising 26 mm from the bottom wall,
+  // right through a raw 4-vertex 60 x 10 bar centred on it: no vertex of either
+  // outline is inside the other, and every bar vertex is 10 mm from a wall.
+  const pocket = [[-40,-15],[-1,-15],[-1,11],[1,11],[1,-15],[40,-15],[40,15],[-40,15]];
+  const raw = rect(60, 10);
+  assert.ok(exactClearance(raw, pocket) >= 5, 'raw, the crossing goes unseen');
+  assert.ok(exactClearance(resampleClosed(raw), pocket) < 0, 'resampled, the crossing is seen');
+  assert.equal(bestPlacement(raw, pocket), null);
+});
+test('exact clearance measures a pocket tooth tip between two profile samples', () => {
+  // Profile samples on the bottom edge sit at even x; the tooth tip (1, −15) is
+  // 5 mm below the edge, midway between samples at (0, −10) and (2, −10).
+  const pocket = [[-30,-20],[-3,-20],[1,-15],[5,-20],[30,-20],[30,20],[-30,20]];
+  const c = exactClearance(resampleClosed(rect(40, 20)), pocket);
+  assert.ok(Math.abs(c - 5) < 0.01, String(c));
+});
