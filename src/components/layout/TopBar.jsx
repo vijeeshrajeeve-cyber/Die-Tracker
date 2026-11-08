@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell, Sun, Moon, FileText, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, PenTool, X } from 'lucide-react';
+import { Search, Bell, Sun, Moon, FileText, FilePlus2, Upload, Download, ChevronDown, LogOut, Key, ClipboardList, PenTool, X } from 'lucide-react';
 import useDismissable from '../../hooks/useDismissable';
 import { BRAND, BRAND_ALPHA } from '../../utils/brand';
 import { shortcutLabel } from '../../utils/searchPalette';
@@ -24,7 +24,8 @@ const TopBar = ({
     onLogout,
     onChangePassword,
     onManageSignature,
-    onOpenSearch
+    onOpenSearch,
+    onNewDieOrder // Opens the Prepare New Die Order PDF modal; none hides the button
 }) => {
 
     // Notification logic replicated/moved here for counter
@@ -225,6 +226,12 @@ const TopBar = ({
                         </div>
                     )}
                 </div>
+                {onNewDieOrder && (
+                    <button onClick={onNewDieOrder} title="Prepare a new die order PDF" style={actionButtonStyle()}>
+                        <FilePlus2 size={18} />
+                        <span style={actionLabelStyle()}>New die order</span>
+                    </button>
+                )}
                 {user?.role === 'admin' && (
                     <button onClick={() => setShowImportModal(true)} title="Import Excel/CSV" style={actionButtonStyle()}>
                         <Upload size={18} />

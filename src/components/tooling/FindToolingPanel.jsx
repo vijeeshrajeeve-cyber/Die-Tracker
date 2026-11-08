@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, AlertTriangle, Search } from 'lucide-react';
 import { toolingsAPI } from '../../api';
 import OpeningOverlay from './OpeningOverlay';
@@ -11,7 +11,9 @@ import {
 // `c` is a palette like FrozenDesignsPage's usePalette (bg, inset, border, text,
 // muted, dim, primary, ok/okBg, warn/warnBg, danger/dangerBg). Optional
 // `dieMeta(dieNo) → string | null` supplies a similar die's "press · die size · cav"
-// line from the caller's die list; the panel fetches nothing for it.
+// line from the caller's die list; the panel fetches nothing for it. Optional
+// `onResult(data)` hears each finder answer as it lands (the new die order form keeps
+// the candidates for its record).
 
 const NO_PROFILE_404 = 'no true-size profile stored for this die — similarity and fit unavailable';
 
@@ -108,8 +110,11 @@ function headerLine(q) {
   return parts.join(' · ');
 }
 
-export default function FindToolingPanel({ query, onUse, onClose, c, minClearance = 5, onMinClearanceChange, dieMeta = null }) {
+export default function FindToolingPanel({ query, onUse, onClose, c, minClearance = 5, onMinClearanceChange, dieMeta = null, onResult = null }) {
   const [state, setState] = useState({ status: 'loading', data: null, error: '' });
+  // Read through a ref so an inline callback does not refetch on every parent render.
+  const onResultRef = useRef(onResult);
+  useEffect(() => { onResultRef.current = onResult; });
   // The parent rebuilds `query` on every render; the effect keys on its content.
   const queryKey = JSON.stringify(query ?? {});
 
@@ -117,7 +122,11 @@ export default function FindToolingPanel({ query, onUse, onClose, c, minClearanc
     let active = true; // a newer request makes this one's answer stale
     setState({ status: 'loading', data: null, error: '' });
     toolingsAPI.find({ ...JSON.parse(queryKey), minClearance })
-      .then((data) => { if (active) setState({ status: 'done', data, error: '' }); })
+      .then((data) => {
+        if (!active) return;
+        setState({ status: 'done', data, error: '' });
+        if (onResultRef.current) onResultRef.current(data);
+      })
       .catch((e) => {
         if (!active) return;
         const error = e?.status === 404 ? NO_PROFILE_404 : (e?.message || 'Finder failed');

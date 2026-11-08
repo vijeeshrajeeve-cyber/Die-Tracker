@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Mail, FileText, FolderOpen, AlertTriangle, Search } from 'lucide-react';
 import { BACKUP_REQUEST_STATUS_CONFIG } from '../../utils/constants';
 import { backupRequestsAPI, profilesAPI, pressesAPI, suppliersAPI, ordersAPI, frozenDesignsAPI, existingDataAPI, extractProfileFromDie, getUser } from '../../api';
 import { applyPrefill } from '../../utils/dieOrderPrefill';
@@ -12,6 +12,10 @@ import { dialogs } from '../ui/DialogProvider';
 import { BackupStatusPill } from '../ui/StatusPill';
 import { todayLocal } from '../../utils/today.js';
 import useDialog from '../../hooks/useDialog';
+import FindToolingPanel from '../tooling/FindToolingPanel';
+import useDieTooling from '../tooling/useDieTooling';
+import { applyChoice, finderReadiness } from '../../utils/toolingFinderView';
+import { usePalette } from '../../utils/palette';
 
 const COLUMNS = [
   { key: 'slNo', label: 'SL NO', sortable: false },
@@ -116,6 +120,11 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
   const orderDialogRef = useDialog({ open: showOrderModal && !!orderValues, onClose: () => setShowOrderModal(false), closeOnEscape: !orderBusy });
   const [orderError, setOrderError] = useState('');
   const orderFileInputRef = useRef(null);
+  // Find tooling inside the generate modal: the die's stored profile is the server's to look up.
+  const [showOrderFinder, setShowOrderFinder] = useState(false);
+  const [orderMinClearance, setOrderMinClearance] = useState(5);
+  const orderCurrentTooling = useDieTooling(showOrderFinder ? orderRow?.['DIE NO'] : null, orderRow?.['Plant']);
+  const finderPalette = usePalette(theme);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -548,6 +557,7 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
 
   const openOrderModal = async (request) => {
     setOrderRow(request);
+    setShowOrderFinder(false);
     setOrderFileHandle(null);
     setOrderFile(null);
     setOrderFileName('');
@@ -1507,7 +1517,25 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
               </div>
               <div>
                 <label style={labelStyle} htmlFor="backupdierequests-insert-no">INSERT No</label>
-                <input id="backupdierequests-insert-no" type="text" value={orderValues.INSERT_NO} onChange={(e) => setOrderValues({ ...orderValues, INSERT_NO: e.target.value })} style={inputStyle} />
+                {(() => {
+                  // No profile to wait for here ({} passes that gate); a die without one gets the panel's 404 line.
+                  const gate = finderReadiness({ profile: {}, press: orderValues.PRESS, dieSize: orderValues.DIE_SIZE, cavities: orderValues.NO_OF_CAV, plant: orderRow?.['Plant'] });
+                  return (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input id="backupdierequests-insert-no" type="text" value={orderValues.INSERT_NO} onChange={(e) => setOrderValues({ ...orderValues, INSERT_NO: e.target.value })} style={inputStyle} />
+                      <button
+                        type="button"
+                        onClick={() => setShowOrderFinder((v) => !v)}
+                        disabled={!gate.ready}
+                        title={gate.ready ? 'Find a tooling that fits this die' : gate.reason}
+                        aria-expanded={showOrderFinder}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, padding: '0 12px', borderRadius: '10px', background: 'transparent', border: `1px solid ${gate.ready ? theme.primary : theme.cardBorder}`, color: gate.ready ? theme.primary : theme.textMuted, cursor: gate.ready ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                      >
+                        <Search size={14} /> Find tooling
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div>
@@ -1518,6 +1546,20 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
                 <label style={labelStyle} htmlFor="backupdierequests-insert-size">INSERT SIZE</label>
                 <input id="backupdierequests-insert-size" type="text" value={orderValues.INSERT_SIZE} onChange={(e) => setOrderValues({ ...orderValues, INSERT_SIZE: e.target.value })} style={inputStyle} />
               </div>
+
+              {showOrderFinder && (
+                <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '0.8rem', color: theme.textMuted }}>{orderCurrentTooling || 'Current tooling: loading…'}</div>
+                  <FindToolingPanel
+                    query={{ plant: orderRow?.['Plant'], press: orderValues.PRESS, dieSize: orderValues.DIE_SIZE, cavities: orderValues.NO_OF_CAV, dieNo: orderRow?.['DIE NO'] }}
+                    onUse={(candidate) => setOrderValues((prev) => applyChoice(prev, candidate).values)}
+                    onClose={() => setShowOrderFinder(false)}
+                    c={finderPalette}
+                    minClearance={orderMinClearance}
+                    onMinClearanceChange={setOrderMinClearance}
+                  />
+                </div>
+              )}
 
               <div>
                 <label style={labelStyle} htmlFor="backupdierequests-requested-delivery-date">REQUESTED DELIVERY DATE</label>
