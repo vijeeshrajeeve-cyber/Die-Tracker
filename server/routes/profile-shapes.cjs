@@ -3,6 +3,7 @@
 // neighbours, nearest-to-a-posted-polygon, and the stored picture.
 const path = require('node:path');
 const express = require('express');
+const multer = require('multer');
 const { pool } = require('../db.cjs');
 const { reviewerMiddleware } = require('./auth.cjs');
 const { normalizePlant } = require('../services/frozenDesigns.cjs');
@@ -11,6 +12,7 @@ const { loadIndex, nearest, DEFAULT_LIMIT } = require('../services/profileSimila
 const orderFiles = require('../services/orderFiles.cjs');
 const toolingDrawings = require('../services/toolingDrawings.cjs');
 const { reviewProfileShape } = require('../services/toolingReview.cjs');
+const { shapeFromProfilePng, metaFromForm, readDieListCcd } = require('../services/orderProfileShape.cjs');
 
 const router = express.Router();
 
@@ -28,6 +30,50 @@ const isPolygon = (poly) => Array.isArray(poly) && poly.length >= 3
   && poly.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === 'number' && Number.isFinite(v)));
 
 const NEWEST_FIRST = 'ORDER BY updated_at DESC, id DESC';
+
+// The profile picture is small, so it is held in memory and checked before it is traced.
+const traceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: orderFiles.PROFILE_IMAGE_MAX_BYTES, files: 1 },
+});
+
+const TRACE_FIELDS = [
+  'outer_mm', 'holes_mm', 'outer_unit', 'holes_unit', 'hole_count', 'ccd_mm', 'true_size', 'true_size_source',
+  'true_size_confidence', 'style', 'needs_review', 'review_reason',
+];
+const TRACE_FAILURES = new Set(['no profile found in the picture', 'degenerate outline']);
+
+// The new-die-order modal's profile: the PNG cut from the drawing (multipart `file`) plus the text fields
+// metaFromForm reads, `plant`, and optionally `dieNo` (for the die list's CCD) and `dieType`. Traces and
+// true-sizes it exactly as an order's profile picture is; stores nothing.
+router.post('/trace', (req, res, next) => {
+  traceUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Profile image too large' : err.message });
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file || !orderFiles.isPng(req.file.buffer)) return res.status(400).json({ error: 'Attach the profile image as a PNG' });
+    const body = req.body || {};
+    const plant = plantOf(body.plant);
+    if (!plant) return res.status(400).json({ error: 'plant is required' });
+    const meta = metaFromForm(body);
+    const dieNo = typeof body.dieNo === 'string' ? body.dieNo.trim() : '';
+    const dieListCcd = dieNo ? await readDieListCcd(pool, dieNo, plant) : null;
+    const dieType = typeof body.dieType === 'string' && body.dieType.trim() ? body.dieType.trim() : null;
+    let shape;
+    try {
+      shape = await shapeFromProfilePng(req.file.buffer, { ...meta, dieListCcd, dieType });
+    } catch (err) {
+      if (TRACE_FAILURES.has(err.message)) return res.status(422).json({ error: err.message });
+      throw err;
+    }
+    res.json(Object.fromEntries(TRACE_FIELDS.map((k) => [k, shape[k] ?? null])));
+  } catch (err) {
+    console.error('profile trace failed', err);
+    res.status(500).json({ error: 'Failed to trace the profile' });
+  }
+});
 
 // Literal path first, so it is never read as a die number.
 router.post('/similar', async (req, res) => {

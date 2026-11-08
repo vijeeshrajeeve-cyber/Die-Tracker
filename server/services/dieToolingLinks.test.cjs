@@ -67,3 +67,16 @@ test('order links with neither number do nothing', async () => {
   assert.deepEqual(await m.recordOrderToolingLinks(client, { dieNo: 'x', plant: 'GEX 1', insertNo: '', bolsterNo: null }), []);
   assert.equal(calls.length, 0);
 });
+
+test('a source option scopes the delete and the rows to that source; others are refused', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rowCount: 1, rows: [] }; } };
+  const links = await m.recordOrderToolingLinks(client, { dieNo: 'D-1', plant: 'GEX 1', insertNo: 'I-99999', source: 'new-order-form' });
+  assert.deepEqual(links.map((l) => l.source), ['new-order-form']);
+  const del = calls.find((c) => /^DELETE/.test(c.sql));
+  assert.equal(del.sql, "DELETE FROM die_tooling_links WHERE source = 'new-order-form' AND die_no = $1");
+  assert.deepEqual(del.params, ['D-1']);
+  const ins = calls.find((c) => /^INSERT/.test(c.sql));
+  assert.equal(ins.params[5], 'new-order-form');
+  await assert.rejects(() => m.recordOrderToolingLinks(client, { dieNo: 'D-1', plant: 'GEX 1', insertNo: 'I-1', source: "x' OR 1=1 --" }), /unknown link source/);
+});

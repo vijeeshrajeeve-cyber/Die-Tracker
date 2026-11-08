@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { toolingsAPI, profileShapesAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { toolingsAPI, profileShapesAPI, newDieOrderFormsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -458,4 +458,92 @@ test('toolingsAPI write calls and profileShapesAPI.review hit the right paths wi
   assert.ok(calls[6].url.endsWith('/profile-shapes/4/review'));
   assert.equal(calls[6].method, 'POST');
   assert.deepEqual(JSON.parse(calls[6].body), { action: 'clear', note: 'fine' });
+});
+
+test('profileShapesAPI.trace posts the PNG and each meta field, scales as JSON', async () => {
+  const realFetch = globalThis.fetch;
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url: String(url), options };
+    return new Response(JSON.stringify({ true_size: false, outer_mm: null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+    const out = await profileShapesAPI.trace(blob, { plant: 'GEX 1', dieNo: 'D-1', renderDpi: 200, scales: [1, 0.5], ccdStated: null, dieType: '' });
+    assert.deepEqual(out, { true_size: false, outer_mm: null });
+    assert.ok(seen.url.endsWith('/profile-shapes/trace'));
+    assert.equal(seen.options.method, 'POST');
+    const form = seen.options.body;
+    assert.ok(form instanceof FormData);
+    assert.ok(form.get('file') instanceof Blob);
+    assert.equal(form.get('plant'), 'GEX 1');
+    assert.equal(form.get('dieNo'), 'D-1');
+    assert.equal(form.get('renderDpi'), '200');
+    assert.deepEqual(JSON.parse(form.get('scales')), [1, 0.5]);
+    assert.equal(form.has('ccdStated'), false);
+    assert.equal(form.has('dieType'), false);
+    assert.equal(seen.options.headers['Content-Type'], undefined, 'the browser sets the multipart boundary');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('newDieOrderFormsAPI.generate posts the drawing, values and finder and reads the headers', async () => {
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (calls.length === 2) return new Response(JSON.stringify({ error: 'PLANT and DIE_NO are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    return new Response(new Blob(['%PDF-stamped']), { status: 200, headers: { 'Content-Type': 'application/pdf', 'X-Form-Id': '41', 'X-Chosen-Tooling': 'BOL-4%2F6' } });
+  };
+  try {
+    const pdf = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    const values = { PLANT: 'GEX 1', DIE_NO: 'D-1' };
+    const finder = { chosen: { tooling: 'BOL-4/6', kind: 'bolster', fromFinder: true }, candidates: [], profile: null };
+    const out = await newDieOrderFormsAPI.generate(pdf, values, finder);
+    assert.equal(out.formId, 41);
+    assert.equal(out.chosenTooling, 'BOL-4/6');
+    assert.equal(await out.blob.text(), '%PDF-stamped');
+    assert.ok(calls[0].url.endsWith('/new-die-order-forms/generate'));
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer tok123');
+    const form = calls[0].options.body;
+    assert.deepEqual(JSON.parse(form.get('values')), values);
+    assert.deepEqual(JSON.parse(form.get('finder')), finder);
+    assert.ok(form.get('file') instanceof Blob);
+    await assert.rejects(() => newDieOrderFormsAPI.generate(pdf, {}, null), /PLANT and DIE_NO are required/);
+    assert.equal(calls[1].options.body.has('finder'), false);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
+  }
+});
+
+test('newDieOrderFormsAPI.list drops empty params and pdfBlob fetches with the Bearer header', async () => {
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), auth: options.headers && options.headers.Authorization });
+    if (String(url).includes('/9/pdf')) return new Response('nope', { status: 404 });
+    if (String(url).includes('/pdf')) return new Response(new Blob(['%PDF-form']), { status: 200 });
+    return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    assert.deepEqual(await newDieOrderFormsAPI.list({ dieNo: 'D 1', plant: 'GEX 1', limit: '' }), { items: [] });
+    assert.ok(calls[0].url.endsWith('/new-die-order-forms?dieNo=D+1&plant=GEX+1'));
+    await newDieOrderFormsAPI.list();
+    assert.ok(calls[1].url.endsWith('/new-die-order-forms'));
+    const blob = await newDieOrderFormsAPI.pdfBlob(7);
+    assert.ok(calls[2].url.endsWith('/new-die-order-forms/7/pdf'));
+    assert.equal(calls[2].auth, 'Bearer tok123');
+    assert.equal(await blob.text(), '%PDF-form');
+    await assert.rejects(() => newDieOrderFormsAPI.pdfBlob(9), /404/);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
+  }
 });

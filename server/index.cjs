@@ -36,6 +36,7 @@ const autoBackupService = require('./services/autoBackup.cjs');
 const frozenDesignsRouter = require('./routes/frozen-designs.cjs');
 const toolingsRouter = require('./routes/toolings.cjs');
 const profileShapesRouter = require('./routes/profile-shapes.cjs');
+const newDieOrderFormsRouter = require('./routes/new-die-order-forms.cjs');
 const qualityDiscrepanciesRouter = require('./routes/quality-discrepancies.cjs');
 const searchRouter = require('./routes/search.cjs');
 const signaturesRouter = require('./routes/signatures.cjs');
@@ -116,6 +117,9 @@ app.use('/api/frozen-designs', authMiddleware, pageAccessMiddleware('frozen-desi
 // 60m client_max_body_size of nginx.conf's location /api/toolings/.
 app.use('/api/toolings', authMiddleware, toolingsRouter);
 app.use('/api/profile-shapes', authMiddleware, profileShapesRouter);
+// The new-die-order form is generated from the orders and backup-requests pages. Drawing uploads (30 MB)
+// rely on the 31m client_max_body_size of nginx.conf's location /api/new-die-order-forms/.
+app.use('/api/new-die-order-forms', authMiddleware, pageAccessMiddleware(['orders', 'backup-requests']), newDieOrderFormsRouter);
 app.use('/api/quality-discrepancies', authMiddleware, pageAccessMiddleware('qd-tracker'), qualityDiscrepanciesRouter);
 // Per-group page access is checked inside the router: a user may read orders
 // but not QDs, or the reverse.

@@ -1035,6 +1035,72 @@ export const profileShapesAPI = {
     }),
     // Reviewer-only. body: { action: 'clear'|'keep', note? }
     review: async (id, body) => apiRequest(`/profile-shapes/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify(body) }),
+    // Traces a profile PNG (cut from a drawing) without storing it. meta: { plant, dieNo?, dieType?,
+    // renderDpi, scales, ccdStated, externalPerimeter, internalPerimeter, cavities, dieSize }; blank
+    // values are left out and `scales` goes as JSON. Answers the traced shape (true_size, outer_mm, ...).
+    trace: async (blob, meta = {}) => {
+        const form = new FormData();
+        for (const [key, value] of Object.entries(meta || {})) {
+            if (value == null || value === '') continue;
+            form.append(key, key === 'scales' ? JSON.stringify(value) : String(value));
+        }
+        form.append('file', blob, 'profile.png');
+        return apiRequest('/profile-shapes/trace', { method: 'POST', body: form, isMultipart: true });
+    },
+};
+
+// New-die-order forms: the stamped order PDF for a new die, recorded with its chosen tooling.
+export const newDieOrderFormsAPI = {
+    // pdfFileOrBlob = the drawing; values = the form (template keys + PLANT, DIE_NO, PROFILE_NO, CUSTOMER);
+    // finder = { chosen: { tooling, kind, fromFinder }, candidates, profile } or null.
+    // Returns { blob, formId, chosenTooling } - the stamped PDF and the recorded form's id.
+    generate: async (pdfFileOrBlob, values, finder) => {
+        const form = new FormData();
+        form.append('values', JSON.stringify(values || {}));
+        if (finder) form.append('finder', JSON.stringify(finder));
+        form.append('file', pdfFileOrBlob, pdfFileOrBlob?.name || 'drawing.pdf');
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/new-die-order-forms/generate`, {
+            method: 'POST',
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+            body: form,
+        });
+        if (!response.ok) {
+            if (response.status === 401) {
+                logout();
+                window.location.reload();
+            }
+            let errMsg = `Die order form failed (HTTP ${response.status})`;
+            try {
+                const j = await response.json();
+                if (j?.error) errMsg = j.error;
+                if (j?.detail) errMsg += `: ${j.detail}`;
+            } catch { /* response wasn't JSON */ }
+            throw new Error(errMsg);
+        }
+        const formId = Number(response.headers.get('X-Form-Id'));
+        const chosen = response.headers.get('X-Chosen-Tooling');
+        return {
+            blob: await response.blob(),
+            formId: Number.isInteger(formId) && formId > 0 ? formId : null,
+            chosenTooling: chosen ? decodeURIComponent(chosen) : null,
+        };
+    },
+    // params: { dieNo, plant, limit, full }
+    list: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/new-die-order-forms${qs ? `?${qs}` : ''}`);
+    },
+    // The stored form PDF. The route needs the Bearer header, so a plain link cannot fetch it.
+    pdfBlob: async (id) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/new-die-order-forms/${encodeURIComponent(id)}/pdf`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Could not open the die order form (HTTP ${response.status})`);
+        return response.blob();
+    },
 };
 
 // Quality Discrepancies (QD Tracker) API
