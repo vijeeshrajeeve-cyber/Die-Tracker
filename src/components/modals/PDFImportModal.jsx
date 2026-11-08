@@ -47,7 +47,7 @@ const profileMetaOf = (order) => ({
 });
 
 // PDF Import Modal Component
-const PDFImportModal =({ onClose, onImportRecords, existingOrders = [], suppliers = [], canFillExisting = false, theme = {} }) => {
+const PDFImportModal = ({ onClose, onImportRecords, existingOrders = [], suppliers = [], canFillExisting = false, theme = {} }) => {
   const dialogRef = useDialog({ open: true, onClose });
 
   // The preview's profile thumbnails are object URLs; free them when the modal goes.

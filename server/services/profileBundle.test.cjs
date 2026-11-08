@@ -188,6 +188,9 @@ test('a picture that traces to no shape is counted as nullShape and not written'
   assert.equal(shapesWritten, 0);
   assert.equal(report.needsReview.nullShape, 1);
   assert.equal(report.shapesWritten, 0);
+  assert.deepEqual(report.nullTraces, [{ sheet: 'GEX1', row: 2, source_ref: 'GEX1!E2', die_no: '1_101', media: report.nullTraces[0].media }]);
+  assert.match(report.nullTraces[0].media, /image1\.gif$/);
+  assert.equal(report.nullTracesTruncated, false);
 });
 
 test('limit stops after N pictures', async () => {
@@ -291,6 +294,27 @@ test('inserts a shape and fills true size from the die list CCD', async () => {
   assert.equal(client.calls.at(-1).sql, 'COMMIT');
   assert.equal(r.filesCopied, 1);
   assert.ok(io.copied[0][1].replace(/\\/g, '/').endsWith(`/root/profiles/ab/${'ab'.repeat(32)}.gif`));
+});
+
+test('the die list lookup is deterministic when a die is listed under two plant spellings', async () => {
+  const client = fakeClient();
+  await applyOf(client, [SHAPE()], fakeIo());
+  assert.match(client.calls.find((c) => /existing_die_details/.test(c.sql)).sql, /ORDER BY plant, id LIMIT 1$/);
+});
+
+test('an implausible die-list CCD (11,785 mm) is never scaled from', async () => {
+  const client = fakeClient({ dieRow: { cavity: 4, die_type: 'HOLLOW', profile_number: '07078', ccd: '11785' } });
+  const r = await applyOf(client, [SHAPE({ die_no: '07078_301' })], fakeIo());
+  const p = upsertOf(client).params;
+  assert.deepEqual([p[16], p[17], p[18], p[19], p[20], p[21]], [false, null, null, null, null, null]);
+  assert.deepEqual([r.inserted, r.trueSized, r.ccdImplausible, r.ccdBelowMin], [1, 0, 1, 0]);
+});
+
+test('a placeholder die-list CCD below MIN_CCD_MM is counted as ccdBelowMin', async () => {
+  const client = fakeClient({ dieRow: { cavity: 4, die_type: 'HOLLOW', profile_number: '090019', ccd: '0' } });
+  const r = await applyOf(client, [SHAPE()], fakeIo());
+  assert.equal(upsertOf(client).params[16], false);
+  assert.deepEqual([r.trueSized, r.ccdImplausible, r.ccdBelowMin], [0, 0, 1]);
 });
 
 test('a GEX 2 shape without CCD stays not true size', async () => {
@@ -413,4 +437,16 @@ test('the applier streams shapes.ndjson (a 3-line file yields 3 upserts; a bad l
     /shapes\.ndjson line 3:/);
   assert.equal(client2.calls.at(-1).sql, 'ROLLBACK');
   assert.ok(!client2.calls.some((c) => c.sql === 'COMMIT'));
+});
+
+test('a shapes file shorter than the manifest count rolls back without COMMIT', async () => {
+  const lines = [SHAPE({ source_ref: 'GEX1!E2' }), SHAPE({ source_ref: 'GEX1!E3' })].map((x) => JSON.stringify(x));
+  const partial = fakeBundleFs({ 'manifest.json': MANIFEST_V2, 'shapes.ndjson': lines.map((l) => `${l}\n`).join('') });
+  const client = fakeClient();
+  const io = fakeIo();
+  await assert.rejects(applyProfileBundle(client, readProfileBundle('/b', partial), { root: '/root', io }),
+    /manifest\.json says 3 shapes but shapes\.ndjson holds 2/);
+  assert.equal(client.calls.at(-1).sql, 'ROLLBACK');
+  assert.ok(!client.calls.some((c) => c.sql === 'COMMIT'));
+  assert.equal(io.copied.length, 0);
 });

@@ -4,18 +4,19 @@
 // filled silhouettes (holes are the white regions directly inside the ink) and thin-stroke outline
 // drawings (the outer stroke encloses white, inner strokes draw the cavities: holes are the white
 // regions at even nesting depth). A review rule compares the hole count with the sheet verdict.
+// The root is the largest ink component whose bounding box covers >= 2 % of the picture: a
+// bounding box, not ink pixels, so a thin-walled section (oval tube, clip) still qualifies.
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const {
   toGray, otsuThreshold, inkMask, closeMask, enclosedRegions, traceBoundary, simplify,
 } = require('./rasterTrace.cjs');
 
-const MIN_COMPONENT_FRACTION = 0.02; // of the picture area
+const MIN_COMPONENT_FRACTION = 0.02; // a root's bounding-box area vs the picture area
 const BORDER_SPAN = 0.95; // a component this wide and tall may be a picture frame
 const FRAME_INK_FRACTION = 0.9; // ...and is one when this much of its ink hugs its bbox edges
 const MIN_HOLE_FRACTION = 0.01; // of the outer area
 const OUTLINE_STROKE_RATIO = 0.04; // stroke width vs the outer bbox's shorter side
 const OUTLINE_WHITE_FRACTION = 0.5; // largest enclosed white region vs the outer area
-const BLANK_INK_FRACTION = 0.02;
 
 async function decodeImage(buffer) {
   const img = await loadImage(buffer);
@@ -92,10 +93,13 @@ function isPictureBorder(c, inkLabels, w, h) {
   return nearEdge >= FRAME_INK_FRACTION * c.area;
 }
 
+const bboxArea = (c) => (c.maxX - c.minX + 1) * (c.maxY - c.minY + 1);
+
+// The largest qualifying component by ink area; qualifying is by bounding-box area (see the top).
 function pickRoot(ink, w, h) {
   const minArea = MIN_COMPONENT_FRACTION * w * h;
   return ink.comps.slice(1)
-    .filter((c) => c.area >= minArea && !isPictureBorder(c, ink.labels, w, h))
+    .filter((c) => bboxArea(c) >= minArea && !isPictureBorder(c, ink.labels, w, h))
     .sort((a, b) => b.area - a.area)[0] || null;
 }
 
@@ -186,8 +190,8 @@ function resolveStyle(candidates, whiteDepth, area, thick, expectHollow) {
   return { style: 'outline', holeRegions: [], styleResolvedBy: expectHollow === false ? 'verdict' : 'default' };
 }
 
-function reviewOf({ inkFraction, holeCount }, expectHollow) {
-  if (inkFraction < BLANK_INK_FRACTION) return 'image nearly blank';
+// inkFraction is reported but not judged: a thin outline of a large solid is legitimately low.
+function reviewOf({ holeCount }, expectHollow) {
   if (expectHollow !== true && expectHollow !== false) return null;
   if ((holeCount > 0) === expectHollow) return null;
   return holeCount > 0
@@ -239,7 +243,7 @@ function shapeFromImage(image, { expectHollow = null } = {}) {
   const holes = holeRegions.map((r) => traceRegion(white.labels, r.id, r.bbox, w, h));
 
   const inkFraction = inkPixels / area;
-  const reviewReason = reviewOf({ inkFraction, holeCount: holes.length }, expectHollow);
+  const reviewReason = reviewOf({ holeCount: holes.length }, expectHollow);
   return {
     outer, holes, style, styleResolvedBy, inkFraction, strokeWidthPx, holeCount: holes.length,
     needsReview: reviewReason !== null, reviewReason, pxBbox,

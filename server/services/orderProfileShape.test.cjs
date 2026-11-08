@@ -44,6 +44,11 @@ test('without a die-list CCD the main scale is likely when it fits the die', () 
   assert.equal(chooseScale({ pxCcd: 1000, renderDpi: 200, scales: [1, 2 / 3], dieListCcd: null, dieSize: 'DIA150X160' }), null);
 });
 
+test('a reference CCD above MAX_CCD_MM (a die list typing error) is ignored, not compared', () => {
+  const base = { pxCcd: 1000, renderDpi: 200, scales: [1, 2 / 3], dieSize: 'DIA320X160' };
+  assert.deepEqual(chooseScale({ ...base, dieListCcd: 11785 }), chooseScale({ ...base, dieListCcd: null }));
+});
+
 test('no render DPI, no scales or no die size means no true size', () => {
   assert.equal(chooseScale({ pxCcd: 1000, renderDpi: null, scales: [1], dieListCcd: 127, dieSize: null }), null);
   assert.equal(chooseScale({ pxCcd: 1000, renderDpi: 200, scales: [], dieListCcd: 127, dieSize: null }), null);
@@ -143,4 +148,14 @@ test('a shape without true size stores NULL millimetre columns', async () => {
   assert.equal(params[16], false);
   assert.deepEqual(params.slice(17, 22), [null, null, null, null, null]);
   assert.equal(params[12], null); // no cavities given
+});
+
+test('an order with no plant is refused before the upsert', async () => {
+  const fields = await shapeFromProfilePng(ringPng(), { renderDpi: 200, scales: [], dieListCcd: null, dieSize: null });
+  const seen = [];
+  const client = { query: async (sql) => { seen.push(sql); return { rows: [], rowCount: 0 }; } };
+  for (const plant of [null, undefined, '', '  ']) {
+    await assert.rejects(recordOrderProfileShape(client, { orderId: 7, dieNo: 'D', plant, fields }), { message: 'order has no plant' });
+  }
+  assert.equal(seen.length, 0);
 });

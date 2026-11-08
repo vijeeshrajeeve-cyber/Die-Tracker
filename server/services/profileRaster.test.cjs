@@ -74,4 +74,28 @@ test('synthetic outline square with an inner outline square is a hollow drawn in
   assert.equal(r.style, 'outline'); assert.equal(r.holeCount, 1); assert.equal(r.needsReview, false);
   assert.equal(r.styleResolvedBy, 'geometry');
 });
-test('blank or near-blank image returns null', () => { assert.equal(shapeFromImage(white(100, 60)), null); });
+test('blank or near-blank image returns null', () => {
+  assert.equal(shapeFromImage(white(100, 60)), null);
+  // A speck: its bounding box is far under 2 % of the picture.
+  assert.equal(shapeFromImage(paint(300, 600, (x, y) => x >= 10 && x < 14 && y >= 10 && y < 14)), null);
+});
+// A tall oval tube drawn with a 2 px wall: ink well under 2 % of the picture, bounding box far over.
+const thinOval = (width, height, a, b, wall) => paint(width, height, (x, y) => {
+  const dx = x + 0.5 - width / 2;
+  const dy = y + 0.5 - height / 2;
+  const inside = (ra, rb) => (dx * dx) / (ra * ra) + (dy * dy) / (rb * rb) <= 1;
+  return inside(a, b) && !inside(a - wall, b - wall);
+});
+test('a thin-walled tall section qualifies as the root by its bounding box, not its ink', () => {
+  const img = thinOval(300, 600, 60, 270, 2);
+  let ink = 0;
+  for (let p = 0; p < img.data.length; p += 4) if (img.data[p] === 0) ink++;
+  assert.ok(ink < 0.02 * 300 * 600, `ink ${ink} px`);
+  const r = shapeFromImage(img, { expectHollow: true });
+  assert.ok(r, 'traced');
+  assert.equal(r.style, 'silhouette'); assert.equal(r.holeCount, 1); assert.equal(r.styleResolvedBy, 'verdict');
+  assert.equal(r.needsReview, false); assert.ok(r.inkFraction < 0.1, `inkFraction ${r.inkFraction}`);
+  const b = bbox(r.outer); assert.ok(Math.abs(b.width - 120) <= 3 && Math.abs(b.height - 540) <= 3, `${b.width}x${b.height}`);
+  const d = shapeFromImage(img); // no verdict: a lone thin closed stroke is an outline drawing, still not null
+  assert.equal(d.style, 'outline'); assert.equal(d.styleResolvedBy, 'default'); assert.equal(d.needsReview, false);
+});

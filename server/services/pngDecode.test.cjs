@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 const { createCanvas } = require('@napi-rs/canvas');
-const { decodePng } = require('./pngDecode.cjs');
+const { decodePng, MAX_PIXELS } = require('./pngDecode.cjs');
 const { decodeImage } = require('./profileRaster.cjs');
 
 // A drawing with anti-aliased edges and a half-transparent patch, as the browser would encode it.
@@ -114,4 +114,13 @@ test('a tRNS key colour on greyscale and RGB pictures shows white, as the canvas
   assert.deepEqual([...decodePng(rgb).data], [255, 255, 255, 255, 0, 0, 0, 255]);
   assert.deepEqual([...decodePng(grey).data], [...(await decodeImage(grey)).data]);
   assert.deepEqual([...decodePng(rgb).data], [...(await decodeImage(rgb)).data]);
+});
+
+test('a PNG over the 6 megapixel cap is refused from its header, naming the limit', () => {
+  assert.equal(MAX_PIXELS, 6e6);
+  // 3000x2001 = 6.003 MP: one pixel row over. The header alone decides; no IDAT is inflated.
+  const big = pngOf({ width: 3000, height: 2001, color: 0, raw: Buffer.alloc(1) });
+  assert.throws(() => decodePng(big), /PNG size 3000x2001 not accepted: the limit is 6 megapixels/);
+  const atCap = pngOf({ width: 3000, height: 2000, color: 0, raw: Buffer.alloc(1) });
+  assert.throws(() => decodePng(atCap), /PNG image data is short/); // passes the cap, fails later
 });

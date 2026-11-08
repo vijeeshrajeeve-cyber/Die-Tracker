@@ -8,7 +8,7 @@ const { shapeFromImage } = require('./profileRaster.cjs');
 const { decodePng } = require('./pngDecode.cjs');
 const { toUnitFrame, signatureOf, shapeStats } = require('./profileShape.cjs');
 const { normalizePlant } = require('./frozenDesigns.cjs');
-const { MIN_CCD_MM, PLANT_SPELLINGS } = require('./profileBundle.cjs');
+const { MIN_CCD_MM, MAX_CCD_MM, PLANT_SPELLINGS } = require('./profileBundle.cjs');
 
 const MM_PER_INCH = 25.4;
 const CCD_AGREEMENT = 0.03; // a scale is confirmed when its CCD is this close to the reference CCD
@@ -27,8 +27,9 @@ const hollowFrom = (s) => {
   return null;
 };
 
-// A CCD worth comparing against: a number, not a die list placeholder below MIN_CCD_MM.
-const referenceCcd = (v) => (Number.isFinite(v) && v >= MIN_CCD_MM ? v : null);
+// A CCD worth comparing against: a number within [MIN_CCD_MM, MAX_CCD_MM], not a die list
+// placeholder below the range or a typing error above it.
+const referenceCcd = (v) => (Number.isFinite(v) && v >= MIN_CCD_MM && v <= MAX_CCD_MM ? v : null);
 
 // 'DIA320X160' / '320X160' / 'Dia 250 x 80' -> the diameter (the first size); else null.
 function dieDiameterOf(dieSize) {
@@ -130,7 +131,7 @@ function metaFromForm(body = {}) {
 async function readDieListCcd(client, dieNo, plant) {
   const p = normalizePlant(plant);
   const { rows } = await client.query(
-    "SELECT raw_data->>'ProfileCCD' AS ccd FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2)",
+    "SELECT raw_data->>'ProfileCCD' AS ccd FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2) ORDER BY plant, id LIMIT 1",
     [dieNo, PLANT_SPELLINGS[p] || [p]]
   );
   const raw = rows[0] && rows[0].ccd;
@@ -160,6 +161,7 @@ async function recordOrderProfileShape(client, {
   orderId, dieNo, plant, profileNumber = null, imageSha = null, imagePath = null, dieType = null, cavities = null, fields,
 }) {
   const f = fields;
+  if (plant == null || String(plant).trim() === '') throw new Error('order has no plant');
   await client.query(UPSERT_SHAPE, [
     dieNo, normalizePlant(plant), profileNumber, 'order-pdf', String(orderId), imageSha, imagePath, f.style,
     jsonOrNull(f.outer_unit), jsonOrNull(f.holes_unit || []), jsonOrNull(f.signature), f.hole_count,

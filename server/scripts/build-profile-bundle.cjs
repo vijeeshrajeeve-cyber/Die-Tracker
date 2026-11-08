@@ -2,7 +2,10 @@
 // Builds the profile shape bundle from the image-check workbook's pictures.
 //   node server/scripts/build-profile-bundle.cjs [--workbook <xlsx>] [--out <bundleDir>]
 //        [--sheet GEX1|GEX2] [--limit N] [--dry-run] [--force]
-// Never deletes anything in --out; refuses to run over an existing manifest.json unless --force.
+// Refuses to run over an existing manifest.json unless --force. The only file it ever deletes is
+// that manifest.json, on a live --force run, before any shape is written: an interrupted rebuild
+// then leaves a folder with no manifest (which the applier refuses), never an old manifest beside
+// a partial shapes.ndjson.
 // --dry-run reads and traces everything but writes nothing.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -16,6 +19,14 @@ function localDay() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Readies the bundle folder for a live run: the stale manifest goes first, then the shape lines
+// start afresh. Exported for the test; `fsLike` defaults to node:fs.
+function prepareOut(out, fsLike = fs) {
+  fsLike.mkdirSync(out, { recursive: true });
+  fsLike.rmSync(path.join(out, 'manifest.json'), { force: true });
+  fsLike.writeFileSync(path.join(out, SHAPES_FILE), '');
 }
 
 function flag(name) {
@@ -55,10 +66,7 @@ async function main() {
       appendLine: (name, text) => fs.appendFileSync(path.join(out, name), `${text}
 `),
     };
-  if (!dryRun) {
-    fs.mkdirSync(out, { recursive: true });
-    fs.writeFileSync(path.join(out, SHAPES_FILE), ''); // a --force rebuild starts the shape lines afresh
-  }
+  if (!dryRun) prepareOut(out);
 
   const started = Date.now();
   const zip = openZip(workbook);
@@ -76,4 +84,6 @@ async function main() {
   console.log(dryRun ? 'Dry run, nothing was written.' : `Bundle written to ${out}`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
+
+module.exports = { prepareOut };

@@ -7,7 +7,14 @@
 const zlib = require('node:zlib');
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const MAX_PIXELS = 40e6;
+// The pixel cap protects the backend's 512 MB container, so it is sized by memory, not by what a
+// PNG can hold. Per pixel, decoding then tracing one picture holds about: decoder raw ~1-4 B
+// (h x (stride + 1)) + px 1-4 B + RGBA data 4 B; tracer rgb 3 B + gray 1 B + ink mask 1 B + two
+// closeMask passes 2 B + two Int32Array label arrays and their flood-fill stacks 16 B + filled 1 B
+// + inkInside 1 B + erosion buffers 1-2 B = roughly 30+ bytes per pixel. 6 MP x ~32 B ~ 190 MB,
+// which leaves the server room; 40 MP would be ~1.3 GB. The PDF import posts an A4 crop at 200 DPI
+// (under 4 MP). Do not raise this without redoing that arithmetic.
+const MAX_PIXELS = 6e6;
 const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
 
 function paeth(a, b, c) {
@@ -48,7 +55,7 @@ function decodePng(buffer) {
   if (!ended) throw new Error('PNG is truncated');
   const { width, height, depth, color, interlace } = ihdr;
   const channels = CHANNELS[color];
-  if (!width || !height || width * height > MAX_PIXELS) throw new Error(`PNG size ${width}x${height} not accepted`);
+  if (!width || !height || width * height > MAX_PIXELS) throw new Error(`PNG size ${width}x${height} not accepted: the limit is ${MAX_PIXELS / 1e6} megapixels`);
   if (depth !== 8 || !channels) throw new Error(`unsupported PNG format (bit depth ${depth}, colour type ${color})`);
   if (interlace !== 0) throw new Error('interlaced PNG not supported');
   if (color === 3 && !palette) throw new Error('palette PNG without a palette');
@@ -124,4 +131,4 @@ function decodePng(buffer) {
   return { data, width, height };
 }
 
-module.exports = { decodePng };
+module.exports = { decodePng, MAX_PIXELS };

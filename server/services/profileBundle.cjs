@@ -24,7 +24,7 @@ const SHEETS = {
 const IMAGE_EXTS = new Set(['gif', 'png']);
 const BUNDLE_VERSION = 2;
 const SHAPES_FILE = 'shapes.ndjson';
-const NEARLY_BLANK = 'image nearly blank'; // profileRaster's review reason for an empty picture
+const NULL_TRACES_CAP = 2000; // report.nullTraces lists at most this many pictures
 
 // 'Hollow' / 'HOLOW' -> true, 'SOLID' / 'solid' / 'SOLD' -> false, anything else -> null.
 const hollowFrom = (s) => {
@@ -54,9 +54,11 @@ function newReport() {
     picturesShared: 0,
     shapesWritten: 0,
     // Note categories (noteMismatch, noImage, blankOrUnclear) count every data row whose column-G
-    // note says so, picture or not; verdictMismatch and nullShape count traced pictures;
-    // a tracer "nearly blank" picture also counts under blankOrUnclear.
+    // note says so, picture or not; verdictMismatch and nullShape count traced pictures.
     needsReview: { verdictMismatch: 0, noteMismatch: 0, noImage: 0, blankOrUnclear: 0, nullShape: 0 },
+    // The pictures behind nullShape (first NULL_TRACES_CAP of them), so they can be looked at.
+    nullTraces: [],
+    nullTracesTruncated: false,
     styles: { silhouette: 0, outline: 0 },
     styleResolvedBy: { geometry: 0, verdict: 0, default: 0 },
     errors: [],
@@ -157,15 +159,20 @@ async function buildProfileBundle({
       if (onProgress) onProgress({ done, total });
       if (m.error) { report.errors.push({ row: sourceRef, error: m.error }); continue; }
       const shape = m.traces.get(expectHollow);
-      if (!shape) { report.needsReview.nullShape++; continue; }
+      if (!shape) {
+        report.needsReview.nullShape++;
+        if (report.nullTraces.length < NULL_TRACES_CAP) {
+          report.nullTraces.push({ sheet: sheet.name, row, source_ref: sourceRef, die_no: r.dieNo, media: anchors[i].mediaPath });
+        } else report.nullTracesTruncated = true;
+        continue;
+      }
       const geometry = { outer: shape.outer, holes: shape.holes };
       const signature = signatureOf(geometry);
       if (!signature.every(Number.isFinite)) { report.errors.push({ row: sourceRef, error: 'degenerate outline' }); continue; }
       const unit = toUnitFrame(geometry);
       const stats = shapeStats(geometry);
 
-      if (shape.reviewReason === NEARLY_BLANK) report.needsReview.blankOrUnclear++;
-      else if (shape.reviewReason) report.needsReview.verdictMismatch++;
+      if (shape.reviewReason) report.needsReview.verdictMismatch++;
       report.styles[shape.style]++;
       report.styleResolvedBy[shape.styleResolvedBy]++;
       const reasons = [note.reason, shape.reviewReason].filter(Boolean);
@@ -216,12 +223,15 @@ async function buildProfileBundle({
 // ---------------------------------------------------------------------------------------------
 
 const MIN_CCD_MM = 20; // below this the die list's ProfileCCD is a placeholder, not a diameter
+// Above this it is a typing error (07078_301 says 11,785 mm): the largest die in use is ~500 mm
+// across, so no profile's CCD can be larger. Never scale from it: no guessed true size.
+const MAX_CCD_MM = 600;
 
 // Stored spellings of each plant in existing_die_details.plant.
 const PLANT_SPELLINGS = { 'GEX 1': ['GEX 1', 'GEX 01'], 'GEX 2': ['GEX 2'] };
 
 const SELECT_DIE_LIST = `SELECT cavity, die_type, profile_number, raw_data->>'ProfileCCD' AS ccd
-  FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2)`;
+  FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2) ORDER BY plant, id LIMIT 1`;
 const SELECT_EXISTING = `SELECT signature, holes_unit, hole_count, style, profile_number, cavities, die_type, aspect_ratio, solidity,
     true_size, ccd_mm, needs_review, review_reason, image_path
   FROM profile_shapes WHERE die_no = $1 AND plant = $2 AND source = $3 AND source_ref = $4`;
@@ -294,19 +304,30 @@ const jsonOrNull = (v) => (v == null ? null : JSON.stringify(v));
 // Writes a profile bundle into profile_shapes in one transaction. A row a person has reviewed is never
 // rewritten; a picture is copied only when it is not already stored. All file IO is injected.
 // `bundle.shapes` is any (async) iterable and is consumed once; only counters and the pictures still
-// to copy are kept, so memory stays flat however large the bundle is.
+// to copy are kept, so memory stays flat however large the bundle is. When the manifest states a
+// shape count, a shapes file holding a different number (an interrupted build) rolls back.
+// A die-list CCD below MIN_CCD_MM (a placeholder) counts as ccdBelowMin, above MAX_CCD_MM (a typing
+// error) as ccdImplausible; either way the row is stored without a true size.
 async function applyProfileBundle(client, bundle, { root, io, dryRun = false, log = () => {} }) {
-  const counts = { inserted: 0, updated: 0, unchanged: 0, skippedReviewed: 0, filesCopied: 0, trueSized: 0, dieListMisses: 0 };
+  const counts = {
+    inserted: 0, updated: 0, unchanged: 0, skippedReviewed: 0, filesCopied: 0, trueSized: 0, dieListMisses: 0,
+    ccdBelowMin: 0, ccdImplausible: 0,
+  };
+  const expected = bundle.manifest && bundle.manifest.counts ? bundle.manifest.counts.shapes : undefined;
+  let read = 0;
   await client.query('BEGIN');
   try {
     const toCopy = new Map(); // imagePath -> source file
     for await (const s of bundle.shapes) {
+      read++;
       const spellings = PLANT_SPELLINGS[s.plant] || [s.plant];
       const dieRow = (await client.query(SELECT_DIE_LIST, [s.die_no, spellings])).rows[0];
       if (!dieRow) counts.dieListMisses++;
       const cavity = dieRow && dieRow.cavity != null && Number.isFinite(Number(dieRow.cavity)) ? Number(dieRow.cavity) : null;
       const ccd = dieRow && dieRow.ccd != null && dieRow.ccd !== '' ? Number(dieRow.ccd) : NaN;
-      const sized = Number.isFinite(ccd) && ccd >= MIN_CCD_MM ? trueSizeFromCcd(s, ccd) : null;
+      if (Number.isFinite(ccd) && ccd < MIN_CCD_MM) counts.ccdBelowMin++;
+      if (Number.isFinite(ccd) && ccd > MAX_CCD_MM) counts.ccdImplausible++;
+      const sized = Number.isFinite(ccd) && ccd >= MIN_CCD_MM && ccd <= MAX_CCD_MM ? trueSizeFromCcd(s, ccd) : null;
       const imagePath = s.image_file ? s.image_file.replace(/^files\//, '') : null;
       const dieType = s.die_type || (dieRow && dieRow.die_type) || null;
       const incoming = {
@@ -344,6 +365,10 @@ async function applyProfileBundle(client, bundle, { root, io, dryRun = false, lo
       if (imagePath && !toCopy.has(imagePath)) toCopy.set(imagePath, `${bundle.dir}/files/${imagePath}`.replace(/\\/g, '/'));
     }
 
+    if (typeof expected === 'number' && expected !== read) {
+      throw new Error(`The bundle is incomplete: manifest.json says ${expected} shapes but ${SHAPES_FILE} holds ${read}`);
+    }
+
     for (const [imagePath, src] of toCopy) {
       const dest = absolutePath(root, imagePath);
       if (io.exists(dest)) continue;
@@ -362,5 +387,5 @@ async function applyProfileBundle(client, bundle, { root, io, dryRun = false, lo
 }
 
 module.exports = {
-  buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle, MIN_CCD_MM, PLANT_SPELLINGS, BUNDLE_VERSION, SHAPES_FILE,
+  buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle, MIN_CCD_MM, MAX_CCD_MM, PLANT_SPELLINGS, BUNDLE_VERSION, SHAPES_FILE,
 };
