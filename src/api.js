@@ -995,6 +995,21 @@ export const toolingsAPI = {
     combinations: async ({ press, dieSize }) => apiRequest(`/toolings/combinations?${new URLSearchParams({ press: press ?? '', dieSize: dieSize ?? '' })}`),
 };
 
+// Profile library: a die's stored shapes and its nearest neighbours by shape.
+export const profileShapesAPI = {
+    forDie: async (dieNo, plant) => apiRequest(`/profile-shapes/${encodeURIComponent(dieNo)}?${new URLSearchParams({ plant: plant ?? '' })}`),
+    similar: async (dieNo, { plant, limit } = {}) => {
+        const params = new URLSearchParams({ plant: plant ?? '' });
+        if (limit !== undefined && limit !== null && limit !== '') params.set('limit', String(limit));
+        return apiRequest(`/profile-shapes/${encodeURIComponent(dieNo)}/similar?${params}`);
+    },
+    // Any-frame polygon; the server normalises and signs it.
+    similarTo: async ({ plant, outer, holes, cavities, limit }) => apiRequest('/profile-shapes/similar', {
+        method: 'POST',
+        body: JSON.stringify({ plant, outer, holes, cavities, limit }),
+    }),
+};
+
 // Quality Discrepancies (QD Tracker) API
 export const qualityDiscrepanciesAPI = {
     // year scopes the rows, KPIs and supplier rollup together; omit for all years.

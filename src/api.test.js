@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { toolingsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { toolingsAPI, profileShapesAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -377,4 +377,24 @@ test('uploadProfileImage without meta sends only the PNG', async () => {
   const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
   assert.deepEqual(await ordersAPI.uploadProfileImage(7, blob, 'p.png'), { kept: true });
   assert.deepEqual([...seen.options.body.keys()], ['file']);
+});
+
+test('profileShapesAPI encodes die numbers and plants, and posts the polygon', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || 'GET', body: options.body });
+    return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  await profileShapesAPI.forDie('110634_25-01', 'GEX 1');
+  assert.ok(calls[0].url.endsWith('/profile-shapes/110634_25-01?plant=GEX+1'));
+  assert.equal(calls[0].method, 'GET');
+  await profileShapesAPI.similar('A/B 1', { plant: 'GEX 2', limit: 5 });
+  assert.ok(calls[1].url.endsWith('/profile-shapes/A%2FB%201/similar?plant=GEX+2&limit=5'));
+  await profileShapesAPI.similar('D1', { plant: 'GEX 1' });
+  assert.ok(calls[2].url.endsWith('/profile-shapes/D1/similar?plant=GEX+1'), 'no limit when none is given');
+  const outer = [[0, 0], [10, 0], [10, 10]];
+  await profileShapesAPI.similarTo({ plant: 'GEX 1', outer, holes: [], cavities: 2, limit: 10 });
+  assert.ok(calls[3].url.endsWith('/profile-shapes/similar'));
+  assert.equal(calls[3].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[3].body), { plant: 'GEX 1', outer, holes: [], cavities: 2, limit: 10 });
 });
