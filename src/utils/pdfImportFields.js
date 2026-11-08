@@ -37,3 +37,41 @@ export const readDieType = (items) => {
   if (solidMarked === hollowMarked) return null;
   return solidMarked ? 'SOLID' : 'HOLLOW';
 };
+
+// Every "SCALE a:b" / "Scale a:b" on the page as drawing mm per sheet mm (b / a: 1:1 -> 1,
+// 3:1 -> 1/3), main scale first. The main one is the title block's: written in capitals and
+// lowest on the page (lines run top first, so the largest index). Without a capital SCALE the
+// first one found leads. `lines` are PDFImportModal's { y, text, items }.
+const SCALE = /\b(scale)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/gi;
+export const readScales = (lines) => {
+  const found = [];
+  for (const line of lines || []) {
+    for (const m of String(line.text || '').matchAll(SCALE)) {
+      const a = Number(m[2]);
+      const b = Number(m[3]);
+      if (a > 0 && b > 0) found.push({ ratio: b / a, caps: m[1] === 'SCALE', y: line.y });
+    }
+  }
+  if (!found.length) return [];
+  const capitals = found.filter((f) => f.caps);
+  const main = capitals.length ? capitals.reduce((lo, f) => (f.y < lo.y ? f : lo)) : found[0];
+  const out = [main.ratio];
+  for (const f of found) if (!out.includes(f.ratio)) out.push(f.ratio);
+  return out;
+};
+
+// The title block's CCD and perimeters: the number right after each label on its line, else null.
+// `label` is a regex source; words in it are separated by \s+.
+const numberAfterLabel = (lines, label) => {
+  const re = new RegExp(String.raw`\b${label}\b[\s:=\-]*(\d+(?:\.\d+)?)`, 'i');
+  for (const line of lines || []) {
+    const m = String(line.text || '').match(re);
+    if (m) return Number(m[1]);
+  }
+  return null;
+};
+export const readTitleBlockNumbers = (lines) => ({
+  ccd: numberAfterLabel(lines, 'CCD'),
+  externalPerimeter: numberAfterLabel(lines, String.raw`External\s+Perimeter`),
+  internalPerimeter: numberAfterLabel(lines, String.raw`Internal\s+Perimeter`),
+});

@@ -291,9 +291,16 @@ export const ordersAPI = {
     },
 
     // The profile cut from the die drawing (a PNG Blob). Fills only: the answer
-    // is { kept: true } when the order already has one.
-    uploadProfileImage: async (id, blob, fileName) => {
+    // is { kept: true } when the order already has one. `meta` (optional) carries the
+    // drawing's scale and title-block numbers so the server can true-size the traced
+    // shape; blank values are left out and `scales` goes as JSON.
+    uploadProfileImage: async (id, blob, fileName, meta = {}) => {
         const form = new FormData();
+        for (const key of ['renderDpi', 'scales', 'ccdStated', 'externalPerimeter', 'internalPerimeter', 'cavities', 'dieSize']) {
+            const value = meta?.[key];
+            if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) continue;
+            form.append(key, key === 'scales' ? JSON.stringify(value) : String(value));
+        }
         form.append('file', blob, fileName);
         return apiRequest(`/orders/${id}/profile-image`, { method: 'POST', body: form, isMultipart: true });
     },

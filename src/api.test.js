@@ -342,3 +342,39 @@ test('toolingsAPI.reviewQueue and downloadDrawing hit the right paths', async ()
     globalThis.localStorage = realStorage;
   }
 });
+
+// The PDF import sends the drawing's scale and title-block numbers beside the profile PNG,
+// so the server can size the traced shape. Blank values are left out.
+test('uploadProfileImage sends the drawing meta as form fields beside the PNG', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ file: { id: 3 } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  };
+  const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+  await ordersAPI.uploadProfileImage(7, blob, '30533_201_profile.png', {
+    renderDpi: 200, scales: [1, 1 / 3], ccdStated: 183.2, externalPerimeter: null, internalPerimeter: '', cavities: 2, dieSize: 'DIA320X160',
+  });
+  assert.match(seen.url, /\/orders\/7\/profile-image$/);
+  const form = seen.options.body;
+  assert.ok(form instanceof FormData);
+  assert.equal(form.get('file').name, '30533_201_profile.png');
+  assert.equal(form.get('renderDpi'), '200');
+  assert.deepEqual(JSON.parse(form.get('scales')), [1, 1 / 3]);
+  assert.equal(form.get('ccdStated'), '183.2');
+  assert.equal(form.get('cavities'), '2');
+  assert.equal(form.get('dieSize'), 'DIA320X160');
+  assert.equal(form.has('externalPerimeter'), false);
+  assert.equal(form.has('internalPerimeter'), false);
+});
+
+test('uploadProfileImage without meta sends only the PNG', async () => {
+  let seen;
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options };
+    return new Response(JSON.stringify({ kept: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+  assert.deepEqual(await ordersAPI.uploadProfileImage(7, blob, 'p.png'), { kept: true });
+  assert.deepEqual([...seen.options.body.keys()], ['file']);
+});

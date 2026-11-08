@@ -9,6 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const express = require('express');
+const { createCanvas } = require('@napi-rs/canvas');
 const { installFakeDb, listen, request } = require('./testSupport.cjs');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'order-files-'));
@@ -20,11 +21,16 @@ let stored;
 let current;
 let rows;
 let log = [];
+let dieListCcd; // the die list's ProfileCCD for the order's die (undefined: no die list row)
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   log.push({ q, params });
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
-  if (/^SELECT id, die_no, status FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: stored ? [stored] : [] };
+  if (/^SELECT id, die_no, status(, plant, die_type, die_size, cavity)? FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: stored ? [stored] : [] };
+  if (/^SELECT raw_data->>'ProfileCCD' AS ccd FROM existing_die_details WHERE die_no = \$1 AND plant = ANY\(\$2\)/.test(q)) {
+    return { rows: dieListCcd === undefined ? [] : [{ ccd: dieListCcd }] };
+  }
+  if (/^INSERT INTO profile_shapes/.test(q)) return { rows: [{ inserted: true }], rowCount: 1 };
   if (/^SELECT created_by FROM die_orders WHERE id = \$1/.test(q)) return { rows: stored ? [stored] : [] };
   if (/^SELECT id, original_name FROM die_order_files WHERE order_id = \$1 AND slot = \$2 AND replaced_at IS NULL FOR UPDATE/.test(q)) {
     return { rows: current ? [current] : [] };
@@ -56,6 +62,11 @@ app.use('/api/orders', ordersRouter);
 
 let base;
 let close;
+// The profile-image route warns when it cannot trace the picture; collect instead of printing.
+let warnings = [];
+const realWarn = console.warn;
+test.before(() => { console.warn = (...args) => warnings.push(args.join(' ')); });
+test.after(() => { console.warn = realWarn; });
 test.before(async () => { ({ base, close } = await listen(app)); });
 test.after(async () => {
   await close();
@@ -67,6 +78,8 @@ test.beforeEach(() => {
   stored = { id: 7, die_no: '30533_201', status: 'PENDING FOR DESIGN APPROVAL' };
   current = null;
   rows = [];
+  dieListCcd = undefined;
+  warnings = [];
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(root, { recursive: true });
 });
@@ -238,8 +251,9 @@ test('deleting an order removes its stored files from disk', async () => {
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('rest of png')]);
 
-async function uploadProfile({ content = PNG, name = '30533_201_profile.png' } = {}) {
+async function uploadProfile({ content = PNG, name = '30533_201_profile.png', fields = {} } = {}) {
   const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
   form.append('file', new Blob([content], { type: 'image/png' }), name);
   const response = await fetch(`${base}/api/orders/7/profile-image`, { method: 'POST', body: form });
   return { status: response.status, body: await response.json() };
@@ -294,4 +308,63 @@ test('anyone else without the switch is refused before the upload is read', asyn
 test('the drawer slot route does not take a profile image', async () => {
   const { status } = await upload('profile_image', { name: 'p.png', content: PNG });
   assert.equal(status, 404);
+});
+
+// A real profile picture: a black ring on white (R 80 px, r 40 px), as the PDF import cuts it.
+function ringPng() {
+  const canvas = createCanvas(200, 200);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 200, 200);
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.arc(100, 100, 80, 0, 2 * Math.PI);
+  ctx.arc(100, 100, 40, 0, 2 * Math.PI);
+  ctx.fill('evenodd');
+  return canvas.toBuffer('image/png');
+}
+
+test('posting a profile PNG also records its traced shape, true-sized from the stated scale', async () => {
+  Object.assign(stored, { plant: 'GEX 01', die_type: 'HOLLOW', die_size: '320X160', cavity: 2 });
+  const { status, body } = await uploadProfile({
+    content: ringPng(), fields: { renderDpi: '200', scales: '[1]', dieSize: 'DIA320X160', ccdStated: '' },
+  });
+  assert.equal(status, 201, JSON.stringify(body));
+  assert.equal(body.file.slot, 'profile_image');
+  assert.deepEqual(body.shape, { ok: true, trueSize: true, holeCount: 1 });
+
+  const [dieList] = queries("SELECT raw_data->>'ProfileCCD'");
+  assert.deepEqual(dieList.params, ['30533_201', ['GEX 1', 'GEX 01']]);
+  const [shape] = queries('INSERT INTO profile_shapes');
+  const onDisk = filesOnDisk();
+  assert.deepEqual(shape.params.slice(0, 5), ['30533_201', 'GEX 1', null, 'order-pdf', '7']);
+  assert.equal(shape.params[6], path.join(...onDisk[0].split('/'))); // the stored_path written to die_order_files
+  assert.equal(shape.params[6], queries('INSERT INTO die_order_files')[0].params[3]);
+  assert.equal(shape.params[12], 2); // the order's cavity count
+  assert.equal(shape.params[13], 'HOLLOW');
+  assert.equal(shape.params[20], 'pdf-scale');
+  assert.deepEqual(warnings, []);
+});
+
+test('a profile PNG without the drawing meta is recorded without a true size', async () => {
+  Object.assign(stored, { plant: 'GEX 2', die_type: null, die_size: null, cavity: 0 });
+  const { status, body } = await uploadProfile({ content: ringPng() });
+  assert.equal(status, 201);
+  assert.deepEqual(body.shape, { ok: true, trueSize: false, holeCount: 1 });
+  const [shape] = queries('INSERT INTO profile_shapes');
+  assert.equal(shape.params[12], null); // cavity 0 is "not known"
+  assert.equal(shape.params[16], false);
+});
+
+test('a shape that cannot be traced never fails the upload', async () => {
+  const { status, body } = await uploadProfile(); // PNG magic, but no decodable picture
+  assert.equal(status, 201);
+  assert.equal(body.file.slot, 'profile_image');
+  assert.equal(body.shape.ok, false);
+  assert.equal(typeof body.shape.error, 'string');
+  assert.equal(queries('INSERT INTO profile_shapes').length, 0);
+  assert.equal(queries('COMMIT').length, 1);
+  assert.equal(filesOnDisk().length, 1);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Profile shape for order 7 not recorded/);
 });

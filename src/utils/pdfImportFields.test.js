@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractBolsterInsertNos, readDieType } from './pdfImportFields.js';
+import { extractBolsterInsertNos, readDieType, readScales, readTitleBlockNumbers } from './pdfImportFields.js';
 
 // Row text exactly as pdf.js reconstructs it from the Sept 2026 GEX order forms,
 // whose labels read "No," with the dash separator after the comma.
@@ -66,4 +66,47 @@ test('leaves the die type blank when no box, or both boxes, are marked', () => {
   assert.equal(readDieType(row(['BOLSTER No,', 119], ['INSERT No,', 169], ['I-05138', 196])), null);
   // An "OK" far to the right belongs to something else on the drawing.
   assert.equal(readDieType(row(['SOLID', 119], ['-', 147], ['HOLLOW', 169], ['-', 193], ['OK', 600])), null);
+});
+
+// Lines as PDFImportModal builds them: y descending (top of the page first), items left to right.
+const line = (y, ...texts) => ({
+  y, text: texts.join(' '), items: texts.map((text, i) => ({ text, x: 40 + i * 60 })),
+});
+
+// The 030724 sheet: a detail view at 3:1 near the top, a section at 3:2 lower down and the
+// title block's SCALE 1:1 at the foot of the page.
+const SAMPLE_030724 = [
+  line(780, 'DETAIL A', 'Scale 3:1'),
+  line(520, 'SECTION B-B', 'SCALE 3:2'),
+  line(300, 'CCD 183.2', 'No. of cavities 2'),
+  line(60, 'DRAWN', 'SCALE 1:1', 'SHEET 1 OF 1'),
+];
+
+test('the main view scale wins over detail scales', () => {
+  assert.deepEqual(readScales(SAMPLE_030724), [1, 1 / 3, 2 / 3]);
+});
+
+test('without a capital SCALE the first scale found leads', () => {
+  assert.deepEqual(readScales([line(700, 'Scale 2:1'), line(100, 'Scale 1:2')]), [1 / 2, 2]);
+});
+
+test('a page without a scale gives no scales', () => {
+  assert.deepEqual(readScales([line(100, 'DRAWN', 'CHECKED')]), []);
+  assert.deepEqual(readScales([]), []);
+});
+
+test('reads the title block numbers that follow their labels', () => {
+  assert.deepEqual(readTitleBlockNumbers([line(300, 'CCD 183.2', 'No. of cavities 2')]),
+    { ccd: 183.2, externalPerimeter: null, internalPerimeter: null });
+  assert.deepEqual(readTitleBlockNumbers([
+    line(320, 'External Perimeter', '612.4'),
+    line(300, 'Internal Perimeter: 288'),
+  ]), { ccd: null, externalPerimeter: 612.4, internalPerimeter: 288 });
+});
+
+test('the blank form has no title block numbers', () => {
+  assert.deepEqual(readTitleBlockNumbers([
+    line(320, 'External Perimeter', 'Internal Perimeter'),
+    line(300, 'CCD', 'No. of cavities'),
+  ]), { ccd: null, externalPerimeter: null, internalPerimeter: null });
 });

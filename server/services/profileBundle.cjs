@@ -329,4 +329,4 @@ async function applyProfileBundle(client, bundle, { root, io, dryRun = false, lo
   }
 }
 
-module.exports = { buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle };
+module.exports = { buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle, MIN_CCD_MM, PLANT_SPELLINGS };
