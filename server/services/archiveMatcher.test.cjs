@@ -34,6 +34,10 @@ const CASES = [
   ['INS_27293_27294_FIN_(INS_29293)', ROOT, { toolingNumber: 'I-27293', kind: 'insert' }],
   ['25IC1-G-23483', G2, { toolingNumber: '25IC1-G23483', kind: 'insert', plant: 'GEX 2', basis: 'filename-die' }],
   ['25IC1-G23438', G2, { toolingNumber: '25IC1-G23438' }],
+  ['BOL 16267 (700x200)', G1B, { toolingNumber: 'BOL-16267', sizeClass: '700X200' }],
+  ['BOL-14017(475x220)', G1B, { toolingNumber: 'BOL-14017', sizeClass: '475X220' }],
+  ['INS-30610 (P6)', G1I, { toolingNumber: 'I-30610', press: 'PRESS 6' }],
+  ['I-12345 (P4)', G1I, { toolingNumber: 'I-12345', press: 'PRESS 4' }],
 ];
 for (const [stem, ctx, expected] of CASES) test(`interprets "${stem}"`, () => {
   const got = interpretStem(stem, ctx);
