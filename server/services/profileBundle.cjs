@@ -2,9 +2,10 @@
 // Profile shape bundle. The build half runs on the PC: it reads the image-check workbook, traces
 // every picture into a shape and writes a bundle folder (manifest.json, shapes.json, report.json,
 // files/profiles/…). The apply half (server side, Task 5) loads that bundle into profile_shapes.
-const { sha256Of, profileImagePath } = require('./toolingDrawings.cjs');
+const nodePath = require('node:path');
+const { sha256Of, profileImagePath, absolutePath } = require('./toolingDrawings.cjs');
 const { decodeImage, shapeFromImage } = require('./profileRaster.cjs');
-const { toUnitFrame, signatureOf, shapeStats } = require('./profileShape.cjs');
+const { toUnitFrame, signatureOf, shapeStats, minEnclosingCircle } = require('./profileShape.cjs');
 const {
   readSheetIndex, readSharedStrings, readRows, readPictureAnchors, parseGex1Row, parseGex2Row, reviewFromNote,
 } = require('./imageCheckWorkbook.cjs');
@@ -207,4 +208,115 @@ async function buildProfileBundle({
 // Apply (server side) — Task 5
 // ---------------------------------------------------------------------------------------------
 
-module.exports = { buildProfileBundle };
+const MIN_CCD_MM = 20; // below this the die list's ProfileCCD is a placeholder, not a diameter
+
+// Stored spellings of each plant in existing_die_details.plant.
+const PLANT_SPELLINGS = { 'GEX 1': ['GEX 1', 'GEX 01'], 'GEX 2': ['GEX 2'] };
+
+const SELECT_DIE_LIST = `SELECT cavity, die_type, profile_number, raw_data->>'ProfileCCD' AS ccd
+  FROM existing_die_details WHERE die_no = $1 AND plant = ANY($2)`;
+const SELECT_EXISTING = `SELECT signature, true_size, ccd_mm, needs_review, review_reason, image_path
+  FROM profile_shapes WHERE die_no = $1 AND plant = $2 AND source = $3 AND source_ref = $4`;
+const UPSERT_SHAPE = `INSERT INTO profile_shapes
+    (die_no, plant, profile_number, source, source_ref, image_sha, image_path, style, outer_unit, holes_unit, signature,
+     hole_count, cavities, die_type, aspect_ratio, solidity, true_size, outer_mm, holes_mm, ccd_mm,
+     true_size_source, true_size_confidence, needs_review, review_reason)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+  ON CONFLICT (die_no, plant, source, source_ref) DO UPDATE SET
+    profile_number = EXCLUDED.profile_number, image_sha = EXCLUDED.image_sha, image_path = EXCLUDED.image_path,
+    style = EXCLUDED.style, outer_unit = EXCLUDED.outer_unit, holes_unit = EXCLUDED.holes_unit,
+    signature = EXCLUDED.signature, hole_count = EXCLUDED.hole_count, cavities = EXCLUDED.cavities,
+    die_type = EXCLUDED.die_type, aspect_ratio = EXCLUDED.aspect_ratio, solidity = EXCLUDED.solidity,
+    true_size = EXCLUDED.true_size, outer_mm = EXCLUDED.outer_mm, holes_mm = EXCLUDED.holes_mm, ccd_mm = EXCLUDED.ccd_mm,
+    true_size_source = EXCLUDED.true_size_source, true_size_confidence = EXCLUDED.true_size_confidence,
+    needs_review = EXCLUDED.needs_review, review_reason = EXCLUDED.review_reason, updated_at = CURRENT_TIMESTAMP
+  WHERE profile_shapes.reviewed_at IS NULL
+  RETURNING (xmax = 0) AS inserted`;
+
+// readProfileBundle(dir, fsLike) reads and validates a bundle folder written by buildProfileBundle.
+function readProfileBundle(dir, fsLike = require('node:fs')) {
+  const read = (name, optional = false) => {
+    try { return JSON.parse(fsLike.readFileSync(nodePath.join(dir, name), 'utf8')); } catch (err) {
+      if (optional && err && err.code === 'ENOENT') return null;
+      throw new Error(`Cannot read ${name} from the bundle: ${err.message}`);
+    }
+  };
+  const manifest = read('manifest.json');
+  if (!manifest || manifest.version !== 1 || manifest.kind !== 'profile-shapes') {
+    throw new Error(`Not a profile-shapes bundle of version 1 (version ${manifest && manifest.version}, kind ${manifest && manifest.kind})`);
+  }
+  const shapes = read('shapes.json');
+  if (!Array.isArray(shapes)) throw new Error('shapes.json must be an array');
+  return { dir, manifest, shapes, report: read('report.json', true) };
+}
+
+// Scales the unit-frame outline so the smallest circle around it measures `ccdMm` across.
+function trueSizeFromCcd({ outer_unit: outerUnit, holes_unit: holesUnit = [] }, ccdMm) {
+  const scale = ccdMm / (2 * minEnclosingCircle(outerUnit).r);
+  const mm = (poly) => poly.map(([x, y]) => [x * scale, y * scale]);
+  return { outer_mm: mm(outerUnit), holes_mm: holesUnit.map(mm), ccd_mm: ccdMm, source: 'ccd-scaled', confidence: 'likely' };
+}
+
+const sameCcd = (a, b) => (a == null || b == null ? (a == null) === (b == null) : Math.abs(Number(a) - Number(b)) < 1e-9);
+const jsonOrNull = (v) => (v == null ? null : JSON.stringify(v));
+
+// Writes a profile bundle into profile_shapes in one transaction. A row a person has reviewed is never
+// rewritten; a picture is copied only when it is not already stored. All file IO is injected.
+async function applyProfileBundle(client, bundle, { root, io, dryRun = false, log = () => {} }) {
+  const counts = { inserted: 0, updated: 0, unchanged: 0, skippedReviewed: 0, filesCopied: 0, trueSized: 0, dieListMisses: 0 };
+  await client.query('BEGIN');
+  try {
+    const toCopy = new Map(); // imagePath -> source file
+    for (const s of bundle.shapes) {
+      const spellings = PLANT_SPELLINGS[s.plant] || [s.plant];
+      const dieRow = (await client.query(SELECT_DIE_LIST, [s.die_no, spellings])).rows[0];
+      if (!dieRow) counts.dieListMisses++;
+      const cavity = dieRow && dieRow.cavity != null && Number.isFinite(Number(dieRow.cavity)) ? Number(dieRow.cavity) : null;
+      const ccd = dieRow && dieRow.ccd != null && dieRow.ccd !== '' ? Number(dieRow.ccd) : NaN;
+      const sized = Number.isFinite(ccd) && ccd >= MIN_CCD_MM ? trueSizeFromCcd(s, ccd) : null;
+      const imagePath = s.image_file ? s.image_file.replace(/^files\//, '') : null;
+      const incoming = {
+        signature: s.signature, true_size: sized != null, ccd_mm: sized ? sized.ccd_mm : null,
+        needs_review: !!s.needs_review, review_reason: s.review_reason ?? null, image_path: imagePath,
+      };
+      const old = (await client.query(SELECT_EXISTING, [s.die_no, s.plant, s.source, s.source_ref])).rows[0];
+      const same = old
+        && JSON.stringify(old.signature) === JSON.stringify(incoming.signature)
+        && old.true_size === incoming.true_size && sameCcd(old.ccd_mm, incoming.ccd_mm)
+        && old.needs_review === incoming.needs_review && (old.review_reason ?? null) === incoming.review_reason
+        && (old.image_path ?? null) === incoming.image_path;
+      if (same) {
+        counts.unchanged++;
+      } else {
+        const res = await client.query(UPSERT_SHAPE, [
+          s.die_no, s.plant, s.profile_number ?? null, s.source, s.source_ref, s.image_sha ?? null, imagePath, s.style ?? null,
+          jsonOrNull(s.outer_unit), jsonOrNull(s.holes_unit || []), jsonOrNull(s.signature), s.hole_count, cavity,
+          s.die_type || (dieRow && dieRow.die_type) || null, s.aspect_ratio ?? null, s.solidity ?? null,
+          incoming.true_size, jsonOrNull(sized && sized.outer_mm), jsonOrNull(sized && sized.holes_mm), incoming.ccd_mm,
+          sized ? sized.source : null, sized ? sized.confidence : null, incoming.needs_review, incoming.review_reason,
+        ]);
+        if (res.rowCount === 0) { counts.skippedReviewed++; continue; }
+        if (res.rows[0] && res.rows[0].inserted) counts.inserted++; else counts.updated++;
+      }
+      if (sized) counts.trueSized++;
+      if (imagePath && !toCopy.has(imagePath)) toCopy.set(imagePath, `${bundle.dir}/files/${imagePath}`.replace(/\\/g, '/'));
+    }
+
+    for (const [imagePath, src] of toCopy) {
+      const dest = absolutePath(root, imagePath);
+      if (io.exists(dest)) continue;
+      if (dryRun) { log(`would copy ${imagePath}`); continue; }
+      io.mkdirp(nodePath.dirname(dest));
+      io.copyFile(src, dest);
+      counts.filesCopied++;
+    }
+    log(dryRun ? 'dry run: rolling back' : 'committing');
+    await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
+    return counts;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (rollbackErr) { log(`rollback failed: ${rollbackErr.message}`); }
+    throw err;
+  }
+}
+
+module.exports = { buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle };

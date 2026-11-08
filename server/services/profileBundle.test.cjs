@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { makeXlsx } = require('./fixtures/syntheticXlsx.cjs');
 const { sha256Of, profileImagePath } = require('./toolingDrawings.cjs');
-const { buildProfileBundle } = require('./profileBundle.cjs');
+const { buildProfileBundle, readProfileBundle, trueSizeFromCcd, applyProfileBundle } = require('./profileBundle.cjs');
 
 // RGBA test picture painted directly (copied from profileRaster.test.cjs): a filled annulus.
 const paint = (width, height, ink) => {
@@ -207,4 +207,114 @@ test('GEX2 rows carry plant GEX 2 and no verdict', async () => {
   assert.equal(r.shapes[1].needs_review, true);
   assert.equal(r.report.rowsWithoutPicture, 1);
   assert.deepEqual(r.decoded, ['GIF89a-picture-B']);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Apply half (fake client: records every query, returns scripted rows)
+// ---------------------------------------------------------------------------------------------
+
+const unitRing = (r, n = 64) => Array.from({ length: n }, (_, i) => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)]);
+const SHAPE = (over = {}) => ({
+  die_no: '090019-2501', plant: 'GEX 1', profile_number: '090019', source: 'image-check-xlsx', source_ref: 'GEX1!E2',
+  image_sha: 'ab'.repeat(32), image_file: `files/profiles/ab/${'ab'.repeat(32)}.gif`, style: 'silhouette',
+  outer_unit: unitRing(0.5), holes_unit: [unitRing(0.1, 16)], signature: [0.1, 0.2], hole_count: 1, die_type: 'Hollow',
+  aspect_ratio: 1, solidity: 1, needs_review: false, review_reason: null, ...over,
+});
+
+function fakeClient({ dieRow = { cavity: 4, die_type: 'HOLLOW', profile_number: '090019', ccd: '123.4' }, existing = null, upsertCount = 1, inserted = true } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM existing_die_details/.test(sql)) return { rows: dieRow ? [dieRow] : [], rowCount: dieRow ? 1 : 0 };
+      if (/FROM profile_shapes/.test(sql)) return { rows: existing ? [existing] : [], rowCount: existing ? 1 : 0 };
+      if (/INSERT INTO profile_shapes/.test(sql)) return { rows: upsertCount ? [{ inserted }] : [], rowCount: upsertCount };
+      return { rows: [], rowCount: 0 };
+    },
+  };
+}
+function fakeIo(existing = []) {
+  const io = { copied: [], made: [], exists: (p) => existing.some((e) => p.endsWith(e)), mkdirp: (d) => io.made.push(d), copyFile: (s, d) => io.copied.push([s, d]) };
+  return io;
+}
+const applyOf = (client, shapes, io, extra = {}) => applyProfileBundle(client, { dir: '/b', shapes }, { root: '/root', io, ...extra });
+const upsertOf = (client) => client.calls.find((c) => /INSERT INTO profile_shapes/.test(c.sql));
+
+test('inserts a shape and fills true size from the die list CCD', async () => {
+  const client = fakeClient();
+  const io = fakeIo();
+  const r = await applyOf(client, [SHAPE()], io);
+  const call = upsertOf(client);
+  assert.match(call.sql, /ON CONFLICT \(die_no, plant, source, source_ref\) DO UPDATE/);
+  assert.match(call.sql, /WHERE profile_shapes\.reviewed_at IS NULL/);
+  assert.deepEqual(client.calls.find((c) => /existing_die_details/.test(c.sql)).params, ['090019-2501', ['GEX 1', 'GEX 01']]);
+  const p = call.params;
+  assert.equal(p[6], `profiles/ab/${'ab'.repeat(32)}.gif`); // image_path, no files/ prefix
+  assert.equal(p[12], 4); // cavities
+  assert.equal(p[16], true); // true_size
+  const xs = JSON.parse(p[17]).map((q) => q[0]);
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 123.4) < 0.01);
+  assert.equal(p[19], 123.4);
+  assert.equal(p[20], 'ccd-scaled');
+  assert.equal(p[21], 'likely');
+  assert.deepEqual([r.inserted, r.updated, r.trueSized, r.dieListMisses], [1, 0, 1, 0]);
+  assert.equal(client.calls[0].sql, 'BEGIN');
+  assert.equal(client.calls.at(-1).sql, 'COMMIT');
+  assert.equal(r.filesCopied, 1);
+  assert.ok(io.copied[0][1].replace(/\\/g, '/').endsWith(`/root/profiles/ab/${'ab'.repeat(32)}.gif`));
+});
+
+test('a GEX 2 shape without CCD stays not true size', async () => {
+  const client = fakeClient({ dieRow: { cavity: 2, die_type: 'SOLID', profile_number: '090036', ccd: null } });
+  const r = await applyOf(client, [SHAPE({ plant: 'GEX 2', die_no: '090036-2501' })], fakeIo());
+  const p = upsertOf(client).params;
+  assert.deepEqual([p[16], p[17], p[18], p[19], p[20], p[21]], [false, null, null, null, null, null]);
+  assert.equal(r.trueSized, 0);
+  assert.deepEqual(client.calls.find((c) => /existing_die_details/.test(c.sql)).params[1], ['GEX 2']);
+});
+
+test('a reviewed row keeps its cleared flag', async () => {
+  const client = fakeClient({ upsertCount: 0 });
+  const r = await applyOf(client, [SHAPE({ needs_review: true })], fakeIo());
+  assert.deepEqual([r.inserted, r.updated, r.skippedReviewed], [0, 0, 1]);
+  assert.match(upsertOf(client).sql, /WHERE profile_shapes\.reviewed_at IS NULL/);
+});
+
+test('dry run rolls back and copies nothing', async () => {
+  const client = fakeClient();
+  const io = fakeIo();
+  const r = await applyOf(client, [SHAPE()], io, { dryRun: true });
+  assert.equal(client.calls.at(-1).sql, 'ROLLBACK');
+  assert.ok(!client.calls.some((c) => c.sql === 'COMMIT'));
+  assert.deepEqual([io.copied.length, io.made.length, r.filesCopied], [0, 0, 0]);
+});
+
+test('die list miss is counted and the row still inserted', async () => {
+  const client = fakeClient({ dieRow: null });
+  const r = await applyOf(client, [SHAPE()], fakeIo());
+  const p = upsertOf(client).params;
+  assert.deepEqual([r.dieListMisses, r.inserted, p[12], p[16], p[13]], [1, 1, null, false, 'Hollow']);
+});
+
+test('an unchanged row is neither written nor re-copied when the file exists', async () => {
+  const s = SHAPE();
+  const existing = { signature: s.signature, true_size: true, ccd_mm: '123.4', needs_review: false, review_reason: null, image_path: `profiles/ab/${'ab'.repeat(32)}.gif` };
+  const client = fakeClient({ existing });
+  const r = await applyOf(client, [s], fakeIo([`${'ab'.repeat(32)}.gif`]));
+  assert.deepEqual([r.unchanged, r.inserted, r.filesCopied], [1, 0, 0]);
+  assert.equal(upsertOf(client), undefined);
+});
+
+test('trueSizeFromCcd scales so the enclosing circle equals the CCD', () => {
+  const t = trueSizeFromCcd({ outer_unit: unitRing(0.5), holes_unit: [] }, 200);
+  assert.equal(t.ccd_mm, 200);
+  assert.equal(t.source, 'ccd-scaled');
+  const xs = t.outer_mm.map((q) => q[0]);
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 200) < 1e-6);
+});
+
+test('readProfileBundle rejects a bundle of the wrong kind', () => {
+  const fsLike = { readFileSync: () => JSON.stringify({ version: 1, kind: 'tooling' }) };
+  assert.throws(() => readProfileBundle('/b', fsLike), /profile-shapes/);
 });
