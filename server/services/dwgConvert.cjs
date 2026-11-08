@@ -5,8 +5,16 @@
 const childProcess = require('node:child_process');
 const nodeFs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const DEFAULT_ACCORECONSOLE = 'C:\\Program Files\\Autodesk\\AutoCAD 2027\\accoreconsole.exe';
+
+// accoreconsole reads the .scr in the ANSI code page, so it writes to this pure-ASCII temp path and the
+// result is renamed onto the (possibly non-ASCII) mirrored path afterwards.
+function tempDxfPathFor(file, dxfRoot) {
+  const id = crypto.createHash('sha256').update(file.relPath).digest('hex').slice(0, 12);
+  return path.join(dxfRoot, '.tmp', `${id}.dxf`);
+}
 
 function dxfPathFor(file, dxfRoot) {
   return path.join(dxfRoot, file.relPath.replace(/\.dwg$/i, '.dxf'));
@@ -38,7 +46,8 @@ function convertOne(file, dxfRoot, opts = {}) {
     timeoutMs = 120000,
     fsLike = nodeFs,
   } = opts;
-  const dxf = dxfPathFor(file, dxfRoot);
+  const target = dxfPathFor(file, dxfRoot);
+  const dxf = tempDxfPathFor(file, dxfRoot);
   const scr = dxf.replace(/\.dxf$/i, '.scr');
   const started = Date.now();
 
@@ -51,12 +60,14 @@ function convertOne(file, dxfRoot, opts = {}) {
       settled = true;
       clearTimeout(timer);
       try { fsLike.unlinkSync(scr); } catch { /* already gone */ }
+      if (error) { try { fsLike.unlinkSync(dxf); } catch { /* none written */ } }
       const seconds = (Date.now() - started) / 1000;
       resolve(error ? { ok: false, seconds, error } : { ok: true, seconds });
     };
 
     try {
       fsLike.mkdirSync(path.dirname(dxf), { recursive: true });
+      try { fsLike.unlinkSync(dxf); } catch { /* no leftover temp */ }
       fsLike.writeFileSync(scr, scriptText(dxf));
       child = spawn(exe, ['/i', file.absPath, '/s', scr, '/l', 'en-US'], { windowsHide: true, stdio: 'ignore' });
     } catch (e) {
@@ -73,7 +84,13 @@ function convertOne(file, dxfRoot, opts = {}) {
       if (code !== 0) return finish(`exit code ${code}`);
       let size = 0;
       try { size = fsLike.existsSync(dxf) ? fsLike.statSync(dxf).size : 0; } catch { size = 0; }
-      finish(size > 0 ? null : 'exit 0 but no DXF was written');
+      if (size <= 0) return finish('exit 0 but no DXF was written');
+      try {
+        fsLike.mkdirSync(path.dirname(target), { recursive: true });
+        try { fsLike.unlinkSync(target); } catch { /* no previous DXF */ }
+        fsLike.renameSync(dxf, target);
+      } catch (e) { return finish(`could not move the DXF into place: ${e.message}`); }
+      finish(null);
     });
   });
 }

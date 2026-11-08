@@ -11,15 +11,21 @@ const file = (rel) => ({ absPath: path.join('C:', 'arc', rel), relPath: rel, ste
 // In-memory fs fake: a Map of path -> size.
 function makeFs() {
   const files = new Map();
+  const scripts = new Map(); // .scr contents as written, kept for assertions
   return {
     files,
     existsSync: (p) => files.has(p),
     statSync: (p) => { if (!files.has(p)) throw new Error('ENOENT'); return { size: files.get(p) }; },
     mkdirSync: () => {},
-    writeFileSync: (p, text) => files.set(p, String(text).length),
+    writeFileSync: (p, text) => { files.set(p, String(text).length); if (p.endsWith('.scr')) scripts.set(p, String(text)); },
     unlinkSync: (p) => { files.delete(p); },
+    renameSync: (a, b) => { files.set(b, files.get(a)); files.delete(a); },
+    scripts,
   };
 }
+
+// accoreconsole's output path: the .scr path the converter passed, with the .dxf extension.
+const tempOf = (args) => args[3].replace(/\.scr$/, '.dxf');
 
 // Fake spawner: behaviour(child, args) decides what happens.
 function fakeSpawn(behaviour) {
@@ -55,9 +61,10 @@ test('convertOne reports ok only when the exit code is 0 and the DXF appeared', 
   const dxf = dxfPathFor(f, ROOT);
 
   const fsOk = makeFs();
-  const ok = await convertOne(f, ROOT, { exe: 'acc', fsLike: fsOk, spawn: fakeSpawn((c) => { fsOk.files.set(dxf, 500); c.emit('exit', 0); }) });
+  const ok = await convertOne(f, ROOT, { exe: 'acc', fsLike: fsOk, spawn: fakeSpawn((c, a) => { fsOk.files.set(tempOf(a), 500); c.emit('exit', 0); }) });
   assert.equal(ok.ok, true);
-  assert.equal(fsOk.files.has(dxf.replace(/\.dxf$/, '.scr')), false, 'script is cleaned up');
+  assert.equal(fsOk.files.get(dxf), 500, 'temp DXF renamed onto the mirrored path');
+  assert.deepEqual([...fsOk.files.keys()], [dxf], 'no .scr or temp file left behind');
 
   const fsNone = makeFs();
   const noFile = await convertOne(f, ROOT, { exe: 'acc', fsLike: fsNone, spawn: fakeSpawn((c) => c.emit('exit', 0)) });
@@ -91,7 +98,7 @@ test('convertAll runs at most `concurrency` at once and collects failures', asyn
     setTimeout(() => {
       running--;
       if (dwg.endsWith('f3.dwg')) return child.emit('exit', 1);
-      fsx.files.set(dxfPathFor(files.find((f) => f.absPath === dwg), ROOT), 100);
+      fsx.files.set(tempOf(args), 100);
       child.emit('exit', 0);
     }, 15);
   });
@@ -103,4 +110,38 @@ test('convertAll runs at most `concurrency` at once and collects failures', asyn
   assert.equal(res.failed[0].relPath, 'x/f3.dwg');
   assert.equal(progress.length, 7);
   assert.deepEqual(progress[6], { done: 7, total: 7, failed: 1 });
+});
+
+test('convertOne: exit 0 with a missing or empty temp DXF is a failure and creates no target', async () => {
+  const f = file('x/a.dwg');
+  const target = dxfPathFor(f, ROOT);
+  for (const size of [null, 0]) {
+    const fsx = makeFs();
+    const r = await convertOne(f, ROOT, { exe: 'acc', fsLike: fsx, spawn: fakeSpawn((c, a) => { if (size === 0) fsx.files.set(tempOf(a), 0); c.emit('exit', 0); }) });
+    assert.equal(r.ok, false);
+    assert.equal(fsx.files.has(target), false);
+    assert.deepEqual([...fsx.files.keys()], [], 'temp and script removed');
+  }
+});
+
+test('convertOne: a pre-existing target DXF survives a failed conversion untouched', async () => {
+  const f = file('x/a.dwg');
+  const target = dxfPathFor(f, ROOT);
+  for (const code of [0, 1]) {
+    const fsx = makeFs();
+    fsx.files.set(target, 777);
+    const r = await convertOne(f, ROOT, { exe: 'acc', fsLike: fsx, spawn: fakeSpawn((c, a) => { if (code === 1) fsx.files.set(tempOf(a), 5); c.emit('exit', code); }) });
+    assert.equal(r.ok, false);
+    assert.equal(fsx.files.get(target), 777);
+    assert.deepEqual([...fsx.files.keys()], [target]);
+  }
+});
+
+test('convertOne: the .scr is pure ASCII even for a non-ASCII, spaced relPath', async () => {
+  const f = file('Sub dir/\u0131ns30208-501 - \u0131ns76073.dwg');
+  const fsx = makeFs();
+  let seen;
+  await convertOne(f, ROOT, { exe: 'acc', fsLike: fsx, spawn: fakeSpawn((c, a) => { seen = [...fsx.scripts.values()][0]; fsx.files.set(tempOf(a), 9); c.emit('exit', 0); }) });
+  assert.match(seen, /^[\x00-\x7F]*$/);
+  assert.equal(fsx.files.get(dxfPathFor(f, ROOT)), 9, 'result lands on the non-ASCII mirrored path');
 });
