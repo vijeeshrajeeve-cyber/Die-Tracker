@@ -17,6 +17,8 @@ the 167 MB workbook). Step 2 needs the database, so it runs inside the backend
 container. The geometry import (`docs/tooling-geometry-import-runbook.md`) is
 independent of this one; either can go first.
 
+**Next: finder.** The tooling finder fits these shapes into the openings: `docs/tooling-finder-runbook.md`.
+
 ---
 
 ## Prerequisites

@@ -993,6 +993,11 @@ export const toolingsAPI = {
         return response.blob();
     },
     combinations: async ({ press, dieSize }) => apiRequest(`/toolings/combinations?${new URLSearchParams({ press: press ?? '', dieSize: dieSize ?? '' })}`),
+    // Finder: { plant, press, dieSize, cavities, profile | dieNo, limit? } -> ranked candidates + similar dies.
+    find: async (body) => apiRequest('/toolings/find', {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }),
 };
 
 // Profile library: a die's stored shapes and its nearest neighbours by shape.

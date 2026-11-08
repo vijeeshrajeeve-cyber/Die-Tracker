@@ -159,3 +159,116 @@ test('an order with no plant is refused before the upsert', async () => {
   }
   assert.equal(seen.length, 0);
 });
+
+// --- backfillOrderProfileShapes -------------------------------------------------------------------
+const path = require('node:path');
+const { backfillOrderProfileShapes } = require('./orderProfileShape.cjs');
+
+const ROOT = path.resolve('/srv/orderfiles');
+const pictureRow = (over = {}) => ({
+  id: 1, order_id: 666, stored_path: '120658-803/666/profile_image/1_p.png', die_no: '120658-803', plant: 'GEX 1',
+  die_size: 'DIA320X160', die_type: 'HOLLOW', ...over,
+});
+
+// A fake client: the picture list, the skipped-count and the die-list facts are canned; the rest is recorded.
+function backfillClient(rows, { existing = 0, facts = { ccd: null, cavity: 2 } } = {}) {
+  const seen = [];
+  return {
+    seen,
+    query: async (sql, params) => {
+      seen.push({ sql, params });
+      if (/FROM die_order_files f JOIN die_orders/.test(sql)) return { rows };
+      if (/count\(\*\)/.test(sql)) return { rows: [{ n: existing }] };
+      if (/FROM existing_die_details/.test(sql)) return { rows: [{ ccd: facts.ccd, cavity: facts.cavity }] };
+      return { rows: [{ inserted: true }], rowCount: 1 };
+    },
+  };
+}
+const ioWith = (files) => ({
+  exists: (p) => Object.prototype.hasOwnProperty.call(files, p),
+  readFile: async (p) => { if (!(p in files)) throw new Error(`ENOENT ${p}`); return files[p]; },
+});
+const abs = (row) => path.join(ROOT, row.stored_path);
+const verbs = (client) => client.seen.map((s) => s.sql.trim()).filter((v) => ['BEGIN', 'COMMIT', 'ROLLBACK'].includes(v));
+
+test('backfill traces pictures without a shape row and records them', async () => {
+  const row = pictureRow();
+  const client = backfillClient([row], { existing: 2 });
+  const res = await backfillOrderProfileShapes(client, { root: ROOT, io: ioWith({ [abs(row)]: ringPng() }) });
+  assert.deepEqual(res, { scanned: 1, traced: 1, trueSized: 1, skippedExisting: 2, failed: [] });
+  assert.deepEqual(verbs(client), ['BEGIN', 'COMMIT']);
+  const list = client.seen.find((s) => /FROM die_order_files f JOIN die_orders/.test(s.sql));
+  assert.deepEqual(list.params, []);
+  assert.match(list.sql, /f\.slot = 'profile_image' AND f\.replaced_at IS NULL/);
+  assert.match(list.sql, /NOT EXISTS \(SELECT 1 FROM profile_shapes p WHERE p\.source = 'order-pdf' AND p\.source_ref = f\.order_id::text\)/);
+  assert.match(list.sql, /ORDER BY f\.id/);
+  const up = client.seen.find((s) => /^\s*INSERT INTO profile_shapes/.test(s.sql));
+  assert.equal(up.params[0], '120658-803');
+  assert.equal(up.params[4], '666');
+  assert.equal(up.params[5].length, 64); // sha256
+  assert.equal(up.params[6], row.stored_path);
+  assert.equal(up.params[12], 2); // cavities from the die list
+  assert.equal(up.params[13], 'HOLLOW');
+  assert.equal(up.params[16], true);
+  assert.equal(up.params[21], 'likely');
+});
+
+test('backfill: orders that already have an order-pdf row are skipped', async () => {
+  const client = backfillClient([], { existing: 3 });
+  const res = await backfillOrderProfileShapes(client, { root: ROOT, io: ioWith({}), limit: 5 });
+  assert.deepEqual(res, { scanned: 0, traced: 0, trueSized: 0, skippedExisting: 3, failed: [] });
+  const list = client.seen.find((s) => /FROM die_order_files f JOIN die_orders/.test(s.sql));
+  assert.match(list.sql, /LIMIT \$1/);
+  assert.deepEqual(list.params, [5]);
+  assert.ok(!client.seen.some((s) => /^\s*INSERT INTO profile_shapes/.test(s.sql)));
+});
+
+test('backfill: an unreadable picture is reported, not fatal', async () => {
+  const bad = pictureRow({ id: 1, order_id: 1, die_no: 'A-1' });
+  const gone = pictureRow({ id: 2, order_id: 2, die_no: 'A-2', stored_path: 'A-2/2/profile_image/x.png' });
+  const outside = pictureRow({ id: 3, order_id: 3, die_no: 'A-3', stored_path: '../../etc/passwd' });
+  const good = pictureRow({ id: 4, order_id: 4, die_no: 'A-4', stored_path: 'A-4/4/profile_image/ok.png' });
+  const client = backfillClient([bad, gone, outside, good]);
+  const res = await backfillOrderProfileShapes(client, {
+    root: ROOT, io: ioWith({ [abs(bad)]: Buffer.from('not a png'), [abs(good)]: ringPng() }),
+  });
+  assert.equal(res.scanned, 4);
+  assert.equal(res.traced, 1);
+  assert.deepEqual(res.failed.map((f) => [f.orderId, f.dieNo]), [[1, 'A-1'], [2, 'A-2'], [3, 'A-3']]);
+  assert.equal(res.failed[2].error, 'picture path outside the storage root');
+  assert.ok(res.failed.every((f) => typeof f.error === 'string' && f.error));
+  assert.deepEqual(verbs(client), ['BEGIN', 'COMMIT']);
+});
+
+test('backfill: dry run rolls back', async () => {
+  const row = pictureRow();
+  const client = backfillClient([row]);
+  const res = await backfillOrderProfileShapes(client, { root: ROOT, io: ioWith({ [abs(row)]: ringPng() }), dryRun: true });
+  assert.equal(res.traced, 1);
+  assert.deepEqual(verbs(client), ['BEGIN', 'ROLLBACK']);
+  assert.ok(client.seen.some((s) => /^\s*INSERT INTO profile_shapes/.test(s.sql)));
+});
+
+test('backfill: a database error on one row is rolled back to its savepoint and the run still commits', async () => {
+  const a = pictureRow({ id: 1, order_id: 1, die_no: 'A-1', stored_path: 'A-1/1/profile_image/a.png' });
+  const b = pictureRow({ id: 2, order_id: 2, die_no: 'A-2', stored_path: 'A-2/2/profile_image/b.png' });
+  const client = backfillClient([a, b]);
+  const inner = client.query;
+  client.query = async (sql, params) => {
+    if (/^\s*INSERT INTO profile_shapes/.test(sql) && params[4] === '1') {
+      client.seen.push({ sql, params });
+      throw new Error('constraint violation');
+    }
+    return inner(sql, params);
+  };
+  const res = await backfillOrderProfileShapes(client, { root: ROOT, io: ioWith({ [abs(a)]: ringPng(), [abs(b)]: ringPng() }) });
+  assert.equal(res.traced, 1);
+  assert.deepEqual(res.failed, [{ orderId: 1, dieNo: 'A-1', error: 'constraint violation' }]);
+  const stmts = client.seen.map((s) => s.sql.trim());
+  const at = (re) => stmts.findIndex((x) => re.test(x));
+  assert.ok(at(/^SAVEPOINT row_1$/) < at(/^INSERT INTO profile_shapes/));
+  assert.ok(at(/^ROLLBACK TO SAVEPOINT row_1$/) > at(/^INSERT INTO profile_shapes/));
+  assert.ok(stmts.includes('RELEASE SAVEPOINT row_1') && stmts.includes('RELEASE SAVEPOINT row_2'));
+  assert.equal(stmts.filter((x) => /^INSERT INTO profile_shapes/.test(x)).length, 2);
+  assert.deepEqual(verbs(client), ['BEGIN', 'COMMIT']);
+});
