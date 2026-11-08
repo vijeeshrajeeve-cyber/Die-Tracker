@@ -240,7 +240,7 @@ export default function ToolingDrawer({ number, user, theme = {}, onClose, onCha
                   <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
                     <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Review note (optional)" aria-label="Review note" style={input} />
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button type="button" style={primaryBtn} disabled={!!busy || !opening} title={opening ? undefined : 'No opening to confirm'} onClick={() => review('confirm')}>
+                      <button type="button" style={primaryBtn} disabled={!!busy || !hasPockets} title={hasPockets ? undefined : 'No pockets to confirm — use Correct pockets'} onClick={() => review('confirm')}>
                         <CheckCircle2 size={14} aria-hidden="true" />Confirm opening
                       </button>
                       <button type="button" style={btn} disabled={!!busy} onClick={() => { setCorrecting((v) => !v); setPocketsText(hasPockets ? JSON.stringify(opening.pockets) : ''); setPocketsError(''); setActionError(''); }}>

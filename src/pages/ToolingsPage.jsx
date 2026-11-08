@@ -69,16 +69,20 @@ export default function ToolingsPage({ user, theme = {}, search = '' }) {
   }, [filters, q, offset]);
   useEffect(() => { if (tab === 'list') loadList(); }, [tab, loadList]);
 
+  // Same guard as the list: a slower answer for an earlier plant must not overwrite a newer one.
+  const queueSeq = useRef(0);
   const loadQueue = useCallback(() => {
+    const seq = ++queueSeq.current;
     setQueueLoading(true);
     const params = filtersToParams({ plant: queuePlant, limit: PAGE_SIZE });
     return Promise.all([toolingsAPI.reviewQueue(params), profileShapesAPI.reviewQueue(params)])
       .then(([o, p]) => {
+        if (seq !== queueSeq.current) return;
         setQueue({ openings: o.items || [], profiles: p.items || [], openingsTotal: o.total || 0, profilesTotal: p.total || 0 });
         setQueueError('');
       })
-      .catch((e) => setQueueError(e.message || 'Could not load the review queue'))
-      .finally(() => setQueueLoading(false));
+      .catch((e) => { if (seq === queueSeq.current) setQueueError(e.message || 'Could not load the review queue'); })
+      .finally(() => { if (seq === queueSeq.current) setQueueLoading(false); });
   }, [queuePlant]);
   useEffect(() => { if (tab === 'queue') loadQueue(); }, [tab, loadQueue]);
 

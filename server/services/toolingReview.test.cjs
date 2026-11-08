@@ -61,8 +61,8 @@ test('confirm sets confidence and reviewer', async (t) => {
   const up = client.calls.find((c) => /^UPDATE tooling_openings/.test(c.sql));
   assert.match(up.sql, /confidence = 'confirmed'/);
   assert.match(up.sql, /reviewed_by = \$2, reviewed_at = CURRENT_TIMESTAMP, review_note = \$3, updated_at = CURRENT_TIMESTAMP/);
-  assert.match(up.sql, /WHERE tooling_id = \$1/);
-  assert.doesNotMatch(up.sql, /pockets/);
+  assert.match(up.sql, /WHERE tooling_id = \$1 AND jsonb_typeof\(pockets\) = 'array' AND pockets <> '\[\]'::jsonb/, 'only an opening with pockets');
+  assert.doesNotMatch(up.sql.split('WHERE')[0], /pockets/, 'confirm never writes the pockets');
   assert.deepEqual(up.params, [7, 12, 'checked on the drawing']);
   assert.ok(!client.calls.some((c) => /UPDATE toolings|INSERT INTO toolings/.test(c.sql)), 'never touches toolings');
   assert.deepEqual(seen, ['GEX 1']);
@@ -74,6 +74,18 @@ test('confirm or none without an opening is a 404; an unknown tooling is a 404',
   await assert.rejects(review.reviewOpening(noOpening, 7, { action: 'none', userId: 1 }), { status: 404, message: 'No opening to review' });
   await assert.rejects(review.reviewOpening(fakeClient(), 99, { action: 'confirm', userId: 1 }), { status: 404, message: 'Tooling not found' });
   await assert.rejects(review.reviewOpening(noOpening, 7, { action: 'approve', userId: 1 }), { status: 400 });
+});
+
+test('confirm refuses an opening with no pockets (409), so a not-known opening is never marked confirmed', async (t) => {
+  const seen = spyOn(toolingFinder, t);
+  // The guarded UPDATE matches nothing; the opening row exists.
+  const client = fakeClient((sql) => lookup(sql)
+    || (/^SELECT 1 FROM tooling_openings WHERE tooling_id = \$1/.test(sql) ? { rows: [{ '?column?': 1 }], rowCount: 1 } : undefined));
+  await assert.rejects(review.reviewOpening(client, 7, { action: 'confirm', userId: 12 }),
+    { status: 409, message: 'No pockets to confirm — correct the pockets or mark the opening not known' });
+  const exists = client.calls.find((c) => /^SELECT 1 FROM tooling_openings/.test(c.sql));
+  assert.deepEqual(exists.params, [7]);
+  assert.deepEqual(seen, [], 'nothing changed, nothing invalidated');
 });
 
 test('correct validates and stores manual pockets', async (t) => {
@@ -146,6 +158,14 @@ test('updateTooling normalises the size class and refuses unknown fields', async
   await review.updateTooling(nulls, 'I-21599', { cavities: null, userId: 1 });
   assert.match(nulls.calls[0].sql, /SET cavities = \$2, updated_at/);
   assert.deepEqual(nulls.calls[0].params, ['I-21599', null]);
+
+  // Clearing the size class clears its source and confidence instead of recording a confirmed manual null.
+  for (const empty of [null, '', '  ']) {
+    const cleared = fakeClient(() => ({ rows: [{ plant: 'GEX 1', size_class: null }], rowCount: 1 }));
+    await review.updateTooling(cleared, 'I-21599', { sizeClass: empty, userId: 1 });
+    assert.match(cleared.calls[0].sql, /SET size_class = NULL, size_class_source = NULL, size_class_confidence = NULL, updated_at/);
+    assert.deepEqual(cleared.calls[0].params, ['I-21599']);
+  }
 });
 
 test('createTooling infers kind from the number and refuses duplicates', async (t) => {

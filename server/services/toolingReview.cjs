@@ -100,13 +100,23 @@ async function reviewOpening(client, toolingId, { action, pockets, outer, note, 
       [toolingId, outer == null ? null : JSON.stringify(outer), JSON.stringify(pockets),
         pocketGapMm(pockets.map((points) => ({ points }))), userId ?? null, reviewNote]);
   } else {
-    const set = action === 'confirm'
+    const confirm = action === 'confirm';
+    const set = confirm
       ? "confidence = 'confirmed'"
       : "pockets = NULL, pocket_gap_mm = NULL, confidence = 'none'";
+    // An opening with no pockets is "not known": confirming it would claim a geometry nobody has.
+    // jsonb_typeof is NULL for SQL NULL, so this also refuses a NULL or JSON-null pockets.
+    const guard = confirm ? " AND jsonb_typeof(pockets) = 'array' AND pockets <> '[]'::jsonb" : '';
     res = await client.query(
-      `UPDATE tooling_openings SET ${set}, ${REVIEW_SET} WHERE tooling_id = $1 RETURNING *`,
+      `UPDATE tooling_openings SET ${set}, ${REVIEW_SET} WHERE tooling_id = $1${guard} RETURNING *`,
       [toolingId, userId ?? null, reviewNote]);
-    if (!res.rows[0]) throw httpError(404, 'No opening to review');
+    if (!res.rows[0]) {
+      if (confirm) {
+        const exists = await client.query('SELECT 1 FROM tooling_openings WHERE tooling_id = $1', [toolingId]);
+        if (exists.rows.length) throw httpError(409, 'No pockets to confirm — correct the pockets or mark the opening not known');
+      }
+      throw httpError(404, 'No opening to review');
+    }
   }
   toolingFinder.invalidate(tooling.plant);
   return res.rows[0];
@@ -129,7 +139,12 @@ async function updateTooling(client, number, patch = {}) {
     set('status = ?', patch.status);
   }
   if (has('sizeClass')) {
-    set("size_class = ?, size_class_source = 'manual', size_class_confidence = 'confirmed'", sizeClassOf(patch.sizeClass));
+    // Clearing the size class clears its provenance too: a null size is not a confirmed manual entry.
+    if (patch.sizeClass == null || String(patch.sizeClass).trim() === '') {
+      sets.push('size_class = NULL, size_class_source = NULL, size_class_confidence = NULL');
+    } else {
+      set("size_class = ?, size_class_source = 'manual', size_class_confidence = 'confirmed'", sizeClassOf(patch.sizeClass));
+    }
   }
   if (has('cavities')) set('cavities = ?', cavitiesOf(patch.cavities));
   if (has('notes')) set('notes = ?', textOrNull(patch.notes));

@@ -52,11 +52,11 @@ too (`server/index.cjs`). The `toolings` page id is in `VALID_PAGE_IDS`
 
 | Action (reviewers) | Route | Writes |
 | --- | --- | --- |
-| Confirm opening | `POST /api/toolings/:n/opening/review {action:'confirm', note?}` | `tooling_openings.confidence='confirmed'`, `reviewed_by/at`, `review_note` |
+| Confirm opening | `POST /api/toolings/:n/opening/review {action:'confirm', note?}` | `tooling_openings.confidence='confirmed'`, `reviewed_by/at`, `review_note` — only for an opening with pockets: with none the button is disabled and the server answers 409 (use Correct pockets, or Mark opening not known) |
 | Correct pockets | `… {action:'correct', pockets, note?}` | replaces `pockets` (mm, tooling frame, y up, `[[[x,y],…],…]`, ≥3 pairs each — checked in the browser first), `extraction_source='manual'`, `confidence='confirmed'`, recomputes `pocket_gap_mm`; keeps the outer |
 | Mark opening not known | `… {action:'none'}` | `pockets=NULL`, `pocket_gap_mm=NULL`, `confidence='none'`; keeps outer, drawing, note |
 | Retire / Reactivate / Mark verified | `PATCH /api/toolings/:n {status}` | `toolings.status` (`retired` leaves the finder; `active`) |
-| Save changes (location, size class, cavities, notes) | `PATCH /api/toolings/:n` | only the changed fields; a size class is normalised and stored as `manual`/`confirmed` |
+| Save changes (location, size class, cavities, notes) | `PATCH /api/toolings/:n` | only the changed fields; a size class is normalised and stored as `manual`/`confirmed`; clearing it clears its source and confidence too |
 | Upload drawing (.dxf/.pdf) | `POST /api/toolings/:n/drawing` | stores the file, adds `tooling_drawings`, reads the opening — **never replaces a confirmed or reviewed opening** (the toast says "the reviewed opening was kept") |
 | Add tooling | `POST /api/toolings` then the upload above if a drawing was picked | new `toolings` row, `source='manual'`; kind is guessed from the number (`I-…`, `NNIC…` = insert) and editable; plant/kind/cavities left blank come from the number |
 | Clear (picture) | `POST /api/profile-shapes/:id/review {action:'clear', note?}` | `needs_review=false`, reviewer — the shape joins the similarity index |
