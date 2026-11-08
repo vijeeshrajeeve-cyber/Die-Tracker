@@ -29,6 +29,11 @@ const CASES = [
   ['25B2C1A', G2, { toolingNumber: 'BOL-25B2C1A', kind: 'bolster' }], ['TLX-35B2C1A-051033.1.600x370.P2', G2, { toolingNumber: 'BOL-35B2C1A', sizeClass: '600X370' }],
   ['25IC1-027847', ROOT, { toolingNumber: '25IC1-027847', plant: 'GEX 2' }],
   ['Die Rings Inventory-P4', ROOT, { skip: 'press-part' }], ['EYEBOLTM16.', ROOT, { skip: 'press-part' }], ['Nitrex Testing Coins', ROOT, { skip: 'unrecognised' }],
+  ['I_29651_FIN_(BOL_29651)', ROOT, { toolingNumber: 'I-29651', kind: 'insert', variant: 'FIN' }],
+  ['BOL_27283_FIN_(I_27283)', ROOT, { toolingNumber: 'BOL-27283', kind: 'bolster', variant: 'FIN' }],
+  ['INS_27293_27294_FIN_(INS_29293)', ROOT, { toolingNumber: 'I-27293', kind: 'insert' }],
+  ['25IC1-G-23483', G2, { toolingNumber: '25IC1-G23483', kind: 'insert', plant: 'GEX 2', basis: 'filename-die' }],
+  ['25IC1-G23438', G2, { toolingNumber: '25IC1-G23438' }],
 ];
 for (const [stem, ctx, expected] of CASES) test(`interprets "${stem}"`, () => {
   const got = interpretStem(stem, ctx);

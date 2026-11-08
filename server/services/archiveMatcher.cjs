@@ -95,11 +95,13 @@ const PRESS_PART_WORDS = [
     /\bHOLDERS?\b/, /\bBOLTS?\b/, /EYEBOLT/, /\bRINGS?\b/, /\bPLATENS?\b/, /\bFIXTURES?\b/, /\bKEY\b/, /\bPIN\b/,
 ];
 const PAREN_BOLSTER_CODE = /\(\s*\d-\d-[A-Z]\s*\)/;
-const TALEX_CODE = /\b(25|35)(IC\d{1,2}[A-Z]?|B\d+C\d+[A-Z]?)(?:-?(\d{5,6}))?\b/;
+const TALEX_CODE = /\b(25|35)(IC\d{1,2}[A-Z]?|B\d+C\d+[A-Z]?)(?:-?([A-Z]?)-?(\d{5,6}))?\b/;
 const SIZE_TOKEN = /(?<!\d)(\d{3,4})\s*X\s*(\d{2,3})(?!\d)/;
 const BOLSTER_CODE = /(?<![\d-])(\d-\d-[A-Z])\b/;
 // "BOL", "BOLS", "BO", "BOLSTER" as a word, a trailing BOL / BOL1, BOL glued to digits, or a "B-" prefix.
 const BOL_WORD = /\b(?:BOLS?|BO|BOLSTER)\b|BOL\d?$|\bBOL(?=\d{3,5}\b)|\bB(?=[- ]\d{3,5}\b)/;
+const LEADING_KIND = /^(?:I-|INS\b|BOL|BO\b|B-|(?:TLX-)?(?:25|35)(?:IC|B\d))/;
+const TRAILING_GROUPS = /(?:\s*-?\s*\([^)]*\))+\s*$/;
 const DIGIT_TOKEN = /(?<!\d)\d{3,5}(?!\d)/g;
 
 function normaliseStem(stem) {
@@ -123,6 +125,9 @@ function detectPress(text) {
 
 function interpretStem(stem, { plant, kindHint }) {
     let text = normaliseStem(stem);
+    // A leading token that carries a kind (I-, INS, BOL, BO, B-, TALEX code) decides the part; a trailing
+    // parenthesised group then only names the mating part and is ignored.
+    if (LEADING_KIND.test(text)) text = text.replace(TRAILING_GROUPS, '').trim();
     if (text.includes('SCRAP')) return { skip: 'scrap' };
 
     const talex = TALEX_CODE.exec(text);
@@ -145,7 +150,8 @@ function interpretStem(stem, { plant, kindHint }) {
 
     // (a) TALEX codes are GEX 2.
     if (talex) {
-        const [, p, code, die] = talex;
+        const [, p, code, dieLetter, dieDigits] = talex;
+        const die = dieDigits ? `${dieLetter}${dieDigits}` : '';
         if (code.startsWith('IC')) {
             return make(`${p}${code}${die ? `-${die}` : ''}`, 'insert', die ? 'filename-die' : 'filename-code', 'GEX 2');
         }
