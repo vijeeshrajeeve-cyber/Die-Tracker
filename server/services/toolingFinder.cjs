@@ -274,14 +274,17 @@ function annotateNeighbourTooling(r, { plant, press, dieSize, cavities, chartRow
   let reason = null;
   if (!inScope) reason = 'not-in-scope';
   else if (!hasGeometry) reason = 'no-geometry';
-  else if (toolingCavities != null && toolingCavities !== Number(cavities)) reason = 'cavities';
+  // Unknown cavities fail narrow's gate too (cavities-unknown), so they count as a cavities reason.
+  else if (toolingCavities == null || toolingCavities !== Number(cavities)) reason = 'cavities';
   else if (verdict === 'not_allowed') reason = 'chart';
   return { number: known ? r.number : r.tooling_number, kind, sizeClass, inScope, hasGeometry, chartVerdict: verdict, reason };
 }
 
-async function similarProfiles(client, { outer, holes, limit, ...scope }) {
+async function similarProfiles(client, { outer, holes, limit, excludeDieNo, ...scope }) {
   const index = await loadIndex(client, { plant: scope.plant });
-  const near = nearest(index, { signature: signatureOf({ outer, holes }), holeCount: holes.length, cavities: scope.cavities, limit });
+  const near = nearest(index, {
+    signature: signatureOf({ outer, holes }), holeCount: holes.length, cavities: scope.cavities, limit, excludeDieNo,
+  });
   if (!near.length) return [];
   const { rows } = await client.query(NEIGHBOUR_TOOLINGS_SQL, [near.map((n) => n.die_no)]);
   const byDie = new Map();
@@ -304,6 +307,9 @@ async function similarProfiles(client, { outer, holes, limit, ...scope }) {
 
 async function findToolings(client, { plant, press, dieSize, cavities, profile, dieNo, limit = 20, similarLimit = 20 }) {
   const t0 = performance.now();
+  if (!/^PRESS \d+$/.test(String(press ?? ''))) {
+    throw Object.assign(new Error(`press is not canonical: ${press}`), { code: 'BAD_PRESS' });
+  }
   const query = { plant: normalizePlant(plant), press, dieSize: normalizeSizeClass(dieSize), cavities: Number(cavities) };
   const { outer, holes } = recentre(await resolveProfile(client, { profile, dieNo, plant: query.plant }));
   const profilePts = resampleClosed(outer, 2);
@@ -328,7 +334,10 @@ async function findToolings(client, { plant, press, dieSize, cavities, profile, 
 
   const top = rankCandidates(fitted).slice(0, limit);
   const linkedDies = await linkedDiesFor(client, top.map((c) => c.number));
-  const similar = await similarProfiles(client, { ...query, chartRows, outer, holes, limit: similarLimit });
+  // The queried die would be its own nearest neighbour; it is left out of the list.
+  const similar = await similarProfiles(client, {
+    ...query, chartRows, outer, holes, limit: similarLimit, excludeDieNo: dieNo ?? null,
+  });
 
   return {
     query: {

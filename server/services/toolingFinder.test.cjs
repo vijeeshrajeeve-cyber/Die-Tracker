@@ -339,6 +339,8 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
       link('NOOP', { confidence: 'none' }),
       link('CAV2', { cavities: 2 }),
       link('BADCHART', { size_class: '999X999' }),
+      link('NOCAV', { cavities: null }),
+      link('NOSIZE', { size_class: null }),
       link('BOL', { die_no: 'N-2', kind: 'bolster', t_kind: 'bolster', size_class: '600X150' }),
     ],
   });
@@ -366,6 +368,9 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
   assert.equal(by.CAV2.reason, 'cavities');
   assert.equal(by.BADCHART.reason, 'chart');
   assert.equal(by.BADCHART.chartVerdict, 'not_allowed');
+  assert.equal(by.NOCAV.reason, 'cavities', 'unknown cavities fail the gate, so never eligible');
+  assert.equal(by.NOSIZE.reason, 'chart', 'no size class under a charted press fails the chart gate');
+  assert.equal(by.NOSIZE.chartVerdict, 'not_allowed');
   assert.deepEqual(n2.toolings.map((t) => [t.number, t.kind, t.chartVerdict, t.reason]), [['BOL', 'bolster', 'allowed', null]]);
 
   const q = client.queries.find((x) => /FROM die_tooling_links l/.test(x.sql));
@@ -394,4 +399,29 @@ test('timings and rejected counts are reported', async () => {
   }
   assert.ok(r.timings.totalMs >= r.timings.fitMs);
   assert.deepEqual(Object.keys(r).sort(), ['candidates', 'chart', 'fitted', 'query', 'rejected', 'similar', 'timings', 'truncated']);
+});
+
+test('the queried die is left out of its own similar list', async () => {
+  const plant = 'FIND G';
+  const client = finderClient({
+    toolings: [],
+    shapes: [{ die_no: 'SELF', plant, outer_mm: circle(35), holes_mm: [], cavities: 1, hole_count: 0 }],
+    index: [
+      { id: 21, die_no: 'SELF', plant, profile_number: null, signature: signatureOf({ outer: circle(1) }), hole_count: 0, cavities: 1, true_size: true },
+      { id: 22, die_no: 'N-1', plant, profile_number: null, signature: signatureOf({ outer: rect(2, 1) }), hole_count: 0, cavities: 1, true_size: true },
+    ],
+  });
+  const r = await f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, dieNo: 'SELF', similarLimit: 1 });
+  assert.deepEqual(r.similar.map((s) => s.dieNo), ['N-1'], 'SELF would be at distance 0 and take the only slot');
+});
+
+test('a press that is not canonical is refused with BAD_PRESS', async () => {
+  const client = finderClient({ toolings: [] });
+  for (const press of ['P25', '25', '', undefined]) {
+    await assert.rejects(
+      () => f.findToolings(client, { plant: 'FIND H', press, dieSize: DIE, cavities: 1, profile: { outer: circle(35) } }),
+      (err) => err.code === 'BAD_PRESS',
+    );
+  }
+  assert.equal(client.queries.length, 0, 'refused before any query');
 });

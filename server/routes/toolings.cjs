@@ -213,6 +213,7 @@ router.post('/find', async (req, res) => {
     res.json(result);
   } catch (err) {
     if (err && err.code === 'NO_PROFILE') return res.status(404).json({ error: `no true-size profile for die ${dieNo}` });
+    if (err && err.code === 'BAD_PRESS') return res.status(400).json({ error: 'press is not recognised' });
     console.error('tooling finder failed', err);
     res.status(500).json({ error: 'Finder failed' });
   }

@@ -107,6 +107,12 @@ test('POST /find is not swallowed by /:number', async () => {
   assert.ok(!queries.some((q) => /WHERE t\.number = \$1/.test(q.sql)), 'the detail route never ran');
 });
 
+test('POST /find is 400 for a press the presses master cannot resolve', async () => {
+  const res = await find({ ...BODY, press: 'nonsense' });
+  assert.equal(res.status, 400);
+  assert.deepEqual(res.body, { error: 'press is not recognised' });
+});
+
 test('POST /find answers 500 JSON when the finder fails', async () => {
   const logged = [];
   const realError = console.error;
