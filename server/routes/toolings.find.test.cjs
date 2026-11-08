@@ -38,6 +38,7 @@ installFakeDb(async (sql, params = []) => {
   if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'v1', n: params[0] === 'GEX 7' ? INDEX_GEX7.length : 0 }] };
   if (/FROM profile_shapes WHERE plant/.test(sql)) return { rows: params[0] === 'GEX 7' ? INDEX_GEX7 : [] };
   if (/FROM die_tooling_links/.test(sql)) return { rows: [] };
+  if (/FROM existing_die_details/.test(sql)) return { rows: [] };
   if (/FROM toolings t/.test(sql) && /WHERE t\.number = \$1/.test(sql)) return { rows: [] };
   throw new Error(`unexpected query ${sql}`);
 });

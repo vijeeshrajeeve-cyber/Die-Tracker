@@ -173,6 +173,13 @@ test('createTooling infers kind from the number and refuses duplicates', async (
   await assert.rejects(review.createTooling(fakeClient(), { number: 'hello', plant: 'GEX 1', userId: 1 }), { status: 400 });
   await assert.rejects(review.createTooling(fakeClient(), { number: 'BOL-14017', userId: 1 }), { status: 400, message: 'plant must be GEX 1 or GEX 2' });
   await assert.rejects(review.createTooling(fakeClient(), { number: 'I-21599', kind: 'ring', userId: 1 }), { status: 400 });
+  // A kind that contradicts the number is refused before anything is written.
+  const contra = fakeClient();
+  await assert.rejects(review.createTooling(contra, { number: 'I-21599', kind: 'bolster', plant: 'GEX 1', userId: 1 }),
+    { status: 400, message: 'kind bolster contradicts the number, which parses as insert' });
+  await assert.rejects(review.createTooling(contra, { number: 'BOL-14017', kind: 'insert', plant: 'GEX 1', userId: 1 }),
+    { status: 400, message: 'kind insert contradicts the number, which parses as bolster' });
+  assert.equal(contra.calls.length, 0);
 
   const client = fakeClient((sql, params) => (/^INSERT INTO toolings/.test(sql)
     ? { rows: [{ id: 9, number: params[0], kind: params[1], plant: params[2] }], rowCount: 1 } : undefined));
@@ -192,6 +199,9 @@ test('createTooling infers kind from the number and refuses duplicates', async (
 
   const dup = fakeClient(() => ({ rows: [], rowCount: 0 }));
   await assert.rejects(review.createTooling(dup, { number: 'I-21599', plant: 'GEX 1', userId: 1 }), { status: 409 });
+  const agree = fakeClient(() => ({ rows: [{ id: 11 }], rowCount: 1 }));
+  await review.createTooling(agree, { number: 'BOL-14017', kind: 'bolster', plant: 'GEX 1', userId: 1 });
+  assert.equal(agree.calls[0].params[1], 'bolster', 'a kind that agrees is fine');
 });
 
 // Fake disk: records writes, says a path exists once written.

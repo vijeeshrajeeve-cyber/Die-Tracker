@@ -108,6 +108,18 @@ export function inferKind(number) {
   return /^(I-|\d{2}IC)/.test(s) ? 'insert' : 'bolster';
 }
 
+// The Add tooling POST body. The kind is sent only when the person picked one
+// (kindTouched): the guess from inferKind is a display hint, and the server parses the
+// number itself, so an untouched guess never overrides it (a typo would store the wrong kind).
+export function addToolingBody(form, { kindTouched = false } = {}) {
+  const trim = (v) => String(v ?? '').trim();
+  const body = { number: trim(form.number) };
+  for (const k of ['plant', 'sizeClass', 'location', 'notes']) if (trim(form[k])) body[k] = trim(form[k]);
+  if (kindTouched && trim(form.kind)) body.kind = trim(form.kind);
+  if (trim(form.cavities)) body.cavities = Number(trim(form.cavities));
+  return body;
+}
+
 const isPair = (p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
 
 // The pasted pocket correction: [[[x,y],...],...] in mm. Returns { pockets, error }.

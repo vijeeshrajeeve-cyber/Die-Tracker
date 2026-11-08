@@ -57,11 +57,24 @@ function chartTag(candidate, { press, dieSize, chartBasis }) {
   return null;
 }
 
-const CONFIDENCE_TAGS = {
-  confirmed: { text: 'opening confirmed', tone: 'ok' },
-  likely: { text: 'opening likely', tone: 'muted' },
-  uncertain: { text: 'opening uncertain — needs review', tone: 'warn' },
-};
+const CONFIDENCE_TONES = { confirmed: 'ok', likely: 'muted', uncertain: 'warn' };
+
+const SOURCE_LABELS = { dxf: 'DXF', 'pdf-vector': 'PDF', 'pdf-raster': 'PDF trace', manual: 'manual entry' };
+
+// Where an opening's geometry came from (tooling_openings.extraction_source), for people.
+export function sourceLabel(source) {
+  if (source == null || source === '') return 'unknown source';
+  return SOURCE_LABELS[source] || String(source);
+}
+
+// "opening from DXF (confirmed)": every suggestion says where its geometry came from and
+// how sure the extraction was. An uncertain one also says it needs review.
+function confidenceTag(candidate) {
+  const tone = CONFIDENCE_TONES[candidate.confidence];
+  if (!tone) return null;
+  const text = `opening from ${sourceLabel(candidate.extractionSource)} (${candidate.confidence})`;
+  return { text: candidate.confidence === 'uncertain' ? `${text} — needs review` : text, tone };
+}
 
 // Ordered tags for one candidate card: clearance, chart, location, transfer, confidence.
 export function candidateTags(candidate, { press, dieSize, chartBasis } = {}) {
@@ -74,8 +87,8 @@ export function candidateTags(candidate, { press, dieSize, chartBasis } = {}) {
   } else if (candidate.needsTransfer == null) {
     tags.push({ text: 'held press unknown', tone: 'muted' });
   }
-  const conf = CONFIDENCE_TAGS[candidate.confidence];
-  if (conf) tags.push({ ...conf });
+  const conf = confidenceTag(candidate);
+  if (conf) tags.push(conf);
   return tags;
 }
 
@@ -109,15 +122,41 @@ function similarToolingTag(t) {
   return { tag: 'in scope', tone: 'ok' };
 }
 
-// The nearest dies for the strip. `meta` (press · die size · cav) is not in the
-// finder response; callers that hold the die list pass dieMeta(dieNo) to fill it.
+// "PRESS 6 · 450X250 · 3 cav" from the die-list facts the server attaches to each
+// similar item (press, dieSize, cavity); unknown parts are left out, none known → null.
+export function similarMeta(item) {
+  const text = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
+  const cav = item?.cavity == null || item.cavity === '' ? null : `${item.cavity} cav`;
+  const parts = [text(item?.press), text(item?.dieSize), cav].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+// The nearest dies for the strip. `meta` comes from the item's die-list facts; a
+// caller's dieMeta(dieNo), when given and it answers, overrides them.
 export function similarCards(similar, limit = 8, dieMeta = null) {
   return (similar || []).slice(0, limit).map((s) => ({
     dieNo: s.dieNo,
     distance: s.distance,
     cavityMatch: s.cavityMatch ?? null,
     toolings: (s.toolings || []).map((t) => ({ number: t.number, kind: t.kind, ...similarToolingTag(t) })),
-    meta: (dieMeta && dieMeta(s.dieNo)) || null,
+    meta: (dieMeta && dieMeta(s.dieNo)) || similarMeta(s),
+  }));
+}
+
+// POST /api/profile-shapes/similar items (die_no, profile_number, …) in the finder's
+// `similar` shape, so the similarity-only panel draws the same strip.
+export function similarFromItems(items) {
+  return (items || []).map((i) => ({
+    dieNo: i.die_no,
+    profileNumber: i.profile_number ?? null,
+    distance: i.distance,
+    cavityMatch: i.cavityMatch ?? null,
+    trueSize: !!i.trueSize,
+    shapeId: i.shapeId ?? null,
+    toolings: i.toolings || [],
+    dieSize: i.dieSize ?? null,
+    press: i.press ?? null,
+    cavity: i.cavity ?? null,
   }));
 }
 
@@ -163,15 +202,25 @@ export function applyChoice(values, candidate) {
 
 const blank = (v) => v == null || String(v).trim() === '';
 
-// Whether Find tooling can run, and the first reason it cannot.
+const UNSCALED = 'profile size unknown — fit needs a scale or CCD';
+
+// Whether Find tooling can run, and the first reason it cannot. An unscaled profile
+// (true_size false) cannot be fitted, but its unit-frame outline can still find similar
+// dies by shape: with outer_unit present and every other input fine the answer carries
+// similarityOnly: true (the button then runs the similarity route only).
 export function finderReadiness({ profile, press, dieSize, cavities, plant } = {}) {
   const no = (reason) => ({ ready: false, reason });
   if (!profile) return no('no profile yet');
-  if (profile.true_size === false) return no('profile size unknown — fit needs a scale or CCD');
-  if (blank(press)) return no('press missing');
-  if (blank(dieSize)) return no('die size missing');
-  if (!/^\s*[1-9]\d*\s*$/.test(String(cavities ?? ''))) return no('cavities missing');
-  if (blank(plant)) return no('plant missing');
+  let other = null;
+  if (blank(press)) other = 'press missing';
+  else if (blank(dieSize)) other = 'die size missing';
+  else if (!/^\s*[1-9]\d*\s*$/.test(String(cavities ?? ''))) other = 'cavities missing';
+  else if (blank(plant)) other = 'plant missing';
+  if (profile.true_size === false) {
+    const hasUnit = Array.isArray(profile.outer_unit) && profile.outer_unit.length >= 3;
+    return hasUnit && !other ? { ready: false, reason: UNSCALED, similarityOnly: true } : no(UNSCALED);
+  }
+  if (other) return no(other);
   return { ready: true, reason: null };
 }
 

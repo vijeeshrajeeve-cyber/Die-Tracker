@@ -14,6 +14,7 @@ import { readScales, readTitleBlockNumbers } from '../../utils/pdfImportFields';
 import { captureProfileImage, PROFILE_RENDER_DPI } from '../../utils/profileImage';
 import { usePalette } from '../../utils/palette';
 import { todayLocal } from '../../utils/today.js';
+import { downloadBlob } from '../../utils/downloadBlob';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -25,17 +26,6 @@ const PLANTS = ['GEX 1', 'GEX 2'];
 const TRACE_FAILED = 'profile could not be read — finder unavailable';
 
 const normalizePlantName = (plant) => (plant || '').toString().trim().toUpperCase().replace(/\b0+(\d+)\b/g, '$1');
-
-const downloadBlob = (blob, name) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
 
 export default function NewDieOrderModal({ user, theme, presses = [], suppliers = [], onClose }) {
   const c = usePalette(theme);
@@ -52,6 +42,8 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
   const [showFinder, setShowFinder] = useState(false);
   const [minClearance, setMinClearance] = useState(5);
   const [lastResult, setLastResult] = useState(null);
+  // The finder ran for an earlier press / die size / cavities / plant / profile than the form now shows.
+  const [finderStale, setFinderStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
@@ -89,6 +81,7 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     setChosen(null);
     setShowFinder(false);
     setLastResult(null);
+    setFinderStale(false);
     try {
       const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
       const page1 = await pdf.getPage(1);
@@ -170,20 +163,46 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     const next = editToolingField(values, chosen, key, value);
     setValues(next.values);
     setChosen(next.chosen);
+    if (next.chosen !== chosen) setFinderStale(false); // edited by hand now
   };
   const handleUse = (candidate) => {
     const next = applyChoice(values, candidate);
     setValues(next.values);
-    if (next.chosen) setChosen(next.chosen);
+    if (next.chosen) { setChosen(next.chosen); setFinderStale(false); }
   };
 
   const gate = finderReadiness({
     profile, press: values?.PRESS, dieSize: values?.DIE_SIZE, cavities: values?.NO_OF_CAV, plant,
   });
-  const finderQuery = gate.ready ? {
+  // An unscaled profile cannot be fitted; its unit outline still finds similar dies by shape.
+  const finderMode = gate.ready ? 'fit' : gate.similarityOnly ? 'similarity' : null;
+  const finderQuery = finderMode === 'fit' ? {
     plant, press: values.PRESS, dieSize: values.DIE_SIZE, cavities: values.NO_OF_CAV,
     profile: { outer: profile.outer_mm, holes: profile.holes_mm || [] },
+  } : finderMode === 'similarity' ? {
+    plant, outer: profile.outer_unit, holes: profile.holes_unit || [], cavities: values.NO_OF_CAV,
   } : null;
+  const finderEnabled = finderMode != null;
+
+  // A finder answer belongs to the query it was asked with. When press, die size, cavities,
+  // plant or the profile change, the kept answer (lastResult, the form record's candidates) is
+  // dropped, a tooling chosen from it is no longer "from the finder" (the typed numbers stay),
+  // and the panel closes: Find tooling must be run again for the new query.
+  const finderKey = JSON.stringify({ mode: finderMode, query: finderQuery });
+  const lastFinderKey = useRef(finderKey);
+  const lastResultRef = useRef(lastResult);
+  lastResultRef.current = lastResult;
+  const chosenRef = useRef(chosen);
+  chosenRef.current = chosen;
+  useEffect(() => {
+    if (lastFinderKey.current === finderKey) return;
+    lastFinderKey.current = finderKey;
+    const fromFinder = !!chosenRef.current?.fromFinder;
+    setShowFinder(false);
+    setLastResult(null);
+    if (fromFinder) setChosen({ ...chosenRef.current, fromFinder: false });
+    if (fromFinder || lastResultRef.current) setFinderStale(true);
+  }, [finderKey]);
 
   const hasFile = !!(fileHandle || pickedFile);
   const generateBlocker = !hasFile ? 'Select the drawing first'
@@ -350,10 +369,12 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
               <label style={labelStyle} htmlFor="new-die-order-insert-no">INSERT No{hint('INSERT_NO')}</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {toolingField('INSERT_NO', 'INSERT No', 'new-die-order-insert-no')}
-                <button type="button" onClick={() => setShowFinder((v) => !v)} disabled={!gate.ready}
-                  title={gate.ready ? 'Find a tooling that fits this profile' : gate.reason} aria-expanded={showFinder}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, padding: '0 12px', borderRadius: '10px', background: 'transparent', border: `1px solid ${gate.ready ? theme.primary : theme.cardBorder}`, color: gate.ready ? theme.primary : theme.textMuted, cursor: gate.ready ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                  <Search size={14} /> Find tooling
+                <button type="button" onClick={() => { setShowFinder((v) => !v); setFinderStale(false); }} disabled={!finderEnabled}
+                  title={gate.ready ? 'Find a tooling that fits this profile'
+                    : gate.similarityOnly ? `${gate.reason} — finds similar dies by shape only` : gate.reason}
+                  aria-expanded={showFinder}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, padding: '0 12px', borderRadius: '10px', background: 'transparent', border: `1px solid ${finderEnabled ? theme.primary : theme.cardBorder}`, color: finderEnabled ? theme.primary : theme.textMuted, cursor: finderEnabled ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                  <Search size={14} /> {finderMode === 'similarity' ? 'Find similar (fit not run)' : 'Find tooling'}
                 </button>
               </div>
             </div>
@@ -368,15 +389,17 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
 
             <div style={{ gridColumn: '1 / -1', fontSize: '0.75rem', color: theme.textMuted }}>
               {[
-                profileNote || (gate.ready ? '' : `Find tooling: ${gate.reason}`),
-                chosen ? `Chosen: ${chosen.tooling} ${chosen.fromFinder ? '(from the finder)' : '(edited by hand)'}` : '',
+                profileNote || (gate.ready ? '' : `Find tooling: ${gate.reason}${gate.similarityOnly ? ' (similar dies by shape only)' : ''}`),
+                chosen ? `Chosen: ${chosen.tooling} ${chosen.fromFinder ? '(from the finder)' : finderStale ? '(found for an earlier query)' : '(edited by hand)'}` : '',
+                finderStale ? 'query changed — run Find tooling again' : '',
               ].filter(Boolean).join(' · ')}
             </div>
 
             {showFinder && finderQuery && (
               <div style={{ gridColumn: '1 / -1' }}>
-                <FindToolingPanel query={finderQuery} onUse={handleUse} onClose={() => setShowFinder(false)} c={c}
-                  minClearance={minClearance} onMinClearanceChange={setMinClearance} onResult={setLastResult} />
+                <FindToolingPanel query={finderQuery} mode={finderMode} onUse={handleUse} onClose={() => setShowFinder(false)} c={c}
+                  minClearance={minClearance} onMinClearanceChange={finderMode === 'fit' ? setMinClearance : undefined}
+                  onResult={setLastResult} />
               </div>
             )}
 

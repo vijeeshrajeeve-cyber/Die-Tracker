@@ -45,6 +45,15 @@ const queries = [];
 installFakeDb(async (sql, params = []) => {
   queries.push({ sql, params });
   if (/raw_data->>'ProfileCCD'/.test(sql)) return { rows: params[0] === 'D-CCD' ? [{ ccd: '20.3' }] : [] };
+  if (/FROM die_tooling_links l/.test(sql)) {
+    return { rows: params[0].includes('D-SQ') ? [{
+      die_no: 'D-SQ', tooling_number: 'I-1', kind: 'insert', number: 'I-1', t_kind: 'insert', size_class: '300X100',
+      status: 'active', plant: 'GEX 1', cavities: 2, confidence: 'likely', has_geometry: true,
+    }] : [] };
+  }
+  if (/FROM existing_die_details/.test(sql)) {
+    return { rows: params[0].includes('D-SQ') ? [{ die_no: 'D_SQ', die_size: '250X160', press: 'PRESS 5', cavity: 2 }] : [] };
+  }
   if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'stamp', n: ROWS.length }] };
   if (/needs_review = false/.test(sql)) return { rows: ROWS.filter((r) => r.plant === params[0] && !r.needs_review) };
   if (/WHERE id = \$1 AND die_no = \$2/.test(sql)) {
@@ -106,6 +115,20 @@ test('POST similar normalises an arbitrary-frame polygon', async () => {
   res.body.signature.forEach((v, i) => assert.ok(Math.abs(v - SQ_SIG[i]) < 1e-9, `signature[${i}]`));
   assert.equal(res.body.items[0].die_no, 'D-SQ');
   assert.equal(res.body.items[0].cavityMatch, false);
+});
+
+test('POST similar items carry the die toolings and the die-list press, die size and cavity', async () => {
+  queries.length = 0;
+  const res = await request(base, '/api/profile-shapes/similar', { body: { plant: 'GEX 01', outer: SQUARE, cavities: 4 } });
+  assert.equal(res.status, 200);
+  const sq = res.body.items.find((i) => i.die_no === 'D-SQ');
+  assert.deepEqual([sq.press, sq.dieSize, sq.cavity], ['PRESS 5', '250X160', 2]);
+  assert.deepEqual(sq.toolings.map((t) => [t.number, t.reason, t.chartVerdict]), [['I-1', 'cavities', 'no_chart']],
+    'asked for 4 cavities, the tooling has 2; no press posted, so no chart');
+  const other = res.body.items.find((i) => i.die_no !== 'D-SQ');
+  assert.deepEqual([other.press, other.dieSize, other.cavity, other.toolings], [null, null, null, []]);
+  const meta = queries.find((q) => /FROM existing_die_details/.test(q.sql));
+  assert.deepEqual(meta.params[1], ['GEX 1', 'GEX 01'], 'the plant spelling list');
 });
 
 test('POST /similar is reachable (not swallowed by /:dieNo)', async () => {

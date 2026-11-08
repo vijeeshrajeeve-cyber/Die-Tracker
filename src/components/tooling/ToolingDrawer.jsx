@@ -6,6 +6,7 @@ import useDialog from '../../hooks/useDialog';
 import PDFViewer from '../PDFViewer';
 import OpeningOverlay from './OpeningOverlay';
 import { usePalette } from '../../utils/palette';
+import { downloadBlob } from '../../utils/downloadBlob';
 import { confidenceTone, isToolingReviewer, parsePocketsJson, statusTone } from '../../utils/toolingsView';
 
 const mono = "'JetBrains Mono', ui-monospace, monospace";
@@ -33,15 +34,6 @@ export function Pill({ text, tone = 'muted', c, title }) {
     </span>
   );
 }
-
-const downloadBlob = (blob, name) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
 
 const editDraftOf = (t) => ({
   location: t?.location || '', sizeClass: t?.size_class || '', cavities: t?.cavities == null ? '' : String(t.cavities), notes: t?.notes || '',

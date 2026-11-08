@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  reviewReasonLabel, confidenceTone, isToolingReviewer, statusTone, queueRowsFromApi, filtersToParams, inferKind, parsePocketsJson, matchesConfidence,
+  reviewReasonLabel, confidenceTone, isToolingReviewer, statusTone, queueRowsFromApi, filtersToParams, inferKind, addToolingBody, parsePocketsJson, matchesConfidence,
 } from './toolingsView.js';
 
 test('reviewReasonLabel names the tooling reasons and passes profile reasons through', () => {
@@ -72,6 +72,15 @@ test('matchesConfidence filters a page of rows by opening confidence on the clie
   assert.equal(matchesConfidence({ opening_confidence: 'likely' }, 'likely'), true);
   assert.equal(matchesConfidence({ opening_confidence: 'likely' }, 'confirmed'), false);
   assert.equal(matchesConfidence({ opening_confidence: null }, 'none'), true);
+});
+
+test('addToolingBody sends the kind only when the person picked it', () => {
+  const form = { number: ' I-99901 ', plant: 'GEX 1', kind: 'bolster', sizeClass: ' ', cavities: '2', location: 'RACK 4', notes: '' };
+  assert.deepEqual(addToolingBody(form), { number: 'I-99901', plant: 'GEX 1', location: 'RACK 4', cavities: 2 },
+    'an untouched (guessed) kind is left to the server');
+  assert.deepEqual(addToolingBody(form, { kindTouched: true }), { number: 'I-99901', plant: 'GEX 1', kind: 'bolster', location: 'RACK 4', cavities: 2 });
+  assert.equal('kind' in addToolingBody({ ...form, kind: '' }, { kindTouched: true }), false, '"From the number" sends nothing');
+  assert.deepEqual(addToolingBody({ number: 'BOL-1' }), { number: 'BOL-1' });
 });
 
 test('inferKind reads insert numbers and leaves the rest as bolster', () => {

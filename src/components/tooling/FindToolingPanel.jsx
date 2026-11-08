@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, AlertTriangle, Search } from 'lucide-react';
-import { toolingsAPI } from '../../api';
+import { toolingsAPI, profileShapesAPI } from '../../api';
 import OpeningOverlay from './OpeningOverlay';
 import {
-  candidateTags, candidateMeta, linkedDiesText, similarCards, similarOnlyCards, rejectedSummary,
+  candidateTags, candidateMeta, linkedDiesText, similarCards, similarOnlyCards, rejectedSummary, similarFromItems,
 } from '../../utils/toolingFinderView';
 
 // The Find tooling panel both order forms embed. `query` is the finder request
@@ -14,8 +14,15 @@ import {
 // line from the caller's die list; the panel fetches nothing for it. Optional
 // `onResult(data)` hears each finder answer as it lands (the new die order form keeps
 // the candidates for its record).
+//
+// mode 'similarity' (an unscaled profile: no defensible size, so no fit): `query` is
+// { plant, outer, holes, cavities } in any frame, the panel asks POST /profile-shapes/similar
+// and shows only the similar strip, its toolings as information (no Use this: no fit was
+// checked). onResult is not called in this mode, so the form record gets no candidates.
 
 const NO_PROFILE_404 = 'no true-size profile stored for this die — similarity and fit unavailable';
+const SIMILARITY_BANNER = 'Profile size unknown — fit not run; similar dies by shape only';
+const SIMILAR_LIMIT = 20;
 
 function toneColors(tone, c) {
   if (tone === 'ok') return { color: c.ok, background: c.okBg, border: 'transparent' };
@@ -75,12 +82,15 @@ function SimilarOnlyCard({ item, c }) {
   );
 }
 
-function SimilarStrip({ similar, dieMeta, c }) {
+function SimilarStrip({ similar, dieMeta, c, infoOnly = false }) {
   const cards = similarCards(similar, 8, dieMeta);
   if (cards.length === 0) return null;
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: c.text, marginBottom: 6 }}>Similar existing profiles</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: c.text, marginBottom: 6 }}>
+        Similar existing profiles
+        {infoOnly && <span style={{ fontWeight: 400, color: c.muted }}> — toolings for information only, no fit checked</span>}
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8 }}>
         {cards.map((card) => (
           <div key={card.dieNo} style={{ padding: 8, borderRadius: 6, border: `1px solid ${c.border}`, background: c.bg }}>
@@ -110,7 +120,10 @@ function headerLine(q) {
   return parts.join(' · ');
 }
 
-export default function FindToolingPanel({ query, onUse, onClose, c, minClearance = 5, onMinClearanceChange, dieMeta = null, onResult = null }) {
+export default function FindToolingPanel({
+  query, onUse, onClose, c, minClearance = 5, onMinClearanceChange, dieMeta = null, onResult = null, mode = 'fit',
+}) {
+  const similarityOnly = mode === 'similarity';
   const [state, setState] = useState({ status: 'loading', data: null, error: '' });
   // Read through a ref so an inline callback does not refetch on every parent render.
   const onResultRef = useRef(onResult);
@@ -121,19 +134,24 @@ export default function FindToolingPanel({ query, onUse, onClose, c, minClearanc
   useEffect(() => {
     let active = true; // a newer request makes this one's answer stale
     setState({ status: 'loading', data: null, error: '' });
-    toolingsAPI.find({ ...JSON.parse(queryKey), minClearance })
+    const q = JSON.parse(queryKey);
+    const request = similarityOnly
+      ? profileShapesAPI.similarTo({ plant: q.plant, outer: q.outer, holes: q.holes || [], cavities: q.cavities, limit: SIMILAR_LIMIT })
+        .then((r) => ({ similar: similarFromItems(r?.items) }))
+      : toolingsAPI.find({ ...q, minClearance });
+    request
       .then((data) => {
         if (!active) return;
         setState({ status: 'done', data, error: '' });
-        if (onResultRef.current) onResultRef.current(data);
+        if (!similarityOnly && onResultRef.current) onResultRef.current(data);
       })
       .catch((e) => {
         if (!active) return;
-        const error = e?.status === 404 ? NO_PROFILE_404 : (e?.message || 'Finder failed');
+        const error = !similarityOnly && e?.status === 404 ? NO_PROFILE_404 : (e?.message || 'Finder failed');
         setState({ status: 'error', data: null, error });
       });
     return () => { active = false; };
-  }, [queryKey, minClearance]);
+  }, [queryKey, minClearance, similarityOnly]);
 
   const { status, data, error } = state;
   const tight = minClearance < 5;
@@ -143,7 +161,7 @@ export default function FindToolingPanel({ query, onUse, onClose, c, minClearanc
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Search size={15} aria-hidden="true" style={{ color: c.muted }} />
         <div style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>
-          {status === 'done' ? headerLine(data.query || {}) : 'Find tooling'}
+          {similarityOnly ? 'Similar dies by shape' : status === 'done' ? headerLine(data.query || {}) : 'Find tooling'}
         </div>
         {onClose && (
           <button type="button" onClick={onClose} aria-label="Close Find tooling" style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', padding: 2, display: 'flex' }}>
@@ -152,7 +170,13 @@ export default function FindToolingPanel({ query, onUse, onClose, c, minClearanc
         )}
       </div>
 
-      {status === 'loading' && <div role="status" style={{ fontSize: 12, color: c.muted }}>Finding toolings…</div>}
+      {similarityOnly && (
+        <div role="note" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, padding: '8px 10px', borderRadius: 6, color: c.warn, background: c.warnBg }}>
+          <AlertTriangle size={14} aria-hidden="true" />{SIMILARITY_BANNER}
+        </div>
+      )}
+
+      {status === 'loading' && <div role="status" style={{ fontSize: 12, color: c.muted }}>{similarityOnly ? 'Finding similar dies…' : 'Finding toolings…'}</div>}
 
       {status === 'error' && (
         <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, padding: '8px 10px', borderRadius: 6, color: c.danger, background: c.dangerBg }}>
@@ -160,7 +184,13 @@ export default function FindToolingPanel({ query, onUse, onClose, c, minClearanc
         </div>
       )}
 
-      {status === 'done' && (
+      {status === 'done' && similarityOnly && (
+        (data.similar || []).length
+          ? <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} infoOnly />
+          : <div style={{ fontSize: 12, color: c.muted }}>No similar dies found.</div>
+      )}
+
+      {status === 'done' && !similarityOnly && (
         <FinderResult data={data} onUse={onUse} c={c} tight={tight} onMinClearanceChange={onMinClearanceChange} dieMeta={dieMeta} />
       )}
     </section>

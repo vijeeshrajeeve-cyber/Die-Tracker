@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   placedProfile, overlayViewBox, svgPath, candidateTags, candidateMeta, linkedDiesText,
   similarCards, similarOnlyCards, applyChoice, finderReadiness, rejectedSummary,
+  sourceLabel, similarMeta, similarFromItems,
 } from './toolingFinderView.js';
 
 const near = (actual, expected) => {
@@ -15,7 +16,7 @@ const near = (actual, expected) => {
 
 const cand = (over = {}) => ({
   number: 'I-12999', kind: 'insert', sizeClass: '460X150', sizeClassConfidence: 'confirmed', cavities: 2,
-  heldPresses: ['PRESS 7'], needsTransfer: false, location: 'Rack B3', confidence: 'confirmed',
+  heldPresses: ['PRESS 7'], needsTransfer: false, location: 'Rack B3', confidence: 'confirmed', extractionSource: 'dxf',
   clearance: 6.84, clearanceCapped: false,
   placements: [{ pocketIndex: 0, theta: 0, tx: 0, ty: 0, clearance: 6.84 }],
   chart: { verdict: 'allowed', rows: [] },
@@ -67,7 +68,7 @@ test('svgPath closes the polygon and rounds to 0.01', () => {
 
 test('candidateTags: allowed chart, location, held at the press, confirmed', () => {
   assert.deepEqual(texts(candidateTags(cand(), ctx)), [
-    'ok:Clears by 6.8 mm', 'ok:Chart: allowed PRESS 7 / 250X140', 'muted:Rack B3', 'ok:opening confirmed',
+    'ok:Clears by 6.8 mm', 'ok:Chart: allowed PRESS 7 / 250X140', 'muted:Rack B3', 'ok:opening from DXF (confirmed)',
   ]);
 });
 
@@ -87,16 +88,31 @@ test('candidateTags: not allowed, no chart, capped and tight clearance', () => {
 test('candidateTags: needsTransfer true / false / null and unknown location', () => {
   const t = texts(candidateTags(cand({ needsTransfer: true, heldPresses: ['PRESS 2', 'PRESS 3'] }), ctx));
   assert.deepEqual(t, ['ok:Clears by 6.8 mm', 'ok:Chart: allowed PRESS 7 / 250X140', 'muted:Rack B3',
-    'warn:held at PRESS 2, PRESS 3, needs transfer', 'ok:opening confirmed']);
+    'warn:held at PRESS 2, PRESS 3, needs transfer', 'ok:opening from DXF (confirmed)']);
   assert.equal(texts(candidateTags(cand({ needsTransfer: false }), ctx)).filter((x) => x.includes('held')).length, 0);
   const n = texts(candidateTags(cand({ needsTransfer: null, heldPresses: [], location: null }), ctx));
   assert.deepEqual(n, ['ok:Clears by 6.8 mm', 'ok:Chart: allowed PRESS 7 / 250X140', 'muted:location unknown',
-    'muted:held press unknown', 'ok:opening confirmed']);
+    'muted:held press unknown', 'ok:opening from DXF (confirmed)']);
 });
 
 test('candidateTags: likely and uncertain confidence', () => {
-  assert.deepEqual(candidateTags(cand({ confidence: 'likely' }), ctx).at(-1), { text: 'opening likely', tone: 'muted' });
-  assert.deepEqual(candidateTags(cand({ confidence: 'uncertain' }), ctx).at(-1), { text: 'opening uncertain — needs review', tone: 'warn' });
+  assert.deepEqual(candidateTags(cand({ confidence: 'likely', extractionSource: 'pdf-vector' }), ctx).at(-1),
+    { text: 'opening from PDF (likely)', tone: 'muted' });
+  assert.deepEqual(candidateTags(cand({ confidence: 'uncertain', extractionSource: 'pdf-raster' }), ctx).at(-1),
+    { text: 'opening from PDF trace (uncertain) — needs review', tone: 'warn' });
+  assert.deepEqual(candidateTags(cand({ confidence: 'confirmed', extractionSource: 'manual' }), ctx).at(-1),
+    { text: 'opening from manual entry (confirmed)', tone: 'ok' });
+  assert.deepEqual(candidateTags(cand({ extractionSource: null }), ctx).at(-1),
+    { text: 'opening from unknown source (confirmed)', tone: 'ok' });
+  assert.deepEqual(candidateTags(cand({ extractionSource: undefined }), ctx).at(-1),
+    { text: 'opening from unknown source (confirmed)', tone: 'ok' }, 'an older response without the field');
+  assert.equal(candidateTags(cand({ confidence: 'none' }), ctx).length, 3, 'no tag for a confidence it does not know');
+});
+
+test('sourceLabel names every extraction source', () => {
+  assert.deepEqual(['dxf', 'pdf-vector', 'pdf-raster', 'manual', null, undefined, ''].map(sourceLabel),
+    ['DXF', 'PDF', 'PDF trace', 'manual entry', 'unknown source', 'unknown source', 'unknown source']);
+  assert.equal(sourceLabel('ocr'), 'ocr', 'an unlisted source is shown as stored');
 });
 
 test('candidateMeta and linkedDiesText', () => {
@@ -141,6 +157,33 @@ test('similarCards fills meta from dieMeta when the caller knows the die', () =>
   const cards = similarCards([sim('N-1'), sim('N-2')], 8, (dieNo) => known[dieNo] ?? null);
   assert.deepEqual(cards.map((c) => c.meta), ['PRESS 7 · 250X140 · 2 cav', null]);
   assert.equal(similarCards([sim('N-1')])[0].meta, null);
+});
+
+test('similarCards builds meta from the item die-list fields; dieMeta overrides when it answers', () => {
+  const items = [
+    sim('N-1', [], { press: 'PRESS 6', dieSize: '450X250', cavity: 3 }),
+    sim('N-2', [], { press: null, dieSize: '320X160', cavity: null }),
+    sim('N-3', [], { press: null, dieSize: null, cavity: null }),
+  ];
+  assert.deepEqual(similarCards(items).map((c) => c.meta), ['PRESS 6 · 450X250 · 3 cav', '320X160', null]);
+  const override = similarCards(items, 8, (dieNo) => (dieNo === 'N-1' ? 'from the caller' : null));
+  assert.deepEqual(override.map((c) => c.meta), ['from the caller', '320X160', null]);
+  assert.equal(similarMeta({ press: ' PRESS 2 ', dieSize: '', cavity: 0 }), 'PRESS 2 · 0 cav');
+  assert.equal(similarMeta(null), null);
+});
+
+test('similarFromItems maps the /profile-shapes/similar items to the strip shape', () => {
+  const [a, b] = similarFromItems([
+    { die_no: 'N_1', profile_number: 'P-1', distance: 0.2, cavityMatch: false, trueSize: false, shapeId: 4,
+      toolings: [st('I-1')], dieSize: '250X160', press: 'PRESS 5', cavity: 2 },
+    { die_no: 'N_2', distance: 0.3 },
+  ]);
+  assert.deepEqual(a, { dieNo: 'N_1', profileNumber: 'P-1', distance: 0.2, cavityMatch: false, trueSize: false, shapeId: 4,
+    toolings: [st('I-1')], dieSize: '250X160', press: 'PRESS 5', cavity: 2 });
+  assert.deepEqual(b, { dieNo: 'N_2', profileNumber: null, distance: 0.3, cavityMatch: null, trueSize: false, shapeId: null,
+    toolings: [], dieSize: null, press: null, cavity: null });
+  assert.equal(similarCards([a])[0].meta, 'PRESS 5 · 250X160 · 2 cav');
+  assert.deepEqual(similarFromItems(undefined), []);
 });
 
 test('similarOnlyCards: similar-list toolings not among the candidates, deduped, with reason text', () => {
@@ -190,6 +233,23 @@ test('finder readiness explains why it cannot run', () => {
     assert.deepEqual(finderReadiness({ ...ok, cavities }), { ready: false, reason: 'cavities missing' }, String(cavities));
   }
   assert.deepEqual(finderReadiness({ ...ok, plant: undefined }), { ready: false, reason: 'plant missing' });
+});
+
+test('finder readiness: an unscaled profile with a unit outline runs the similarity route only', () => {
+  const unit = [[0, 0], [1, 0], [1, 1]];
+  const ok = { profile: { true_size: false, outer_unit: unit }, press: 'P7', dieSize: '250X140', cavities: 2, plant: 'GEX 1' };
+  const unscaled = 'profile size unknown — fit needs a scale or CCD';
+  assert.deepEqual(finderReadiness(ok), { ready: false, reason: unscaled, similarityOnly: true });
+  // Any other input missing: no similarity mode either; the size reason stays first.
+  for (const over of [{ press: '' }, { dieSize: null }, { cavities: 0 }, { plant: '' }]) {
+    assert.deepEqual(finderReadiness({ ...ok, ...over }), { ready: false, reason: unscaled }, JSON.stringify(over));
+  }
+  // No usable unit outline.
+  for (const outer_unit of [undefined, null, [], [[0, 0], [1, 1]]]) {
+    assert.deepEqual(finderReadiness({ ...ok, profile: { true_size: false, outer_unit } }), { ready: false, reason: unscaled });
+  }
+  // A true-size profile is never similarity-only.
+  assert.deepEqual(finderReadiness({ ...ok, profile: { true_size: true, outer_unit: unit } }), { ready: true, reason: null });
 });
 
 test('rejectedSummary lists the non-zero reasons, largest first, and the cap', () => {

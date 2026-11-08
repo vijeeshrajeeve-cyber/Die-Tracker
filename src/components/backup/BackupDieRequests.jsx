@@ -13,6 +13,7 @@ import { BackupStatusPill } from '../ui/StatusPill';
 import { todayLocal } from '../../utils/today.js';
 import useDialog from '../../hooks/useDialog';
 import FindToolingPanel from '../tooling/FindToolingPanel';
+import { downloadBlob } from '../../utils/downloadBlob';
 import useDieTooling from '../tooling/useDieTooling';
 import { applyChoice, finderReadiness } from '../../utils/toolingFinderView';
 import { usePalette } from '../../utils/palette';
@@ -661,17 +662,6 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
     setOrderFileHandle(null);
     setOrderFileName(file.name);
     setOrderError('');
-  };
-
-  const downloadBlob = (blob, name) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleGenerateOrderPdf = async () => {

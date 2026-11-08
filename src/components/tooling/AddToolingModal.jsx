@@ -4,7 +4,7 @@ import { toolingsAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
 import useDialog from '../../hooks/useDialog';
 import { usePalette } from '../../utils/palette';
-import { inferKind } from '../../utils/toolingsView';
+import { inferKind, addToolingBody } from '../../utils/toolingsView';
 
 // A new tooling (reviewers only): the server checks the number and fills plant/kind/cavities
 // from it when they are left out; a drawing, if picked, is uploaded after and read for the opening.
@@ -37,10 +37,8 @@ export default function AddToolingModal({ theme = {}, onClose, onCreated }) {
     setError('');
     let created = null;
     try {
-      const body = { number: form.number.trim() };
-      for (const k of ['plant', 'kind', 'sizeClass', 'location', 'notes']) if (form[k].trim()) body[k] = form[k].trim();
-      if (form.cavities.trim()) body.cavities = Number(form.cavities);
-      created = (await toolingsAPI.create(body)).tooling;
+      // The guessed kind is only shown; the server reads the kind from the number unless the person picked one.
+      created = (await toolingsAPI.create(addToolingBody(form, { kindTouched }))).tooling;
       if (file) await toolingsAPI.uploadDrawing(created.number, file);
       dialogs.notify(`Tooling ${created.number} added${file ? ' with its drawing' : ''}`, 'success');
       onCreated?.(created);

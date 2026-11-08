@@ -9,6 +9,7 @@ const { reviewerMiddleware } = require('./auth.cjs');
 const { normalizePlant } = require('../services/frozenDesigns.cjs');
 const { toUnitFrame, signatureOf } = require('../services/profileShape.cjs');
 const { loadIndex, nearest, DEFAULT_LIMIT } = require('../services/profileSimilarity.cjs');
+const { neighbourDetails } = require('../services/toolingFinder.cjs');
 const orderFiles = require('../services/orderFiles.cjs');
 const toolingDrawings = require('../services/toolingDrawings.cjs');
 const { reviewProfileShape } = require('../services/toolingReview.cjs');
@@ -90,7 +91,15 @@ router.post('/similar', async (req, res) => {
     const signature = signatureOf({ outer: unit.outer, holes: unit.holes });
     if (!signature.every(Number.isFinite)) return res.status(400).json({ error: 'outer is degenerate' });
     const index = await loadIndex(pool, { plant });
-    const items = nearest(index, { signature, holeCount: holes.length, cavities, limit: clampLimit(limit) });
+    const near = nearest(index, { signature, holeCount: holes.length, cavities, limit: clampLimit(limit) });
+    // The finder panel's similarity-only mode shows these as its strip: each item also carries the
+    // die's toolings and its die-list press / die size / cavity. No press is posted, so no chart
+    // rows: a tooling's chart verdict is 'no_chart' and never a reason.
+    const details = await neighbourDetails(pool, near, { plant, press: null, dieSize: null, cavities, chartRows: [] });
+    const items = near.map((n, i) => {
+      const { toolings, dieSize, press, cavity } = details[i];
+      return { ...n, toolings, dieSize, press, cavity };
+    });
     res.json({ items, signature });
   } catch (err) {
     console.error('profile similarity (posted shape) failed', err);

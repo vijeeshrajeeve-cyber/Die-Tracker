@@ -13,20 +13,36 @@ const KIND_LABEL = { insert: 'Insert', bolster: 'Bolster' };
 const EMPTY_FILTERS = { plant: '', press: '', kind: '', sizeClass: '', status: 'active', confidence: '' };
 
 // A flagged profile picture. The image route needs the Bearer header, so it is fetched as a blob.
+// A profile-drawing shape's stored file is the drawing PDF, which an <img> cannot show.
+const PDF_THUMB_TITLE = 'drawing PDF — open the form to view';
+
 function ProfileThumb({ row, c }) {
   const [url, setUrl] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [notImage, setNotImage] = useState(false);
   useEffect(() => {
     if (!row.has_image) return undefined;
     let live = true;
     let made = null;
     profileShapesAPI.image(row.die_no, row.id, row.plant)
-      .then((blob) => { if (!live) return; made = URL.createObjectURL(blob); setUrl(made); })
+      .then((blob) => {
+        if (!live) return;
+        if (!/^image\//i.test(blob?.type || '')) { setNotImage(true); return; }
+        made = URL.createObjectURL(blob);
+        setUrl(made);
+      })
       .catch(() => { if (live) setFailed(true); });
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
   }, [row.die_no, row.id, row.plant, row.has_image]);
   const box = { width: 72, height: 54, borderRadius: 6, border: `1px solid ${c.border}`, background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' };
   if (url) return <img src={url} alt={`Profile picture of ${row.die_no}`} style={{ ...box, objectFit: 'contain' }} />;
+  if (notImage) {
+    return (
+      <div style={{ ...box, background: c.inset, color: c.dim }} title={PDF_THUMB_TITLE} aria-label={PDF_THUMB_TITLE} role="img">
+        <ImageOff size={16} aria-hidden="true" />
+      </div>
+    );
+  }
   return (
     <div style={{ ...box, background: c.inset, color: c.dim, fontSize: 10.5, textAlign: 'center' }} aria-label="No picture">
       {row.has_image && !failed ? '…' : <ImageOff size={16} aria-hidden="true" />}

@@ -162,6 +162,10 @@ async function createTooling(client, { number, kind, plant, sizeClass, cavities,
   const parsed = parseToolingNumber(number);
   if (!parsed.canonical || !KINDS.has(parsed.kind)) throw httpError(400, 'number is not a recognised insert or bolster number');
   if (kind != null && !KINDS.has(kind)) throw httpError(400, 'kind must be insert or bolster');
+  // The number decides the kind (the parse above is never ambiguous); a given kind may only agree with it.
+  if (kind != null && kind !== parsed.kind) {
+    throw httpError(400, `kind ${kind} contradicts the number, which parses as ${parsed.kind}`);
+  }
   const plantName = normalizePlant(plant || parsed.plant);
   if (!PLANTS.has(plantName)) throw httpError(400, 'plant must be GEX 1 or GEX 2');
   const size = sizeClass == null || sizeClass === '' ? null : sizeClassOf(sizeClass);
