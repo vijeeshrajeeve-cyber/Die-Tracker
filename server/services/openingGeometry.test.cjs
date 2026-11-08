@@ -218,3 +218,64 @@ test('normaliseFrame reports the offset it subtracted', () => {
   const { offset } = normaliseFrame({ outer: loop(circle(1140.9, 8380.4, 87.5)), pockets: [] });
   assert.ok(Math.abs(offset[0] - 1140.9) < 1e-6 && Math.abs(offset[1] - 8380.4) < 1e-6);
 });
+
+test('the centring rim and its concentric step are never pockets; a clean 1:n ratio is reported as drawingScale', () => {
+  // I-05091 (cfceda23): Ø110 rim, Ø103 step, a 51 x 36 profile, stated Ø175 (ratio 1.59: not a clean scale)
+  const loops = [loop(circle(0, 0, 55)), loop(circle(0, 0, 51.5)), loop(rect(51, 36))];
+  const r = classifyLoops(loops, { expectedOuterDiameter: 175 });
+  assert.equal(r.outerBasis, 'synthesised-rim');
+  assert.deepEqual(r.pockets, [loops[2]]);
+  assert.deepEqual(r.ignored.map((i) => i.reason).sort(), ['centring-rim', 'centring-rim']);
+  assert.equal(r.drawingScale, null);
+  assert.ok(r.notes.some((n) => /drawn rim Ø110 disagrees with the stated Ø175/.test(n)));
+  const scaled = classifyLoops([loop(circle(0, 0, 475 / 6)), loop(rect(90, 30))], { expectedOuterDiameter: 475 });
+  assert.equal(scaled.drawingScale, 3);
+  assert.equal(scaled.pockets.length, 1);
+  assert.ok(scaled.notes.some((n) => /at 1:3; outer centred on the rim/.test(n)));
+});
+
+test('cleanScale: 2..5 within 1 %, nothing else', () => {
+  const { cleanScale } = require('./openingGeometry.cjs');
+  assert.equal(cleanScale(475, 158.3), 3); assert.equal(cleanScale(440, 146.7), 3); assert.equal(cleanScale(220, 110), 2);
+  assert.equal(cleanScale(300, 155.8), null, '1.93 is not 1:2'); assert.equal(cleanScale(175, 110), null);
+  assert.equal(cleanScale(560, 460), null); assert.equal(cleanScale(600, 100), null, '1:6 is outside 2..5');
+});
+
+test('a narrow, elongated loop out towards the rim is a key slot; a result of key slots alone has no pocket', () => {
+  const lines = [seg(-150, 0, 150, 0), seg(0, -150, 0, 150)];
+  const slot = loop(translate(rect(14, 48), 0, 105));
+  const pocket = loop(rect(128, 64));
+  const r = classifyLoops([pocket, slot], { expectedOuterDiameter: 300, openChains: lines });
+  assert.deepEqual(r.pockets, [pocket]);
+  assert.deepEqual(r.ignored.map((i) => i.reason), ['key-slot']);
+  const only = classifyLoops([loop(translate(rect(16, 47), 0, 106))], { expectedOuterDiameter: 300, openChains: lines });
+  assert.deepEqual(only.pockets, []);
+  const g = gradeConfidence({ outer: only.outer, outerSynthesised: true, outerBasis: only.outerBasis, pockets: [], bridged: 0, source: 'dxf', statedDiameter: 300, knownCavities: null, scaleBasis: 'native-mm' });
+  assert.equal(g.confidence, 'none');
+  // not a key slot: near the centre, or squat (the 13 x 8 at r 125 stays), or wide
+  for (const [w, h, y] of [[14, 48, 40], [13, 8, 125], [24, 48, 105]]) {
+    const k = classifyLoops([loop(translate(rect(w, h), 0, y))], { expectedOuterDiameter: 300, openChains: lines });
+    assert.equal(k.pockets.length, 1, `${w} x ${h} at ${y}`);
+  }
+});
+
+test('a rectangular pocket holding a small feature is not a frame; a sheet border holding two drawings is', () => {
+  const pocket = loop(rect(300, 200));
+  const feature = loop(rect(40, 40));
+  const r = classifyLoops([pocket, feature], { expectedOuterDiameter: 475, openChains: [seg(-200, 0, 200, 0), seg(0, -200, 0, 200)] });
+  assert.ok(r.pockets.includes(pocket), 'the 300 x 200 is a pocket');
+  assert.ok(r.ignored.some((i) => i.loop === feature && i.reason === 'nested'));
+  assert.ok(!r.ignored.some((i) => i.reason === 'frame'));
+  // an A4 inner border (273 x 196) round a profile and a title-block symbol beside it, stated Ø475: a frame
+  const border = loop(rect(273, 196));
+  const s = classifyLoops([border, loop(translate(rect(200, 140), -20, 10)), loop(translate(rect(16, 16), 120, -85))], { expectedOuterDiameter: 475 });
+  assert.ok(s.ignored.some((i) => i.loop === border && i.reason === 'frame'));
+  // a double border: the outer holds the inner, which is a frame, so both are
+  const outerBorder = loop(rect(287, 200));
+  const d = classifyLoops([outerBorder, border, loop(translate(rect(200, 140), -20, 10)), loop(translate(rect(16, 16), 120, -85))], { expectedOuterDiameter: 475 });
+  assert.equal(d.ignored.filter((i) => i.reason === 'frame').length, 2);
+  // no expected diameter: larger than 1.2 x the largest loop it holds
+  const big = loop(rect(400, 268));
+  const n = classifyLoops([big, loop(rect(95, 95))]);
+  assert.ok(n.ignored.some((i) => i.loop === big && i.reason === 'frame'));
+});

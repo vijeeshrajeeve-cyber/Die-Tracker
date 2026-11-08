@@ -56,18 +56,45 @@ function hintsFor(number, match, known) {
   };
 }
 
-// Comparison key of a tooling number: kind prefix, punctuation and leading zeros dropped (BOL-S_05256 -> S5256,
-// I-05256 -> 5256, 25IC1-028851 -> 25IC128851).
-const numberKey = (n) => String(n).toUpperCase().replace(/^(?:I|BOL)-/, '')
-  .replace(/\d+/g, (d) => String(Number(d))).replace(/[^A-Z0-9]/g, '');
-// The same tooling written another way: equal keys, or one key holding the other (a 5-digit die number read as an
-// insert in a bolster drawing, a GEX-2 prefix like 35IC1 on a 35IC1-090371 drawing, a letter suffix).
+// Comparison key of a tooling number: kind prefix and punctuation dropped, and - only when allowed - the leading
+// zeros of each digit run (BOL-S_05256 -> S5256, I-05256 -> 5256, 25IC1-028851 -> 25IC128851). `seps` marks the key
+// positions that followed punctuation in the original, so a match can tell a whole segment from a digit run.
+const KIND = /^(I|BOL)-/;
+function numberKey(n, stripZeros) {
+  let s = String(n).toUpperCase().replace(KIND, '');
+  if (stripZeros) s = s.replace(/\d+/g, (d) => String(Number(d)));
+  let key = '';
+  const seps = [];
+  let sep = false;
+  for (const ch of s) {
+    if (/[A-Z0-9]/.test(ch)) { seps.push(sep); key += ch; sep = false; } else sep = true;
+  }
+  return { key, seps };
+}
+const kindOf = (n) => (KIND.exec(String(n).toUpperCase()) || [])[1] || null;
+const digitCount = (n) => String(n).replace(KIND, '').replace(/\D/g, '').length;
+// The same tooling written another way. Leading zeros are dropped only between numbers of the same kind or with the
+// same digit count (25IC1-28851 ~ 25IC1-028851, but BOL-5043 is not I-05043). Then equal keys, or one key inside the
+// other where the extra characters are letters (I-29361C, BOL-IB17928, INS-35IC1-026904) or whole punctuation-
+// separated segments (35IC1 on a 35IC1-090371 drawing) - never stray digits (I-05289 is not I-15289).
 function sameTooling(a, b) {
-  const ka = numberKey(a);
-  const kb = numberKey(b);
-  if (ka === kb) return true;
-  const [short, long] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
-  return short.length >= 4 && long.includes(short);
+  const ka0 = kindOf(a);
+  const kb0 = kindOf(b);
+  const strip = !ka0 || !kb0 || ka0 === kb0 || digitCount(a) === digitCount(b);
+  const ka = numberKey(a, strip);
+  const kb = numberKey(b, strip);
+  if (ka.key === kb.key) return true;
+  const [short, long] = ka.key.length <= kb.key.length ? [ka, kb] : [kb, ka];
+  if (short.key.length < 4) return false;
+  for (let at = long.key.indexOf(short.key); at !== -1; at = long.key.indexOf(short.key, at + 1)) {
+    const end = at + short.key.length;
+    const pre = long.key.slice(0, at);
+    const post = long.key.slice(end);
+    const preOk = !pre || /^[A-Z]+$/.test(pre) || long.seps[at];
+    const postOk = !post || /^[A-Z]+$/.test(post) || long.seps[end];
+    if (preOk && postOk) return true;
+  }
+  return false;
 }
 
 // The drawing's own (non-size) numbers when they exist and none of them is this tooling; null otherwise.

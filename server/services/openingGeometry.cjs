@@ -173,18 +173,60 @@ function isAxisRect(points) {
 }
 
 // Drawing frames: axis-aligned rectangles that hold every other loop (larger frames aside), e.g. the sheet border
-// and its inner border. They are never the outer and never a pocket.
-function frameLoops(loops) {
+// and its inner border. They are never the outer and never a pocket. A rectangle that holds the rest is a frame when
+// it is larger than the die - with an expected diameter, both sides exceed it (or, when a drawn rim shows the drawing
+// at a clean 1:n scale, exceed that rim); with none, both sides exceed 1.2 x the largest loop it holds - or when it
+// holds more than one drawing (a loop outside the largest one it holds, e.g. the title-block symbols beside the
+// profile). So a real rectangular pocket holding a single small feature is never dropped as a frame.
+function frameLoops(loops, { expectedOuterDiameter = null } = {}) {
   const rects = loops.filter((l) => isAxisRect(l.points)).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
   const frames = new Set();
+  let drawnDiameter = expectedOuterDiameter;
+  if (expectedOuterDiameter && rects.length) {
+    // A drawing at 1:n shows the die at D / n: a drawn rim at a clean scale sets the size a frame must exceed.
+    const rims = loops.map((l) => robustCircle(l.points)).filter((f) => f && f.r * 2 >= 100);
+    if (!rims.some((f) => Math.abs(f.r * 2 - expectedOuterDiameter) <= 0.1 * expectedOuterDiameter)) {
+      const scaled = rims.map((f) => cleanScale(expectedOuterDiameter, f.r * 2)).filter(Boolean);
+      if (scaled.length) drawnDiameter = expectedOuterDiameter / Math.max(...scaled);
+    }
+  }
+  // The rectangles that hold every other loop, outermost first (a sheet border and its inner border).
+  const holders = [];
   for (const r of rects) {
     const b = bbox(r.points);
-    const others = loops.filter((l) => l !== r && !frames.has(l));
+    const others = loops.filter((l) => l !== r && !holders.includes(l));
     if (!others.length) continue;
     const inside = (p) => p[0] >= b.minX - 0.5 && p[0] <= b.maxX + 0.5 && p[1] >= b.minY - 0.5 && p[1] <= b.maxY + 0.5;
-    if (others.every((l) => l.points.every(inside))) frames.add(r);
+    if (others.every((l) => l.points.every(inside))) holders.push(r);
+  }
+  const content = loops.filter((l) => !holders.includes(l));
+  const isFrame = (r, held) => {
+    if (!held.length) return true;
+    const b = bbox(r.points);
+    const boxes = held.map((l) => bbox(l.points));
+    const limit = drawnDiameter || 1.2 * Math.max(...boxes.map((o) => Math.max(o.width, o.height)));
+    if (Math.min(b.width, b.height) > limit) return true;
+    const largest = held.reduce((m, l) => (polygonArea(l.points) > polygonArea(m.points) ? l : m));
+    const lb = bbox(largest.points);
+    return held.some((l, i) => l !== largest && (boxes[i].minX < lb.minX || boxes[i].maxX > lb.maxX
+      || boxes[i].minY < lb.minY || boxes[i].maxY > lb.maxY || !polygonContains(largest.points, l.points)));
+  };
+  // Innermost first: a rectangle holding a frame is a frame; one holding a pocket-sized rectangle is judged with it.
+  let innerIsFrame = false;
+  const kept = [];
+  for (let i = holders.length - 1; i >= 0; i--) {
+    const r = holders[i];
+    if (innerIsFrame || isFrame(r, [...content, ...kept])) { frames.add(r); innerIsFrame = true; } else kept.push(r);
   }
   return frames;
+}
+
+// The drawing scale n (2..5) when stated / drawn is n within 1 %, else null.
+function cleanScale(stated, drawn) {
+  if (!(stated > 0) || !(drawn > 0)) return null;
+  const ratio = stated / drawn;
+  const n = Math.round(ratio);
+  return n >= 2 && n <= 5 && Math.abs(ratio - n) <= 0.01 * n ? n : null;
 }
 
 // Two long straight open chains crossing near their midpoints (the drawing's centre lines): their intersection.
@@ -337,8 +379,9 @@ const fmtMm = (n) => String(Math.round(n * 10) / 10);
 // noOuterFallback: with no expected diameter and no circle, do not promote the largest loop to outer
 // (an outline-only drawing, e.g. a scan, has pockets and no outer).
 // openChains: the chains that did not close (centre lines live there); used only to centre a synthesised outer.
-// Returns { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes } where outerBasis is
-// 'drawn-circle' | 'promoted' | 'synthesised-rim' | 'synthesised-centre-lines' | 'synthesised-bbox' | null.
+// Returns { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes, drawingScale } where outerBasis is
+// 'drawn-circle' | 'promoted' | 'synthesised-rim' | 'synthesised-centre-lines' | 'synthesised-bbox' | null, and
+// drawingScale is n when the centring rim is the stated diameter at a clean 1:n (the geometry is not rescaled).
 function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = false, openChains = [] } = {}) {
   const ignored = [];
   const notes = [];
@@ -346,9 +389,11 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
   let outerSynthesised = false;
   let outerFit = null;
   let outerBasis = null;
+  let drawingScale = null;
+  let centringRim = null;
 
   // Rule 0: drawing frames (sheet borders) are neither the outer nor a pocket.
-  const frames = frameLoops(loops);
+  const frames = frameLoops(loops, { expectedOuterDiameter });
   for (const f of frames) ignored.push({ loop: f, reason: 'frame' });
   const live = loops.filter((l) => !frames.has(l));
 
@@ -382,9 +427,14 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
       const rim = circles.find(holds);
       let centre = null;
       if (rim) {
+        // The rim stands in for the outer: it is never a pocket.
         centre = [rim.fit.cx, rim.fit.cy];
         outerBasis = 'synthesised-rim';
-        notes.push(`drawn rim Ø${fmtMm(rim.fit.r * 2)} disagrees with the stated Ø${fmtMm(expectedOuterDiameter)}; outer centred on the rim`);
+        centringRim = rim.l;
+        drawingScale = cleanScale(expectedOuterDiameter, rim.fit.r * 2);
+        notes.push(drawingScale
+          ? `drawn rim Ø${fmtMm(rim.fit.r * 2)} is the stated Ø${fmtMm(expectedOuterDiameter)} at 1:${drawingScale}; outer centred on the rim`
+          : `drawn rim Ø${fmtMm(rim.fit.r * 2)} disagrees with the stated Ø${fmtMm(expectedOuterDiameter)}; outer centred on the rim`);
       } else {
         centre = centreLineCrossing(openChains, 0.6 * expectedOuterDiameter);
         if (centre) {
@@ -411,6 +461,22 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
   }
 
   let rest = live.filter((l) => l !== outer);
+  if (centringRim) {
+    // The rim and any step drawn just inside it (a concentric circle within 10 % of its size) are the outer's
+    // stand-in, never a pocket.
+    const rimFit = robustCircle(centringRim.points);
+    const step = (l) => {
+      if (l === centringRim) return true;
+      const f = robustCircle(l.points);
+      return !!f && f.r >= 0.9 * rimFit.r && f.r <= rimFit.r
+        && Math.hypot(f.cx - rimFit.cx, f.cy - rimFit.cy) <= Math.max(1, 0.01 * rimFit.r);
+    };
+    rest = rest.filter((l) => {
+      if (!step(l)) return true;
+      ignored.push({ loop: l, reason: 'centring-rim' });
+      return false;
+    });
+  }
   let centre = null;
   let outerRadius = null;
   if (outer) {
@@ -445,6 +511,21 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
     });
   }
 
+  // Rule 5b: key slots - narrow (short side under 20 mm), elongated (long side at least twice the short) and out
+  // towards the rim (centroid beyond 0.6 x the outer radius). A locating feature, never a cavity.
+  if (outer) {
+    rest = rest.filter((l) => {
+      const b = bbox(l.points);
+      const short = Math.min(b.width, b.height);
+      const long = Math.max(b.width, b.height);
+      if (short < 20 && long >= 2 * short && dist(centroid(l.points), centre) > 0.6 * outerRadius) {
+        ignored.push({ loop: l, reason: 'key-slot' });
+        return false;
+      }
+      return true;
+    });
+  }
+
   // Rule 6: loops contained by a larger remaining loop.
   const areas = new Map(rest.map((l) => [l, polygonArea(l.points)]));
   const afterNested = rest.filter((l) => {
@@ -463,7 +544,7 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
   });
   pockets.sort((a, b) => areas.get(b) - areas.get(a));
 
-  return { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes };
+  return { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes, drawingScale };
 }
 
 function pocketGapMm(pockets) {
@@ -522,6 +603,6 @@ function gradeConfidence({
 
 module.exports = {
   chainLoops, polygonArea, centroid, bbox, pointInPolygon, polygonContains,
-  circleFit, isCircleLike, robustCircle, isAxisRect, frameLoops, centreLineCrossing,
+  circleFit, isCircleLike, robustCircle, isAxisRect, frameLoops, cleanScale, centreLineCrossing,
   classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, NATIVE_SCALES,
 };

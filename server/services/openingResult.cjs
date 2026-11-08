@@ -21,7 +21,8 @@
 // With scaleBasis 'inventory-dims' and no expected diameter the outer is not guessed (the pocket is never promoted),
 // and a short side more than 2 mm away from inventoryDims.b_wid makes the result 'none'.
 // Caps at 'uncertain' (each with a note): several different plausible size texts; with no known cavity count, a pocket
-// smaller than a tenth of the largest one (a locating slot or a title-block symbol, not a cavity); a reader warning.
+// smaller than a tenth of the largest one (a locating slot or a title-block symbol, not a cavity); a drawn rim showing
+// the drawing at a clean 1:n scale (the geometry is not rescaled); a reader warning.
 
 const {
   classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, bbox, polygonArea,
@@ -131,6 +132,7 @@ function buildExtractionResult({
     const small = areas.filter((a) => a < SMALL_POCKET_SHARE * largest).length;
     if (small) capUncertain(state, `${small} pocket${small === 1 ? '' : 's'} under a tenth of the largest pocket's area`);
   }
+  if (cls.drawingScale) capUncertain(state, `drawing appears to be at 1:${cls.drawingScale} scale; geometry not rescaled`);
   for (const w of warnings) capUncertain(state, w);
   confidence = state.confidence;
 

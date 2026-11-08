@@ -165,3 +165,40 @@ test('an inch drawing is native: no scale-derived note, and meta records the uni
 test('numbersFromTexts reads INS-nnnnn and ignores BOL words without digits', () => {
   assert.deepEqual(numbersFromTexts(['INS-10163', 'BOL. No:', 'BOLSTER', 'BOL:(ALV-14)45-48 HRC']), ['I-10163']);
 });
+
+// ---- regression fixtures from the final re-review (v2 bundle) --------------------------------------------------------
+
+test('BOL-2-1-H: a 1:3 drawing - the Ø158.3 centring rim is not a pocket, the 90 x 30 profile is; capped uncertain', () => {
+  const r = extractFromDxf(fixture('bolster-BOL-2-1-H-1to3.dxf'), { sizeClass: '475X220' });
+  assert.equal(r.outerSynthesised, true);
+  assert.ok(Math.abs(circleFit(r.outer).r * 2 - 475) < 0.01, 'the outer is the stated size, not rescaled');
+  assert.equal(r.pockets.length, 1);
+  assert.ok(!r.pockets.some((p) => { const b = bbox(p); return Math.abs(b.width - 158.3) < 2 && Math.abs(b.height - 158.3) < 2; }),
+    'the Ø158.3 rim is not a pocket');
+  const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 90) < 0.5 && Math.abs(b.height - 30) < 0.5, `pocket ${b.width} x ${b.height}`);
+  assert.equal(r.confidence, 'uncertain');
+  assert.ok(r.notes.includes('drawing appears to be at 1:3 scale; geometry not rescaled'));
+});
+
+test('I-05091: the drawn Ø175 is the outer and its 110 x 68.4 pocket is kept (a drawn outer is never a centring rim)', () => {
+  const r = extractFromDxf(fixture('insert-05091-drawn-outer.dxf'), { sizeClass: '175X80' });
+  assert.equal(r.outerSynthesised, false);
+  assert.ok(Math.abs(circleFit(r.outer).r * 2 - 175) < 0.5);
+  assert.equal(r.pockets.length, 1);
+  const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 110) < 0.5 && Math.abs(b.height - 68.4) < 0.5, `pocket ${b.width} x ${b.height}`);
+  assert.equal(r.confidence, 'confirmed');
+  assert.ok(!r.notes.some((n) => /rim|scale/.test(n)));
+});
+
+test('I-13608: the 14 x 48 key slot at r 105 is not a cavity; one pocket', () => {
+  const r = extractFromDxf(fixture('insert-13608-key-slot.dxf'));
+  assert.equal(r.pockets.length, 1);
+  const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 128.2) < 0.5 && Math.abs(b.height - 63.7) < 0.5, `pocket ${b.width} x ${b.height}`);
+  assert.equal(r.cavities, 1);
+});
+
+test('I-16215: a drawing whose only pocket candidate is the key slot has no pocket', () => {
+  const r = extractFromDxf(fixture('insert-16215-key-slot-only.dxf'), { sizeClass: '300X100' });
+  assert.equal(r.pockets.length, 0);
+  assert.equal(r.confidence, 'none');
+});

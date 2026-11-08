@@ -472,3 +472,9 @@ test('sameTooling: the same number written another way is not a mismatch; a diff
   for (const [a, b] of [['35IC2-120187', '35IC1-120187'], ['25IC1-120670', '25IC1-090670'], ['I-15289', 'I-15278'], ['I-30547', 'I-30546'],
     ['BOL-1', 'BOL-14017'], ['I-45228', 'I-09861']]) assert.equal(sameTooling(a, b), false, `${a} vs ${b}`);
 });
+test('sameTooling: leading zeros only within a kind or an equal digit count; only letters or whole segments extra', () => {
+  for (const [a, b] of [['I-05289', 'I-15289'], ['I-01234', 'I-12345'], ['BOL-5043', 'I-05043'], ['I-05043', 'BOL-5043'],
+    ['I-12345', 'I-123456'], ['25IC1-28851', '25IC1-128851']]) assert.equal(sameTooling(a, b), false, `${a} vs ${b}`);
+  for (const [a, b] of [['35IC1-026904', 'INS-35IC1-026904'], ['BOL-S-27363', 'BOL-27363'], ['I-05289', 'I-5289'],
+    ['BOL-05043', 'BOL-5043'], ['25IC1-28851', '25IC1-028851'], ['I-14093', 'BOL-14093']]) assert.equal(sameTooling(a, b), true, `${a} ~ ${b}`);
+});
