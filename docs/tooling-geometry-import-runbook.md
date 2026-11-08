@@ -85,37 +85,52 @@ The bundle folder holds `manifest.json`, `toolings.json`, `drawings.json`,
 `openings.json`, `hints.json`, `report.json` and `files/` (the DXF/PDF copies; the
 original DWG is not copied, its DXF is, and `archive_path` keeps the provenance).
 
-Test-server result (`full-2026-11-08-v2`, built after the final-review fix wave,
-about 2 minutes, 2.5 GB; the first build `full-2026-11-08` is kept for comparison):
+Test-server result (`full-2026-11-08-v3`, built after the regression fixes,
+about 2 minutes, 2.5 GB; `full-2026-11-08-v2` and the first build `full-2026-11-08`
+are kept for comparison):
 
-| | v2 (current) | first build |
-|---|---|---|
-| Drawing files in scope | 9,538 | 9,538 |
-| Toolings matched | 3,505, of which 2,174 new to the master | same |
-| Files and drawings in bundle | 8,265 | 8,265 |
-| Openings extracted | 3,504 | 3,504 |
-| Openings by confidence | confirmed 1,383, likely 1,016, uncertain 898, none 207 | confirmed 1,315, likely 1,400, uncertain 444, none 345 |
-| Skipped | 515: unrecognised 320, press-part 53, scrap 142 | same |
-| Extraction failures | 1 (`35IC1_090082.pdf`, zero bytes) | same |
-| Read failures | 0 | 0 |
-| Warnings (number mismatch) | 30, each a different number | 340, about two thirds noise (`BOL-STER`, `BOL-.`, `I-14093` on `BOL-14093`) |
+| | v3 (current) | v2 | first build |
+|---|---|---|---|
+| Drawing files in scope | 9,538 | 9,538 | 9,538 |
+| Toolings matched | 3,505, of which 2,174 new to the master | same | same |
+| Files and drawings in bundle | 8,265 | 8,265 | 8,265 |
+| Openings extracted | 3,504 | 3,504 | 3,504 |
+| Openings by confidence | confirmed 1,393, likely 1,099, uncertain 799, none 213 | confirmed 1,383, likely 1,016, uncertain 898, none 207 | confirmed 1,315, likely 1,400, uncertain 444, none 345 |
+| Skipped | 515: unrecognised 320, press-part 53, scrap 142 | same | same |
+| Extraction failures | 1 (`35IC1_090082.pdf`, zero bytes) | same | same |
+| Read failures | 0 | 0 | 0 |
+| Warnings (number mismatch) | 30, each a different number | 30 | 340, about two thirds noise (`BOL-STER`, `BOL-.`, `I-14093` on `BOL-14093`) |
 
-What the fix wave changed in the first build's results (confirmed or likely only):
+What the fixes changed (confirmed or likely only unless stated):
 
-| | first build | v2 |
-|---|---|---|
-| outer synthesised | 1,215 | 748 (715 centred on centre lines, 33 on a drawn rim) |
-| synthesised, pockets more than 20 mm off the outer's centre | 979 | 65 |
-| sheet frame (rectangle) taken as the outer | 23 | 0 |
-| other non-circular outer | 3 | 0 |
-| confirmed with a pocket under a tenth of the largest | 16 | 3 (count agrees with the known cavities) |
-| confirmed with a pocket short side under 12 mm | 14 | 2 |
+| | first build | v2 | v3 |
+|---|---|---|---|
+| outer synthesised | 1,215 | 748 (715 on centre lines, 33 on a drawn rim) | 810 (801 on centre lines, 9 on a drawn rim) |
+| synthesised, pockets more than 20 mm off the outer's centre | 979 | 65 | 52 |
+| sheet frame (rectangle) taken as the outer | 23 | 0 | 0 |
+| other non-circular outer | 3 | 0 | 0 |
+| confirmed with a pocket under a tenth of the largest | 16 | 3 | 3 (count agrees with the known cavities) |
+| confirmed with a pocket short side under 12 mm | 14 | 2 | 2 |
+| the centring rim kept as the pocket (any grade) | - | 38 | 0 |
+| key-slot-shaped pocket (short < 20 mm, long >= 2x, beyond 0.6 R) | - | 22 | 0 |
+| 1:n-scale drawings capped `uncertain` (any grade) | - | 0 | 25 (23 at 1:3, 2 at 1:2; 2 more at 1:3 are `none`) |
 
-`uncertain` grew because the new caps now say what was guessed (an opening can
-carry several): a pocket under a tenth of the largest (358), an outer centred on
-the drawn loops with no rim or centre lines (243), a drawing naming another
-number (29), several size texts (15), a DXF reader warning (4), a non-circular
-promoted outer (2).
+v2 to v3 in detail: the 1:3 bolster drawings (`BOL-2-x`, `BOL-5-x`, `BOL-7-x`, rim
+Ø158.3 for a stated Ø475, Ø146.7 for Ø440) now keep their real profile loops as
+pockets instead of the rim, graded `uncertain`; the rest of the 38 rim-as-pocket
+cases now take the profile inside the rim (I-16920: 410 x 119 instead of the
+Ø460), or have no pocket (I-06030). Key slots dropped: 22 confirmed/likely
+openings lost a false cavity (I-13608 2 -> 1, I-12391 3 -> 2, I-09475, I-13303,
+I-23247 ...) and I-16215 went `likely` -> `none`; 118 openings that were
+capped only by a key slot "under a tenth of the largest" pocket rose to `likely`
+or `confirmed`. No sheet border became a pocket (the frame guard keeps every
+frame the older rule found).
+
+`uncertain` caps in v3 (an opening can carry several): a pocket under a tenth of
+the largest (227), an outer centred on the drawn loops with no rim or centre
+lines (243), pocket count disagreeing with the known cavities (151), a drawing at
+1:n scale (25), a drawing naming another number (29), several size texts (15), a
+DXF reader warning (4), a non-circular promoted outer (2).
 
 ## 4. Apply (backend container)
 
@@ -160,6 +175,16 @@ v2 after the reset (see below), same day:
 
 (The 2,174 drawing-archive rows already existed, so they count as conflicts, not
 inserts; their blanks are refilled by the insert's `COALESCE`.)
+
+v3 after a second reset (backend rebuilt from the fix commit), same day. The reset
+restored 1,935 (721 changed by the v2 apply) and cleared 1,798 drawing-archive
+rows.
+
+| Run | toolings inserted / updated | drawings inserted / skipped / unknown tooling | openings written | reviewed openings skipped | files copied |
+|---|---|---|---|---|---|
+| dry run | 0 / 783 | 0 / 8,265 / 0 | 3,504 | 0 | 0 |
+| live | 0 / 783 | 0 / 8,265 / 0 | 3,504 | 0 | 0 |
+| live again | 0 / 0 | 0 / 8,265 / 0 | 3,504 | 0 | 0 |
 
 ## When the extraction rules change: reset, rebuild, re-apply
 
@@ -214,36 +239,35 @@ select count(*) from toolings where cavities is not null and source = 'drawing-a
 select count(*) from tooling_openings where extraction_meta is not null;
 ```
 
-Test-server output after the v2 apply:
+Test-server output after the v3 apply:
 
 | confidence | source | count |
 |---|---|---|
-| confirmed | dxf | 1,383 |
-| likely | dxf | 932 |
+| confirmed | dxf | 1,393 |
+| likely | dxf | 1,015 |
 | likely | pdf-vector | 84 |
-| uncertain | dxf | 894 |
+| uncertain | dxf | 795 |
 | uncertain | pdf-vector | 4 |
-| none | dxf | 83 |
+| none | dxf | 89 |
 | none | pdf-vector | 91 |
 | none | pdf-raster | 33 |
 
 | plant | kind | status | sized | total |
 |---|---|---|---|---|
 | GEX 1 | bolster | active | 14 | 14 |
-| GEX 1 | bolster | retired | 127 | 216 |
-| GEX 1 | insert | active | 660 | 1,421 |
-| GEX 1 | insert | retired | 1,599 | 1,902 |
+| GEX 1 | bolster | retired | 119 | 216 |
+| GEX 1 | insert | active | 721 | 1,421 |
+| GEX 1 | insert | retired | 1,624 | 1,902 |
 | GEX 2 | bolster | active | 70 | 79 |
 | GEX 2 | bolster | retired | 4 | 6 |
 | GEX 2 | insert | active | 420 | 421 |
 | GEX 2 | insert | retired | 7 | 50 |
 
-Drawings: 8,265 across 3,505 toolings. Size classes by source: drawing 2,397,
-inventory 504, none 1,208 (first build: 2,782 / 504 / 823; the difference is the
-uncertain openings no longer writing to the master). Openings with no outer:
-409 (SQL NULL). Drawing-archive toolings with cavities: 1,670 (first build:
-1,982). Openings with `extraction_meta`: 3,392 (the 112 without are PDF results
-that never got a scale).
+Drawings: 8,265 across 3,505 toolings. Size classes by source: drawing 2,475,
+inventory 504, none 1,130 (v2: 2,397 / 504 / 1,208; first build: 2,782 / 504 / 823).
+Openings with no outer: 409 (SQL NULL). Drawing-archive toolings with cavities:
+1,699 (v2: 1,670; first build: 1,982). Openings with `extraction_meta`: 3,392 (the
+112 without are PDF results that never got a scale).
 
 The fourth query's first rows are `25IC1-...` inserts marked `uncertain`, mostly
 "pocket count N disagrees with 1 cavities" (the inventory says 1 cavity, the
@@ -256,15 +280,28 @@ plus `25IC1-015647`, whose drawing names `25IC2-15647`.
 |---|---|---|
 | `confirmed` | DXF geometry, pocket count agrees with the inventory cavity count, dimensions agree with any inventory dimensions | Use as exact geometry. |
 | `likely` | DXF or vector-PDF geometry, no contradicting hint | Use; show as drawing-derived. |
-| `uncertain` | Geometry found but something is guessed or contradicts: pocket count or size disagrees with a hint, a raster scan, no outer, an outer synthesised and centred on the drawn loops (no rim or centre lines), a non-circular outer, a pocket under a tenth of the largest one (cavities unknown), several different size texts, a DXF reader warning, or a drawing that names a different tooling number | Offer only as a candidate with a warning; a person should review. Never written into the master's `cavities` / `size_class`. |
+| `uncertain` | Geometry found but something is guessed or contradicts: pocket count or size disagrees with a hint, a raster scan, no outer, an outer synthesised and centred on the drawn loops (no rim or centre lines), a drawing at 1:n scale (geometry not rescaled), a non-circular outer, a pocket under a tenth of the largest one (cavities unknown), several different size texts, a DXF reader warning, or a drawing that names a different tooling number | Offer only as a candidate with a warning; a person should review. Never written into the master's `cavities` / `size_class`. |
 | `none` | No usable geometry, or a vector PDF / scan with no scale basis | Never used for matching; the drawing is attached only. |
 
 How the outer is found: a drawn circle of 100 mm or more (a rim drawn with its key
 slot counts), preferring the one within 10 % of the stated size. Sheet frames
-(axis-aligned rectangles holding everything) are never the outer or a pocket.
-With no such circle and a stated size, the outer is synthesised and centred on a
-drawn rim of another size (noted), else on two crossing centre lines each longer
-than 60 % of the stated diameter, else on the drawn loops (uncertain).
+(axis-aligned rectangles holding everything) are never the outer or a pocket; a
+rectangle is a frame only when it is larger than the die (both sides over the
+stated diameter, or over a clean 1:n rim; with no stated size, over 1.2 x the
+largest loop it holds) or when it holds more than one drawing (a title-block
+symbol beside the profile), so a rectangular pocket holding one small feature
+stays a pocket. With no such circle and a stated size, the outer is synthesised
+and centred on a drawn rim of another size (noted), else on two crossing centre
+lines each longer than 60 % of the stated diameter, else on the drawn loops
+(uncertain). The rim it is centred on, and a concentric step just inside it, are
+never pockets. When the stated size is a clean 2, 3, 4 or 5 times the rim (within
+1 %), the drawing is at that scale: nothing is rescaled and the result is capped
+at `uncertain` ("drawing appears to be at 1:n scale").
+
+What is not a pocket: fastener holes (circles up to Ø30), notches reaching past
+0.9 of the outer radius, key slots (short side under 20 mm, long side at least
+twice it, centroid beyond 0.6 of the outer radius), loops inside a larger loop,
+and loops under 50 mm². A drawing whose only candidates are key slots is `none`.
 
 Raster scans never rise above `uncertain`. A vector PDF with no scale basis is
 `none`; it is not scaled from the page size. Coloured strokes on vector PDFs are
@@ -298,6 +335,13 @@ dropped.
   centre lines 222 and 287 mm) misses it, and 243 openings fall back to the
   loops' bounding box. At 50 % of the diameter 101 of them, at 40 % 143, would
   have centre lines.
+- **Squat slots near the rim stay pockets.** I-16136 and I-16158 (Ø300) have a
+  12.6 x 8.2 mm loop at r 125 as their only pocket and stay `likely`; it is under
+  twice as long as wide, so the key-slot rule does not take it. I-16136's
+  `cavities = 1` on the test server comes from it.
+- **1:n drawings are not rescaled.** The 25 capped openings keep pockets at
+  drawing size (a third of real size at 1:3). Rescaling them is a possible
+  follow-up; until then a person should review them.
 - **Press-6 insert sheet** (`6.Press 6/Insert/PRESS 6 INSERTS(460 AND 560).xlsx`:
   insert number, size, length, width, cavities, centre gap; 37 rows) is not used
   yet. It is a cheap cross-check for the finder's verification.
