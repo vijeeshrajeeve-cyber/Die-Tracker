@@ -189,7 +189,7 @@ const ioWith = (files) => ({
   readFile: async (p) => { if (!(p in files)) throw new Error(`ENOENT ${p}`); return files[p]; },
 });
 const abs = (row) => path.join(ROOT, row.stored_path);
-const verbs = (client) => client.seen.map((s) => s.sql.trim().split(/\s+/)[0]).filter((v) => ['BEGIN', 'COMMIT', 'ROLLBACK'].includes(v));
+const verbs = (client) => client.seen.map((s) => s.sql.trim()).filter((v) => ['BEGIN', 'COMMIT', 'ROLLBACK'].includes(v));
 
 test('backfill traces pictures without a shape row and records them', async () => {
   const row = pictureRow();
@@ -198,6 +198,7 @@ test('backfill traces pictures without a shape row and records them', async () =
   assert.deepEqual(res, { scanned: 1, traced: 1, trueSized: 1, skippedExisting: 2, failed: [] });
   assert.deepEqual(verbs(client), ['BEGIN', 'COMMIT']);
   const list = client.seen.find((s) => /FROM die_order_files f JOIN die_orders/.test(s.sql));
+  assert.deepEqual(list.params, []);
   assert.match(list.sql, /f\.slot = 'profile_image' AND f\.replaced_at IS NULL/);
   assert.match(list.sql, /NOT EXISTS \(SELECT 1 FROM profile_shapes p WHERE p\.source = 'order-pdf' AND p\.source_ref = f\.order_id::text\)/);
   assert.match(list.sql, /ORDER BY f\.id/);
@@ -246,4 +247,28 @@ test('backfill: dry run rolls back', async () => {
   assert.equal(res.traced, 1);
   assert.deepEqual(verbs(client), ['BEGIN', 'ROLLBACK']);
   assert.ok(client.seen.some((s) => /^\s*INSERT INTO profile_shapes/.test(s.sql)));
+});
+
+test('backfill: a database error on one row is rolled back to its savepoint and the run still commits', async () => {
+  const a = pictureRow({ id: 1, order_id: 1, die_no: 'A-1', stored_path: 'A-1/1/profile_image/a.png' });
+  const b = pictureRow({ id: 2, order_id: 2, die_no: 'A-2', stored_path: 'A-2/2/profile_image/b.png' });
+  const client = backfillClient([a, b]);
+  const inner = client.query;
+  client.query = async (sql, params) => {
+    if (/^\s*INSERT INTO profile_shapes/.test(sql) && params[4] === '1') {
+      client.seen.push({ sql, params });
+      throw new Error('constraint violation');
+    }
+    return inner(sql, params);
+  };
+  const res = await backfillOrderProfileShapes(client, { root: ROOT, io: ioWith({ [abs(a)]: ringPng(), [abs(b)]: ringPng() }) });
+  assert.equal(res.traced, 1);
+  assert.deepEqual(res.failed, [{ orderId: 1, dieNo: 'A-1', error: 'constraint violation' }]);
+  const stmts = client.seen.map((s) => s.sql.trim());
+  const at = (re) => stmts.findIndex((x) => re.test(x));
+  assert.ok(at(/^SAVEPOINT row_1$/) < at(/^INSERT INTO profile_shapes/));
+  assert.ok(at(/^ROLLBACK TO SAVEPOINT row_1$/) > at(/^INSERT INTO profile_shapes/));
+  assert.ok(stmts.includes('RELEASE SAVEPOINT row_1') && stmts.includes('RELEASE SAVEPOINT row_2'));
+  assert.equal(stmts.filter((x) => /^INSERT INTO profile_shapes/.test(x)).length, 2);
+  assert.deepEqual(verbs(client), ['BEGIN', 'COMMIT']);
 });

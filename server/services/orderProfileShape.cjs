@@ -215,6 +215,9 @@ async function backfillOrderProfileShapes(client, { root, io, dryRun = false, li
     );
     for (const row of rows) {
       result.scanned += 1;
+      // A database error inside a transaction aborts it: each row gets a savepoint so one bad row cannot sink the rest.
+      const sp = `row_${result.scanned}`;
+      await client.query(`SAVEPOINT ${sp}`);
       try {
         const file = path.join(root, row.stored_path);
         if (!isInsideRoot(root, file)) throw new Error('picture path outside the storage root');
@@ -229,9 +232,12 @@ async function backfillOrderProfileShapes(client, { root, io, dryRun = false, li
           imageSha: sha256Of(buffer), imagePath: row.stored_path, dieType: row.die_type, cavities: facts.cavity, fields,
         });
         result.traced += 1;
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
         if (fields.true_size) result.trueSized += 1;
         log(`order ${row.order_id} ${row.die_no}: traced${fields.true_size ? ` (${fields.true_size_confidence})` : ' (no true size)'}`);
       } catch (e) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
         result.failed.push({ orderId: row.order_id, dieNo: row.die_no, error: e.message });
         log(`order ${row.order_id} ${row.die_no}: FAILED ${e.message}`);
       }
