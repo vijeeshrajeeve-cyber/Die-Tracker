@@ -89,3 +89,22 @@ test('grades confidence', () => {
   assert.equal(gradeConfidence({ ...base, pockets: [] }).confidence, 'none');
   assert.equal(gradeConfidence({ ...base, scaleBasis: null }).confidence, 'none');
 });
+
+test('chains 3000 shuffled, half-reversed segments into 300 loops quickly', () => {
+  const segs = [];
+  for (let k = 0; k < 300; k++) {
+    const pts = circle((k % 20) * 100, Math.floor(k / 20) * 100, 20, 10);
+    for (let i = 0; i < 10; i++) {
+      const a = pts[i]; const b = pts[(i + 1) % 10];
+      segs.push((i + k) % 2 ? seg(b[0], b[1], a[0], a[1]) : seg(a[0], a[1], b[0], b[1]));
+    }
+  }
+  let state = 12345;
+  const rnd = () => { state = (state * 1664525 + 1013904223) % 4294967296; return state / 4294967296; };
+  for (let i = segs.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [segs[i], segs[j]] = [segs[j], segs[i]]; }
+  const t0 = Date.now();
+  const { loops, open } = chainLoops(segs);
+  const elapsedMs = Date.now() - t0;
+  assert.equal(loops.length, 300); assert.equal(open.length, 0);
+  assert.ok(elapsedMs < 2000, `took ${elapsedMs} ms`);
+});

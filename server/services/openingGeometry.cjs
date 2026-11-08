@@ -129,7 +129,7 @@ function isCircleLike(points) {
 
 function chainLoops(chains, { joinTol = 0.5, bridgeTol = 2 } = {}) {
   const loops = [];
-  const runs = [];
+  let runs = [];
   const uniq = (xs) => [...new Set(xs)];
 
   for (const c of chains) {
@@ -142,31 +142,69 @@ function chainLoops(chains, { joinTol = 0.5, bridgeTol = 2 } = {}) {
     }
   }
 
-  // Attach runs end-to-end until no free end is within joinTol of another run's free end.
-  let joined = true;
-  while (joined) {
-    joined = false;
-    search: for (let i = 0; i < runs.length; i++) {
-      for (let j = i + 1; j < runs.length; j++) {
-        const a = runs[i];
-        const b = runs[j];
-        const aEnd = a.points[a.points.length - 1];
-        const aStart = a.points[0];
-        const bEnd = b.points[b.points.length - 1];
-        const bStart = b.points[0];
-        let pts = null;
-        if (dist(aEnd, bStart) <= joinTol) pts = [...a.points, ...b.points.slice(1)];
-        else if (dist(aEnd, bEnd) <= joinTol) pts = [...a.points, ...b.points.slice(0, -1).reverse()];
-        else if (dist(aStart, bEnd) <= joinTol) pts = [...b.points, ...a.points.slice(1)];
-        else if (dist(aStart, bStart) <= joinTol) pts = [...b.points.slice().reverse(), ...a.points.slice(1)];
-        if (!pts) continue;
-        runs[i] = { points: pts, layer: a.layer, sources: uniq([...a.sources, ...b.sources]), source: a.source };
-        runs.splice(j, 1);
-        joined = true;
-        break search;
+  // Attach runs end-to-end in a single pass: free endpoints are bucketed in a spatial hash
+  // (cell size joinTol, 3x3 neighbourhood) and each run is extended at both ends until nothing is in reach.
+  const cell = Math.max(joinTol, 1e-9);
+  const cellOf = (p) => [Math.floor(p[0] / cell), Math.floor(p[1] / cell)];
+  const grid = new Map();
+  const addEnd = (ri, which, p) => {
+    const [gx, gy] = cellOf(p);
+    const key = gx + ',' + gy;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push({ ri, which });
+  };
+  runs.forEach((r, ri) => {
+    addEnd(ri, 'start', r.points[0]);
+    addEnd(ri, 'end', r.points[r.points.length - 1]);
+  });
+  const consumed = new Array(runs.length).fill(false);
+  const nearest = (p, self) => {
+    const [gx, gy] = cellOf(p);
+    let best = null;
+    let bestD = Infinity;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const list = grid.get((gx + dx) + ',' + (gy + dy));
+        if (!list) continue;
+        for (const e of list) {
+          if (e.ri === self || consumed[e.ri]) continue;
+          const q = e.which === 'start' ? runs[e.ri].points[0] : runs[e.ri].points[runs[e.ri].points.length - 1];
+          const d = dist(p, q);
+          if (d <= joinTol && d < bestD) { best = e; bestD = d; }
+        }
       }
     }
+    return best;
+  };
+  const merged = [];
+  for (let i = 0; i < runs.length; i++) {
+    if (consumed[i]) continue;
+    consumed[i] = true;
+    const run = runs[i];
+    const body = run.points.slice();
+    const head = []; // points added beyond the start, in outward order
+    let sources = run.sources;
+    // outward travel from an end: the neighbour's points in the direction away from the shared joint
+    const outward = (cand) => {
+      const pts = runs[cand.ri].points;
+      consumed[cand.ri] = true;
+      sources = uniq([...sources, ...runs[cand.ri].sources]);
+      return cand.which === 'start' ? pts.slice(1) : pts.slice().reverse().slice(1);
+    };
+    for (;;) {
+      const cand = nearest(body[body.length - 1], i);
+      if (!cand) break;
+      for (const p of outward(cand)) body.push(p);
+    }
+    for (;;) {
+      const tip = head.length ? head[head.length - 1] : body[0];
+      const cand = nearest(tip, i);
+      if (!cand) break;
+      for (const p of outward(cand)) head.push(p);
+    }
+    merged.push({ points: [...head.reverse(), ...body], layer: run.layer, sources, source: run.source });
   }
+  runs = merged;
 
   const open = [];
   let bridged = 0;
