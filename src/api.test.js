@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { toolingsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -306,4 +306,13 @@ test('searchAPI.qd fetches one QD by id', async () => {
   globalThis.fetch = async (url) => { seenUrl = url; return new Response('{"id":5}', { status: 200 }); };
   assert.equal((await searchAPI.qd(5)).id, 5);
   assert.equal(seenUrl, '/api/search/qd/5');
+});
+
+test('toolingsAPI.get encodes the tooling number and list drops empty params', async () => {
+  const urls = [];
+  globalThis.fetch = async (url) => { urls.push(String(url)); return new Response('{"items":[],"total":0}', { status: 200, headers: { 'Content-Type': 'application/json' } }); };
+  await toolingsAPI.get('BOL-4-6-A');
+  await toolingsAPI.list({ plant: 'GEX 2', kind: '', press: undefined });
+  assert.ok(urls[0].endsWith('/toolings/BOL-4-6-A'));
+  assert.ok(urls[1].endsWith('/toolings?plant=GEX+2'));
 });

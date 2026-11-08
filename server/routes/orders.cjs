@@ -15,6 +15,7 @@ const {
     displayValue, validateReason, canEditOrderDetails, fromRow, columnValue,
 } = require('../services/orderDetailEdits.cjs');
 const orderFiles = require('../services/orderFiles.cjs');
+const { recordOrderToolingLinks } = require('../services/dieToolingLinks.cjs');
 const { adminMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
@@ -285,6 +286,8 @@ const orderValidation = [
     body('Sample Status').optional().customSanitizer(sanitizeString),
     body('Remark').optional().customSanitizer(sanitizeString),
     body('Sample Remark').optional().customSanitizer(sanitizeString),
+    body('Insert No').optional().customSanitizer(sanitizeString),
+    body('Bolster No').optional().customSanitizer(sanitizeString),
     body('Urgency').optional().trim().custom((value) => {
         const n = normalizeUrgencyInput(value);
         if (!['NORMAL', 'URGENT', 'TOP_URGENT'].includes(n)) {
@@ -402,6 +405,18 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             req.user.id,
             sanitizeString(order['Die Type']) || null
         ]);
+
+        // The form's insert/bolster numbers are a side record: never fail the order over them.
+        try {
+            await recordOrderToolingLinks(pool, {
+                dieNo: order['DIE NO'],
+                plant: order['Plant'],
+                insertNo: order['Insert No'],
+                bolsterNo: order['Bolster No'],
+            });
+        } catch (linkError) {
+            console.error('Record order tooling links error:', linkError);
+        }
 
         await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
 

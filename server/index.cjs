@@ -34,6 +34,7 @@ const existingDataRouter = require('./routes/existing-data.cjs');
 const autoBackupsRouter = require('./routes/auto-backups.cjs');
 const autoBackupService = require('./services/autoBackup.cjs');
 const frozenDesignsRouter = require('./routes/frozen-designs.cjs');
+const toolingsRouter = require('./routes/toolings.cjs');
 const qualityDiscrepanciesRouter = require('./routes/quality-discrepancies.cjs');
 const searchRouter = require('./routes/search.cjs');
 const signaturesRouter = require('./routes/signatures.cjs');
@@ -110,6 +111,7 @@ app.use('/api/correctors', correctorsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/backup-requests', authMiddleware, pageAccessMiddleware('backup-requests'), backupRequestsRouter);
 app.use('/api/frozen-designs', authMiddleware, pageAccessMiddleware('frozen-designs'), frozenDesignsRouter);
+app.use('/api/toolings', authMiddleware, toolingsRouter);
 app.use('/api/quality-discrepancies', authMiddleware, pageAccessMiddleware('qd-tracker'), qualityDiscrepanciesRouter);
 // Per-group page access is checked inside the router: a user may read orders
 // but not QDs, or the reverse.

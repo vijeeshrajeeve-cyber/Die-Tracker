@@ -964,6 +964,16 @@ export const frozenDesignsAPI = {
     update: async (id, payload) => apiRequest(`/frozen-designs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
 };
 
+export const toolingsAPI = {
+    list: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/toolings${qs ? `?${qs}` : ''}`);
+    },
+    get: async (number) => apiRequest(`/toolings/${encodeURIComponent(number)}`),
+    combinations: async ({ press, dieSize }) => apiRequest(`/toolings/combinations?${new URLSearchParams({ press: press ?? '', dieSize: dieSize ?? '' })}`),
+};
+
 // Quality Discrepancies (QD Tracker) API
 export const qualityDiscrepanciesAPI = {
     // year scopes the rows, KPIs and supplier rollup together; omit for all years.
