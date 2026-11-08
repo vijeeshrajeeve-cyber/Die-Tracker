@@ -136,6 +136,13 @@ test('similarCards caps at 8 and tags scope', () => {
   assert.equal(card.toolings[0].kind, 'insert');
 });
 
+test('similarCards fills meta from dieMeta when the caller knows the die', () => {
+  const known = { 'N-1': 'PRESS 7 · 250X140 · 2 cav' };
+  const cards = similarCards([sim('N-1'), sim('N-2')], 8, (dieNo) => known[dieNo] ?? null);
+  assert.deepEqual(cards.map((c) => c.meta), ['PRESS 7 · 250X140 · 2 cav', null]);
+  assert.equal(similarCards([sim('N-1')])[0].meta, null);
+});
+
 test('similarOnlyCards: similar-list toolings not among the candidates, deduped, with reason text', () => {
   const similar = [
     sim('N-1', [st('I-1'), st('I-2', { reason: 'cavities' }), st('I-3')]),
@@ -144,7 +151,7 @@ test('similarOnlyCards: similar-list toolings not among the candidates, deduped,
   const out = similarOnlyCards(similar, [cand({ number: 'I-1' })]);
   assert.deepEqual(out.map((o) => [o.number, o.dieNo, o.reasonText]), [
     ['I-2', 'N-1', 'Cavity count differs — shown because the shape is similar'],
-    ['I-3', 'N-1', 'Did not fit — shown because the shape is similar'],
+    ['I-3', 'N-1', 'Not among the ranked fits — shown because the shape is similar'],
     ['I-4', 'N-2', 'Opening not known — shown because the shape is similar'],
     ['I-5', 'N-2', 'Not in scope (retired, unknown or other plant) — shown because the shape is similar'],
     ['I-6', 'N-2', 'Chart: not allowed — shown because the shape is similar'],

@@ -110,14 +110,14 @@ function similarToolingTag(t) {
 }
 
 // The nearest dies for the strip. `meta` (press · die size · cav) is not in the
-// finder response; callers that hold the die list fill it.
-export function similarCards(similar, limit = 8) {
+// finder response; callers that hold the die list pass dieMeta(dieNo) to fill it.
+export function similarCards(similar, limit = 8, dieMeta = null) {
   return (similar || []).slice(0, limit).map((s) => ({
     dieNo: s.dieNo,
     distance: s.distance,
     cavityMatch: s.cavityMatch ?? null,
     toolings: (s.toolings || []).map((t) => ({ number: t.number, kind: t.kind, ...similarToolingTag(t) })),
-    meta: null,
+    meta: (dieMeta && dieMeta(s.dieNo)) || null,
   }));
 }
 
@@ -129,7 +129,8 @@ const SIMILAR_ONLY_TEXT = {
 };
 
 // Toolings of similar dies that are not candidates, first sighting wins. A null
-// reason passed every gate, so it failed the fit (or was cut by the 400 cap).
+// reason passed the gates the list reports: it may have failed the fit, ranked below
+// the limit, been cut by the 400 cap or failed the pocket count.
 export function similarOnlyCards(similar, candidates) {
   const seen = new Set((candidates || []).map((c) => c.number));
   const out = [];
@@ -137,7 +138,7 @@ export function similarOnlyCards(similar, candidates) {
     for (const t of s.toolings || []) {
       if (seen.has(t.number)) continue;
       seen.add(t.number);
-      const why = SIMILAR_ONLY_TEXT[t.reason] || 'Did not fit';
+      const why = SIMILAR_ONLY_TEXT[t.reason] || 'Not among the ranked fits';
       out.push({
         number: t.number, kind: t.kind, sizeClass: t.sizeClass ?? null, reason: t.reason ?? null,
         dieNo: s.dieNo, reasonText: `${why} — shown because the shape is similar`,

@@ -9,7 +9,9 @@ import {
 // The Find tooling panel both order forms embed. `query` is the finder request
 // without minClearance ({ plant, press, dieSize, cavities, profile | dieNo });
 // `c` is a palette like FrozenDesignsPage's usePalette (bg, inset, border, text,
-// muted, dim, primary, ok/okBg, warn/warnBg, danger/dangerBg).
+// muted, dim, primary, ok/okBg, warn/warnBg, danger/dangerBg). Optional
+// `dieMeta(dieNo) → string | null` supplies a similar die's "press · die size · cav"
+// line from the caller's die list; the panel fetches nothing for it.
 
 const NO_PROFILE_404 = 'no true-size profile stored for this die — similarity and fit unavailable';
 
@@ -71,8 +73,8 @@ function SimilarOnlyCard({ item, c }) {
   );
 }
 
-function SimilarStrip({ similar, c }) {
-  const cards = similarCards(similar);
+function SimilarStrip({ similar, dieMeta, c }) {
+  const cards = similarCards(similar, 8, dieMeta);
   if (cards.length === 0) return null;
   return (
     <div>
@@ -106,7 +108,7 @@ function headerLine(q) {
   return parts.join(' · ');
 }
 
-export default function FindToolingPanel({ query, onUse, onClose, c, minClearance = 5, onMinClearanceChange }) {
+export default function FindToolingPanel({ query, onUse, onClose, c, minClearance = 5, onMinClearanceChange, dieMeta = null }) {
   const [state, setState] = useState({ status: 'loading', data: null, error: '' });
   // The parent rebuilds `query` on every render; the effect keys on its content.
   const queryKey = JSON.stringify(query ?? {});
@@ -150,13 +152,13 @@ export default function FindToolingPanel({ query, onUse, onClose, c, minClearanc
       )}
 
       {status === 'done' && (
-        <FinderResult data={data} onUse={onUse} c={c} tight={tight} onMinClearanceChange={onMinClearanceChange} />
+        <FinderResult data={data} onUse={onUse} c={c} tight={tight} onMinClearanceChange={onMinClearanceChange} dieMeta={dieMeta} />
       )}
     </section>
   );
 }
 
-function FinderResult({ data, onUse, c, tight, onMinClearanceChange }) {
+function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta }) {
   const q = data.query || {};
   const chartBasis = data.chart?.basis;
   const tagCtx = { press: q.press, dieSize: q.dieSize, chartBasis };
@@ -207,7 +209,7 @@ function FinderResult({ data, onUse, c, tight, onMinClearanceChange }) {
         )}
       </div>
 
-      <SimilarStrip similar={data.similar} c={c} />
+      <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} />
 
       {data.timings && typeof data.timings.totalMs === 'number' && (
         <div style={{ fontSize: 10, color: c.dim, textAlign: 'right' }}>{data.timings.totalMs} ms</div>
