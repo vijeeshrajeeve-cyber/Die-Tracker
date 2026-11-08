@@ -1,0 +1,169 @@
+'use strict';
+// Bundle builder (PC side): matches archive drawings to tooling numbers, copies them into a bundle
+// directory and extracts opening geometry. Pure apart from the injected `io`, so the tests use fakes.
+//
+//   io = { readFile(absPath) -> Buffer, copyFile(absPath, bundleRelPath), dxfFor(file) -> absPath | null }
+//   extractors = { dxf(text, hints), pdf(buffer, hints) }   (each may be sync or async)
+//
+// A DWG itself is never stored: its converted DXF is (named after the DWG, archivePath = the DWG's path).
+// A DWG without a converted DXF is recorded as a 'dwg' drawing with no bundle file and reported.
+const { interpretStem, groupByTooling } = require('./archiveMatcher.cjs');
+const { storedRelativePath, sha256Of, formatOf } = require('./toolingDrawings.cjs');
+const { parseToolingNumber } = require('./toolingNumbers.cjs');
+
+const NO_DXF = 'no DXF — run convert-dwg-to-dxf';
+const SIZE_IN_NUMBER = /\d{3,4}X\d{2,3}/;
+const EXTRACT_RANK = { dxf: 0, pdf: 1 };
+
+function knownFromExport(json) {
+  const map = new Map();
+  for (const t of (json && json.toolings) || []) {
+    map.set(t.number, {
+      kind: t.kind ?? null, plant: t.plant ?? null, size_class: t.size_class ?? null, cavities: t.cavities ?? null,
+      inventory_dims: t.inventory_dims ?? null, status: t.status ?? null,
+    });
+  }
+  return map;
+}
+
+// Interprets every file name; returns the tooling groups plus what was skipped or not recognised.
+function matchFiles(files) {
+  const matched = [];
+  const skipped = [];
+  const unmatched = [];
+  for (const file of files) {
+    const m = interpretStem(file.stem, { plant: file.plant, kindHint: file.kindHint });
+    if (m.skip) {
+      skipped.push({ relPath: file.relPath, reason: m.skip });
+      if (m.skip === 'unrecognised') unmatched.push(file.stem);
+    } else {
+      matched.push({ ...file, ...m });
+    }
+  }
+  return { groups: groupByTooling(matched), skipped, unmatched };
+}
+
+function hintsFor(number, match, known) {
+  const k = known.get(number);
+  return {
+    sizeClass: (k && k.size_class) ?? match.sizeClass ?? null,
+    cavities: (k && k.cavities) ?? parseToolingNumber(number).cavities ?? null,
+    inventoryDims: (k && k.inventory_dims) ?? null,
+  };
+}
+
+const mismatch = (number, numbers) => {
+  const usable = (numbers || []).filter((n) => !SIZE_IN_NUMBER.test(n));
+  return usable.length > 0 && !usable.includes(number);
+};
+
+async function buildBundle({ files, known, io, extractors, limit = null, onProgress = null }) {
+  const { groups, skipped, unmatched } = matchFiles(files);
+  const toolings = [];
+  const drawings = [];
+  const openings = [];
+  const hintsOut = [];
+  const report = {
+    skipped, unmatched,
+    extractionFailures: [],
+    warnings: [],
+    byConfidence: { confirmed: 0, likely: 0, uncertain: 0, none: 0 },
+    limited: false,
+  };
+
+  let processed = 0;
+  for (const [number, group] of groups) {
+    if (limit != null && processed >= limit) { report.limited = true; break; }
+    processed++;
+    const { match } = group;
+    const isKnown = known.has(number);
+    const hints = hintsFor(number, match, known);
+    hintsOut.push({ toolingNumber: number, known: isKnown, hints: { ...hints } });
+
+    // One entry per file: what is stored, and whether it can be extracted from.
+    const entries = [];
+    const seen = new Set();
+    for (const file of group.files) {
+      if (file.ext === 'dwg') {
+        const dxfAbs = io.dxfFor(file);
+        if (!dxfAbs) {
+          entries.push({ file, isPrimary: file === group.primary, row: {
+            toolingNumber: number, bundleFile: null, originalName: file.relPath.split('/').pop(), archivePath: file.relPath,
+            format: 'dwg', matchBasis: match.basis, sha256: null, byteSize: null,
+          }, extract: null });
+          continue;
+        }
+        entries.push(await stored(file, dxfAbs, file.relPath.split('/').pop().replace(/\.dwg$/i, '.dxf'), 'dxf'));
+      } else {
+        entries.push(await stored(file, file.absPath, file.relPath.split('/').pop(), file.ext));
+      }
+    }
+    async function stored(file, readFrom, originalName, ext) {
+      const buffer = io.readFile(readFrom);
+      const sha256 = sha256Of(buffer);
+      const bundleFile = `files/${storedRelativePath({ number, sha256, originalName })}`;
+      return { file, isPrimary: file === group.primary, copyFrom: readFrom, extract: { ext, buffer }, row: {
+        toolingNumber: number, bundleFile, originalName, archivePath: file.relPath, format: formatOf(originalName),
+        matchBasis: match.basis, sha256, byteSize: buffer.length,
+      } };
+    }
+    for (const e of entries) {
+      if (e.row.sha256) {
+        if (seen.has(e.row.sha256)) { e.duplicate = true; continue; }
+        seen.add(e.row.sha256);
+        io.copyFile(e.copyFrom, e.row.bundleFile);
+      }
+    }
+    for (const e of entries) {
+      if (e.duplicate) continue;
+      drawings.push({ ...e.row, isPrimary: e.isPrimary });
+    }
+
+    // Extraction source: the primary, else the next best extractable file (dxf before pdf).
+    const candidates = entries.filter((e) => e.extract && !e.duplicate)
+      .sort((a, b) => (b.isPrimary - a.isPrimary) || (EXTRACT_RANK[a.extract.ext] - EXTRACT_RANK[b.extract.ext]));
+    const primaryEntry = entries.find((e) => e.isPrimary);
+    if (primaryEntry && !primaryEntry.extract) {
+      report.extractionFailures.push({ toolingNumber: number, file: primaryEntry.file.relPath, error: NO_DXF });
+    }
+    let extraction = null;
+    const source = candidates[0];
+    if (source) {
+      try {
+        extraction = source.extract.ext === 'dxf'
+          ? await extractors.dxf(source.extract.buffer.toString('utf8'), hints)
+          : await extractors.pdf(source.extract.buffer, hints);
+        openings.push({ toolingNumber: number, drawingSha256: source.row.sha256, extraction });
+        const c = report.byConfidence[extraction.confidence] === undefined ? 'none' : extraction.confidence;
+        report.byConfidence[c]++;
+        if (mismatch(number, extraction.numbersInDrawing)) {
+          report.warnings.push({
+            toolingNumber: number, file: source.file.relPath,
+            warning: `number mismatch: drawing names ${extraction.numbersInDrawing.join(', ')}`,
+          });
+        }
+      } catch (err) {
+        extraction = null;
+        report.extractionFailures.push({ toolingNumber: number, file: source.file.relPath, error: err.message });
+      }
+    }
+
+    if (!isKnown) {
+      let sizeClass = null; let sizeSource = null; let confidence = null;
+      if (extraction && extraction.sizeClass) {
+        sizeClass = extraction.sizeClass; sizeSource = 'drawing'; confidence = extraction.sizeClassConfidence || 'likely';
+      } else if (match.sizeClass) {
+        sizeClass = match.sizeClass; sizeSource = 'drawing'; confidence = 'likely';
+      }
+      toolings.push({
+        number, kind: match.kind, plant: match.plant, size_class: sizeClass, size_class_source: sizeSource,
+        size_class_confidence: confidence, cavities: (extraction && extraction.cavities) ?? hints.cavities,
+        source: 'drawing-archive', status: 'retired', notes: `from drawing archive: ${group.primary.relPath}`,
+      });
+    }
+    if (onProgress) onProgress({ done: processed, total: limit != null ? Math.min(limit, groups.size) : groups.size });
+  }
+  return { toolings, drawings, openings, hints: hintsOut, report };
+}
+
+module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle };
