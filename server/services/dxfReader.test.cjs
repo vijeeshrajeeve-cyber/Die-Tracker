@@ -147,3 +147,48 @@ test('a tilted normal warns once and leaves coordinates untouched', () => {
   const xs = chains[0].points.map((p) => p[0]);
   assert.ok(Math.abs(Math.max(...xs) - 15) < 1e-9 && Math.abs(Math.min(...xs) - 5) < 1e-9);
 });
+
+const ellipseEntity = (cx, cy, mx, my, ratio, t0, t1, normal) =>
+  `0
+ELLIPSE
+8
+0
+10
+${cx}
+20
+${cy}
+11
+${mx}
+21
+${my}
+40
+${ratio}
+41
+${t0}
+42
+${t1}
+` +
+  (normal === undefined ? '' : `210
+0
+220
+0
+230
+${normal}
+`);
+
+test('an ELLIPSE is a WCS entity: a -1 normal does not move its centre or major axis', () => {
+  const { chains } = flat([ellipseEntity(40, 10, 20, 0, 0.5, 0, 2 * Math.PI, -1)]);
+  const xs = chains[0].points.map((p) => p[0]), ys = chains[0].points.map((p) => p[1]);
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  assert.ok(near((Math.max(...xs) + Math.min(...xs)) / 2, 40) && near((Math.max(...ys) + Math.min(...ys)) / 2, 10));
+  assert.ok(near(Math.max(...xs) - Math.min(...xs), 40) && near(Math.max(...ys) - Math.min(...ys), 20));
+});
+
+test('a half ELLIPSE on a -1 normal sweeps the other way: the minor-axis side flips', () => {
+  const up = flat([ellipseEntity(40, 10, 20, 0, 0.5, 0, Math.PI, 1)]).chains[0].points;
+  const mir = flat([ellipseEntity(40, 10, 20, 0, 0.5, 0, Math.PI, -1)]).chains[0].points;
+  assert.ok(up.every(([, y]) => y >= 10 - 1e-9));
+  assert.ok(mir.every(([, y]) => y <= 10 + 1e-9));
+  const cx = (p) => (Math.max(...p.map((q) => q[0])) + Math.min(...p.map((q) => q[0]))) / 2;
+  assert.ok(Math.abs(cx(up) - 40) < 1e-6 && Math.abs(cx(mir) - 40) < 1e-6);
+});

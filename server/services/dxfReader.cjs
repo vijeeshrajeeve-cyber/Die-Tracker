@@ -141,12 +141,11 @@ function lwVertices(groups) {
   return vs;
 }
 
-// `mirror`: the entity is on the (0, 0, -1) OCS. x is negated for the centre and major axis, and the
-// parameter range is reflected (t -> -t) so the curve is the mirror image, still swept counter-clockwise.
+// ELLIPSE centre (10/20) and major axis (11/21) are world coordinates, so they are never mirrored. A
+// (0, 0, -1) normal only reverses the sweep (minor axis = N x major): use the parameter range [-t1, -t0].
 function ellipsePoints(groups, tol, mirror) {
-  const sx = mirror ? -1 : 1;
-  const cx = sx * first(groups, 10, 0), cy = first(groups, 20, 0);
-  const mx = sx * first(groups, 11, 1), my = first(groups, 21, 0);
+  const cx = first(groups, 10, 0), cy = first(groups, 20, 0);
+  const mx = first(groups, 11, 1), my = first(groups, 21, 0);
   const ratio = first(groups, 40, 1);
   let t0 = first(groups, 41, 0);
   let t1 = first(groups, 42, 2 * Math.PI);
