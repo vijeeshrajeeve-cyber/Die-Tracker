@@ -44,7 +44,9 @@ too (`server/index.cjs`). The `toolings` page id is in `VALID_PAGE_IDS`
   - *Picture* rows from `GET /api/profile-shapes/review-queue?plant&limit&offset` (new):
     profile shapes with `needs_review = true`, newest first, with the stored picture as
     a thumbnail (fetched as a blob, the image route needs the Bearer header) and the
-    reason the import flagged it.
+    reason the import flagged it. A `profile-drawing` shape (from a New die order form)
+    stores the drawing PDF, not a picture: its row shows a crossed-out image icon titled
+    "drawing PDF — open the form to view" instead of a broken image.
   Pictures are dated and come first; openings have no date and follow. Use the
   *Openings only / Pictures only* select to see one kind. The first 50 of each are shown.
 
@@ -58,7 +60,7 @@ too (`server/index.cjs`). The `toolings` page id is in `VALID_PAGE_IDS`
 | Retire / Reactivate / Mark verified | `PATCH /api/toolings/:n {status}` | `toolings.status` (`retired` leaves the finder; `active`) |
 | Save changes (location, size class, cavities, notes) | `PATCH /api/toolings/:n` | only the changed fields; a size class is normalised and stored as `manual`/`confirmed`; clearing it clears its source and confidence too |
 | Upload drawing (.dxf/.pdf) | `POST /api/toolings/:n/drawing` | stores the file, adds `tooling_drawings`, reads the opening — **never replaces a confirmed or reviewed opening** (the toast says "the reviewed opening was kept") |
-| Add tooling | `POST /api/toolings` then the upload above if a drawing was picked | new `toolings` row, `source='manual'`; kind is guessed from the number (`I-…`, `NNIC…` = insert) and editable; plant/kind/cavities left blank come from the number |
+| Add tooling | `POST /api/toolings` then the upload above if a drawing was picked | new `toolings` row, `source='manual'`; the kind shown is a guess from the number (`I-…`, `NNIC…` = insert) and is **not sent** unless the person picks one; the server parses the number for the kind and answers 400 "kind X contradicts the number, which parses as Y" when a picked kind disagrees; plant/cavities left blank come from the number |
 | Clear (picture) | `POST /api/profile-shapes/:id/review {action:'clear', note?}` | `needs_review=false`, reviewer — the shape joins the similarity index |
 | Keep (picture) | `… {action:'keep', note?}` | stays `needs_review=true`, reviewer recorded; a note is appended to `review_reason` |
 
@@ -69,7 +71,42 @@ Every write invalidates the plant's finder / similarity cache.
 *New die order* (top bar) → pick the drawing PDF → fields prefill from the drawing with
 "from drawing" hints → Find tooling (needs a true-size profile traced from the drawing,
 plant, press, die size, cavities) → *Use this* fills one INSERT or BOLSTER pair →
-*Generate & Save* stamps the order template onto the PDF and records it:
+*Generate & Save* stamps the order template onto the PDF and records it.
+
+**A finder answer belongs to its query.** When the press, die size, cavities, plant or
+the traced profile change after Find tooling ran, the modal drops the kept answer (so
+the record gets no stale candidates), marks a tooling chosen from it as no longer
+"from the finder" (`chosen_from_finder = false`; the typed INSERT / BOLSTER numbers stay),
+**closes the panel**, and the note under the tooling fields says "query changed — run
+Find tooling again" (the choice reads "found for an earlier query"). Running Find tooling
+again, *Use this*, or editing the chosen pair by hand clears the note. The backup modal
+keeps no answer: its panel re-asks whenever the query changes, so it needs nothing more.
+
+**Similarity-only mode (unscaled profile).** A profile traced without a defensible scale
+(`true_size = false`: no scale and no CCD) cannot be fitted. When it still has its unit
+outline (`outer_unit`) and press, die size, cavities and plant are filled, the button
+reads **Find similar (fit not run)**. The panel then calls
+`POST /api/profile-shapes/similar` with the unit outline and cavities, shows the banner
+"Profile size unknown — fit not run; similar dies by shape only", no candidate cards, and
+only the similar strip. The strip's toolings are information only — there is no *Use this*
+(no fit was checked) and the form record gets no candidates. Since this fix wave the
+`/similar` items carry each die's `toolings` (scope / geometry / cavity tags; no press is
+posted, so no chart verdict) and its die-list `press`, `dieSize`, `cavity`.
+
+**What a candidate card says.** Besides clearance, chart, location and transfer, every
+card says where its opening came from and how sure the extraction was:
+"opening from DXF (confirmed)", "opening from PDF (likely)",
+"opening from PDF trace (uncertain) — needs review", "opening from manual entry (confirmed)"
+(`tooling_openings.extraction_source`: `dxf` / `pdf-vector` / `pdf-raster` / `manual`;
+none stored reads "unknown source"). The similar strip under the cards shows each die's
+die-list line, e.g. "PRESS 6 · 450X250 · 3 cav" (looked up in `existing_die_details` with
+the plant spellings and `_` = `-`; unknown parts are left out).
+
+**The fallback download.** In a browser without in-place save the stamped PDF is
+downloaded; the object URL is revoked a second later (`src/utils/downloadBlob.js`), not
+at once, which could abort the download in Firefox / Safari.
+
+The record:
 
 - `new_die_order_forms`: plant, die, profile, customer, press, die size, cavities, all
   form values, `chosen_tooling` / `chosen_kind` / `chosen_from_finder`, the candidates
@@ -145,6 +182,21 @@ Data changed and restored (one transaction, values recorded before the smoke):
   `updated_at` 2026-11-08 13:57:16.410252 (243 flagged again).
 - User `tf5smoke` deleted. No tooling, drawing, form or link rows were created.
 
+## Re-smoke after the final-review fixes, test server, 2026-11-08
+
+Both images rebuilt from the branch (fix commit `128f73d`); scratch user `tf5smoke`
+(reviewer, pages orders / backup-requests / toolings), deleted afterwards. Screenshots in
+the session scratchpad, `final-fix-smoke/`.
+
+| Check | Result | Screenshot |
+| --- | --- | --- |
+| Backup → 13794-525 → Generate Die Order PDF → Find tooling: every card ends "opening from DXF (likely)" | ok | `01-backup-cards-source-label.jpg` |
+| Same panel: the similar strip shows "PRESS 6 · 450X250 · 3 cav", "PRESS 5 · 250X160 · 1 cav", … for all 8 dies | ok | `02-backup-strip-meta.jpg` |
+| Toolings → Review queue: 50 picture thumbnails, all loaded, none broken | ok | `03-review-queue-thumbnails.jpg` |
+| New die order: stale query, similarity-only mode | **manual** (native file picker) | — |
+
+Nothing was written: no form, review or tooling rows (checked by SQL after).
+
 ## Known gaps
 
 - DXF / DWG / TIF drawings are download-only; only PDFs are viewed in the browser.
@@ -153,6 +205,9 @@ Data changed and restored (one transaction, values recorded before the smoke):
 - The backup panel runs on the die's stored profile, not the drawing (the drawing is
   only picked at Generate). A die with no true-size profile gets the finder's 404 text.
 - The confidence filter covers the loaded page only (no server parameter).
-- The New die order picker step needs a manual check (above).
+- The New die order picker step needs a manual check (above), including the stale-query
+  behaviour and similarity-only mode (both need a picked drawing).
+- The PDF-backed queue thumbnail was not seen in the browser: the test server has no
+  flagged `profile-drawing` shape.
 - Openings in the queue carry no date, so the merged list puts pictures first; use the
   kind select.
