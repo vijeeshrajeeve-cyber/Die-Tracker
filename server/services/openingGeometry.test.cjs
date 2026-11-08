@@ -40,6 +40,14 @@ test('does not bridge a 15 mm gap', () => {
   const { loops, open } = chainLoops([seg(0, 0, 100, 0), seg(100, 0, 100, 100), seg(100, 100, 0, 100), seg(0, 100, 0, 15)]);
   assert.equal(loops.length, 0); assert.equal(open.length, 1);
 });
+test('bridges a 2.5 mm gap and counts it', () => {
+  const { loops, bridged } = chainLoops([seg(0, 0, 10, 0), seg(10, 0, 10, 10), seg(10, 10, 0, 10), seg(0, 10, 0, 2.5)]);
+  assert.equal(loops.length, 1); assert.equal(bridged, 1);
+});
+test('does not bridge a 3.5 mm gap', () => {
+  const { loops, open } = chainLoops([seg(0, 0, 10, 0), seg(10, 0, 10, 10), seg(10, 10, 0, 10), seg(0, 10, 0, 3.5)]);
+  assert.equal(loops.length, 0); assert.equal(open.length, 1);
+});
 test('a circle is circle-like, a rounded rectangle is not', () => {
   assert.equal(isCircleLike(circle(0, 0, 87.5, 64)), true);
   assert.equal(isCircleLike(roundedRect(250, 150, 15)), false);
@@ -62,6 +70,10 @@ test('synthesises the outer from the expected diameter when none is drawn', () =
   assert.equal(r.outerSynthesised, true);
   assert.ok(Math.abs(circleFit(r.outer.points).r - 237.5) < 0.01);
   assert.equal(r.pockets.length, 1);
+});
+test('a single loop with no expected diameter is a pocket, not the outer', () => {
+  const r = classifyLoops([loop(roundedRect(60, 100, 5))]);
+  assert.equal(r.outer, null); assert.equal(r.pockets.length, 1); assert.equal(r.outerSynthesised, false);
 });
 test('a loop inside a pocket is nested, not a second pocket', () => {
   const r = classifyLoops([loop(circle(0, 0, 110)), loop(rect(80, 80)), loop(rect(20, 20))]);

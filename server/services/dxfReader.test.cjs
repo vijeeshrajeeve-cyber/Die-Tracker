@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseDxf, flattenDxf, plainText } = require('./dxfReader.cjs');
-const { dxfOf, line, arc, circleEntity, insert } = require('./fixtures/tooling/dxfBuilders.cjs');
+const { dxfOf, line, arc, circleEntity, lwpolyline, insert } = require('./fixtures/tooling/dxfBuilders.cjs');
+const { chainLoops, circleFit } = require('./openingGeometry.cjs');
 
 const fixture = (n) => fs.readFileSync(path.join(__dirname, 'fixtures', 'tooling', n), 'utf8');
 
@@ -93,4 +94,56 @@ test('arcs inside a scaled block meet 0.1 mm after the INSERT scale', () => {
   const text = dxfOf({ blocks: { A: [arc(0, 0, 100, 0, 90)] }, entities: [insert('A', 0, 0, 10, 0)] });
   const { chains } = flattenDxf(parseDxf(text));
   assert.ok(maxSagittaMm(chains[0].points, 1000, 1) <= 0.1 + 1e-9);
+});
+
+// ---------- OCS extrusion normal (group 230) ----------
+
+const flat = (entities, opts) => flattenDxf(parseDxf(dxfOf({ entities })), opts);
+
+test('a mirrored ARC lands on the world-space side', () => {
+  // OCS arc centre (10, 0), r 5, 0..180 runs (15,0) -> (10,5) -> (5,0); world x = -OCS x.
+  const { chains } = flat([arc(10, 0, 5, 0, 180, { normal: -1 })]);
+  const pts = chains[0].points;
+  assert.ok(pts.every(([x, y]) => x >= -15 - 1e-9 && x <= -5 + 1e-9 && y >= -1e-9));
+  const ends = [pts[0], pts[pts.length - 1]].sort((a, b) => a[0] - b[0]);
+  assert.ok(Math.abs(ends[0][0] + 15) < 1e-9 && Math.abs(ends[0][1]) < 1e-9);
+  assert.ok(Math.abs(ends[1][0] + 5) < 1e-9 && Math.abs(ends[1][1]) < 1e-9);
+});
+
+test('a mirrored CIRCLE is centred at the mirrored centre', () => {
+  const { chains } = flat([circleEntity(10, 0, 5, { normal: -1 })]);
+  const fit = circleFit(chains[0].points);
+  assert.ok(Math.abs(fit.cx + 10) < 1e-6 && Math.abs(fit.cy) < 1e-6);
+});
+
+test('a mirrored LWPOLYLINE mirrors x and flips bulges', () => {
+  // Bottom edge (0,0)->(10,0) bulging below (positive bulge, CCW) in OCS; the mirror image bows below too.
+  const pts = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  const up = flat([lwpolyline(pts, { closed: true, bulges: [0.5] })]).chains[0].points;
+  const mir = flat([lwpolyline(pts, { closed: true, bulges: [0.5], normal: -1 })]).chains[0].points;
+  const lowest = (p) => p.reduce((m, q) => (q[1] < m[1] ? q : m));
+  assert.ok(lowest(up)[1] < -1 && lowest(mir)[1] < -1, 'bow stays on the same (lower) side');
+  assert.ok(Math.abs(lowest(mir)[0] + 5) < 0.5, 'bow midpoint is at the mirrored x');
+  assert.ok(mir.every(([x]) => x <= 1e-9));
+});
+
+test('a mirrored pocket chains closed', () => {
+  // Rounded rectangle 40 x 20 (corner r 5) centred at world x = 40, so a missed mirror cannot close by symmetry.
+  // Arcs are authored in the -1 OCS: centre x negated, angles reflected (start' = 180 - end, end' = 180 - start).
+  const n = { normal: -1 };
+  const entities = [
+    line(25, 10, 55, 10), line(25, -10, 55, -10), line(60, -5, 60, 5), line(20, -5, 20, 5),
+    arc(-25, 5, 5, 0, 90, n), arc(-55, 5, 5, 90, 180, n), arc(-55, -5, 5, 180, 270, n), arc(-25, -5, 5, 270, 360, n),
+  ];
+  const { chains } = flat(entities);
+  assert.equal(chainLoops(chains).loops.length, 1);
+});
+
+test('a tilted normal warns once and leaves coordinates untouched', () => {
+  const tilted = arc(10, 0, 5, 0, 180, { normal: [0.5, 0, 0.866] });
+  const warnings = [];
+  const { chains } = flat([tilted], { onWarn: (m) => warnings.push(m) });
+  assert.deepEqual(warnings, ['entity on a tilted OCS left untransformed']);
+  const xs = chains[0].points.map((p) => p[0]);
+  assert.ok(Math.abs(Math.max(...xs) - 15) < 1e-9 && Math.abs(Math.min(...xs) - 5) < 1e-9);
 });

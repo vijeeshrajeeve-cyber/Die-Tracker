@@ -2,12 +2,19 @@
 const g = (code, value) => `${String(code).padStart(3, ' ')}\n${value}\n`;
 
 const line = (x1, y1, x2, y2) => g(0, 'LINE') + g(8, '0') + g(10, x1) + g(20, y1) + g(11, x2) + g(21, y2);
-const arc = (cx, cy, r, startDeg, endDeg) =>
-  g(0, 'ARC') + g(8, '0') + g(10, cx) + g(20, cy) + g(40, r) + g(50, startDeg) + g(51, endDeg);
-const circleEntity = (cx, cy, r) => g(0, 'CIRCLE') + g(8, '0') + g(10, cx) + g(20, cy) + g(40, r);
-const lwpolyline = (points, { closed = false, bulges = [] } = {}) =>
+// Optional extrusion normal: `normal: -1` emits (0, 0, -1); `normal: [nx, ny, nz]` emits that vector.
+const extrusion = (normal) => {
+  if (normal === undefined) return '';
+  const [nx, ny, nz] = Array.isArray(normal) ? normal : [0, 0, normal];
+  return g(210, nx) + g(220, ny) + g(230, nz);
+};
+const arc = (cx, cy, r, startDeg, endDeg, { normal } = {}) =>
+  g(0, 'ARC') + g(8, '0') + g(10, cx) + g(20, cy) + g(40, r) + g(50, startDeg) + g(51, endDeg) + extrusion(normal);
+const circleEntity = (cx, cy, r, { normal } = {}) =>
+  g(0, 'CIRCLE') + g(8, '0') + g(10, cx) + g(20, cy) + g(40, r) + extrusion(normal);
+const lwpolyline = (points, { closed = false, bulges = [], normal } = {}) =>
   g(0, 'LWPOLYLINE') + g(8, '0') + g(90, points.length) + g(70, closed ? 1 : 0) +
-  points.map(([x, y], i) => g(10, x) + g(20, y) + (bulges[i] ? g(42, bulges[i]) : '')).join('');
+  points.map(([x, y], i) => g(10, x) + g(20, y) + (bulges[i] ? g(42, bulges[i]) : '')).join('') + extrusion(normal);
 const insert = (blockName, x, y, scale = 1, rotationDeg = 0) =>
   g(0, 'INSERT') + g(8, '0') + g(2, blockName) + g(10, x) + g(20, y) + g(41, scale) + g(42, scale) + g(50, rotationDeg);
 const rectLines = (w, h, cx = 0, cy = 0) => {

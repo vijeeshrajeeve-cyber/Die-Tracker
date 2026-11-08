@@ -127,7 +127,7 @@ function isCircleLike(points) {
 
 // ---- chaining --------------------------------------------------------------
 
-function chainLoops(chains, { joinTol = 0.5, bridgeTol = 2 } = {}) {
+function chainLoops(chains, { joinTol = 0.5, bridgeTol = 3 } = {}) {
   const loops = [];
   let runs = [];
   const uniq = (xs) => [...new Set(xs)];
@@ -265,7 +265,7 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
       outerSynthesised = true;
     } else if (!noOuterFallback) {
       const largest = loops.reduce((m, l) => (polygonArea(l.points) > polygonArea(m.points) ? l : m));
-      if (loops.every((l) => l === largest || polygonContains(largest.points, l.points))) outer = largest;
+      if (loops.length >= 2 && loops.every((l) => l === largest || polygonContains(largest.points, l.points))) outer = largest;
     }
   }
 

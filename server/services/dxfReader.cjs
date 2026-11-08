@@ -2,6 +2,7 @@
 // polyline chains and texts (drawing units; callers multiply by `unitScale` for mm).
 
 const MAX_INSERT_DEPTH = 8;
+const OCS_TYPES = new Set(['ARC', 'CIRCLE', 'LWPOLYLINE', 'POLYLINE', 'ELLIPSE']);
 const SEGMENT_ANGLE = Math.PI / 16; // at least 8 segments per quadrant
 
 function parseDxf(text) {
@@ -140,12 +141,16 @@ function lwVertices(groups) {
   return vs;
 }
 
-function ellipsePoints(groups, tol) {
-  const cx = first(groups, 10, 0), cy = first(groups, 20, 0);
-  const mx = first(groups, 11, 1), my = first(groups, 21, 0);
+// `mirror`: the entity is on the (0, 0, -1) OCS. x is negated for the centre and major axis, and the
+// parameter range is reflected (t -> -t) so the curve is the mirror image, still swept counter-clockwise.
+function ellipsePoints(groups, tol, mirror) {
+  const sx = mirror ? -1 : 1;
+  const cx = sx * first(groups, 10, 0), cy = first(groups, 20, 0);
+  const mx = sx * first(groups, 11, 1), my = first(groups, 21, 0);
   const ratio = first(groups, 40, 1);
-  const t0 = first(groups, 41, 0);
+  let t0 = first(groups, 41, 0);
   let t1 = first(groups, 42, 2 * Math.PI);
+  if (mirror) [t0, t1] = [-t1, -t0];
   if (t1 <= t0) t1 += 2 * Math.PI;
   const full = Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9;
   const n = segmentCount(t1 - t0, Math.hypot(mx, my), tol);
@@ -156,6 +161,10 @@ function ellipsePoints(groups, tol) {
     pts.push([cx + ct * mx - st * my, cy + ct * my + st * mx]);
   }
   return { points: pts, closed: full };
+}
+
+function mirrorVertices(vertices, flip) {
+  return flip ? vertices.map((v) => ({ x: -v.x, y: v.y, bulge: -v.bulge })) : vertices;
 }
 
 function pairsOf(groups, xCode, yCode) {
@@ -254,7 +263,14 @@ function insertTransform(groups, base) {
   return [a, b, c, d, tx - (a * base[0] + c * base[1]), ty - (b * base[0] + d * base[1])];
 }
 
-function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
+// Extrusion normal of an entity (groups 210/220/230, default (0, 0, 1)): 1, -1 (mirrored OCS) or 'tilted'.
+function normalOf(groups) {
+  const nx = first(groups, 210, 0), ny = first(groups, 220, 0), nz = first(groups, 230, 1);
+  if (Math.abs(nx) > 1e-6 || Math.abs(ny) > 1e-6) return 'tilted';
+  return nz < 0 ? -1 : 1;
+}
+
+function flattenDxf(dxf, { chordTolerance = 0.1, onWarn = null } = {}) {
   const insunits = dxf.header.insunits;
   const unitScale = insunits === 1 ? 25.4 : insunits === 2 ? 304.8 : 1;
   const chains = [];
@@ -273,26 +289,36 @@ function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
       const e = ents[i];
       const g = e.groups;
       const layer = e.layer === '0' && parentLayer ? parentLayer : e.layer;
+      // OCS: only the mirrored (0, 0, -1) normal is transformed; a tilted one is reported and left alone.
+      // LINE coordinates are world coordinates already.
+      let flip = false;
+      if (OCS_TYPES.has(e.type)) {
+        const n = normalOf(g);
+        if (n === 'tilted') { if (onWarn) onWarn('entity on a tilted OCS left untransformed'); } else flip = n === -1;
+      }
+      const sx = flip ? -1 : 1;
       switch (e.type) {
         case 'LINE':
           emitChain(layer, 'LINE', [[first(g, 10, 0), first(g, 20, 0)], [first(g, 11, 0), first(g, 21, 0)]], false, m);
           break;
         case 'ARC': {
-          const a0 = (first(g, 50, 0) * Math.PI) / 180;
-          let a1 = (first(g, 51, 360) * Math.PI) / 180;
-          if (a1 <= a0) a1 += 2 * Math.PI;
-          emitChain(layer, 'ARC', arcPoints(first(g, 10, 0), first(g, 20, 0), first(g, 40, 0), a0, a1 - a0, tol, true), false, m);
+          let d0 = first(g, 50, 0), d1 = first(g, 51, 360);
+          if (flip) [d0, d1] = [180 - d1, 180 - d0]; // reflect so the arc still sweeps counter-clockwise
+          const a0 = (d0 * Math.PI) / 180;
+          let a1 = (d1 * Math.PI) / 180;
+          while (a1 <= a0) a1 += 2 * Math.PI;
+          emitChain(layer, 'ARC', arcPoints(sx * first(g, 10, 0), first(g, 20, 0), first(g, 40, 0), a0, a1 - a0, tol, true), false, m);
           break;
         }
         case 'CIRCLE': {
-          const pts = arcPoints(first(g, 10, 0), first(g, 20, 0), first(g, 40, 0), 0, 2 * Math.PI, tol, true);
+          const pts = arcPoints(sx * first(g, 10, 0), first(g, 20, 0), first(g, 40, 0), 0, 2 * Math.PI, tol, true);
           pts.pop(); // last point repeats the first
           emitChain(layer, 'CIRCLE', pts, true, m);
           break;
         }
         case 'LWPOLYLINE': {
           const closed = (first(g, 70, 0) & 1) === 1;
-          emitChain(layer, 'LWPOLYLINE', polylinePoints(lwVertices(g), closed, tol), closed, m);
+          emitChain(layer, 'LWPOLYLINE', polylinePoints(mirrorVertices(lwVertices(g), flip), closed, tol), closed, m);
           break;
         }
         case 'POLYLINE': {
@@ -304,11 +330,11 @@ function flattenDxf(dxf, { chordTolerance = 0.1 } = {}) {
             if ((first(vg, 70, 0) & 16) === 0) vs.push({ x: first(vg, 10, 0), y: first(vg, 20, 0), bulge: first(vg, 42, 0) });
           }
           if (i + 1 < ents.length && ents[i + 1].type === 'SEQEND') i++;
-          emitChain(layer, 'POLYLINE', polylinePoints(vs, closed, tol), closed, m);
+          emitChain(layer, 'POLYLINE', polylinePoints(mirrorVertices(vs, flip), closed, tol), closed, m);
           break;
         }
         case 'ELLIPSE': {
-          const { points, closed } = ellipsePoints(g, tol);
+          const { points, closed } = ellipsePoints(g, tol, flip);
           emitChain(layer, 'ELLIPSE', points, closed, m);
           break;
         }
