@@ -66,3 +66,14 @@ test('no closed pocket → none', () => {
   const r = extractFromDxf(dxfOf({ entities: [circleEntity(0, 0, 87.5), line(0, 0, 10, 10)] }));
   assert.equal(r.confidence, 'none'); assert.deepEqual(r.pockets, []);
 });
+test('a malformed size hint is ignored with a note', () => {
+  const withText = extractFromDxf(fixture('dieshop-21599.dxf'), { sizeClass: 'garbage' });
+  assert.equal(withText.sizeClass, '175X80');
+  assert.ok(withText.notes.some((n) => /malformed size hint/.test(n)));
+  const noText = extractFromDxf(dxfOf({ entities: [circleEntity(0, 0, 87.5), ...rectLines(50, 50)] }), { sizeClass: 'garbage' });
+  assert.equal(noText.sizeClass, null);
+  assert.ok(noText.notes.some((n) => /malformed size hint/.test(n)));
+});
+test('numbersFromTexts parses tokens only', () => {
+  assert.deepEqual(numbersFromTexts(['BOL-14017 475X220', 'Insert No.', '21599', 'Ø175 x 80']), ['BOL-14017', 'I-21599']);
+});

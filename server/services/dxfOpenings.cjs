@@ -47,9 +47,7 @@ function numbersFromTexts(texts) {
     if (p.kind !== 'unknown') add(p.canonical);
   };
   for (const raw of texts) {
-    const text = String(raw).trim();
-    tryParse(text);
-    for (const token of text.split(/\s+/).filter(Boolean)) {
+    for (const token of String(raw).trim().split(/\s+/).filter(Boolean)) {
       tryParse(token);
       if (/^\d{5}$/.test(token)) add(`I-${token}`);
     }
@@ -77,7 +75,10 @@ function extractFromDxf(text, hints = {}) {
   const { loops, bridged } = chainLoops(chains);
 
   const stated = sizeFromTexts(texts);
-  const hinted = !stated && hintSize ? normalizeSizeClass(hintSize) : null;
+  const normHint = hintSize ? normalizeSizeClass(hintSize) : null;
+  const validHint = normHint && hintDiameter(normHint) != null ? normHint : null;
+  if (normHint && !validHint) notes.push('ignored malformed size hint');
+  const hinted = stated ? null : validHint;
   const hintedDiameter = hinted ? hintDiameter(hinted) : null;
   const expectedDiameter = stated ? stated.diameter : hintedDiameter;
 
