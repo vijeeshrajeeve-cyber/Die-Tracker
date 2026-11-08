@@ -398,3 +398,24 @@ test('profileShapesAPI encodes die numbers and plants, and posts the polygon', a
   assert.equal(calls[3].method, 'POST');
   assert.deepEqual(JSON.parse(calls[3].body), { plant: 'GEX 1', outer, holes: [], cavities: 2, limit: 10 });
 });
+
+test('toolingsAPI.find posts the query as JSON to /toolings/find', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), opts });
+    return new Response(JSON.stringify({ candidates: [], similar: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const body = { plant: 'GEX 1', press: 'P25', dieSize: '250X200', cavities: 2, profile: { outer: [[0, 0], [10, 0], [0, 10]] } };
+    const out = await toolingsAPI.find(body);
+    assert.deepEqual(out, { candidates: [], similar: [] });
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.endsWith('/toolings/find'));
+    assert.equal(calls[0].opts.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].opts.body), body);
+    assert.equal(calls[0].opts.headers['Content-Type'], 'application/json');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

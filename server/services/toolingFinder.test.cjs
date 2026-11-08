@@ -188,3 +188,210 @@ test('narrow cuts at MAX_FITTED smallest pockets and reports truncated', () => {
   assert.equal(f.MIN_CLEARANCE_MM, 5);
   assert.equal(f.CLEARANCE_CAP_MM, 50);
 });
+
+// ---- findToolings ----------------------------------------------------------
+
+const { signatureOf } = require('./profileShape.cjs');
+
+// A database scripted by SQL shape. Each test uses its own plant, so the
+// module-level caches (candidates, similarity index) never leak between tests.
+function finderClient(s) {
+  const queries = [];
+  return {
+    queries,
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/max\(GREATEST/.test(sql)) return { rows: [{ max_updated: 'v1', n: s.toolings.length }] };
+      if (/FROM toolings t JOIN tooling_openings o/.test(sql)) return { rows: s.toolings };
+      if (/FROM tooling_combinations/.test(sql)) return { rows: (s.chart || CHART).filter((r) => r.press === params[0]) };
+      if (/FROM profile_shapes\s+WHERE die_no/.test(sql)) return { rows: (s.shapes || []).filter((r) => r.die_no === params[0] && r.plant === params[1]) };
+      if (/max\(updated_at\)/.test(sql) && /FROM profile_shapes/.test(sql)) return { rows: [{ max_updated: 'v1', n: (s.index || []).length }] };
+      if (/FROM profile_shapes WHERE plant/.test(sql)) return { rows: s.index || [] };
+      if (/FROM die_tooling_links l/.test(sql)) return { rows: (s.neighbourLinks || []).filter((r) => params[0].includes(r.die_no)) };
+      if (/FROM die_tooling_links\s+WHERE tooling_number = ANY/.test(sql)) return { rows: (s.links || []).filter((r) => params[0].includes(r.tooling_number)) };
+      throw new Error(`unexpected query ${sql}`);
+    },
+  };
+}
+
+const CANDIDATE_KEYS = ['number', 'kind', 'sizeClass', 'sizeClassConfidence', 'cavities', 'heldPresses', 'needsTransfer',
+  'location', 'confidence', 'clearance', 'clearanceCapped', 'placements', 'chart', 'linkedDies', 'pockets'].sort();
+
+test('fits a profile by polygon and returns ranked candidates with links and placements', async () => {
+  const plant = 'FIND A';
+  const client = finderClient({
+    toolings: [
+      row({ number: 'WIDE', pockets: [circle(50)] }),
+      row({ number: 'SNUG', pockets: [circle(45)] }),
+      row({ number: 'SLOT', pockets: [rect(300, 72)] }),
+    ],
+    chart: [...CHART, { press: PRESS, die_size: '355X200', insert_size: '460X150', bolster_size: null, remark: null }],
+    links: [
+      { tooling_number: 'SNUG', die_no: 'D-1', plant, source: 'die-list' },
+      { tooling_number: 'SNUG', die_no: 'D-2', plant, source: 'order-pdf' },
+    ],
+  });
+  // Off-centre on purpose: the profile must be recentred before the fit.
+  const r = await f.findToolings(client, {
+    plant: 'find a', press: PRESS, dieSize: '250x200', cavities: 1, profile: { outer: circle(35, 90, 500, 300) },
+  });
+
+  assert.equal(r.query.plant, plant);
+  assert.equal(r.query.press, PRESS);
+  assert.equal(r.query.dieSize, DIE);
+  assert.equal(r.query.cavities, 1);
+  assert.equal(r.query.profile.holeCount, 0);
+  assert.ok(Math.abs(r.query.profile.area - Math.PI * 35 ** 2) < 60, String(r.query.profile.area));
+  assert.ok(Math.abs(r.query.profile.ccd - 70) < 0.5);
+  assert.ok(r.query.profile.perimeter > 215 && r.query.profile.perimeter < 221);
+  const cx = r.query.profile.points.reduce((s, p) => s + p[0], 0) / r.query.profile.points.length;
+  const cy = r.query.profile.points.reduce((s, p) => s + p[1], 0) / r.query.profile.points.length;
+  assert.ok(Math.abs(cx) < 1e-6 && Math.abs(cy) < 1e-6, 'profile points are recentred');
+
+  assert.equal(r.chart.basis, 'chart');
+  assert.deepEqual(r.chart.rowsForDieSize, CHART);
+
+  assert.deepEqual(r.candidates.map((c) => c.number), ['SNUG', 'WIDE']);
+  const snug = r.candidates[0];
+  assert.deepEqual(Object.keys(snug).sort(), CANDIDATE_KEYS);
+  assert.ok(Math.abs(snug.clearance - 10) < 0.3, String(snug.clearance));
+  assert.equal(snug.clearanceCapped, false);
+  assert.equal(snug.placements.length, 1);
+  assert.ok(Math.abs(snug.placements[0].tx) < 0.5 && Math.abs(snug.placements[0].ty) < 0.5, JSON.stringify(snug.placements[0]));
+  assert.deepEqual(snug.linkedDies, [{ dieNo: 'D-1', source: 'die-list' }, { dieNo: 'D-2', source: 'order-pdf' }]);
+  assert.deepEqual(snug.pockets, [circle(45)]);
+  assert.deepEqual(snug.heldPresses, [PRESS]);
+  assert.equal(snug.needsTransfer, false);
+  assert.equal(snug.sizeClass, '300X100');
+  assert.equal(snug.sizeClassConfidence, 'confirmed');
+  assert.equal(snug.location, 'RACK 1');
+  assert.equal(snug.chart.verdict, 'allowed');
+  assert.deepEqual(snug.chart.rows, CHART);
+  assert.deepEqual(r.candidates[1].linkedDies, []);
+
+  const linkQueries = client.queries.filter((q) => /FROM die_tooling_links\s+WHERE tooling_number/.test(q.sql));
+  assert.equal(linkQueries.length, 1, 'one query for all linked dies');
+  assert.deepEqual(linkQueries[0].params, [['SNUG', 'WIDE']]);
+  const chartQuery = client.queries.find((q) => /FROM tooling_combinations/.test(q.sql));
+  assert.deepEqual(chartQuery.params, [PRESS]);
+});
+
+test("resolves the profile from a die's newest true-size row", async () => {
+  const plant = 'FIND B';
+  const client = finderClient({
+    toolings: [row({ number: 'SNUG', pockets: [circle(45)] })],
+    shapes: [{ die_no: 'DIE-9', plant, outer_mm: circle(35, 90, 200, -80), holes_mm: [], cavities: 1, hole_count: 0 }],
+  });
+  const r = await f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, dieNo: 'DIE-9' });
+  const q = client.queries.find((x) => /FROM profile_shapes\s+WHERE die_no/.test(x.sql));
+  assert.deepEqual(q.params, ['DIE-9', plant]);
+  assert.match(q.sql, /AND true_size\s+ORDER BY updated_at DESC LIMIT 1/);
+  assert.deepEqual(r.candidates.map((c) => c.number), ['SNUG']);
+  assert.ok(Math.abs(r.candidates[0].placements[0].tx) < 0.5);
+
+  await assert.rejects(
+    () => f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, dieNo: 'NOPE' }),
+    (err) => err.code === 'NO_PROFILE' && /no true-size profile for die NOPE/.test(err.message),
+  );
+});
+
+test('no chart rows: candidates are fitted and flagged no_chart', async () => {
+  const client = finderClient({
+    toolings: [row({ number: 'NOSIZE', size_class: null, pockets: [circle(45)] }), row({ number: 'ODD', size_class: '999X999', pockets: [circle(50)] })],
+  });
+  const r = await f.findToolings(client, { plant: 'FIND C', press: 'PRESS 99', dieSize: DIE, cavities: 1, profile: { outer: circle(35) } });
+  assert.equal(r.chart.basis, 'no_chart');
+  assert.deepEqual(r.chart.rowsForDieSize, []);
+  assert.deepEqual(r.candidates.map((c) => c.number), ['NOSIZE', 'ODD']);
+  for (const c of r.candidates) assert.deepEqual(c.chart, { verdict: 'no_chart', rows: [] });
+});
+
+test('held at another press is a note, not a gate', async () => {
+  const client = finderClient({
+    toolings: [
+      row({ number: 'AWAY', held_presses: ['PRESS 35'], pockets: [circle(45)] }),
+      row({ number: 'HERE', held_presses: [PRESS], pockets: [circle(50)] }),
+    ],
+  });
+  const r = await f.findToolings(client, { plant: 'FIND D', press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) } });
+  assert.deepEqual(r.candidates.map((c) => [c.number, c.needsTransfer]), [['AWAY', true], ['HERE', false]]);
+  assert.deepEqual(r.candidates[0].heldPresses, ['PRESS 35']);
+});
+
+test('similar dies carry their toolings with scope and chart reasons', async () => {
+  const plant = 'FIND E';
+  const link = (number, over = {}) => ({
+    die_no: 'N-1', tooling_number: number, kind: 'insert', number, t_kind: 'insert', size_class: '300X100',
+    status: 'active', plant, cavities: 1, confidence: 'confirmed', ...over,
+  });
+  const client = finderClient({
+    toolings: [],
+    index: [
+      { id: 11, die_no: 'N-1', plant, profile_number: 'P-1', signature: signatureOf({ outer: circle(1) }), hole_count: 0, cavities: 1, true_size: true },
+      { id: 12, die_no: 'N-2', plant, profile_number: null, signature: signatureOf({ outer: rect(2, 1) }), hole_count: 0, cavities: 2, true_size: false },
+      { id: 13, die_no: 'N-3', plant, profile_number: null, signature: signatureOf({ outer: circle(1) }), hole_count: 1, cavities: 1, true_size: true },
+    ],
+    neighbourLinks: [
+      link('GOOD'),
+      link('RET', { status: 'retired' }),
+      link('GHOST', { number: null, t_kind: null, size_class: null, status: null, plant: null, cavities: null, confidence: 'none' }),
+      link('ELSEWHERE', { plant: 'GEX 2' }),
+      link('NOOP', { confidence: 'none' }),
+      link('CAV2', { cavities: 2 }),
+      link('BADCHART', { size_class: '999X999' }),
+      link('BOL', { die_no: 'N-2', kind: 'bolster', t_kind: 'bolster', size_class: '600X150' }),
+    ],
+  });
+  const r = await f.findToolings(client, { plant, press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) } });
+
+  assert.deepEqual(r.similar.map((s) => s.dieNo), ['N-1', 'N-2'], 'hole count must match; nearest first');
+  const [n1, n2] = r.similar;
+  assert.deepEqual(Object.keys(n1).sort(), ['cavityMatch', 'dieNo', 'distance', 'profileNumber', 'shapeId', 'toolings', 'trueSize']);
+  assert.equal(n1.profileNumber, 'P-1');
+  assert.equal(n1.shapeId, 11);
+  assert.equal(n1.trueSize, true);
+  assert.equal(n1.cavityMatch, true);
+  assert.equal(n2.cavityMatch, false);
+  assert.ok(n1.distance < n2.distance);
+
+  const by = Object.fromEntries(n1.toolings.map((t) => [t.number, t]));
+  assert.deepEqual(by.GOOD, { number: 'GOOD', kind: 'insert', sizeClass: '300X100', inScope: true, hasGeometry: true, chartVerdict: 'allowed', reason: null });
+  assert.equal(by.RET.reason, 'not-in-scope');
+  assert.equal(by.RET.inScope, false);
+  assert.equal(by.GHOST.reason, 'not-in-scope');
+  assert.equal(by.GHOST.hasGeometry, false);
+  assert.equal(by.ELSEWHERE.reason, 'not-in-scope');
+  assert.equal(by.NOOP.reason, 'no-geometry');
+  assert.equal(by.NOOP.hasGeometry, false);
+  assert.equal(by.CAV2.reason, 'cavities');
+  assert.equal(by.BADCHART.reason, 'chart');
+  assert.equal(by.BADCHART.chartVerdict, 'not_allowed');
+  assert.deepEqual(n2.toolings.map((t) => [t.number, t.kind, t.chartVerdict, t.reason]), [['BOL', 'bolster', 'allowed', null]]);
+
+  const q = client.queries.find((x) => /FROM die_tooling_links l/.test(x.sql));
+  assert.deepEqual(q.params, [['N-1', 'N-2']]);
+  assert.match(q.sql, /l\.kind <> 'unknown'/);
+});
+
+test('timings and rejected counts are reported', async () => {
+  const client = finderClient({
+    toolings: [
+      row({ number: 'A', pockets: [circle(45)] }),
+      row({ number: 'B', pockets: [circle(50)] }),
+      row({ number: 'SLOT', pockets: [rect(300, 72)] }),
+      row({ number: 'TWO', cavities: 2 }),
+      row({ number: 'SMALL', pockets: [circle(36)] }),
+    ],
+  });
+  const r = await f.findToolings(client, { plant: 'FIND F', press: PRESS, dieSize: DIE, cavities: 1, profile: { outer: circle(35) }, limit: 1 });
+  assert.deepEqual(r.rejected, { cavities: 1, 'cavities-unknown': 0, 'no-size-class': 0, chart: 0, 'size-prefilter': 1, 'no-fit': 1 });
+  assert.equal(r.fitted, 3, 'every kept candidate is fitted');
+  assert.equal(r.truncated, false);
+  assert.deepEqual(r.candidates.map((c) => c.number), ['A'], 'limit cuts the list after ranking');
+  assert.deepEqual(r.similar, []);
+  for (const k of ['narrowMs', 'fitMs', 'totalMs']) {
+    assert.ok(Number.isInteger(r.timings[k]) && r.timings[k] >= 0, `${k}=${r.timings[k]}`);
+  }
+  assert.ok(r.timings.totalMs >= r.timings.fitMs);
+  assert.deepEqual(Object.keys(r).sort(), ['candidates', 'chart', 'fitted', 'query', 'rejected', 'similar', 'timings', 'truncated']);
+});

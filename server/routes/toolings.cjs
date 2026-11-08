@@ -5,6 +5,7 @@ const { loadPresses, normalizePlant } = require('../services/frozenDesigns.cjs')
 const { resolvePress } = require('../services/dieListImport.cjs');
 const { normalizeSizeClass } = require('../services/toolingNumbers.cjs');
 const drawingStore = require('../services/toolingDrawings.cjs');
+const { findToolings } = require('../services/toolingFinder.cjs');
 
 const router = express.Router();
 
@@ -155,6 +156,65 @@ router.get('/review-queue', async (req, res) => {
   } catch (err) {
     console.error('toolings review queue failed', err);
     res.status(500).json({ error: 'Failed to load the review queue' });
+  }
+});
+
+// ---- POST /find: which toolings can take a profile ---------------------------
+// Registered before '/:number' like the routes above.
+const FIND_DEFAULT_LIMIT = 20;
+const FIND_MAX_LIMIT = 50;
+const FIND_SIMILAR_LIMIT = 20;
+
+const str = (v) => (v == null ? '' : String(v).trim());
+const isPolygon = (poly) => Array.isArray(poly) && poly.length >= 3
+  && poly.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n)));
+const positiveInt = (v) => {
+  const n = typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : v;
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+router.post('/find', async (req, res) => {
+  const body = req.body || {};
+  const bad = (error) => res.status(400).json({ error });
+  for (const field of ['plant', 'press', 'dieSize']) {
+    if (!str(body[field])) return bad(`${field} is required`);
+  }
+  const cavities = positiveInt(body.cavities);
+  if (cavities == null) return bad('cavities must be a positive integer');
+  let profile = null;
+  if (body.profile != null) {
+    const { outer, holes } = body.profile;
+    if (!isPolygon(outer)) return bad('profile.outer must be at least 3 [x, y] number pairs');
+    if (holes != null && !(Array.isArray(holes) && holes.every(isPolygon))) {
+      return bad('profile.holes must be polygons of at least 3 [x, y] number pairs');
+    }
+    profile = { outer, holes: holes || [] };
+  }
+  const dieNo = str(body.dieNo);
+  if (!profile && !dieNo) return bad('profile or dieNo is required');
+  const dieSize = normalizeSizeClass(body.dieSize);
+  if (!dieSize) return bad('dieSize is required');
+  const parsedLimit = parseInt(body.limit, 10);
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.min(Math.max(parsedLimit, 1), FIND_MAX_LIMIT)
+    : FIND_DEFAULT_LIMIT;
+
+  try {
+    const result = await findToolings(pool, {
+      plant: normalizePlant(body.plant),
+      press: await normalizePress(str(body.press)),
+      dieSize,
+      cavities,
+      profile,
+      dieNo: profile ? null : dieNo,
+      limit,
+      similarLimit: FIND_SIMILAR_LIMIT,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err && err.code === 'NO_PROFILE') return res.status(404).json({ error: `no true-size profile for die ${dieNo}` });
+    console.error('tooling finder failed', err);
+    res.status(500).json({ error: 'Finder failed' });
   }
 });
 
