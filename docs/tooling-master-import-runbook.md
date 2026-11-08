@@ -178,3 +178,5 @@ sections 1 to 3. Re-running any script should change nothing.
 - **Imported order PDFs** now record their INSERT No / BOLSTER No as `order-pdf`
   links on the main die, not on the insert/bolster sub-orders. Existing dies
   updated via PATCH are not linked.
+
+Next: geometry — see `docs/tooling-geometry-import-runbook.md`.

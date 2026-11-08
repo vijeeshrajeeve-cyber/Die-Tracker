@@ -39,7 +39,8 @@ function parseToolingNumber(raw) {
     }
 
     match = BOLSTER.exec(text);
-    if (match) {
+    // A bolster code always carries a digit: 'BOLSTER', 'BOL-.' and the like are words, not numbers.
+    if (match && /\d/.test(match[1])) {
         const rest = match[1].replace(/\s+/g, '-');
         return { kind: 'bolster', canonical: `BOL-${rest}`, plant: null, cavities: null, madeForDie: null, raw: rawText };
     }

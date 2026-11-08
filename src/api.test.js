@@ -316,3 +316,29 @@ test('toolingsAPI.get encodes the tooling number and list drops empty params', a
   assert.ok(urls[0].endsWith('/toolings/BOL-4-6-A'));
   assert.ok(urls[1].endsWith('/toolings?plant=GEX+2'));
 });
+
+test('toolingsAPI.reviewQueue and downloadDrawing hit the right paths', async () => {
+  const calls = [];
+  const blob = new Blob(['0\nSECTION']);
+  const realFetch = globalThis.fetch;
+  const realStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'tok123' : null), setItem: () => {}, removeItem: () => {} };
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), auth: opts.headers && opts.headers.Authorization });
+    if (String(url).includes('/drawings/9/')) return new Response('nope', { status: 404 });
+    if (String(url).includes('/drawings/')) return new Response(blob, { status: 200 });
+    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    await toolingsAPI.reviewQueue({ plant: 'GEX 2', kind: '', limit: 5 });
+    assert.ok(calls[0].url.endsWith('/toolings/review-queue?plant=GEX+2&limit=5'));
+    const out = await toolingsAPI.downloadDrawing('BOL-4/6', 7);
+    assert.ok(calls[1].url.endsWith('/toolings/BOL-4%2F6/drawings/7/file'));
+    assert.equal(calls[1].auth, 'Bearer tok123');
+    assert.equal(await out.text(), '0\nSECTION');
+    await assert.rejects(() => toolingsAPI.downloadDrawing('BOL-1', 9), /404/);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realStorage;
+  }
+});

@@ -431,6 +431,22 @@ CREATE TABLE IF NOT EXISTS toolings (
 );
 CREATE INDEX IF NOT EXISTS idx_toolings_plant_kind ON toolings (plant, kind);
 
+CREATE TABLE IF NOT EXISTS tooling_drawings (
+    id SERIAL PRIMARY KEY,
+    tooling_id INTEGER NOT NULL REFERENCES toolings(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,                      -- relative to TOOLING_FILES_ROOT
+    original_name TEXT NOT NULL,
+    archive_path TEXT,                            -- where it came from, informational
+    format TEXT NOT NULL CHECK (format IN ('dxf', 'dwg', 'pdf', 'tif')),
+    match_basis TEXT NOT NULL,                    -- 'filename-die' | 'filename-code' | 'title-block' | 'manual'
+    sha256 TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (tooling_id, sha256)
+);
+CREATE INDEX IF NOT EXISTS idx_tooling_drawings_tooling ON tooling_drawings (tooling_id);
+
 CREATE TABLE IF NOT EXISTS tooling_openings (
     id SERIAL PRIMARY KEY,
     tooling_id INTEGER NOT NULL UNIQUE REFERENCES toolings(id) ON DELETE CASCADE,
@@ -440,6 +456,9 @@ CREATE TABLE IF NOT EXISTS tooling_openings (
     extraction_source TEXT,                      -- 'dxf' | 'pdf-vector' | 'pdf-raster' | 'manual'
     confidence TEXT NOT NULL DEFAULT 'none' CHECK (confidence IN ('confirmed', 'likely', 'uncertain', 'none')),
     drawing_file TEXT,
+    drawing_id INTEGER REFERENCES tooling_drawings(id) ON DELETE SET NULL,
+    extraction_note TEXT,                        -- the extractor notes, joined with semicolons
+    extraction_meta JSONB,                       -- { scaleBasis, outerSynthesised, offset: [cx, cy], mmPerUnit }
     reviewed_by INTEGER REFERENCES users(id),
     reviewed_at TIMESTAMP,
     review_note TEXT,

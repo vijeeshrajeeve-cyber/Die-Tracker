@@ -971,6 +971,20 @@ export const toolingsAPI = {
         return apiRequest(`/toolings${qs ? `?${qs}` : ''}`);
     },
     get: async (number) => apiRequest(`/toolings/${encodeURIComponent(number)}`),
+    reviewQueue: async (params = {}) => {
+        const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+        const qs = new URLSearchParams(clean).toString();
+        return apiRequest(`/toolings/review-queue${qs ? `?${qs}` : ''}`);
+    },
+    // A stored drawing's bytes. The route needs the Bearer header, so a plain link cannot fetch it.
+    downloadDrawing: async (number, id) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}/toolings/${encodeURIComponent(number)}/drawings/${encodeURIComponent(id)}/file`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) throw new Error(`Could not download the drawing (HTTP ${response.status})`);
+        return response.blob();
+    },
     combinations: async ({ press, dieSize }) => apiRequest(`/toolings/combinations?${new URLSearchParams({ press: press ?? '', dieSize: dieSize ?? '' })}`),
 };
 
