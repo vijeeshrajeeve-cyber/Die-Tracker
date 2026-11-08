@@ -8,7 +8,7 @@
 // A DWG itself is never stored: its converted DXF is (named after the DWG, archivePath = the DWG's path).
 // A DWG without a converted DXF is recorded as a 'dwg' drawing with no bundle file and reported.
 const { interpretStem, groupByTooling } = require('./archiveMatcher.cjs');
-const { storedRelativePath, sha256Of, formatOf } = require('./toolingDrawings.cjs');
+const { storedRelativePath, sha256Of, formatOf, absolutePath } = require('./toolingDrawings.cjs');
 const { parseToolingNumber } = require('./toolingNumbers.cjs');
 
 const NO_DXF = 'no DXF — run convert-dwg-to-dxf';
@@ -165,4 +165,135 @@ async function buildBundle({ files, known, io, extractors, limit = null, onProgr
   return { toolings, drawings, openings, hints: hintsOut, report };
 }
 
-module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle };
+
+// ---- Apply half (server side) ---------------------------------------------------------------------
+// readBundle(dir, fsLike) reads and validates a bundle directory written by build-tooling-bundle.cjs.
+function readBundle(dir, fsLike = require('node:fs')) {
+  const path = require('node:path');
+  const read = (name, optional = false) => {
+    try { return JSON.parse(fsLike.readFileSync(path.join(dir, name), 'utf8')); } catch (err) {
+      if (optional && err && err.code === 'ENOENT') return null;
+      throw new Error(`Cannot read ${name} from the bundle: ${err.message}`);
+    }
+  };
+  const manifest = read('manifest.json');
+  if (!manifest || manifest.version !== 1) {
+    throw new Error(`Unsupported bundle version ${manifest && manifest.version}; this applier reads version 1`);
+  }
+  const parts = { toolings: read('toolings.json'), drawings: read('drawings.json'), openings: read('openings.json') };
+  for (const [name, value] of Object.entries(parts)) {
+    if (!Array.isArray(value)) throw new Error(`${name}.json must be an array`);
+  }
+  return { dir, manifest, ...parts, report: read('report.json', true) };
+}
+
+// Writes a bundle into the database in one transaction. Never writes toolings.status; never overwrites a
+// reviewed opening; copies a file only when it is not already stored. All file IO is injected.
+async function applyBundle(client, bundle, { root, io, dryRun = false, log = () => {} }) {
+  const counts = {
+    toolingsInserted: 0, toolingsUpdated: 0, drawingsInserted: 0, drawingsSkipped: 0, drawingsUnstored: 0,
+    openingsWritten: 0, openingsSkippedReviewed: 0, openingsSkippedUnknownTooling: 0, filesCopied: 0,
+  };
+  await client.query('BEGIN');
+  try {
+    for (const t of bundle.toolings) {
+      const res = await client.query(
+        `INSERT INTO toolings (number, kind, plant, size_class, size_class_source, size_class_confidence, cavities, source, status, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (number) DO UPDATE SET
+           size_class = COALESCE(toolings.size_class, EXCLUDED.size_class),
+           size_class_source = CASE WHEN toolings.size_class IS NULL AND EXCLUDED.size_class IS NOT NULL THEN EXCLUDED.size_class_source ELSE toolings.size_class_source END,
+           size_class_confidence = CASE WHEN toolings.size_class IS NULL AND EXCLUDED.size_class IS NOT NULL THEN EXCLUDED.size_class_confidence ELSE toolings.size_class_confidence END,
+           cavities = COALESCE(toolings.cavities, EXCLUDED.cavities),
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING (xmax = 0) AS inserted`,
+        [t.number, t.kind, t.plant, t.size_class ?? null, t.size_class_source ?? null, t.size_class_confidence ?? null,
+          t.cavities ?? null, t.source, t.status, t.notes ?? null]);
+      if (res.rows[0] && res.rows[0].inserted) counts.toolingsInserted++;
+    }
+
+    const numbers = [...new Set([...bundle.drawings, ...bundle.openings].map((r) => r.toolingNumber))];
+    const idOf = new Map();
+    if (numbers.length) {
+      const res = await client.query('SELECT id, number FROM toolings WHERE number = ANY($1)', [numbers]);
+      for (const row of res.rows) idOf.set(row.number, row.id);
+    }
+
+    const toCopy = [];
+    const primaries = new Map();
+    for (const d of bundle.drawings) {
+      if (!d.bundleFile || !d.sha256) { counts.drawingsUnstored++; continue; }
+      const toolingId = idOf.get(d.toolingNumber);
+      if (toolingId == null) continue;
+      const filePath = d.bundleFile.replace(/^files\//, '');
+      const res = await client.query(
+        `INSERT INTO tooling_drawings (tooling_id, file_path, original_name, archive_path, format, match_basis, sha256, byte_size)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (tooling_id, sha256) DO NOTHING`,
+        [toolingId, filePath, d.originalName, d.archivePath ?? null, d.format, d.matchBasis, d.sha256, d.byteSize]);
+      if (res.rowCount > 0) counts.drawingsInserted++; else counts.drawingsSkipped++;
+      if (d.isPrimary) primaries.set(toolingId, d.sha256);
+      toCopy.push({ src: `${bundle.dir}/${d.bundleFile}`.replace(/\\/g, '/'), dest: absolutePath(root, filePath) });
+    }
+    for (const [toolingId, sha] of primaries) {
+      await client.query('UPDATE tooling_drawings SET is_primary = (sha256 = $2) WHERE tooling_id = $1', [toolingId, sha]);
+    }
+    if (!dryRun) {
+      const path = require('node:path');
+      for (const f of toCopy) {
+        if (io.exists(f.dest)) continue;
+        io.mkdirp(path.dirname(f.dest));
+        io.copyFile(f.src, f.dest);
+        counts.filesCopied++;
+      }
+    }
+
+    for (const o of bundle.openings) {
+      const toolingId = idOf.get(o.toolingNumber);
+      if (toolingId == null) { counts.openingsSkippedUnknownTooling++; continue; }
+      const x = o.extraction;
+      let drawingId = null; let drawingFile = null;
+      if (o.drawingSha256) {
+        const found = await client.query('SELECT id, file_path FROM tooling_drawings WHERE tooling_id = $1 AND sha256 = $2', [toolingId, o.drawingSha256]);
+        if (found.rows[0]) { drawingId = found.rows[0].id; drawingFile = found.rows[0].file_path; }
+      }
+      const res = await client.query(
+        `INSERT INTO tooling_openings (tooling_id, outer_outline, pockets, pocket_gap_mm, extraction_source, confidence, drawing_file, drawing_id, extraction_note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (tooling_id) DO UPDATE SET
+           outer_outline = EXCLUDED.outer_outline, pockets = EXCLUDED.pockets, pocket_gap_mm = EXCLUDED.pocket_gap_mm,
+           extraction_source = EXCLUDED.extraction_source, confidence = EXCLUDED.confidence,
+           drawing_file = EXCLUDED.drawing_file, drawing_id = EXCLUDED.drawing_id,
+           extraction_note = EXCLUDED.extraction_note, updated_at = CURRENT_TIMESTAMP
+         WHERE tooling_openings.reviewed_at IS NULL`,
+        [toolingId, JSON.stringify(x.outer ?? null), JSON.stringify(x.pockets ?? null), x.pocketGapMm ?? null,
+          x.source ?? null, x.confidence ?? 'none', drawingFile, drawingId, (x.notes || []).join('; ')]);
+      if (res.rowCount > 0) counts.openingsWritten++; else counts.openingsSkippedReviewed++;
+
+      if (x.sizeClass || x.cavities) {
+        const cur = (await client.query('SELECT size_class, cavities FROM toolings WHERE id = $1', [toolingId])).rows[0];
+        const fills = cur && ((cur.size_class == null && x.sizeClass) || (cur.cavities == null && x.cavities));
+        if (fills) {
+          await client.query(
+            `UPDATE toolings SET
+               size_class = COALESCE(size_class, $2),
+               size_class_source = CASE WHEN size_class IS NULL AND $2 IS NOT NULL THEN 'drawing' ELSE size_class_source END,
+               size_class_confidence = CASE WHEN size_class IS NULL AND $2 IS NOT NULL THEN $3 ELSE size_class_confidence END,
+               cavities = COALESCE(cavities, $4),
+               updated_at = CURRENT_TIMESTAMP
+             WHERE number = $1`,
+            [o.toolingNumber, x.sizeClass ?? null, x.sizeClassConfidence ?? 'likely', x.cavities ?? null]);
+          counts.toolingsUpdated++;
+        }
+      }
+    }
+    log(dryRun ? 'dry run: rolling back' : 'committing');
+    await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
+    return counts;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
+}
+
+module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle, readBundle, applyBundle };
