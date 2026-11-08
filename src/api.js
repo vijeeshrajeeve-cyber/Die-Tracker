@@ -1000,6 +1000,24 @@ export const toolingsAPI = {
         method: 'POST',
         body: JSON.stringify(body),
     }),
+    // The toolings a die is recorded with, each with its master row (null when the master lacks the number).
+    forDie: async (dieNo, plant) => {
+        const qs = plant ? `?${new URLSearchParams({ plant })}` : '';
+        return apiRequest(`/toolings/for-die/${encodeURIComponent(dieNo)}${qs}`);
+    },
+    // Reviewer-only writes (admins, or users with the tooling review switch).
+    // patch: { location, status: 'active'|'retired', sizeClass, cavities, notes }
+    update: async (number, patch) => apiRequest(`/toolings/${encodeURIComponent(number)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    // body: { action: 'confirm'|'correct'|'none', pockets?, outer?, note? }
+    reviewOpening: async (number, body) => apiRequest(`/toolings/${encodeURIComponent(number)}/opening/review`, { method: 'POST', body: JSON.stringify(body) }),
+    // body: { number, plant, kind?, sizeClass?, cavities?, location?, notes? }
+    create: async (body) => apiRequest('/toolings', { method: 'POST', body: JSON.stringify(body) }),
+    // One .dxf or .pdf; answers with the tooling detail plus openingKept.
+    uploadDrawing: async (number, file) => {
+        const form = new FormData();
+        form.append('file', file);
+        return apiRequest(`/toolings/${encodeURIComponent(number)}/drawing`, { method: 'POST', body: form, isMultipart: true });
+    },
 };
 
 // Profile library: a die's stored shapes and its nearest neighbours by shape.
@@ -1015,6 +1033,8 @@ export const profileShapesAPI = {
         method: 'POST',
         body: JSON.stringify({ plant, outer, holes, cavities, limit }),
     }),
+    // Reviewer-only. body: { action: 'clear'|'keep', note? }
+    review: async (id, body) => apiRequest(`/profile-shapes/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify(body) }),
 };
 
 // Quality Discrepancies (QD Tracker) API

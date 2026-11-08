@@ -419,3 +419,43 @@ test('toolingsAPI.find posts the query as JSON to /toolings/find', async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+test('toolingsAPI write calls and profileShapesAPI.review hit the right paths with the right bodies', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || 'GET', body: options.body, headers: options.headers || {} });
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  await toolingsAPI.update('BOL-4/6', { location: 'RACK 2' });
+  assert.ok(calls[0].url.endsWith('/toolings/BOL-4%2F6'));
+  assert.equal(calls[0].method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls[0].body), { location: 'RACK 2' });
+
+  await toolingsAPI.reviewOpening('I-21599', { action: 'confirm', note: 'ok' });
+  assert.ok(calls[1].url.endsWith('/toolings/I-21599/opening/review'));
+  assert.equal(calls[1].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[1].body), { action: 'confirm', note: 'ok' });
+
+  await toolingsAPI.create({ number: 'I-30000', plant: 'GEX 1' });
+  assert.ok(calls[2].url.endsWith('/toolings'));
+  assert.equal(calls[2].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[2].body), { number: 'I-30000', plant: 'GEX 1' });
+
+  const file = new File(['0\nSECTION'], 'I-21599.dxf');
+  await toolingsAPI.uploadDrawing('I-21599', file);
+  assert.ok(calls[3].url.endsWith('/toolings/I-21599/drawing'));
+  assert.equal(calls[3].method, 'POST');
+  assert.ok(calls[3].body instanceof FormData);
+  assert.equal(calls[3].body.get('file').name, 'I-21599.dxf');
+  assert.equal(calls[3].headers['Content-Type'], undefined, 'the browser sets the multipart boundary');
+
+  await toolingsAPI.forDie('110634_25-01', 'GEX 2');
+  assert.ok(calls[4].url.endsWith('/toolings/for-die/110634_25-01?plant=GEX+2'));
+  await toolingsAPI.forDie('A/1');
+  assert.ok(calls[5].url.endsWith('/toolings/for-die/A%2F1'), 'no plant when none is given');
+
+  await profileShapesAPI.review(4, { action: 'clear', note: 'fine' });
+  assert.ok(calls[6].url.endsWith('/profile-shapes/4/review'));
+  assert.equal(calls[6].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[6].body), { action: 'clear', note: 'fine' });
+});

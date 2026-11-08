@@ -1,11 +1,15 @@
 'use strict';
+const fs = require('node:fs');
 const express = require('express');
+const multer = require('multer');
 const { pool } = require('../db.cjs');
+const { reviewerMiddleware } = require('./auth.cjs');
 const { loadPresses, normalizePlant } = require('../services/frozenDesigns.cjs');
 const { resolvePress } = require('../services/dieListImport.cjs');
 const { normalizeSizeClass } = require('../services/toolingNumbers.cjs');
 const drawingStore = require('../services/toolingDrawings.cjs');
 const { findToolings, MIN_CLEARANCE_MM } = require('../services/toolingFinder.cjs');
+const toolingReview = require('../services/toolingReview.cjs');
 
 const router = express.Router();
 
@@ -99,6 +103,40 @@ router.get('/combinations', async (req, res) => {
   } catch (err) {
     console.error('toolings combinations failed', err);
     res.status(500).json({ error: 'Failed to load combinations' });
+  }
+});
+
+// Registered before '/:number'. The toolings a die is recorded with (die list, order PDF, new-order form), each with
+// its master row when the master has the number.
+router.get('/for-die/:dieNo', async (req, res) => {
+  try {
+    const plant = text(req.query.plant) ? normalizePlant(req.query.plant) : null;
+    const { rows } = await pool.query(
+      `SELECT l.tooling_number, l.kind, l.source, l.seen_at,
+              t.number AS t_number, t.kind AS t_kind, t.size_class, t.status, t.location,
+              CASE WHEN t.id IS NULL THEN NULL ELSE COALESCE(o.confidence, 'none') END AS opening_confidence
+         FROM die_tooling_links l
+         LEFT JOIN toolings t ON t.number = l.tooling_number
+         LEFT JOIN tooling_openings o ON o.tooling_id = t.id
+        WHERE l.die_no = $1 AND ($2::text IS NULL OR l.plant = $2)
+        ORDER BY l.tooling_number NULLS LAST, l.id`,
+      [req.params.dieNo, plant],
+    );
+    res.json({
+      links: rows.map((r) => ({
+        tooling_number: r.tooling_number,
+        kind: r.kind,
+        source: r.source,
+        seen_at: r.seen_at,
+        tooling: r.t_number == null ? null : {
+          number: r.t_number, kind: r.t_kind, size_class: r.size_class, status: r.status, location: r.location,
+          opening_confidence: r.opening_confidence,
+        },
+      })),
+    });
+  } catch (err) {
+    console.error('toolings for die failed', err);
+    res.status(500).json({ error: 'Failed to load the toolings for this die' });
   }
 });
 
@@ -237,50 +275,57 @@ router.post('/find', async (req, res) => {
   }
 });
 
+// The detail payload: the tooling, its opening, its drawings and the dies linked to it; null when unknown.
+async function loadDetail(number) {
+  const found = await pool.query(
+    `SELECT t.*, COALESCE(o.confidence, 'none') AS opening_confidence
+       FROM toolings t
+       LEFT JOIN tooling_openings o ON o.tooling_id = t.id
+      WHERE t.number = $1`,
+    [number],
+  );
+  if (found.rows.length === 0) return null;
+  const tooling = found.rows[0];
+
+  const opening = await pool.query('SELECT * FROM tooling_openings o WHERE o.tooling_id = $1', [tooling.id]);
+  // Stored paths stay on the server; the client downloads through the file route.
+  const drawings = await pool.query(
+    `SELECT id, original_name, format, match_basis, is_primary, byte_size, created_at
+       FROM tooling_drawings WHERE tooling_id = $1 ORDER BY is_primary DESC, original_name`,
+    [tooling.id],
+  );
+  // One die row per link: prefer the die of the same plant when die_no repeats across plants.
+  const links = await pool.query(
+    `SELECT l.die_no, l.plant, l.source, l.seen_at,
+            d.die_size, d.press, d.cavity, d.die_status, (d.die_no IS NOT NULL) AS die_found
+       FROM die_tooling_links l
+       LEFT JOIN LATERAL (
+            SELECT e.die_no, e.die_size, e.press, e.cavity, e.die_status
+              FROM existing_die_details e
+             WHERE e.die_no = l.die_no
+             ORDER BY (regexp_replace(upper(trim(e.plant)), '\\m0+(\\d+)', '\\1', 'g') IS NOT DISTINCT FROM l.plant) DESC
+             LIMIT 1
+       ) d ON true
+      WHERE l.tooling_number = $1
+      ORDER BY l.die_no, l.id`,
+    [tooling.number],
+  );
+  return {
+    tooling,
+    opening: opening.rows[0] || null,
+    drawings: drawings.rows,
+    links: links.rows.map(({ die_size, press, cavity, die_status, die_found, ...link }) => ({
+      ...link,
+      die: die_found === false ? null : { die_size, press, cavity, die_status },
+    })),
+  };
+}
+
 router.get('/:number', async (req, res) => {
   try {
-    const found = await pool.query(
-      `SELECT t.*, COALESCE(o.confidence, 'none') AS opening_confidence
-         FROM toolings t
-         LEFT JOIN tooling_openings o ON o.tooling_id = t.id
-        WHERE t.number = $1`,
-      [req.params.number],
-    );
-    if (found.rows.length === 0) return res.status(404).json({ error: 'Tooling not found' });
-    const tooling = found.rows[0];
-
-    const opening = await pool.query('SELECT * FROM tooling_openings o WHERE o.tooling_id = $1', [tooling.id]);
-    // Stored paths stay on the server; the client downloads through the file route.
-    const drawings = await pool.query(
-      `SELECT id, original_name, format, match_basis, is_primary, byte_size, created_at
-         FROM tooling_drawings WHERE tooling_id = $1 ORDER BY is_primary DESC, original_name`,
-      [tooling.id],
-    );
-    // One die row per link: prefer the die of the same plant when die_no repeats across plants.
-    const links = await pool.query(
-      `SELECT l.die_no, l.plant, l.source, l.seen_at,
-              d.die_size, d.press, d.cavity, d.die_status, (d.die_no IS NOT NULL) AS die_found
-         FROM die_tooling_links l
-         LEFT JOIN LATERAL (
-              SELECT e.die_no, e.die_size, e.press, e.cavity, e.die_status
-                FROM existing_die_details e
-               WHERE e.die_no = l.die_no
-               ORDER BY (regexp_replace(upper(trim(e.plant)), '\\m0+(\\d+)', '\\1', 'g') IS NOT DISTINCT FROM l.plant) DESC
-               LIMIT 1
-         ) d ON true
-        WHERE l.tooling_number = $1
-        ORDER BY l.die_no, l.id`,
-      [tooling.number],
-    );
-    res.json({
-      tooling,
-      opening: opening.rows[0] || null,
-      drawings: drawings.rows,
-      links: links.rows.map(({ die_size, press, cavity, die_status, die_found, ...link }) => ({
-        ...link,
-        die: die_found === false ? null : { die_size, press, cavity, die_status },
-      })),
-    });
+    const detail = await loadDetail(req.params.number);
+    if (!detail) return res.status(404).json({ error: 'Tooling not found' });
+    res.json(detail);
   } catch (err) {
     console.error('tooling detail failed', err);
     res.status(500).json({ error: 'Failed to load tooling' });
@@ -312,6 +357,94 @@ router.get('/:number/drawings/:id/file', async (req, res) => {
   } catch (err) {
     console.error('tooling drawing download failed', err);
     res.status(500).json({ error: 'Failed to load the drawing' });
+  }
+});
+
+// ---- write side: reviewers only (admins, or users with can_review_toolings) --------------------------
+// A service error carries its HTTP status; anything else is a 500.
+function fail(res, err, what) {
+  if (err && err.status) return res.status(err.status).json({ error: err.message });
+  console.error(`tooling: ${what} failed`, err);
+  return res.status(500).json({ error: `Failed to ${what}` });
+}
+
+const MAX_DRAWING_BYTES = 50 * 1024 * 1024; // nginx allows 60m on /api/toolings/
+// Memory storage: the bytes are needed whole anyway (sha-256 name, extraction), and 50 MB bounds them.
+const drawingUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_DRAWING_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (['dxf', 'pdf'].includes(drawingStore.formatOf(file.originalname))) return cb(null, true);
+    cb(new Error('Only .dxf and .pdf drawings can be uploaded'));
+  },
+});
+// Multer rejections (type, size) are client mistakes: 400 with a message the UI can show.
+const acceptDrawing = (req, res, next) => {
+  drawingUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE' ? `File too large (max ${MAX_DRAWING_BYTES / 1024 / 1024} MB)` : err.message;
+    return res.status(400).json({ error: message });
+  });
+};
+const diskIo = {
+  exists: (p) => fs.existsSync(p),
+  mkdirp: (dir) => fs.mkdirSync(dir, { recursive: true }),
+  writeFile: (p, buffer) => fs.writeFileSync(p, buffer),
+};
+
+router.post('/', reviewerMiddleware, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const tooling = await toolingReview.createTooling(pool, {
+      number: b.number, kind: b.kind, plant: b.plant, sizeClass: b.sizeClass, cavities: b.cavities,
+      location: b.location, notes: b.notes, userId: req.user.id,
+    });
+    res.status(201).json({ tooling });
+  } catch (err) {
+    fail(res, err, 'add the tooling');
+  }
+});
+
+router.patch('/:number', reviewerMiddleware, async (req, res) => {
+  try {
+    const tooling = await toolingReview.updateTooling(pool, req.params.number, { ...(req.body || {}), userId: req.user.id });
+    res.json({ tooling });
+  } catch (err) {
+    fail(res, err, 'update the tooling');
+  }
+});
+
+router.post('/:number/opening/review', reviewerMiddleware, async (req, res) => {
+  try {
+    const found = await pool.query('SELECT id, plant FROM toolings WHERE number = $1', [req.params.number]);
+    if (found.rows.length === 0) return res.status(404).json({ error: 'Tooling not found' });
+    const { action, pockets, outer, note } = req.body || {};
+    const opening = await toolingReview.reviewOpening(pool, found.rows[0].id, { action, pockets, outer, note, userId: req.user.id });
+    res.json({ opening });
+  } catch (err) {
+    fail(res, err, 'review the opening');
+  }
+});
+
+// Answers with the fresh detail payload plus openingKept (a confirmed or reviewed opening is never replaced).
+router.post('/:number/drawing', reviewerMiddleware, acceptDrawing, async (req, res) => {
+  let client = null;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'file is required' });
+    const found = await pool.query('SELECT * FROM toolings WHERE number = $1', [req.params.number]);
+    if (found.rows.length === 0) return res.status(404).json({ error: 'Tooling not found' });
+    client = await pool.connect();
+    const out = await toolingReview.attachDrawing(client, found.rows[0], {
+      buffer: req.file.buffer, originalName: req.file.originalname, root: drawingStore.getRoot(), io: diskIo,
+    });
+    client.release();
+    client = null;
+    const detail = await loadDetail(found.rows[0].number);
+    res.json({ ...detail, openingKept: out.openingKept, extraction: out.extraction });
+  } catch (err) {
+    fail(res, err, 'attach the drawing');
+  } finally {
+    if (client) client.release();
   }
 });
 

@@ -4,11 +4,13 @@
 const path = require('node:path');
 const express = require('express');
 const { pool } = require('../db.cjs');
+const { reviewerMiddleware } = require('./auth.cjs');
 const { normalizePlant } = require('../services/frozenDesigns.cjs');
 const { toUnitFrame, signatureOf } = require('../services/profileShape.cjs');
 const { loadIndex, nearest, DEFAULT_LIMIT } = require('../services/profileSimilarity.cjs');
 const orderFiles = require('../services/orderFiles.cjs');
 const toolingDrawings = require('../services/toolingDrawings.cjs');
+const { reviewProfileShape } = require('../services/toolingReview.cjs');
 
 const router = express.Router();
 
@@ -111,6 +113,20 @@ router.get('/:dieNo/image/:shapeId', async (req, res) => {
   } catch (err) {
     console.error('profile image download failed', err);
     res.status(500).json({ error: 'Failed to load the profile image' });
+  }
+});
+
+// A reviewer's verdict on a shape: clear puts it into the similarity index, keep leaves it out, flagged.
+router.post('/:id/review', reviewerMiddleware, async (req, res) => {
+  try {
+    if (!/^\d+$/.test(req.params.id)) return res.status(404).json({ error: 'Profile shape not found' });
+    const { action, note } = req.body || {};
+    const shape = await reviewProfileShape(pool, Number(req.params.id), { action, note, userId: req.user.id });
+    res.json({ shape });
+  } catch (err) {
+    if (err && err.status) return res.status(err.status).json({ error: err.message });
+    console.error('profile shape review failed', err);
+    res.status(500).json({ error: 'Failed to review the profile shape' });
   }
 });
 

@@ -10,6 +10,7 @@
 const { interpretStem, groupByTooling } = require('./archiveMatcher.cjs');
 const { storedRelativePath, sha256Of, formatOf, absolutePath } = require('./toolingDrawings.cjs');
 const { parseToolingNumber } = require('./toolingNumbers.cjs');
+const { openingRowFromExtraction, openingParams } = require('./toolingReview.cjs');
 
 const NO_DXF = 'no DXF — run convert-dwg-to-dxf';
 const SIZE_IN_NUMBER = /\d{3,4}X\d{2,3}/;
@@ -322,9 +323,7 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
            extraction_note = EXCLUDED.extraction_note, extraction_meta = EXCLUDED.extraction_meta,
            updated_at = CURRENT_TIMESTAMP
          WHERE tooling_openings.reviewed_at IS NULL`,
-        [toolingId, x.outer == null ? null : JSON.stringify(x.outer), x.pockets == null ? null : JSON.stringify(x.pockets),
-          x.pocketGapMm ?? null, x.source ?? null, x.confidence ?? 'none', drawingFile, drawingId, (x.notes || []).join('; '),
-          x.meta == null ? null : JSON.stringify(x.meta)]);
+        openingParams(toolingId, openingRowFromExtraction(x, { drawingId, drawingFile })));
       if (res.rowCount > 0) counts.openingsWritten++; else counts.openingsSkippedReviewed++;
 
       // Only a confirmed or likely opening fills the master's blanks.
