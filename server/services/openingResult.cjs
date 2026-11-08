@@ -14,12 +14,17 @@
 //   canConfirm   true only when the scale is native (DXF): a drawn outer then confirms stated text. A PDF is scaled
 //                from its own text/hint/inventory dims, so its drawn circle can never confirm anything.
 //   notes        array, appended to
+//   openChains   chains that did not close (centre lines), used to centre a synthesised outer
+//   mmPerUnit    millimetres per source unit, recorded in meta
+//   warnings     reader warnings; any one caps the result at 'uncertain'
 // })
 // With scaleBasis 'inventory-dims' and no expected diameter the outer is not guessed (the pocket is never promoted),
 // and a short side more than 2 mm away from inventoryDims.b_wid makes the result 'none'.
+// Caps at 'uncertain' (each with a note): several different plausible size texts; with no known cavity count, a pocket
+// smaller than a tenth of the largest one (a locating slot or a title-block symbol, not a cavity); a reader warning.
 
 const {
-  classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, circleFit, isCircleLike, bbox,
+  classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, bbox, polygonArea,
 } = require('./openingGeometry.cjs');
 const { normalizeSizeClass } = require('./toolingNumbers.cjs');
 
@@ -31,7 +36,17 @@ function hintDiameter(sizeClass) {
   return m ? Number(m[1]) : null;
 }
 
-function buildExtractionResult({ source, loops, bridged, scaleBasis, texts, numbers, hints, stated, canConfirm, notes }) {
+const SMALL_POCKET_SHARE = 0.1;
+
+function capUncertain(state, note) {
+  state.notes.push(note);
+  if (state.confidence === 'confirmed' || state.confidence === 'likely') state.confidence = 'uncertain';
+}
+
+function buildExtractionResult({
+  source, loops, bridged, scaleBasis, texts, numbers, hints, stated, canConfirm, notes,
+  openChains = [], mmPerUnit = 1, warnings = [],
+}) {
   const { sizeClass: hintSize = null, cavities: hintCavities = null, inventoryDims = null } = hints || {};
   const normHint = hintSize ? normalizeSizeClass(hintSize) : null;
   const validHint = normHint && hintDiameter(normHint) != null ? normHint : null;
@@ -43,17 +58,22 @@ function buildExtractionResult({ source, loops, bridged, scaleBasis, texts, numb
   const cls = classifyLoops(loops, {
     expectedOuterDiameter: expectedDiameter,
     noOuterFallback: scaleBasis === 'inventory-dims' && !expectedDiameter,
+    openChains,
   });
+  notes.push(...cls.notes);
   const framed = normaliseFrame({ outer: cls.outer, pockets: cls.pockets });
   const outer = framed.outer ? framed.outer.points : null;
   const pockets = framed.pockets.map((p) => p.points);
 
-  const drawnCircle = !!(cls.outer && !cls.outerSynthesised && isCircleLike(cls.outer.points));
-  const drawnDiameter = drawnCircle ? circleFit(cls.outer.points).r * 2 : null;
+  // The drawn circle the outer sits on: a robust fit, so a rim drawn with its key slot still measures true.
+  const drawnCircle = !!(cls.outer && !cls.outerSynthesised && cls.outerFit);
+  const drawnDiameter = drawnCircle ? cls.outerFit.r * 2 : null;
 
   const graded = gradeConfidence({
     outer: cls.outer,
     outerSynthesised: cls.outerSynthesised,
+    outerFit: cls.outerFit,
+    outerBasis: cls.outerBasis,
     pockets,
     bridged,
     source,
@@ -101,6 +121,19 @@ function buildExtractionResult({ source, loops, bridged, scaleBasis, texts, numb
     }
   }
 
+  const state = { confidence, notes };
+  if (stated && stated.candidates && stated.candidates.length > 1) {
+    capUncertain(state, `several size texts: ${stated.candidates.join(', ')}`);
+  }
+  if (hintCavities == null && pockets.length > 1) {
+    const areas = pockets.map(polygonArea);
+    const largest = Math.max(...areas);
+    const small = areas.filter((a) => a < SMALL_POCKET_SHARE * largest).length;
+    if (small) capUncertain(state, `${small} pocket${small === 1 ? '' : 's'} under a tenth of the largest pocket's area`);
+  }
+  for (const w of warnings) capUncertain(state, w);
+  confidence = state.confidence;
+
   return {
     source,
     outer,
@@ -116,6 +149,7 @@ function buildExtractionResult({ source, loops, bridged, scaleBasis, texts, numb
     numbersInDrawing: numbers,
     texts,
     notes,
+    meta: { scaleBasis, outerSynthesised: cls.outerSynthesised, offset: framed.offset, mmPerUnit },
   };
 }
 

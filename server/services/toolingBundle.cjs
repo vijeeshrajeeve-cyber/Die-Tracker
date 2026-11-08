@@ -14,6 +14,10 @@ const { parseToolingNumber } = require('./toolingNumbers.cjs');
 const NO_DXF = 'no DXF — run convert-dwg-to-dxf';
 const SIZE_IN_NUMBER = /\d{3,4}X\d{2,3}/;
 const EXTRACT_RANK = { dxf: 0, pdf: 1 };
+// Only an opening the extractor is sure of may write the master's cavities or drawing-derived size class; the rest
+// is left NULL for the review queue.
+const MASTER_GRADE = new Set(['confirmed', 'likely']);
+const fillsMaster = (x) => !!(x && MASTER_GRADE.has(x.confidence));
 
 function knownFromExport(json) {
   const map = new Map();
@@ -52,9 +56,10 @@ function hintsFor(number, match, known) {
   };
 }
 
+// The drawing's own (non-size) numbers when they exist and exclude the tooling number; null otherwise.
 const mismatch = (number, numbers) => {
   const usable = (numbers || []).filter((n) => !SIZE_IN_NUMBER.test(n));
-  return usable.length > 0 && !usable.includes(number);
+  return usable.length > 0 && !usable.includes(number) ? usable : null;
 };
 
 async function buildBundle({ files, known, io, extractors, limit = null, onProgress = null }) {
@@ -131,13 +136,17 @@ async function buildBundle({ files, known, io, extractors, limit = null, onProgr
           ? await extractors.dxf(source.extract.buffer.toString('utf8'), hints)
           : await extractors.pdf(source.extract.buffer, hints);
         if (!extraction || typeof extraction !== 'object') throw new Error('extractor returned no result');
+        // A drawing that names other numbers but not this one may be filed under the wrong tooling: keep the
+        // geometry for review, never better than uncertain.
+        const named = mismatch(number, extraction.numbersInDrawing);
+        if (named) {
+          extraction = { ...extraction, notes: [...(extraction.notes || []), `drawing names ${named.join(', ')}, not ${number}`] };
+          if (MASTER_GRADE.has(extraction.confidence)) extraction.confidence = 'uncertain';
+          report.warnings.push({ toolingNumber: number, file: source.file.relPath,
+            warning: `number mismatch: drawing names ${extraction.numbersInDrawing.join(', ')}` });
+        }
         const c = report.byConfidence[extraction.confidence] === undefined ? 'none' : extraction.confidence;
-        const warn = mismatch(number, extraction.numbersInDrawing)
-          ? { toolingNumber: number, file: source.file.relPath,
-              warning: `number mismatch: drawing names ${extraction.numbersInDrawing.join(', ')}` }
-          : null;
         report.byConfidence[c]++;
-        if (warn) report.warnings.push(warn);
         openings.push({ toolingNumber: number, drawingSha256: source.row.sha256, extraction });
       } catch (err) {
         extraction = null;
@@ -148,15 +157,18 @@ async function buildBundle({ files, known, io, extractors, limit = null, onProgr
     for (const e of entries) drawings.push({ ...e.row, isPrimary: e === source });
 
     if (!isKnown) {
+      // The extraction's size class and cavities count only when the opening is confirmed or likely; the size in the
+      // file name and the cavities in the tooling number (GEX-2 35IC2) do not depend on the geometry.
+      const sure = fillsMaster(extraction);
       let sizeClass = null; let sizeSource = null; let confidence = null;
-      if (extraction && extraction.sizeClass) {
+      if (sure && extraction.sizeClass) {
         sizeClass = extraction.sizeClass; sizeSource = 'drawing'; confidence = extraction.sizeClassConfidence || 'likely';
       } else if (match.sizeClass) {
         sizeClass = match.sizeClass; sizeSource = 'drawing'; confidence = 'likely';
       }
       toolings.push({
         number, kind: match.kind, plant: match.plant, size_class: sizeClass, size_class_source: sizeSource,
-        size_class_confidence: confidence, cavities: (extraction && extraction.cavities) ?? hints.cavities,
+        size_class_confidence: confidence, cavities: (sure ? extraction.cavities : null) ?? hints.cavities ?? null,
         source: 'drawing-archive', status: 'retired', notes: `from drawing archive: ${group.primary.relPath}`,
       });
     }
@@ -192,14 +204,16 @@ function readBundle(dir, fsLike = require('node:fs')) {
 async function applyBundle(client, bundle, { root, io, dryRun = false, log = () => {} }) {
   const counts = {
     toolingsInserted: 0, toolingsUpdated: 0, drawingsInserted: 0, drawingsSkipped: 0, drawingsUnstored: 0,
-    openingsWritten: 0, openingsSkippedReviewed: 0, openingsSkippedUnknownTooling: 0, filesCopied: 0,
+    drawingsSkippedUnknownTooling: 0, openingsWritten: 0, openingsSkippedReviewed: 0, openingsSkippedUnknownTooling: 0,
+    filesCopied: 0,
   };
   await client.query('BEGIN');
   try {
+    // A tooling known only from a drawing is always a retired drawing-archive row, whatever the bundle says.
     for (const t of bundle.toolings) {
       const res = await client.query(
         `INSERT INTO toolings (number, kind, plant, size_class, size_class_source, size_class_confidence, cavities, source, status, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'drawing-archive', 'retired', $8)
          ON CONFLICT (number) DO UPDATE SET
            size_class = COALESCE(toolings.size_class, EXCLUDED.size_class),
            size_class_source = CASE WHEN toolings.size_class IS NULL AND EXCLUDED.size_class IS NOT NULL THEN EXCLUDED.size_class_source ELSE toolings.size_class_source END,
@@ -208,7 +222,7 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
            updated_at = CURRENT_TIMESTAMP
          RETURNING (xmax = 0) AS inserted`,
         [t.number, t.kind, t.plant, t.size_class ?? null, t.size_class_source ?? null, t.size_class_confidence ?? null,
-          t.cavities ?? null, t.source, t.status, t.notes ?? null]);
+          t.cavities ?? null, t.notes ?? null]);
       if (res.rows[0] && res.rows[0].inserted) counts.toolingsInserted++;
     }
 
@@ -224,7 +238,7 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
     for (const d of bundle.drawings) {
       if (!d.bundleFile || !d.sha256) { counts.drawingsUnstored++; continue; }
       const toolingId = idOf.get(d.toolingNumber);
-      if (toolingId == null) continue;
+      if (toolingId == null) { counts.drawingsSkippedUnknownTooling++; continue; }
       const filePath = d.bundleFile.replace(/^files\//, '');
       const res = await client.query(
         `INSERT INTO tooling_drawings (tooling_id, file_path, original_name, archive_path, format, match_basis, sha256, byte_size)
@@ -258,19 +272,22 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
         if (found.rows[0]) { drawingId = found.rows[0].id; drawingFile = found.rows[0].file_path; }
       }
       const res = await client.query(
-        `INSERT INTO tooling_openings (tooling_id, outer_outline, pockets, pocket_gap_mm, extraction_source, confidence, drawing_file, drawing_id, extraction_note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO tooling_openings (tooling_id, outer_outline, pockets, pocket_gap_mm, extraction_source, confidence, drawing_file, drawing_id, extraction_note, extraction_meta)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (tooling_id) DO UPDATE SET
            outer_outline = EXCLUDED.outer_outline, pockets = EXCLUDED.pockets, pocket_gap_mm = EXCLUDED.pocket_gap_mm,
            extraction_source = EXCLUDED.extraction_source, confidence = EXCLUDED.confidence,
            drawing_file = EXCLUDED.drawing_file, drawing_id = EXCLUDED.drawing_id,
-           extraction_note = EXCLUDED.extraction_note, updated_at = CURRENT_TIMESTAMP
+           extraction_note = EXCLUDED.extraction_note, extraction_meta = EXCLUDED.extraction_meta,
+           updated_at = CURRENT_TIMESTAMP
          WHERE tooling_openings.reviewed_at IS NULL`,
-        [toolingId, JSON.stringify(x.outer ?? null), JSON.stringify(x.pockets ?? null), x.pocketGapMm ?? null,
-          x.source ?? null, x.confidence ?? 'none', drawingFile, drawingId, (x.notes || []).join('; ')]);
+        [toolingId, x.outer == null ? null : JSON.stringify(x.outer), x.pockets == null ? null : JSON.stringify(x.pockets),
+          x.pocketGapMm ?? null, x.source ?? null, x.confidence ?? 'none', drawingFile, drawingId, (x.notes || []).join('; '),
+          x.meta == null ? null : JSON.stringify(x.meta)]);
       if (res.rowCount > 0) counts.openingsWritten++; else counts.openingsSkippedReviewed++;
 
-      if (x.sizeClass || x.cavities) {
+      // Only a confirmed or likely opening fills the master's blanks.
+      if (fillsMaster(x) && (x.sizeClass || x.cavities)) {
         const cur = (await client.query('SELECT size_class, cavities FROM toolings WHERE id = $1', [toolingId])).rows[0];
         const fills = cur && ((cur.size_class == null && x.sizeClass) || (cur.cavities == null && x.cavities));
         if (fills) {
@@ -291,7 +308,8 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
     await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
     return counts;
   } catch (err) {
-    await client.query('ROLLBACK');
+    // A failing ROLLBACK (e.g. the connection died) must not hide the error that caused it.
+    try { await client.query('ROLLBACK'); } catch (rollbackErr) { log(`rollback failed: ${rollbackErr.message}`); }
     throw err;
   }
 }

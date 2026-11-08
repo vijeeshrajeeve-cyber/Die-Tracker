@@ -72,6 +72,9 @@ test('BOL-27080: scale from the Ø475x220 text, outer Ø475 ± 2, one V-shaped p
   assert.equal(r.pocketGapMm, null);
   assert.ok(r.numbersInDrawing.includes('BOL-27080'));
   assert.equal(r.confidence, 'likely'); // scaled from its own size text, so never 'confirmed'; the side section's loops are outside the outer and ignored
+  // what a viewer needs to lay the outline back on the sheet
+  assert.equal(r.meta.scaleBasis, 'text-diameter'); assert.equal(r.meta.outerSynthesised, false);
+  assert.ok(r.meta.mmPerUnit > 0 && r.meta.offset.length === 2 && r.meta.offset.every(Number.isFinite));
 });
 
 test('coloured strokes are not geometry', async () => {

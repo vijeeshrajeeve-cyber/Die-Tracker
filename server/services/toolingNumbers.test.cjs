@@ -76,3 +76,8 @@ test('letter-variant inserts and BOL- bolsters stored by the inventory resolve a
   assert.equal(m.resolveToolingRef('AMBIG', known).kind, 'unknown', 'present in both is ambiguous');
   assert.equal(m.resolveToolingRef('35IC9Z', known).kind, 'unknown', 'present in neither');
 });
+
+test('a bolster code needs a digit: words that start with BOL are not numbers', () => {
+  for (const word of ['BOLSTER', 'BOL-.', 'BOL.', 'B-A', 'BOL-STER']) assert.equal(m.parseToolingNumber(word).kind, 'unknown', word);
+  for (const code of ['BOL-4-6-A', 'BOL-15109', 'BOL-2-1-C', 'B-6-1-C', 'BOL-25B1C1A']) assert.equal(m.parseToolingNumber(code).kind, 'bolster', code);
+});

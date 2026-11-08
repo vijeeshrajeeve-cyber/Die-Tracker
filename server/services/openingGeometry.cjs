@@ -125,6 +125,103 @@ function isCircleLike(points) {
   return Number.isFinite(r) && maxDeviation <= Math.max(1, 0.01 * r);
 }
 
+// Circle fit that tolerates a key slot cut into the rim: refit on the points inside a tightening band until the
+// fit is within 1 % of the radius. Accepted only when most points are on the circle and they go nearly all the way
+// round, so a pocket outline never passes. Returns the fit or null.
+function robustCircle(points) {
+  if (points.length < 8) return null;
+  let pts = points;
+  // Start from the bounding box: a key slot cuts inwards, so the rim still defines it, whereas a least-squares
+  // fit over every point is dragged off-centre by the slot.
+  const bb = bbox(points);
+  let fit = { cx: bb.cx, cy: bb.cy, r: (bb.width + bb.height) / 4, maxDeviation: Infinity };
+  for (const band of [0.03, 0.015, 0.01]) {
+    for (let again = 0; again < 5; again++) {
+      if (!Number.isFinite(fit.r)) return null;
+      const tol = Math.max(1, band * fit.r);
+      const keep = pts.filter((q) => Math.abs(Math.hypot(q[0] - fit.cx, q[1] - fit.cy) - fit.r) <= tol);
+      if (keep.length < 8) return null;
+      const stable = keep.length === pts.length;
+      pts = keep;
+      fit = circleFit(pts);
+      if (stable) break;
+    }
+  }
+  if (pts.length < 0.6 * points.length || fit.maxDeviation > Math.max(1, 0.01 * fit.r)) return null;
+  const angles = pts.map((q) => Math.atan2(q[1] - fit.cy, q[0] - fit.cx)).sort((a, b) => a - b);
+  let widest = angles[0] + 2 * Math.PI - angles[angles.length - 1];
+  for (let i = 1; i < angles.length; i++) widest = Math.max(widest, angles[i] - angles[i - 1]);
+  return widest <= Math.PI / 3 ? fit : null;
+}
+
+// A 4-vertex axis-aligned rectangle (collinear and repeated vertices are dropped first).
+function isAxisRect(points) {
+  const span = Math.max(bbox(points).width, bbox(points).height) || 1;
+  const eps = 1e-6 * span;
+  let pts = points.filter((p, i) => dist(p, points[(i + 1) % points.length]) > eps);
+  pts = pts.filter((p, i) => {
+    const a = pts[(i - 1 + pts.length) % pts.length];
+    const b = pts[(i + 1) % pts.length];
+    return Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) > eps * span;
+  });
+  if (pts.length !== 4) return false;
+  const tol = 1e-3 * span;
+  return pts.every((p, i) => {
+    const q = pts[(i + 1) % 4];
+    return Math.abs(p[0] - q[0]) <= tol || Math.abs(p[1] - q[1]) <= tol;
+  });
+}
+
+// Drawing frames: axis-aligned rectangles that hold every other loop (larger frames aside), e.g. the sheet border
+// and its inner border. They are never the outer and never a pocket.
+function frameLoops(loops) {
+  const rects = loops.filter((l) => isAxisRect(l.points)).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
+  const frames = new Set();
+  for (const r of rects) {
+    const b = bbox(r.points);
+    const others = loops.filter((l) => l !== r && !frames.has(l));
+    if (!others.length) continue;
+    const inside = (p) => p[0] >= b.minX - 0.5 && p[0] <= b.maxX + 0.5 && p[1] >= b.minY - 0.5 && p[1] <= b.maxY + 0.5;
+    if (others.every((l) => l.points.every(inside))) frames.add(r);
+  }
+  return frames;
+}
+
+// Two long straight open chains crossing near their midpoints (the drawing's centre lines): their intersection.
+function centreLineCrossing(openChains, minLength) {
+  const lines = [];
+  for (const c of openChains || []) {
+    const pts = c.points;
+    if (!pts || pts.length < 2) continue;
+    const a = pts[0];
+    const b = pts[pts.length - 1];
+    const chord = dist(a, b);
+    if (chord <= minLength) continue;
+    let path = 0;
+    for (let i = 1; i < pts.length; i++) path += dist(pts[i - 1], pts[i]);
+    if (chord < 0.99 * path) continue; // not straight
+    lines.push({ a, b, len: chord });
+  }
+  let best = null;
+  for (let i = 0; i < lines.length; i++) {
+    for (let j = i + 1; j < lines.length; j++) {
+      const p = lines[i];
+      const q = lines[j];
+      const r = [p.b[0] - p.a[0], p.b[1] - p.a[1]];
+      const s = [q.b[0] - q.a[0], q.b[1] - q.a[1]];
+      const cross = r[0] * s[1] - r[1] * s[0];
+      if (Math.abs(cross) < Math.sin(Math.PI / 3) * p.len * q.len) continue; // not crossing at 60 degrees or more
+      const w = [q.a[0] - p.a[0], q.a[1] - p.a[1]];
+      const t = (w[0] * s[1] - w[1] * s[0]) / cross;
+      const u = (w[0] * r[1] - w[1] * r[0]) / cross;
+      if (Math.abs(t - 0.5) > 0.15 || Math.abs(u - 0.5) > 0.15) continue;
+      const score = Math.min(p.len, q.len);
+      if (!best || score > best.score) best = { score, point: [p.a[0] + t * r[0], p.a[1] + t * r[1]] };
+    }
+  }
+  return best ? best.point : null;
+}
+
 // ---- chaining --------------------------------------------------------------
 
 function chainLoops(chains, { joinTol = 0.5, bridgeTol = 3 } = {}) {
@@ -235,41 +332,85 @@ function synthesiseCircle(cx, cy, diameter, n = 64) {
   });
 }
 
+const fmtMm = (n) => String(Math.round(n * 10) / 10);
+
 // noOuterFallback: with no expected diameter and no circle, do not promote the largest loop to outer
 // (an outline-only drawing, e.g. a scan, has pockets and no outer).
-function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = false } = {}) {
+// openChains: the chains that did not close (centre lines live there); used only to centre a synthesised outer.
+// Returns { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes } where outerBasis is
+// 'drawn-circle' | 'promoted' | 'synthesised-rim' | 'synthesised-centre-lines' | 'synthesised-bbox' | null.
+function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = false, openChains = [] } = {}) {
   const ignored = [];
+  const notes = [];
   let outer = null;
   let outerSynthesised = false;
+  let outerFit = null;
+  let outerBasis = null;
 
-  // Rule 1: the outer is a circle-like loop of at least 100 mm diameter.
-  const circles = loops
-    .map((l) => ({ l, fit: isCircleLike(l.points) ? circleFit(l.points) : null }))
+  // Rule 0: drawing frames (sheet borders) are neither the outer nor a pocket.
+  const frames = frameLoops(loops);
+  for (const f of frames) ignored.push({ loop: f, reason: 'frame' });
+  const live = loops.filter((l) => !frames.has(l));
+
+  // Rule 1: the outer is a circle of at least 100 mm diameter; a rim drawn with its key slot still counts.
+  const circles = live
+    .map((l) => ({ l, fit: robustCircle(l.points) }))
     .filter((c) => c.fit && c.fit.r * 2 >= 100);
+  circles.sort((a, b) => b.fit.r - a.fit.r);
   if (circles.length) {
+    let pick = null;
     if (expectedOuterDiameter) {
       const off = (c) => Math.abs(c.fit.r * 2 - expectedOuterDiameter);
-      circles.sort((a, b) => off(a) - off(b));
-      if (off(circles[0]) <= 0.1 * expectedOuterDiameter) outer = circles[0].l;
+      const near = circles.filter((c) => off(c) <= 0.1 * expectedOuterDiameter).sort((a, b) => off(a) - off(b));
+      pick = near[0] || null;
     } else {
-      circles.sort((a, b) => b.fit.r - a.fit.r);
-      outer = circles[0].l;
+      pick = circles[0];
     }
+    if (pick) { outer = pick.l; outerFit = pick.fit; outerBasis = 'drawn-circle'; }
   }
 
   // Rule 2: no qualifying circle.
-  if (!outer && loops.length) {
+  if (!outer && live.length) {
     if (expectedOuterDiameter) {
-      const b = bbox(loops.flatMap((l) => l.points));
-      outer = { points: synthesiseCircle(b.cx, b.cy, expectedOuterDiameter), layer: '', bridgedGaps: 0, sources: [] };
+      // Centre the synthesised outer on a drawn rim (whatever its size), else on the centre lines, else on the
+      // joint bbox of the drawn loops (frames excluded) - the last is a guess and is graded so.
+      const holds = (c) => live.some((l) => {
+        if (l === c.l) return false;
+        const [x, y] = centroid(l.points);
+        return Math.hypot(x - c.fit.cx, y - c.fit.cy) < c.fit.r;
+      });
+      const rim = circles.find(holds);
+      let centre = null;
+      if (rim) {
+        centre = [rim.fit.cx, rim.fit.cy];
+        outerBasis = 'synthesised-rim';
+        notes.push(`drawn rim Ø${fmtMm(rim.fit.r * 2)} disagrees with the stated Ø${fmtMm(expectedOuterDiameter)}; outer centred on the rim`);
+      } else {
+        centre = centreLineCrossing(openChains, 0.6 * expectedOuterDiameter);
+        if (centre) {
+          outerBasis = 'synthesised-centre-lines';
+          notes.push('outer centred on the drawn centre lines');
+        } else {
+          const b = bbox(live.flatMap((l) => l.points));
+          centre = [b.cx, b.cy];
+          outerBasis = 'synthesised-bbox';
+        }
+      }
+      outer = { points: synthesiseCircle(centre[0], centre[1], expectedOuterDiameter), layer: '', bridgedGaps: 0, sources: [] };
       outerSynthesised = true;
     } else if (!noOuterFallback) {
-      const largest = loops.reduce((m, l) => (polygonArea(l.points) > polygonArea(m.points) ? l : m));
-      if (loops.length >= 2 && loops.every((l) => l === largest || polygonContains(largest.points, l.points))) outer = largest;
+      const largest = live.reduce((m, l) => (polygonArea(l.points) > polygonArea(m.points) ? l : m));
+      // A plain rectangle holding the rest is a sheet or title frame, never the outer.
+      if (live.length >= 2 && !isAxisRect(largest.points)
+        && live.every((l) => l === largest || polygonContains(largest.points, l.points))) {
+        outer = largest;
+        outerBasis = 'promoted';
+        if (isCircleLike(largest.points)) outerFit = circleFit(largest.points);
+      }
     }
   }
 
-  let rest = loops.filter((l) => l !== outer);
+  let rest = live.filter((l) => l !== outer);
   let centre = null;
   let outerRadius = null;
   if (outer) {
@@ -322,7 +463,7 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
   });
   pockets.sort((a, b) => areas.get(b) - areas.get(a));
 
-  return { outer, outerSynthesised, pockets, ignored };
+  return { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes };
 }
 
 function pocketGapMm(pockets) {
@@ -335,19 +476,25 @@ function pocketGapMm(pockets) {
   return best;
 }
 
+// offset: the [cx, cy] subtracted from every point (source mm), so a viewer can put the outline back on the drawing.
 function normaliseFrame({ outer, pockets }) {
   const ref = outer ? outer.points : pockets.flatMap((p) => p.points);
-  if (!ref.length) return { outer, pockets };
+  if (!ref.length) return { outer, pockets, offset: [0, 0] };
   const { cx, cy } = bbox(ref);
   const shift = (l) => ({ ...l, points: l.points.map(([x, y]) => [x - cx, y - cy]) });
-  return { outer: outer ? shift(outer) : outer, pockets: pockets.map(shift) };
+  return { outer: outer ? shift(outer) : outer, pockets: pockets.map(shift), offset: [cx, cy] };
 }
 
 // ---- confidence ------------------------------------------------------------
 
-const NATIVE_SCALE = 'native-mm';
+// The drawing's own units (DXF): the geometry is measured, not scaled from a stated size.
+const NATIVE_SCALES = new Set(['native-mm', 'native-inch', 'native-feet']);
 
-function gradeConfidence({ outer, outerSynthesised, pockets, bridged, source, statedDiameter, knownCavities, scaleBasis }) {
+// outerFit: the circle the outer is drawn on (a keyed rim's least-squares fit is dragged by the slot), when known.
+// outerBasis: as returned by classifyLoops; 'synthesised-bbox' and a non-circular 'promoted' outer cap at uncertain.
+function gradeConfidence({
+  outer, outerSynthesised, outerFit = null, outerBasis = null, pockets, bridged, source, statedDiameter, knownCavities, scaleBasis,
+}) {
   if (!scaleBasis) return { confidence: 'none', notes: ['no scale basis'] };
   if (!pockets || !pockets.length) return { confidence: 'none', notes: ['no pocket found'] };
   if (source === 'pdf-raster') return { confidence: 'uncertain', notes: ['raster PDF: geometry is only approximate'] };
@@ -355,19 +502,26 @@ function gradeConfidence({ outer, outerSynthesised, pockets, bridged, source, st
   if (knownCavities != null && knownCavities !== pockets.length) {
     return { confidence: 'uncertain', notes: [`pocket count ${pockets.length} disagrees with ${knownCavities} cavities`] };
   }
-  if (statedDiameter != null && outer && !outerSynthesised && scaleBasis === NATIVE_SCALE) {
-    const fitted = circleFit(outer.points).r * 2;
+  if (outerBasis === 'synthesised-bbox') {
+    return { confidence: 'uncertain', notes: ['outer synthesised from the stated size and centred on the drawn loops (no rim or centre lines)'] };
+  }
+  if (outerBasis === 'promoted' && !outerFit) {
+    return { confidence: 'uncertain', notes: ['outer is the largest loop but not a circle'] };
+  }
+  if (statedDiameter != null && outer && !outerSynthesised && NATIVE_SCALES.has(scaleBasis)) {
+    const fitted = (outerFit || circleFit(outer.points)).r * 2;
     if (Math.abs(fitted - statedDiameter) > 2) return { confidence: 'uncertain', notes: ['outer disagrees with stated size'] };
   }
   const notes = [];
   if (bridged > 0) notes.push(`${bridged} gap${bridged === 1 ? '' : 's'} bridged`);
   if (outerSynthesised) notes.push('outer outline synthesised from the stated size');
   if (statedDiameter == null) notes.push('no stated size to check the outer against');
-  if (scaleBasis !== NATIVE_SCALE) notes.push('scale derived from the stated size, not native units');
+  if (!NATIVE_SCALES.has(scaleBasis)) notes.push('scale derived from the stated size, not native units');
   return { confidence: notes.length ? 'likely' : 'confirmed', notes };
 }
 
 module.exports = {
   chainLoops, polygonArea, centroid, bbox, pointInPolygon, polygonContains,
-  circleFit, isCircleLike, classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence,
+  circleFit, isCircleLike, robustCircle, isAxisRect, frameLoops, centreLineCrossing,
+  classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, NATIVE_SCALES,
 };

@@ -1052,6 +1052,7 @@ const initializeDatabase = async () => {
           drawing_file TEXT,
           drawing_id INTEGER REFERENCES tooling_drawings(id) ON DELETE SET NULL,
           extraction_note TEXT,                        -- the extractor notes, joined with semicolons
+          extraction_meta JSONB,
           reviewed_by INTEGER REFERENCES users(id),
           reviewed_at TIMESTAMP,
           review_note TEXT,
@@ -1060,6 +1061,7 @@ const initializeDatabase = async () => {
       );
       ALTER TABLE tooling_openings ADD COLUMN IF NOT EXISTS drawing_id INTEGER REFERENCES tooling_drawings(id) ON DELETE SET NULL;
       ALTER TABLE tooling_openings ADD COLUMN IF NOT EXISTS extraction_note TEXT;
+      ALTER TABLE tooling_openings ADD COLUMN IF NOT EXISTS extraction_meta JSONB;
 
       CREATE TABLE IF NOT EXISTS tooling_combinations (
           id SERIAL PRIMARY KEY,

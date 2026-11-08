@@ -458,6 +458,7 @@ CREATE TABLE IF NOT EXISTS tooling_openings (
     drawing_file TEXT,
     drawing_id INTEGER REFERENCES tooling_drawings(id) ON DELETE SET NULL,
     extraction_note TEXT,                        -- the extractor notes, joined with semicolons
+    extraction_meta JSONB,                       -- { scaleBasis, outerSynthesised, offset: [cx, cy], mmPerUnit }
     reviewed_by INTEGER REFERENCES users(id),
     reviewed_at TIMESTAMP,
     review_note TEXT,

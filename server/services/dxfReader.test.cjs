@@ -192,3 +192,15 @@ test('a half ELLIPSE on a -1 normal sweeps the other way: the minor-axis side fl
   const cx = (p) => (Math.max(...p.map((q) => q[0])) + Math.min(...p.map((q) => q[0]))) / 2;
   assert.ok(Math.abs(cx(up) - 40) < 1e-6 && Math.abs(cx(mir) - 40) < 1e-6);
 });
+
+test('an INSERT on a mirrored or tilted OCS warns (it is not transformed)', () => {
+  for (const normal of [-1, [0.5, 0, 0.866]]) {
+    const warnings = [];
+    flattenDxf(parseDxf(dxfOf({ blocks: { SQ: [line(0, 0, 10, 0)] }, entities: [insert('SQ', 100, 50, 1, 0, { normal })] })),
+      { onWarn: (m) => warnings.push(m) });
+    assert.deepEqual(warnings, ['block reference on a mirrored or tilted OCS left untransformed'], JSON.stringify(normal));
+  }
+  const quiet = [];
+  flattenDxf(parseDxf(dxfOf({ blocks: { SQ: [line(0, 0, 10, 0)] }, entities: [insert('SQ', 100, 50)] })), { onWarn: (m) => quiet.push(m) });
+  assert.deepEqual(quiet, []);
+});

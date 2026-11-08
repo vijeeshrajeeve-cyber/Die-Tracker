@@ -352,6 +352,8 @@ function flattenDxf(dxf, { chordTolerance = 0.1, onWarn = null } = {}) {
         }
         case 'INSERT': {
           if (depth >= MAX_INSERT_DEPTH) break;
+          // A block reference on a mirrored or tilted OCS is expanded as if it were not: report it.
+          if (normalOf(g) !== 1 && onWarn) onWarn('block reference on a mirrored or tilted OCS left untransformed');
           const nameG = g.find(([c]) => c === 2);
           const name = nameG && nameG[1].trim();
           const block = name && dxf.blocks.get(name);

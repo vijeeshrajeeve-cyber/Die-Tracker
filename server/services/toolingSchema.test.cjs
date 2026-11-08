@@ -29,14 +29,17 @@ test('toolings.status and die_tooling_links.kind are constrained', () => {
   assert.ok(columnsOf(initSql, 'die_tooling_links').some((c) => c.includes("CHECK (kind IN ('insert', 'bolster', 'unknown'))")));
 });
 
-test('tooling_openings carries drawing_id and extraction_note in both files and as ALTERs', () => {
+test('tooling_openings carries drawing_id, extraction_note and extraction_meta in both files and as ALTERs', () => {
   for (const text of [initSql, dbCjs]) {
     const cols = columnsOf(text, 'tooling_openings');
     assert.ok(cols.some((c) => c.startsWith('drawing_id INTEGER REFERENCES tooling_drawings(id)')));
     assert.ok(cols.includes('extraction_note TEXT'));
+    assert.ok(cols.includes('extraction_meta JSONB'));
+    assert.ok(cols.indexOf('extraction_meta JSONB') === cols.indexOf('extraction_note TEXT') + 1, 'extraction_meta follows extraction_note');
   }
   assert.ok(dbCjs.includes('ALTER TABLE tooling_openings ADD COLUMN IF NOT EXISTS drawing_id'));
   assert.ok(dbCjs.includes('ALTER TABLE tooling_openings ADD COLUMN IF NOT EXISTS extraction_note'));
+  assert.ok(dbCjs.includes('ALTER TABLE tooling_openings ADD COLUMN IF NOT EXISTS extraction_meta JSONB;'));
 });
 
 test('tooling_drawings is created before tooling_openings in both files', () => {

@@ -15,8 +15,8 @@ const circleEntity = (cx, cy, r, { normal } = {}) =>
 const lwpolyline = (points, { closed = false, bulges = [], normal } = {}) =>
   g(0, 'LWPOLYLINE') + g(8, '0') + g(90, points.length) + g(70, closed ? 1 : 0) +
   points.map(([x, y], i) => g(10, x) + g(20, y) + (bulges[i] ? g(42, bulges[i]) : '')).join('') + extrusion(normal);
-const insert = (blockName, x, y, scale = 1, rotationDeg = 0) =>
-  g(0, 'INSERT') + g(8, '0') + g(2, blockName) + g(10, x) + g(20, y) + g(41, scale) + g(42, scale) + g(50, rotationDeg);
+const insert = (blockName, x, y, scale = 1, rotationDeg = 0, { normal } = {}) =>
+  g(0, 'INSERT') + g(8, '0') + g(2, blockName) + g(10, x) + g(20, y) + g(41, scale) + g(42, scale) + g(50, rotationDeg) + extrusion(normal);
 const rectLines = (w, h, cx = 0, cy = 0) => {
   const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - h / 2, y1 = cy + h / 2;
   return [line(x0, y0, x1, y0), line(x1, y0, x1, y1), line(x1, y1, x0, y1), line(x0, y1, x0, y0)];

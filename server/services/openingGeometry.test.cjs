@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   chainLoops, polygonArea, bbox, isCircleLike, circleFit, classifyLoops,
-  pocketGapMm, normaliseFrame, gradeConfidence,
+  pocketGapMm, normaliseFrame, gradeConfidence, robustCircle, isAxisRect, centreLineCrossing,
 } = require('./openingGeometry.cjs');
 
 const seg = (x1, y1, x2, y2) => ({ layer: '0', points: [[x1, y1], [x2, y2]], closed: false, source: 'LINE' });
@@ -57,7 +57,7 @@ test('classifies outer, pocket, fastener hole and rim notch; the larger drawing 
   const r = classifyLoops(loops, { expectedOuterDiameter: 220 });
   assert.equal(r.outer, loops[0]); assert.equal(r.outerSynthesised, false);
   assert.deepEqual(r.pockets, [loops[2]]);
-  assert.deepEqual(r.ignored.map((i) => i.reason).sort(), ['fastener-hole', 'outside-outer', 'rim-notch']);
+  assert.deepEqual(r.ignored.map((i) => i.reason).sort(), ['fastener-hole', 'frame', 'rim-notch']);
   assert.equal(classifyLoops(loops).outer, loops[0], 'without an expected diameter the circle still wins over the frame');
 });
 test('a single open chain whose own ends meet closes on itself (the Dieshop pocket polyline)', () => {
@@ -126,4 +126,95 @@ test('noOuterFallback keeps the only loop as a pocket instead of promoting it to
   const r = classifyLoops([only], { noOuterFallback: true });
   assert.equal(r.outer, null);
   assert.deepEqual(r.pockets, [only]);
+});
+
+// A rim drawn with its key slot: a circle of radius r with a w x d slot cut inwards at the top, as one loop.
+const keyedRim = (r, w, d, n = 96) => {
+  const half = Math.asin(w / 2 / r);
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = Math.PI / 2 + half + ((2 * Math.PI - 2 * half) * i) / n;
+    pts.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+  const y = r * Math.cos(half);
+  pts.push([w / 2, y], [w / 2, y - d], [-w / 2, y - d]);
+  return pts;
+};
+
+test('robustCircle accepts a rim with its key slot; isCircleLike does not; a rounded rectangle passes neither', () => {
+  const rim = keyedRim(150, 24, 14);
+  assert.equal(isCircleLike(rim), false);
+  const fit = robustCircle(rim);
+  assert.ok(fit && Math.abs(fit.r - 150) < 0.5 && Math.hypot(fit.cx, fit.cy) < 0.5);
+  assert.equal(robustCircle(roundedRect(250, 150, 15)), null);
+});
+
+test('a keyed rim is the outer (rule 1), so off-centre pockets stay pockets and the frame is ignored', () => {
+  const loops = [loop(translate(keyedRim(150, 24, 14), 0, 0)), loop(translate(rect(88.9, 63.8), -61, 0)), loop(translate(rect(88.9, 63.8), 61, 0)),
+    loop(translate(rect(572, 405), -117, -22))];
+  const r = classifyLoops(loops, { expectedOuterDiameter: 300 });
+  assert.equal(r.outer, loops[0]); assert.equal(r.outerSynthesised, false); assert.equal(r.outerBasis, 'drawn-circle');
+  assert.ok(Math.abs(r.outerFit.r * 2 - 300) < 1);
+  assert.equal(r.pockets.length, 2);
+  assert.deepEqual(r.ignored.map((i) => i.reason), ['frame']);
+});
+
+test('isAxisRect: 4-vertex axis-aligned rectangles only (collinear vertices ignored)', () => {
+  assert.equal(isAxisRect(rect(400, 268)), true);
+  assert.equal(isAxisRect([[0, 0], [200, 0], [400, 0], [400, 268], [0, 268]]), true);
+  assert.equal(isAxisRect([[0, 0], [400, 10], [390, 278], [-10, 268]]), false);
+  assert.equal(isAxisRect(roundedRect(250, 150, 15)), false);
+});
+
+test('a sheet frame is never promoted to outer; the loops inside it stay pockets', () => {
+  const pocket = loop(rect(95, 95));
+  const r = classifyLoops([loop(translate(rect(400, 268), 0, -18)), pocket]);
+  assert.equal(r.outer, null);
+  assert.deepEqual(r.pockets, [pocket]);
+  assert.deepEqual(r.ignored.map((i) => i.reason), ['frame']);
+});
+
+test('a promoted outer that is not a circle grades uncertain', () => {
+  const blob = [[-100, -80], [100, -90], [120, 0], [90, 85], [-110, 70]]; // not a rectangle, not a circle
+  const r = classifyLoops([loop(blob), loop(rect(40, 40))]);
+  assert.equal(r.outerBasis, 'promoted');
+  const g = gradeConfidence({ outer: r.outer, outerSynthesised: false, outerFit: r.outerFit, outerBasis: r.outerBasis, pockets: r.pockets.map((p) => p.points), bridged: 0, source: 'dxf', statedDiameter: null, knownCavities: null, scaleBasis: 'native-mm' });
+  assert.equal(g.confidence, 'uncertain');
+});
+
+test('a synthesised outer is centred on a drawn rim even when its size disagrees, noting it', () => {
+  const loops = [loop(circle(10, 20, 150)), loop(translate(rect(60, 40), 70, 20))];
+  const r = classifyLoops(loops, { expectedOuterDiameter: 400 });
+  assert.equal(r.outerSynthesised, true); assert.equal(r.outerBasis, 'synthesised-rim');
+  const b = bbox(r.outer.points); assert.ok(Math.abs(b.cx - 10) < 0.01 && Math.abs(b.cy - 20) < 0.01 && Math.abs(b.width - 400) < 0.1);
+  assert.ok(r.notes.some((n) => /drawn rim Ø300 disagrees with the stated Ø400/.test(n)));
+});
+
+test('without a rim the synthesised outer is centred on the crossing centre lines', () => {
+  const lines = [seg(-150, 5, 150, 5), seg(-20, -145, -20, 155)];
+  assert.deepEqual(centreLineCrossing(lines, 0.6 * 475).map((v) => Math.round(v)), [-20, 5]);
+  const r = classifyLoops([loop(translate(rect(100, 50), 60, 5))], { expectedOuterDiameter: 475, openChains: lines });
+  assert.equal(r.outerBasis, 'synthesised-centre-lines');
+  const b = bbox(r.outer.points); assert.ok(Math.abs(b.cx + 20) < 0.01 && Math.abs(b.cy - 5) < 0.01);
+  assert.equal(centreLineCrossing([seg(-100, 0, 100, 0), seg(0, -100, 0, 100)], 0.6 * 475), null, 'too short for a Ø475');
+  assert.equal(centreLineCrossing([seg(-150, 0, 150, 0), seg(140, -150, 140, 150)], 0.6 * 475), null, 'not crossing near the midpoints');
+});
+
+test('with neither rim nor centre lines the outer is centred on the loops (frames excluded) and grades uncertain', () => {
+  const r = classifyLoops([loop(translate(rect(100, 50), 60, 5)), loop(translate(rect(2000, 1500), 300, 300))], { expectedOuterDiameter: 475 });
+  assert.equal(r.outerBasis, 'synthesised-bbox');
+  const b = bbox(r.outer.points); assert.ok(Math.abs(b.cx - 60) < 0.01 && Math.abs(b.cy - 5) < 0.01, 'the frame is not part of the centring box');
+  const g = gradeConfidence({ outer: r.outer, outerSynthesised: true, outerFit: null, outerBasis: r.outerBasis, pockets: r.pockets.map((p) => p.points), bridged: 0, source: 'dxf', statedDiameter: 475, knownCavities: null, scaleBasis: 'native-mm' });
+  assert.equal(g.confidence, 'uncertain');
+});
+
+test('native inch and feet drawings are native: no scale-derived note', () => {
+  const base = { outer: loop(circle(0, 0, 87.5)), outerSynthesised: false, pockets: [loop(rect(50, 50))], bridged: 0, source: 'dxf', statedDiameter: 175, knownCavities: 1 };
+  assert.deepEqual(gradeConfidence({ ...base, scaleBasis: 'native-inch' }), { confidence: 'confirmed', notes: [] });
+  assert.deepEqual(gradeConfidence({ ...base, scaleBasis: 'native-feet' }), { confidence: 'confirmed', notes: [] });
+});
+
+test('normaliseFrame reports the offset it subtracted', () => {
+  const { offset } = normaliseFrame({ outer: loop(circle(1140.9, 8380.4, 87.5)), pockets: [] });
+  assert.ok(Math.abs(offset[0] - 1140.9) < 1e-6 && Math.abs(offset[1] - 8380.4) < 1e-6);
 });

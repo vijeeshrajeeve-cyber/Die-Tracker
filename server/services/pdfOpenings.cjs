@@ -7,7 +7,7 @@
 // then size-class hint), or from the inventory dimensions of the pocket. Nothing here is ever 'confirmed'.
 
 const {
-  chainLoops, circleFit, isCircleLike, bbox, centroid,
+  chainLoops, circleFit, isCircleLike, bbox, centroid, robustCircle,
 } = require('./openingGeometry.cjs');
 const { buildExtractionResult, hintDiameter } = require('./openingResult.cjs');
 const { sizeFromTexts, numbersFromTexts } = require('./dxfOpenings.cjs');
@@ -194,40 +194,11 @@ function noneResult(source, notes, extra = {}) {
   return {
     source, outer: null, outerSynthesised: false, pockets: [], pocketGapMm: null, cavities: null,
     sizeClass: null, sizeClassSource: null, sizeClassConfidence: null, scaleBasis: null,
-    confidence: 'none', numbersInDrawing: [], texts: [], notes, ...extra,
+    confidence: 'none', numbersInDrawing: [], texts: [], notes, meta: null, ...extra,
   };
 }
 
 const longSide = (points) => { const b = bbox(points); return Math.max(b.width, b.height); };
-
-// Circle fit that tolerates a key slot cut into the rim: refit on the points inside a tightening band until the
-// fit is within 1 % of the radius. Accepted only when most points are on the circle and they go nearly all the way
-// round, so a pocket outline never passes. Returns the fit or null.
-function robustCircle(points) {
-  if (points.length < 8) return null;
-  let pts = points;
-  // Start from the bounding box: a key slot cuts inwards, so the rim still defines it, whereas a least-squares
-  // fit over every point is dragged off-centre by the slot.
-  const bb = bbox(points);
-  let fit = { cx: bb.cx, cy: bb.cy, r: (bb.width + bb.height) / 4, maxDeviation: Infinity };
-  for (const band of [0.03, 0.015, 0.01]) {
-    for (let again = 0; again < 5; again++) {
-      if (!Number.isFinite(fit.r)) return null;
-      const tol = Math.max(1, band * fit.r);
-      const keep = pts.filter((q) => Math.abs(Math.hypot(q[0] - fit.cx, q[1] - fit.cy) - fit.r) <= tol);
-      if (keep.length < 8) return null;
-      const stable = keep.length === pts.length;
-      pts = keep;
-      fit = circleFit(pts);
-      if (stable) break;
-    }
-  }
-  if (pts.length < 0.6 * points.length || fit.maxDeviation > Math.max(1, 0.01 * fit.r)) return null;
-  const angles = pts.map((q) => Math.atan2(q[1] - fit.cy, q[0] - fit.cx)).sort((a, b) => a - b);
-  let widest = angles[0] + 2 * Math.PI - angles[angles.length - 1];
-  for (let i = 1; i < angles.length; i++) widest = Math.max(widest, angles[i] - angles[i - 1]);
-  return widest <= Math.PI / 3 ? fit : null;
-}
 
 function circlePolygon({ cx, cy, r }, n = 64) {
   return Array.from({ length: n }, (_, i) => [cx + r * Math.cos((2 * Math.PI * i) / n), cy + r * Math.sin((2 * Math.PI * i) / n)]);
@@ -309,6 +280,7 @@ async function extractFromVectorPdf(buffer, hints = {}) {
   }
   return buildExtractionResult({
     source, loops, bridged: second.bridged, scaleBasis, texts, numbers, hints: safeHints, stated, canConfirm: false, notes,
+    openChains: second.open, mmPerUnit,
   });
 }
 
@@ -369,6 +341,7 @@ async function extractFromScannedPdf(buffer, hints = {}) {
   const loops = asLoops(usable.map((l) => l.map(([x, y]) => [x * mmPerPx, y * mmPerPx])));
   return buildExtractionResult({
     source, loops, bridged: 0, scaleBasis, texts: [], numbers: [], hints: safeHints, stated: null, canConfirm: false, notes,
+    mmPerUnit: mmPerPx,
   });
 }
 

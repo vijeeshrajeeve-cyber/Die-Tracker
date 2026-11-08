@@ -251,8 +251,18 @@ test('inserts new toolings as retired without touching status on conflict', asyn
   const set = call.sql.split('DO UPDATE')[1];
   assert.doesNotMatch(set, /status\s*=/);
   assert.doesNotMatch(set, /(^|[\s,])(kind|plant|source|held_presses)\s*=/);
-  assert.ok(call.params.includes('retired'));
+  assert.match(call.sql, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, 'drawing-archive', 'retired', \$8\)/);
   assert.equal(r.toolingsInserted, 1);
+});
+
+test('the new-tooling insert never trusts the bundle for status or source', async () => {
+  const client = fakeClient();
+  const t = { number: 'BOL-1', kind: 'bolster', plant: 'GEX 1', size_class: null, size_class_source: null,
+    size_class_confidence: null, cavities: null, source: 'inventory', status: 'active', notes: 'n' };
+  await apply(client, bundleOf({ toolings: [t], drawings: [], openings: [] }), fakeApplyIo().io);
+  const call = client.calls.find((c) => /INSERT INTO toolings/.test(c.sql));
+  assert.ok(!call.params.includes('active') && !call.params.includes('inventory'));
+  assert.match(call.sql, /'drawing-archive', 'retired'/);
 });
 
 test('a known tooling with no size class receives the drawing-derived one via COALESCE', async () => {
@@ -384,4 +394,74 @@ test('readBundle returns the parts and tolerates a missing report', () => {
   assert.throws(() => readBundle('/b', fsWith({
     'manifest.json': '{"version":1}', 'toolings.json': '{}', 'drawings.json': '[]', 'openings.json': '[]',
   })), /toolings/);
+});
+
+// ---- final-review fix wave ----------------------------------------------------------------------------------------
+
+test('a new tooling takes cavities and the extracted size class only from a confirmed or likely opening', async () => {
+  for (const [confidence, expectSize, expectCavities] of [['confirmed', '225X90', 3], ['likely', '225X90', 3], ['uncertain', null, 1], ['none', null, 1]]) {
+    const extractors = { dxf: async () => result(), pdf: async () => pdfResult({ confidence }) };
+    const r = await buildBundle({ files: [ROOT_PDF], known: known(), io: fakeIo(), extractors });
+    const t = r.toolings[0];
+    // 25IC1-027847: the tooling number itself says one cavity, which does not depend on the geometry
+    assert.equal(t.size_class, expectSize, confidence); assert.equal(t.cavities, expectCavities, confidence);
+  }
+  const gex1 = mk('Toolings/Dieshop - Insert Drawings/PDF & Tiff/22223.pdf', 'GEX 1', 'insert');
+  const r = await buildBundle({ files: [gex1], known: known(), io: fakeIo(), extractors: { dxf: null, pdf: async () => pdfResult({ confidence: 'uncertain' }) } });
+  assert.equal(r.toolings[0].cavities, null); assert.equal(r.toolings[0].size_class, null);
+});
+
+test('the applier fills a known tooling only from a confirmed or likely opening', async () => {
+  for (const [confidence, updates] of [['confirmed', 1], ['likely', 1], ['uncertain', 0], ['none', 0]]) {
+    const client = fakeClient();
+    const r = await apply(client, bundleOf({ openings: [{ toolingNumber: 'I-21599', drawingSha256: SHA_A, extraction: extraction({ confidence }) }] }), fakeApplyIo().io);
+    assert.equal(client.calls.filter((c) => /UPDATE toolings/.test(c.sql)).length, updates, confidence);
+    assert.equal(r.toolingsUpdated, updates, confidence);
+  }
+});
+
+test('a genuine number mismatch is noted on the opening and caps it at uncertain', async () => {
+  const ex = { dxf: async () => result(), pdf: async () => pdfResult({ numbersInDrawing: ['I-99999'], notes: ['n1'] }) };
+  const r = await buildBundle({ files: [DIE_PDF], known: known(), io: fakeIo(), extractors: ex });
+  const x = r.openings[0].extraction;
+  assert.equal(x.confidence, 'uncertain');
+  assert.deepEqual(x.notes, ['n1', 'drawing names I-99999, not I-21599']);
+  assert.equal(r.report.byConfidence.uncertain, 1); assert.equal(r.report.byConfidence.likely, 0);
+  const none = await buildBundle({ files: [DIE_PDF], known: known(), io: fakeIo(),
+    extractors: { dxf: null, pdf: async () => pdfResult({ confidence: 'none', numbersInDrawing: ['I-99999'] }) } });
+  assert.equal(none.openings[0].extraction.confidence, 'none', 'none stays none');
+  const match = await buildBundle({ files: [DIE_PDF], known: known(), io: fakeIo(), extractors: { dxf: null, pdf: async () => pdfResult({ numbersInDrawing: ['I-21599'] }) } });
+  assert.equal(match.openings[0].extraction.confidence, 'likely');
+  const empty = await buildBundle({ files: [DIE_PDF], known: known(), io: fakeIo(), extractors: { dxf: null, pdf: async () => pdfResult({ numbersInDrawing: [] }) } });
+  assert.equal(empty.openings[0].extraction.confidence, 'likely', 'no numbers in the drawing is not a mismatch');
+});
+
+test('a missing outer is SQL NULL, not JSON null; extraction_meta is written as JSON', async () => {
+  const client = fakeClient();
+  const meta = { scaleBasis: 'native-mm', outerSynthesised: false, offset: [1.5, -2], mmPerUnit: 1 };
+  await apply(client, bundleOf({ openings: [{ toolingNumber: 'I-21599', drawingSha256: SHA_A, extraction: extraction({ outer: null, meta }) }] }), fakeApplyIo().io);
+  const op = client.calls.find((c) => /INSERT INTO tooling_openings/.test(c.sql));
+  assert.equal(op.params[1], null);
+  assert.equal(op.params[9], JSON.stringify(meta));
+  assert.match(op.sql, /extraction_meta = EXCLUDED\.extraction_meta/);
+  const noMeta = fakeClient();
+  await apply(noMeta, bundleOf(), fakeApplyIo().io);
+  assert.equal(noMeta.calls.find((c) => /INSERT INTO tooling_openings/.test(c.sql)).params[9], null);
+});
+
+test('a drawing whose tooling is unknown is counted', async () => {
+  const r = await apply(fakeClient({ ids: {} }), bundleOf(), fakeApplyIo().io);
+  assert.equal(r.drawingsSkippedUnknownTooling, 1);
+});
+
+test('a failing ROLLBACK does not mask the original error', async () => {
+  const bad = fakeClient();
+  bad.query = ((orig) => async (sql, p) => {
+    if (/INSERT INTO tooling_openings/.test(sql)) throw new Error('boom');
+    if (sql === 'ROLLBACK') throw new Error('connection lost');
+    return orig(sql, p);
+  })(bad.query);
+  const logged = [];
+  await assert.rejects(apply(bad, bundleOf(), fakeApplyIo().io, { log: (m) => logged.push(m) }), /boom/);
+  assert.ok(logged.some((m) => /rollback failed: connection lost/.test(m)));
 });
