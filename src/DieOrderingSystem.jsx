@@ -34,6 +34,7 @@ import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
 import ProfileThumb from './components/orders/ProfileThumb';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
+import { stopReason, remarkFallback } from './utils/stopReason';
 import { designToEmsSince } from './utils/oracleEntry';
 import { determineStatus, hasDieReceivedDate } from './utils/determineStatus';
 import { typeLabel, dieTypeLabel, erpDieTypeCode } from './utils/dieType';
@@ -962,6 +963,20 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     setStaged({});
   }, [order.id]);
 
+  // A Cancelled or On Hold order shows why, from the STATUS change-log entry
+  // that stopped it. undefined while loading, null when none is recorded.
+  const [stopInfo, setStopInfo] = useState(undefined);
+  const savedStopped = order.STATUS === 'CANCELLED' || order.STATUS === 'HOLD';
+  useEffect(() => {
+    if (!savedStopped) { setStopInfo(null); return undefined; }
+    let cancelled = false;
+    setStopInfo(undefined);
+    ordersAPI.getChangeLog(order.id)
+      .then((res) => { if (!cancelled) setStopInfo(stopReason(order.STATUS, res?.changes)); })
+      .catch((err) => { console.error('Failed to load change log:', err); if (!cancelled) setStopInfo(null); });
+    return () => { cancelled = true; };
+  }, [order.id, order.STATUS, savedStopped]);
+
   useEffect(() => {
     let cancelled = false;
     setFiles({});
@@ -1402,6 +1417,13 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                 {overallDelay > 0 || designDelay > 0
                   ? fact('Delay', `${overallDelay}d overall${designDelay > 0 ? ` · ${designDelay}d design` : ''}`, { bg: c.dangerBg, fg: c.danger })
                   : fact('Delay', 'None')}
+                {revisions > 0 ? (
+                  <button type="button" onClick={() => onViewRevisions && onViewRevisions(currentOrder)} title="View revision history"
+                    style={{ background: c.inset, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, border: 'none', textAlign: 'left', font: 'inherit', cursor: 'pointer' }}>
+                    <span style={{ fontSize: '0.68rem', color: c.dim, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Design revisions</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: c.primary, textDecoration: 'underline', textUnderlineOffset: '3px', ...ellipsis }}>{revisions} · view history</span>
+                  </button>
+                ) : fact('Design revisions', 'None')}
               </div>
               <nav aria-label="Order sections" style={{ display: 'flex', gap: '4px', marginBottom: '-1px' }}>
                 {[['timeline', 'Timeline'], ['details', 'Details'], ['files', 'Files']].map(([key, label]) => (
@@ -1418,6 +1440,27 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
         <div ref={bodyRef} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {!isEditing ? (
             <>
+              {savedStopped && (
+                <div role="note" style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: order.STATUS === 'CANCELLED' ? c.dangerBg : c.warnBg, border: `1px solid ${order.STATUS === 'CANCELLED' ? c.danger : c.warnBorder}`, borderRadius: '12px', padding: '14px 16px' }}>
+                  <AlertTriangle size={18} color={order.STATUS === 'CANCELLED' ? c.danger : c.warn} style={{ flexShrink: 0, marginTop: '1px' }} aria-hidden="true" />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: order.STATUS === 'CANCELLED' ? c.danger : c.warn }}>
+                      {order.STATUS === 'CANCELLED' ? 'Order cancelled' : 'Order on hold'}
+                      {stopInfo?.changedAt && ` · ${new Date(stopInfo.changedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                      {stopInfo?.changedBy && ` by ${stopInfo.changedBy}`}
+                    </span>
+                    {(() => {
+                      const remark = stopInfo === undefined ? null : remarkFallback(stopInfo, order.Remark);
+                      const shown = stopInfo?.reason ? `Reason: ${stopInfo.reason}` : remark ? `Remark: ${remark}` : null;
+                      return (
+                        <span style={{ fontSize: '0.875rem', color: shown ? c.text : c.muted, fontStyle: shown ? 'normal' : 'italic', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                          {stopInfo === undefined ? 'Loading reason…' : shown || 'No reason recorded.'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
               {currentIdx > 0 && waitingDays !== null && (
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: c.warnBg, border: `1px solid ${c.warnBorder}`, borderRadius: '12px', padding: '14px 16px' }}>
                   <Clock size={18} color={c.warn} style={{ flexShrink: 0, marginTop: '1px' }} aria-hidden="true" />
@@ -1492,17 +1535,6 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <dt style={{ color: c.dim, fontSize: '0.75rem' }}>Shipment</dt>
                       <dd style={{ margin: 0, fontWeight: 500 }}>{currentOrder['Type of shipment'] || '—'}</dd>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <dt style={{ color: c.dim, fontSize: '0.75rem' }}>Design revisions</dt>
-                      <dd style={{ margin: 0 }}>
-                        {revisions > 0 ? (
-                          <button type="button" onClick={() => onViewRevisions && onViewRevisions(currentOrder)} title="View revision history"
-                            style={{ padding: 0, background: 'transparent', border: 'none', color: c.primary, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
-                            {revisions} · view history
-                          </button>
-                        ) : <span style={{ fontWeight: 500 }}>None</span>}
-                      </dd>
                     </div>
                   </dl>
                 </div>
