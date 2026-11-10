@@ -5,7 +5,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { newDieOrderFormsAPI, profileShapesAPI, toolingsAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
 import useDialog from '../../hooks/useDialog';
-import FindToolingPanel from './FindToolingPanel';
+import FindToolingWindow from './FindToolingWindow';
 import { applyChoice, finderReadiness, finderChecklist, matchDieSize } from '../../utils/toolingFinderView';
 import {
   fieldsFromDrawing, valuesFromFields, pressOptionName, editToolingField, finderPayload, linesFromTextItems,
@@ -53,6 +53,9 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
   const [profileBlob, setProfileBlob] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileNote, setProfileNote] = useState('');
+  // The CCD the drawing states (title block), editable; the trace sizes the profile with it.
+  const [ccdText, setCcdText] = useState('');
+  const [ccdForTrace, setCcdForTrace] = useState('');
   const [chosen, setChosen] = useState(null);
   const [showFinder, setShowFinder] = useState(false);
   const [minClearance, setMinClearance] = useState(5);
@@ -80,14 +83,22 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     const { meta } = profileBlob;
     setProfile(null);
     setProfileNote(TRACE_READING);
+    const ccdStated = Number(ccdForTrace);
     profileShapesAPI.trace(profileBlob.blob, {
-      ...meta, cavities: v.NO_OF_CAV, dieSize: v.DIE_SIZE, plant, dieNo: v.DIE_NO,
+      ...meta, ccdStated: Number.isFinite(ccdStated) && ccdStated > 0 ? ccdStated : null,
+      cavities: v.NO_OF_CAV, dieSize: v.DIE_SIZE, plant, dieNo: v.DIE_NO,
       dieType: v.SOLID ? 'SOLID' : v.HOLLOW ? 'HOLLOW' : '',
     })
       .then((shape) => { if (active) { setProfile(shape); setProfileNote(''); } })
       .catch(() => { if (active) setProfileNote(TRACE_FAILED); });
     return () => { active = false; };
-  }, [profileBlob, plant]);
+  }, [profileBlob, plant, ccdForTrace]);
+
+  // A typed CCD re-reads the profile once the typing pauses.
+  useEffect(() => {
+    const t = setTimeout(() => setCcdForTrace(ccdText.trim()), 700);
+    return () => clearTimeout(t);
+  }, [ccdText]);
 
   const readDrawing = async (file) => {
     const token = ++readToken.current;
@@ -96,6 +107,8 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     setProfile(null);
     setProfileBlob(null);
     setProfileNote('');
+    setCcdText('');
+    setCcdForTrace('');
     setChosen(null);
     setShowFinder(false);
     setLastResult(null);
@@ -108,13 +121,16 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
       const prefill = valuesFromFields(fields, { today: todayLocal() });
       prefill.values.PRESS = pressOptionName(prefill.values.PRESS, presses);
       if (token !== readToken.current) return;
+      const titleBlock = readTitleBlockNumbers(lines);
+      const ccd = titleBlock.ccd != null && titleBlock.ccd > 0 ? String(titleBlock.ccd) : '';
       setValues(prefill.values);
-      setSources(prefill.sources);
+      setSources(ccd ? { ...prefill.sources, CCD: 'drawing' } : prefill.sources);
+      setCcdText(ccd);
+      setCcdForTrace(ccd);
 
       const blob = await captureProfileImage(page1);
       if (token !== readToken.current) return;
       if (!blob) { setProfileNote(TRACE_FAILED); return; }
-      const titleBlock = readTitleBlockNumbers(lines);
       setProfileBlob({
         blob,
         meta: {
@@ -519,7 +535,11 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
   ));
 
   const finderButtonLabel = finderMode === 'similarity' ? 'Find similar (fit not run)'
-    : showFinder ? 'Hide results' : finderStale ? 'Run Find tooling again' : 'Find tooling';
+    : finderStale ? 'Run Find tooling again' : lastResult ? 'Open the results again' : 'Find tooling';
+  const tracedCcd = profile && profile.true_size !== false && typeof profile.ccd_mm === 'number' ? profile.ccd_mm : null;
+  const ccdNote = !ccdText.trim() ? 'Not found on the drawing — type it to size the profile'
+    : tracedCcd != null ? `Profile sized to CCD ${Math.round(tracedCcd * 10) / 10} mm`
+      : profile ? 'The profile could not be sized with this CCD' : '';
   const toolingPane = values && (
     <>
       {section('Profile', (
@@ -529,6 +549,13 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
             : <span style={{ fontSize: '0.8rem', color: c.muted, padding: 12, textAlign: 'center' }}>{reading ? 'Reading the drawing…' : 'No profile picture from this drawing'}</span>}
         </div>
       ))}
+      <div style={{ marginTop: -10 }}>
+        {label('CCD (mm)', 'new-die-order-ccd', { hintKey: 'CCD' })}
+        <input id="new-die-order-ccd" type="text" inputMode="decimal" value={ccdText} placeholder="e.g. 181.6"
+          onChange={(e) => { setCcdText(e.target.value); setSources((prev) => { const { CCD: _drop, ...rest } = prev; return rest; }); }}
+          style={inputStyle} />
+        <div style={{ marginTop: 5, fontSize: '0.72rem', color: ccdText.trim() && tracedCcd == null && profile ? c.warn : c.dim, minHeight: '1.1em' }}>{ccdNote}</div>
+      </div>
 
       {section('Tooling', (
         <>
@@ -565,15 +592,15 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
               Press, die size, cavities, plant or the profile changed since the finder ran.
             </div>
           )}
-          <button type="button" onClick={() => { setShowFinder((v) => !v); setFinderStale(false); }} disabled={!finderEnabled}
+          <button type="button" onClick={() => { setShowFinder(true); setFinderStale(false); }} disabled={!finderEnabled}
             title={gate.ready ? 'Find a tooling that fits this profile'
               : gate.similarityOnly ? `${gate.reason} — finds similar dies by shape only` : gate.reason}
-            aria-expanded={showFinder}
+            aria-haspopup="dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '10px 14px', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem',
               cursor: finderEnabled ? 'pointer' : 'not-allowed',
-              background: !finderEnabled ? c.inset : showFinder ? 'transparent' : c.primary,
-              color: !finderEnabled ? c.dim : showFinder ? c.primary : c.primaryText,
+              background: !finderEnabled ? c.inset : c.primary,
+              color: !finderEnabled ? c.dim : c.primaryText,
               border: `1px solid ${finderEnabled ? c.primary : c.border}`,
             }}>
             <Search size={15} aria-hidden="true" /> {finderButtonLabel}
@@ -584,9 +611,13 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
             </div>
           )}
           {showFinder && finderQuery && (
-            <FindToolingPanel query={finderQuery} mode={finderMode} onUse={handleUse} onClose={() => setShowFinder(false)} c={c}
+            <FindToolingWindow query={finderQuery} mode={finderMode} onUse={handleUse} onClose={() => setShowFinder(false)} c={c}
               minClearance={minClearance} onMinClearanceChange={finderMode === 'fit' ? setMinClearance : undefined}
-              onResult={setLastResult} chosenNumber={chosen?.fromFinder ? chosen.tooling : null} />
+              onResult={setLastResult} chosenNumber={chosen?.fromFinder ? chosen.tooling : null}
+              footer={[
+                values.INSERT_NO ? `Insert ${values.INSERT_NO}${values.INSERT_SIZE ? ` (${values.INSERT_SIZE})` : ''}` : 'No insert chosen',
+                values.BOLSTER_NO ? `Bolster ${values.BOLSTER_NO}${values.BOLSTER_SIZE ? ` (${values.BOLSTER_SIZE})` : ''}` : 'no bolster chosen',
+              ].join(' · ')} />
           )}
         </>
       ))}

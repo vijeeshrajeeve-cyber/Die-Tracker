@@ -215,6 +215,7 @@ export function finderPayload({ chosen = null, result = null, profile = null } =
       const card = { ...candidate };
       delete card.pockets;
       delete card.placements;
+      delete card.outer;
       return card;
     })
     : null;

@@ -54,6 +54,21 @@ function Note({ tone = 'warn', icon = true, children, c }) {
   );
 }
 
+// Room for two columns side by side (the wide window); below it they stack.
+const TWO_COLUMN_QUERY = '(min-width: 1000px)';
+function useTwoColumns() {
+  const [on, setOn] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(TWO_COLUMN_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(TWO_COLUMN_QUERY);
+    if (!mq) return undefined;
+    const update = () => setOn(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return on;
+}
+
 const linkButton = (c) => ({
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 2px', background: 'transparent', border: 'none',
   color: c.link || c.primary, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -188,8 +203,8 @@ function SimilarOnlyCard({ item, c }) {
   );
 }
 
-function SimilarStrip({ similar, dieMeta, c, infoOnly = false }) {
-  const cards = similarCards(similar, 8, dieMeta);
+function SimilarStrip({ similar, dieMeta, c, infoOnly = false, bare = false, limit = 8 }) {
+  const cards = similarCards(similar, limit, dieMeta);
   if (cards.length === 0) return null;
   const fact = (label, value, missing) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 }}>
@@ -198,8 +213,8 @@ function SimilarStrip({ similar, dieMeta, c, infoOnly = false }) {
     </div>
   );
   return (
-    <div style={{ paddingTop: 10, borderTop: `1px solid ${c.border}` }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: c.text }}>Similar existing profiles</div>
+    <div style={bare ? undefined : { paddingTop: 10, borderTop: `1px solid ${c.border}` }}>
+      <div style={{ fontSize: bare ? 13 : 12, fontWeight: 700, color: c.text }}>Similar existing profiles</div>
       <div style={{ fontSize: 11, color: c.muted, margin: '2px 0 8px' }}>
         {infoOnly ? 'Toolings for information only — no fit was checked.' : 'Nearest dies by shape, with the tooling each one runs in.'}
       </div>
@@ -270,9 +285,10 @@ function Skeleton({ c }) {
 
 export default function FindToolingPanel({
   query, onUse, onClose, c, minClearance = 5, onMinClearanceChange, dieMeta = null, onResult = null, mode = 'fit',
-  chosenNumber = null,
+  chosenNumber = null, wide = false, note = null,
 }) {
   const similarityOnly = mode === 'similarity';
+  const twoColumns = useTwoColumns();
   const [state, setState] = useState({ status: 'loading', data: null, error: '' });
   // Read through a ref so an inline callback does not refetch on every parent render.
   const onResultRef = useRef(onResult);
@@ -311,11 +327,16 @@ export default function FindToolingPanel({
   const subtitle = similarityOnly ? '' : queryLine((status === 'done' && data.query) || query || {});
 
   return (
-    <section aria-label="Find tooling" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 12, border: `1px solid ${c.border}`, background: c.inset, color: c.text }}>
+    <section
+      aria-label="Find tooling"
+      style={wide
+        ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: 16, background: c.inset, color: c.text }
+        : { display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 12, border: `1px solid ${c.border}`, background: c.inset, color: c.text }}
+    >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <Search size={15} aria-hidden="true" style={{ color: c.muted, marginTop: 2, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
+          <div style={{ fontSize: wide ? 16 : 14, fontWeight: 700 }}>{title}</div>
           {subtitle && <div style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{subtitle}</div>}
         </div>
         {onClose && (
@@ -348,6 +369,8 @@ export default function FindToolingPanel({
         </div>
       )}
 
+      {note && <div style={{ fontSize: 12, color: c.muted }}>{note}</div>}
+
       {similarityOnly && <Note c={c}>{SIMILARITY_BANNER}</Note>}
 
       {status === 'loading' && (
@@ -360,19 +383,22 @@ export default function FindToolingPanel({
       {status === 'error' && <Note tone="no" c={c}>{error}</Note>}
 
       {status === 'done' && similarityOnly && (
-        (data.similar || []).length
-          ? <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} infoOnly />
-          : <div style={{ fontSize: 12, color: c.muted }}>No similar dies found.</div>
+        <div style={wide ? { flex: 1, minHeight: 0, overflowY: 'auto' } : undefined}>
+          {(data.similar || []).length
+            ? <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} infoOnly bare={wide} limit={wide ? 20 : 8} />
+            : <div style={{ fontSize: 12, color: c.muted }}>No similar dies found.</div>}
+        </div>
       )}
 
       {status === 'done' && !similarityOnly && (
-        <FinderResult data={data} onUse={onUse} c={c} tight={tight} onMinClearanceChange={onMinClearanceChange} dieMeta={dieMeta} chosenNumber={chosenNumber} />
+        <FinderResult data={data} onUse={onUse} c={c} tight={tight} onMinClearanceChange={onMinClearanceChange} dieMeta={dieMeta} chosenNumber={chosenNumber}
+          wide={wide} twoColumns={twoColumns} />
       )}
     </section>
   );
 }
 
-function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, chosenNumber }) {
+function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, chosenNumber, wide = false, twoColumns = false }) {
   const [showAll, setShowAll] = useState(false);
   const [showGreyed, setShowGreyed] = useState(false);
   const q = data.query || {};
@@ -385,11 +411,12 @@ function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, ch
   const profilePoints = q.profile?.points || null;
   // The one in use is never hidden behind "Show all".
   const chosenIndex = candidates.findIndex((cand) => cand.number === chosenNumber);
-  const expanded = showAll || chosenIndex >= FIRST_SHOWN;
+  // The wide window has a column of its own for the fits, so it lists them all.
+  const expanded = wide || showAll || chosenIndex >= FIRST_SHOWN;
   const shown = expanded ? candidates : candidates.slice(0, FIRST_SHOWN);
-  const canToggle = candidates.length > FIRST_SHOWN && chosenIndex < FIRST_SHOWN;
+  const canToggle = !wide && candidates.length > FIRST_SHOWN && chosenIndex < FIRST_SHOWN;
 
-  return (
+  const fits = (
     <>
       {chart && (
         <Note tone={chart.tone === 'ok' ? 'muted' : chart.tone} icon={chart.tone !== 'ok'} c={c}>{chart.text}</Note>
@@ -412,7 +439,9 @@ function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, ch
       )}
 
       {candidates.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={wide
+          ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 10, alignItems: 'start' }
+          : { display: 'flex', flexDirection: 'column', gap: 8 }}>
           {shown.map((cand, i) => (
             <CandidateCard
               key={cand.number}
@@ -446,12 +475,41 @@ function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, ch
           {showGreyed && greyed.map((item) => <SimilarOnlyCard key={item.number} item={item} c={c} />)}
         </div>
       )}
-
-      <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} />
-
-      {data.timings && typeof data.timings.totalMs === 'number' && (
-        <div style={{ fontSize: 10, color: c.dim, textAlign: 'right' }}>{data.timings.totalMs} ms</div>
-      )}
     </>
+  );
+  const timings = data.timings && typeof data.timings.totalMs === 'number'
+    ? <div style={{ fontSize: 10, color: c.dim, textAlign: 'right' }}>{data.timings.totalMs} ms</div>
+    : null;
+
+  if (!wide) {
+    return (
+      <>
+        {fits}
+        <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} />
+        {timings}
+      </>
+    );
+  }
+
+  // The window: fits on the left, similar profiles on the right, each scrolling on its own.
+  // Too narrow for two columns, they stack and scroll as one.
+  const hasSimilar = (data.similar || []).length > 0;
+  const columnStyle = { display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, minHeight: 0, overflowY: twoColumns ? 'auto' : 'visible', paddingRight: twoColumns ? 6 : 0 };
+  return (
+    <div style={twoColumns
+      ? { flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: hasSimilar ? 'minmax(0, 1.25fr) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: 16 }
+      : { flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div aria-label="Matching toolings" role="region" tabIndex={twoColumns ? 0 : undefined} style={columnStyle}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>Matching toolings</div>
+        {fits}
+        {timings}
+      </div>
+      {hasSimilar && (
+        <div aria-label="Similar existing profiles" role="region" tabIndex={twoColumns ? 0 : undefined}
+          style={{ ...columnStyle, paddingLeft: twoColumns ? 16 : 0, borderLeft: twoColumns ? `1px solid ${c.border}` : 'none' }}>
+          <SimilarStrip similar={data.similar} dieMeta={dieMeta} c={c} bare limit={20} />
+        </div>
+      )}
+    </div>
   );
 }
