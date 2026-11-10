@@ -43,6 +43,7 @@ const normalizePlantName = (plant) => (plant || '').toString().trim().toUpperCas
 export default function NewDieOrderModal({ user, theme, presses = [], suppliers = [], onClose }) {
   const c = usePalette(theme);
   const [fileHandle, setFileHandle] = useState(null);
+  const noDirectAccess = useRef(false); // the browser refused direct file access once
   const [pickedFile, setPickedFile] = useState(null); // the fallback input's File (no write-back)
   const [fileName, setFileName] = useState('');
   const [reading, setReading] = useState(false);
@@ -133,20 +134,29 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
 
   const handlePick = async () => {
     // File System Access API (Chromium): the stamped PDF overwrites the picked file in place.
-    if (typeof window.showOpenFilePicker === 'function') {
+    if (typeof window.showOpenFilePicker === 'function' && !noDirectAccess.current) {
+      let handle = null;
+      let file = null;
       try {
-        const [handle] = await window.showOpenFilePicker({
+        [handle] = await window.showOpenFilePicker({
           mode: 'readwrite',
           multiple: false,
           types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
         });
-        setFileHandle(handle);
-        setPickedFile(null);
-        setFileName(handle.name);
-        await readDrawing(await handle.getFile());
+        file = await handle.getFile();
       } catch (err) {
-        if (err.name !== 'AbortError') setError(err.message || String(err));
+        if (err.name === 'AbortError') return;
+        // Some browsers (embedded ones, or after "don't allow") hand out a picker but refuse
+        // the file itself. Use the plain input from here on; the stamped PDF is downloaded.
+        noDirectAccess.current = true;
+        setError('This browser would not open the file for saving in place. Choose the PDF again — the stamped copy will be downloaded instead.');
+        fileInputRef.current?.click();
+        return;
       }
+      setFileHandle(handle);
+      setPickedFile(null);
+      setFileName(handle.name);
+      await readDrawing(file);
       return;
     }
     // Fallback: a plain input; the stamped PDF is downloaded instead.
@@ -177,7 +187,9 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { setError('Drop a PDF drawing.'); return; }
     let handle = null;
     try { handle = handlePromise ? await handlePromise : null; } catch { handle = null; }
-    if (handle?.kind === 'file') { setFileHandle(handle); setPickedFile(null); } else { setPickedFile(file); setFileHandle(null); }
+    // The dropped File is kept either way: if saving over the file is refused, it is downloaded.
+    setPickedFile(file);
+    setFileHandle(handle?.kind === 'file' ? handle : null);
     setFileName(file.name);
     readDrawing(file);
   };
@@ -257,25 +269,38 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     setError('');
     try {
       let file = pickedFile;
+      let saveHandle = fileHandle;
       if (fileHandle) {
-        const permOpts = { mode: 'readwrite' };
-        if (fileHandle.queryPermission) {
-          let permission = await fileHandle.queryPermission(permOpts);
-          if (permission !== 'granted' && fileHandle.requestPermission) permission = await fileHandle.requestPermission(permOpts);
-          if (permission !== 'granted') throw new Error('Permission to overwrite the file was denied.');
+        try {
+          const permOpts = { mode: 'readwrite' };
+          if (fileHandle.queryPermission) {
+            let permission = await fileHandle.queryPermission(permOpts);
+            if (permission !== 'granted' && fileHandle.requestPermission) permission = await fileHandle.requestPermission(permOpts);
+            if (permission !== 'granted') throw new Error('Permission to overwrite the file was denied.');
+          }
+          file = await fileHandle.getFile();
+        } catch (err) {
+          // A dropped file is still in hand: stamp that and download the result.
+          if (!pickedFile) throw err;
+          file = pickedFile;
+          saveHandle = null;
         }
-        file = await fileHandle.getFile();
       }
       const { blob, formId } = await newDieOrderFormsAPI.generate(
         file, values, finderPayload({ chosen, result: lastResult, profile }),
       );
-      let savedNote;
-      if (fileHandle) {
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        savedNote = `saved to "${fileHandle.name}"`;
-      } else {
+      let savedNote = '';
+      if (saveHandle) {
+        try {
+          const writable = await saveHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          savedNote = `saved to "${saveHandle.name}"`;
+        } catch {
+          savedNote = ''; // the form is already recorded; do not lose the PDF
+        }
+      }
+      if (!savedNote) {
         const name = `${fileName.replace(/\.pdf$/i, '')}-die-order.pdf`;
         downloadBlob(blob, name);
         savedNote = `downloaded as "${name}"`;
