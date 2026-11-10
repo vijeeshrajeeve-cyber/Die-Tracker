@@ -12,7 +12,7 @@ import { dialogs } from '../ui/DialogProvider';
 import { BackupStatusPill } from '../ui/StatusPill';
 import { todayLocal } from '../../utils/today.js';
 import useDialog from '../../hooks/useDialog';
-import FindToolingPanel from '../tooling/FindToolingPanel';
+import FindToolingWindow from '../tooling/FindToolingWindow';
 import { downloadBlob } from '../../utils/downloadBlob';
 import useDieTooling from '../tooling/useDieTooling';
 import { applyChoice, finderReadiness } from '../../utils/toolingFinderView';
@@ -1515,10 +1515,10 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
                       <input id="backupdierequests-insert-no" type="text" value={orderValues.INSERT_NO} onChange={(e) => setOrderValues({ ...orderValues, INSERT_NO: e.target.value })} style={inputStyle} />
                       <button
                         type="button"
-                        onClick={() => setShowOrderFinder((v) => !v)}
+                        onClick={() => setShowOrderFinder(true)}
                         disabled={!gate.ready}
                         title={gate.ready ? 'Find a tooling that fits this die' : gate.reason}
-                        aria-expanded={showOrderFinder}
+                        aria-haspopup="dialog"
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, padding: '0 12px', borderRadius: '10px', background: 'transparent', border: `1px solid ${gate.ready ? theme.primary : theme.cardBorder}`, color: gate.ready ? theme.primary : theme.textMuted, cursor: gate.ready ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap' }}
                       >
                         <Search size={14} /> Find tooling
@@ -1538,17 +1538,19 @@ const BackupDieRequests = ({ theme, searchTerm = '', setSearchTerm, backupReques
               </div>
 
               {showOrderFinder && (
-                <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ fontSize: '0.8rem', color: theme.textMuted }}>{orderCurrentTooling || 'Current tooling: loading…'}</div>
-                  <FindToolingPanel
-                    query={{ plant: orderRow?.['Plant'], press: orderValues.PRESS, dieSize: orderValues.DIE_SIZE, cavities: orderValues.NO_OF_CAV, dieNo: orderRow?.['DIE NO'] }}
-                    onUse={(candidate) => setOrderValues((prev) => applyChoice(prev, candidate).values)}
-                    onClose={() => setShowOrderFinder(false)}
-                    c={finderPalette}
-                    minClearance={orderMinClearance}
-                    onMinClearanceChange={setOrderMinClearance}
-                  />
-                </div>
+                <FindToolingWindow
+                  query={{ plant: orderRow?.['Plant'], press: orderValues.PRESS, dieSize: orderValues.DIE_SIZE, cavities: orderValues.NO_OF_CAV, dieNo: orderRow?.['DIE NO'] }}
+                  onUse={(candidate) => setOrderValues((prev) => applyChoice(prev, candidate).values)}
+                  onClose={() => setShowOrderFinder(false)}
+                  c={finderPalette}
+                  minClearance={orderMinClearance}
+                  onMinClearanceChange={setOrderMinClearance}
+                  note={orderCurrentTooling || 'Current tooling: loading…'}
+                  footer={[
+                    orderValues.INSERT_NO ? `Insert ${orderValues.INSERT_NO}${orderValues.INSERT_SIZE ? ` (${orderValues.INSERT_SIZE})` : ''}` : 'No insert chosen',
+                    orderValues.BOLSTER_NO ? `Bolster ${orderValues.BOLSTER_NO}${orderValues.BOLSTER_SIZE ? ` (${orderValues.BOLSTER_SIZE})` : ''}` : 'no bolster chosen',
+                  ].join(' · ')}
+                />
               )}
 
               <div>
