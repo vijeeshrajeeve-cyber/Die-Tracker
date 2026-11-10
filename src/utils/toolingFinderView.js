@@ -77,9 +77,10 @@ function confidenceTag(candidate) {
 }
 
 // Ordered tags for one candidate card: clearance, chart, location, transfer, confidence.
-export function candidateTags(candidate, { press, dieSize, chartBasis } = {}) {
+// `skipChart` leaves the chart tag out for a card that states the chart check on its own line.
+export function candidateTags(candidate, { press, dieSize, chartBasis, skipChart = false } = {}) {
   const tags = [clearanceTag(candidate)];
-  const chart = chartTag(candidate, { press, dieSize, chartBasis });
+  const chart = skipChart ? null : chartTag(candidate, { press, dieSize, chartBasis });
   if (chart) tags.push(chart);
   tags.push(candidate.location ? { text: String(candidate.location), tone: 'muted' } : { text: 'location unknown', tone: 'muted' });
   if (candidate.needsTransfer === true) {
@@ -133,13 +134,45 @@ export function similarMeta(item) {
 
 // The nearest dies for the strip. `meta` comes from the item's die-list facts; a
 // caller's dieMeta(dieNo), when given and it answers, overrides them.
+//
+// One profile is listed once per press, die size, cavity count and set of toolings: dies of
+// the same profile that agree on all four are one card (the nearest die leads, the rest are
+// its `otherDies`). A die that differs in any of them keeps its own card.
+function sameProfileKey(s) {
+  const profile = String(s.profileNumber ?? '').trim().toUpperCase() || `die:${s.dieNo}`;
+  const toolings = (s.toolings || []).map((t) => String(t.number)).sort().join(',');
+  return JSON.stringify([profile, String(s.press ?? '').trim().toUpperCase(), sizeKey(s.dieSize), s.cavity ?? null, toolings]);
+}
+
+function mergeSameProfiles(similar) {
+  const byKey = new Map();
+  const out = [];
+  for (const s of similar || []) {
+    const key = sameProfileKey(s);
+    const lead = byKey.get(key);
+    if (lead) { lead.otherDies.push(s.dieNo); continue; }
+    const first = { ...s, otherDies: [] };
+    byKey.set(key, first);
+    out.push(first);
+  }
+  return out;
+}
+
 export function similarCards(similar, limit = 8, dieMeta = null) {
-  return (similar || []).slice(0, limit).map((s) => ({
+  return mergeSameProfiles(similar).slice(0, limit).map((s) => ({
     dieNo: s.dieNo,
+    otherDies: s.otherDies,
     distance: s.distance,
     cavityMatch: s.cavityMatch ?? null,
-    toolings: (s.toolings || []).map((t) => ({ number: t.number, kind: t.kind, ...similarToolingTag(t) })),
+    toolings: (s.toolings || []).map((t) => ({
+      number: t.number, kind: t.kind, sizeClass: t.sizeClass ?? null, ...similarToolingTag(t),
+    })),
     meta: (dieMeta && dieMeta(s.dieNo)) || similarMeta(s),
+    ccd: typeof s.ccd === 'number' ? s.ccd : null,
+    dieSize: s.dieSize ?? null,
+    press: s.press ?? null,
+    cavity: s.cavity ?? null,
+    outline: s.outline ?? null,
   }));
 }
 
@@ -157,6 +190,8 @@ export function similarFromItems(items) {
     dieSize: i.dieSize ?? null,
     press: i.press ?? null,
     cavity: i.cavity ?? null,
+    ccd: i.ccd ?? null,
+    outline: i.outline ?? null,
   }));
 }
 
@@ -271,6 +306,7 @@ export function finderChecklist({ profile, profileNote = '', profileBusy = false
 // A die size as the tooling chart writes it: "Ø302.5 x 160" and "302.5×160" → "302.5X160".
 // Anything that is not diameter × thickness is only trimmed and upper-cased.
 const DIE_SIZE_TOKEN = /^(?:∅|Ø|DIA)?\s*(\d+(?:\.\d+)?)\s*[X×]\s*(\d+(?:\.\d+)?)$/;
+function sizeKey(raw) { return dieSizeKey(raw); }
 export function dieSizeKey(raw) {
   const t = String(raw ?? '').trim().toUpperCase();
   const m = DIE_SIZE_TOKEN.exec(t);
@@ -283,4 +319,97 @@ export function matchDieSize(value, options = []) {
   const key = dieSizeKey(value);
   if (!key) return null;
   return options.find((o) => dieSizeKey(o) === key) ?? null;
+}
+
+// ---- what a suggested tooling is: its size, its opening, the chart's word on it ----
+
+// "Ø460 × 150 mm" from the size class "460X150" (diameter × thickness); other text as it is.
+export function sizeClassText(sizeClass) {
+  const t = String(sizeClass ?? '').trim();
+  if (!t) return null;
+  const m = DIE_SIZE_TOKEN.exec(t.toUpperCase());
+  return m ? `Ø${Number(m[1])} × ${Number(m[2])} mm` : t;
+}
+
+// Width × height (mm, whole numbers) of each pocket's bounding box, in the tooling frame.
+export function openingSizes(pockets) {
+  const out = [];
+  for (const poly of pockets || []) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    for (const [x, y] of poly) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    out.push({ w: Math.round(maxX - minX), h: Math.round(maxY - minY) });
+  }
+  return out;
+}
+
+// "182 × 64 mm", "2 openings, 182 × 64 mm each", or each one listed when they differ.
+export function openingText(pockets) {
+  const sizes = openingSizes(pockets);
+  if (sizes.length === 0) return null;
+  const one = (s) => `${s.w} × ${s.h}`;
+  if (sizes.length === 1) return `${one(sizes[0])} mm`;
+  const same = sizes.every((s) => s.w === sizes[0].w && s.h === sizes[0].h);
+  return same ? `${sizes.length} openings, ${one(sizes[0])} mm each` : `${sizes.length} openings: ${sizes.map(one).join(', ')} mm`;
+}
+
+// Largest width × height of the profile as it lies (mm): what has to go through the opening.
+export function profileSizeText(points) {
+  const [s] = openingSizes([points]);
+  return s ? `${s.w} × ${s.h} mm` : null;
+}
+
+const isHold = (row) => /^hold$/i.test(String(row?.remark || '').trim());
+const distinct = (rows, field) => [...new Set(rows.map((r) => r[field]).filter((v) => v != null && v !== ''))]
+  .sort((a, b) => String(a).localeCompare(String(b), 'en', { numeric: true }));
+
+// The tooling combination chart's word on one suggestion, in a sentence: whether its size is
+// listed for the press with this die size, and what the chart pairs it with.
+export function chartCheck(candidate, { press, dieSize, chartBasis } = {}) {
+  const verdict = candidate?.chart?.verdict ?? (chartBasis === 'no_chart' ? 'no_chart' : null);
+  const kind = candidate?.kind === 'bolster' ? 'Bolster' : 'Insert';
+  const size = candidate?.sizeClass || 'of unknown size';
+  if (verdict === 'allowed') {
+    const other = candidate.kind === 'bolster' ? 'insert_size' : 'bolster_size';
+    const pairs = distinct(candidate.chart.rows || [], other);
+    const pairWord = candidate.kind === 'bolster' ? 'insert' : 'bolster';
+    return {
+      tone: 'ok',
+      text: `${kind} ${size} is allowed on ${press} for die ${dieSize}`,
+      detail: pairs.length ? `The chart pairs it with ${pairWord} ${pairs.join(' or ')}` : null,
+    };
+  }
+  if (verdict === 'not_allowed') {
+    return { tone: 'no', text: `${kind} ${size} is not on the chart for ${press} with die ${dieSize}`, detail: null };
+  }
+  if (verdict === 'no_chart') {
+    return { tone: 'warn', text: `Not checked: the chart has no rows for ${press}`, detail: null };
+  }
+  return null;
+}
+
+// What the chart allows for the asked press and die size, for the top of the answer.
+// `chart` is the finder's { basis, rowsForDieSize }; rows on HOLD do not count.
+export function chartSummary(chart, { press, dieSize } = {}) {
+  if (!chart) return null;
+  if (chart.basis === 'no_chart') {
+    return { tone: 'warn', text: `The tooling combination chart has no rows for ${press}, so tooling sizes were not checked against it.` };
+  }
+  const rows = (chart.rowsForDieSize || []).filter((r) => !isHold(r));
+  if (rows.length === 0) {
+    return {
+      tone: 'no',
+      text: `Die size ${dieSize} is not on the tooling combination chart for ${press}, so the chart allows no insert or bolster for it.`,
+    };
+  }
+  const inserts = distinct(rows, 'insert_size');
+  const bolsters = distinct(rows, 'bolster_size');
+  const parts = [
+    inserts.length ? `insert ${inserts.join(', ')}` : null,
+    bolsters.length ? `bolster ${bolsters.join(', ')}` : null,
+  ].filter(Boolean);
+  return { tone: 'ok', text: `Chart for ${press} with die ${dieSize} allows ${parts.join(' · ')}.`, inserts, bolsters };
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { finderChecklist, dieSizeKey, matchDieSize,
+import { finderChecklist, dieSizeKey, matchDieSize, sizeClassText, openingSizes, openingText, profileSizeText, chartCheck, chartSummary,
   placedProfile, overlayViewBox, svgPath, candidateTags, candidateMeta, linkedDiesText,
   similarCards, similarOnlyCards, applyChoice, finderReadiness, rejectedSummary,
   sourceLabel, similarMeta, similarFromItems,
@@ -129,7 +129,7 @@ const sim = (dieNo, toolings = [], over = {}) => ({ dieNo, profileNumber: 'P', d
 const st = (number, over = {}) => ({ number, kind: 'insert', sizeClass: '300X100', inScope: true, hasGeometry: true, chartVerdict: 'allowed', reason: null, ...over });
 
 test('similarCards caps at 8 and tags scope', () => {
-  const list = Array.from({ length: 20 }, (_, i) => sim(`D-${i}`));
+  const list = Array.from({ length: 20 }, (_, i) => sim(`D-${i}`, [], { profileNumber: `P${i}` }));
   assert.deepEqual(similarCards(list).map((s) => s.dieNo), ['D-0', 'D-1', 'D-2', 'D-3', 'D-4', 'D-5', 'D-6', 'D-7']);
   assert.equal(similarCards(list, 3).length, 3);
   assert.deepEqual(similarCards(null), []);
@@ -154,7 +154,7 @@ test('similarCards caps at 8 and tags scope', () => {
 
 test('similarCards fills meta from dieMeta when the caller knows the die', () => {
   const known = { 'N-1': 'PRESS 7 · 250X140 · 2 cav' };
-  const cards = similarCards([sim('N-1'), sim('N-2')], 8, (dieNo) => known[dieNo] ?? null);
+  const cards = similarCards([sim('N-1'), sim('N-2', [], { profileNumber: 'P2' })], 8, (dieNo) => known[dieNo] ?? null);
   assert.deepEqual(cards.map((c) => c.meta), ['PRESS 7 · 250X140 · 2 cav', null]);
   assert.equal(similarCards([sim('N-1')])[0].meta, null);
 });
@@ -175,14 +175,18 @@ test('similarCards builds meta from the item die-list fields; dieMeta overrides 
 test('similarFromItems maps the /profile-shapes/similar items to the strip shape', () => {
   const [a, b] = similarFromItems([
     { die_no: 'N_1', profile_number: 'P-1', distance: 0.2, cavityMatch: false, trueSize: false, shapeId: 4,
-      toolings: [st('I-1')], dieSize: '250X160', press: 'PRESS 5', cavity: 2 },
+      toolings: [st('I-1')], dieSize: '250X160', press: 'PRESS 5', cavity: 2, ccd: 181.6, outline: { outer: [[0, 0], [1, 0], [0, 1]], holes: [] } },
     { die_no: 'N_2', distance: 0.3 },
   ]);
   assert.deepEqual(a, { dieNo: 'N_1', profileNumber: 'P-1', distance: 0.2, cavityMatch: false, trueSize: false, shapeId: 4,
-    toolings: [st('I-1')], dieSize: '250X160', press: 'PRESS 5', cavity: 2 });
+    toolings: [st('I-1')], dieSize: '250X160', press: 'PRESS 5', cavity: 2, ccd: 181.6, outline: { outer: [[0, 0], [1, 0], [0, 1]], holes: [] } });
   assert.deepEqual(b, { dieNo: 'N_2', profileNumber: null, distance: 0.3, cavityMatch: null, trueSize: false, shapeId: null,
-    toolings: [], dieSize: null, press: null, cavity: null });
+    toolings: [], dieSize: null, press: null, cavity: null, ccd: null, outline: null });
   assert.equal(similarCards([a])[0].meta, 'PRESS 5 · 250X160 · 2 cav');
+  const [card] = similarCards([a]);
+  assert.deepEqual([card.ccd, card.dieSize, card.press, card.cavity], [181.6, '250X160', 'PRESS 5', 2], 'the strip states CCD and die size');
+  assert.deepEqual(card.outline, a.outline, 'and draws the profile');
+  assert.deepEqual([similarCards([b])[0].ccd, similarCards([b])[0].outline], [null, null]);
   assert.deepEqual(similarFromItems(undefined), []);
 });
 
@@ -287,4 +291,80 @@ test('matchDieSize finds a typed die size among the chart sizes of a press', () 
   assert.equal(matchDieSize('305X160', sizes), null);
   assert.equal(matchDieSize('', sizes), null);
   assert.equal(matchDieSize('302.5X160'), null);
+});
+
+test('a suggestion states its size and its opening', () => {
+  const box = (w, h, x = 0) => [[x, 0], [x + w, 0], [x + w, h], [x, h]];
+  assert.equal(sizeClassText('460X150'), 'Ø460 × 150 mm');
+  assert.equal(sizeClassText('302.5x160'), 'Ø302.5 × 160 mm');
+  assert.equal(sizeClassText('SPECIAL'), 'SPECIAL');
+  assert.equal(sizeClassText(null), null);
+  assert.deepEqual(openingSizes([box(181.6, 64.2), [[0, 0], [1, 1]]]), [{ w: 182, h: 64 }], 'a pocket that is not a polygon is left out');
+  assert.equal(openingText([box(182, 64)]), '182 × 64 mm');
+  assert.equal(openingText([box(90, 40), box(90, 40, 100)]), '2 openings, 90 × 40 mm each');
+  assert.equal(openingText([box(90, 40), box(80, 30, 100)]), '2 openings: 90 × 40, 80 × 30 mm');
+  assert.equal(openingText([]), null);
+  assert.equal(profileSizeText(box(120, 35)), '120 × 35 mm');
+  assert.equal(profileSizeText(null), null);
+});
+
+test('chartCheck says what the combination chart decided for one suggestion', () => {
+  const ctx = { press: 'PRESS 6', dieSize: '355X200', chartBasis: 'chart' };
+  const rows = [{ insert_size: '460X150', bolster_size: '700X196' }, { insert_size: '460X150', bolster_size: '700X250' }, { insert_size: '460X150', bolster_size: '700X196' }];
+  assert.deepEqual(chartCheck({ kind: 'insert', sizeClass: '460X150', chart: { verdict: 'allowed', rows } }, ctx), {
+    tone: 'ok', text: 'Insert 460X150 is allowed on PRESS 6 for die 355X200', detail: 'The chart pairs it with bolster 700X196 or 700X250',
+  });
+  const bolster = chartCheck({ kind: 'bolster', sizeClass: '700X196', chart: { verdict: 'allowed', rows: [{ insert_size: null, bolster_size: '700X196' }] } }, ctx);
+  assert.deepEqual([bolster.text, bolster.detail], ['Bolster 700X196 is allowed on PRESS 6 for die 355X200', null]);
+  assert.equal(chartCheck({ kind: 'insert', sizeClass: '999X9', chart: { verdict: 'not_allowed', rows: [] } }, ctx).tone, 'no');
+  const none = chartCheck({ kind: 'insert', sizeClass: '460X150' }, { press: 'PRESS 7', dieSize: '250X140', chartBasis: 'no_chart' });
+  assert.deepEqual([none.tone, none.text], ['warn', 'Not checked: the chart has no rows for PRESS 7']);
+  assert.equal(chartCheck({ kind: 'insert' }, ctx), null);
+});
+
+test('chartSummary says what the chart allows for the press and die size', () => {
+  const q = { press: 'PRESS 6', dieSize: '355X200' };
+  const rows = [
+    { insert_size: '460X150', bolster_size: '700X196', remark: null },
+    { insert_size: '300X100', bolster_size: null, remark: '' },
+    { insert_size: '999X999', bolster_size: '900X300', remark: ' Hold ' },
+  ];
+  const ok = chartSummary({ basis: 'chart', rowsForDieSize: rows }, q);
+  assert.equal(ok.tone, 'ok');
+  assert.equal(ok.text, 'Chart for PRESS 6 with die 355X200 allows insert 300X100, 460X150 · bolster 700X196.');
+  const off = chartSummary({ basis: 'chart', rowsForDieSize: [rows[2]] }, q);
+  assert.equal(off.tone, 'no', 'only a HOLD row: nothing is allowed');
+  assert.match(off.text, /Die size 355X200 is not on the tooling combination chart for PRESS 6/);
+  assert.equal(chartSummary({ basis: 'no_chart', rowsForDieSize: [] }, q).tone, 'warn');
+  assert.equal(chartSummary(null, q), null);
+});
+
+test('similarCards lists one profile once per press, die size, cavities and toolings', () => {
+  const die = (dieNo, over = {}, toolings = [st('BOL-A')]) => sim(dieNo, toolings, {
+    profileNumber: '13794', press: 'PRESS 6', dieSize: '355X200', cavity: 2, ...over,
+  });
+  const cards = similarCards([
+    die('13794_624'),
+    die('13794_625', { dieSize: '355 x 200', press: 'press 6' }), // the same, written differently
+    die('13794_623', { cavity: 3 }),
+    die('13794_284', { press: 'PRESS 2' }, []),
+    die('13794_286', { press: 'PRESS 2' }),
+    die('13794_285', { press: 'PRESS 2' }),
+    die('13794_524', { dieSize: '250X160' }),
+    die('99999_601', { profileNumber: '99999' }),
+    sim('X-1', [], { profileNumber: null, press: 'PRESS 6' }),
+    sim('X-2', [], { profileNumber: null, press: 'PRESS 6' }),
+  ]);
+  assert.deepEqual(cards.map((c) => [c.dieNo, c.otherDies]), [
+    ['13794_624', ['13794_625']],
+    ['13794_623', []],
+    ['13794_284', []],
+    ['13794_286', ['13794_285']],
+    ['13794_524', []],
+    ['99999_601', []],
+    ['X-1', []],
+    ['X-2', []],
+  ], 'cavities, die size, press, tooling or profile differing keeps a card; no profile number never merges');
+  const many = Array.from({ length: 12 }, (_, i) => die(`D_${i}`));
+  assert.equal(similarCards([...many, die('LAST', { cavity: 1 })]).length, 2, 'merged before the cap, so later profiles still show');
 });

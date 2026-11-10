@@ -54,6 +54,9 @@ installFakeDb(async (sql, params = []) => {
   if (/FROM existing_die_details/.test(sql)) {
     return { rows: params[0].includes('D-SQ') ? [{ die_no: 'D_SQ', die_size: '250X160', press: 'PRESS 5', cavity: 2 }] : [] };
   }
+  if (/FROM profile_shapes WHERE id = ANY/.test(sql)) {
+    return { rows: params[0].includes(3) ? [{ id: 3, ccd_mm: 42.04, true_size: true, outer_unit: [[1, 0], [0, 1], [-1, 0]], holes_unit: [] }] : [] };
+  }
   if (/max\(updated_at\)/.test(sql)) return { rows: [{ max_updated: 'stamp', n: ROWS.length }] };
   if (/needs_review = false/.test(sql)) return { rows: ROWS.filter((r) => r.plant === params[0] && !r.needs_review) };
   if (/WHERE id = \$1 AND die_no = \$2/.test(sql)) {
@@ -123,6 +126,8 @@ test('POST similar items carry the die toolings and the die-list press, die size
   assert.equal(res.status, 200);
   const sq = res.body.items.find((i) => i.die_no === 'D-SQ');
   assert.deepEqual([sq.press, sq.dieSize, sq.cavity], ['PRESS 5', '250X160', 2]);
+  assert.equal(sq.ccd, 42, 'the neighbour shape CCD');
+  assert.deepEqual(sq.outline, { outer: [[1, 0], [0, 1], [-1, 0]], holes: [] });
   assert.deepEqual(sq.toolings.map((t) => [t.number, t.reason, t.chartVerdict]), [['I-1', 'cavities', 'no_chart']],
     'asked for 4 cavities, the tooling has 2; no press posted, so no chart');
   const other = res.body.items.find((i) => i.die_no !== 'D-SQ');
