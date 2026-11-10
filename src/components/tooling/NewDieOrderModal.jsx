@@ -8,10 +8,10 @@ import useDialog from '../../hooks/useDialog';
 import FindToolingWindow from './FindToolingWindow';
 import { applyChoice, finderReadiness, finderChecklist, matchDieSize } from '../../utils/toolingFinderView';
 import {
-  fieldsFromDrawing, valuesFromFields, pressOptionName, editToolingField, finderPayload, linesFromTextItems,
+  fieldsFromPages, valuesFromFields, pressOptionName, editToolingField, finderPayload,
 } from '../../utils/newDieOrderPrefill';
 import { readScales, readTitleBlockNumbers } from '../../utils/pdfImportFields';
-import { captureProfileImage, PROFILE_RENDER_DPI } from '../../utils/profileImage';
+import { captureProfileImages, captureTitleBlockImage, PROFILE_RENDER_DPI } from '../../utils/profileImage';
 import { usePalette } from '../../utils/palette';
 import { todayLocal } from '../../utils/today.js';
 import { downloadBlob } from '../../utils/downloadBlob';
@@ -66,6 +66,7 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewBlob, setPreviewBlob] = useState(null); // the view the traced profile came from
   const wide = useWide();
   const fileInputRef = useRef(null);
   const readToken = useRef(0); // a newer pick makes an older read's answers stale
@@ -84,13 +85,28 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     setProfile(null);
     setProfileNote(TRACE_READING);
     const ccdStated = Number(ccdForTrace);
-    profileShapesAPI.trace(profileBlob.blob, {
+    const traceMeta = {
       ...meta, ccdStated: Number.isFinite(ccdStated) && ccdStated > 0 ? ccdStated : null,
       cavities: v.NO_OF_CAV, dieSize: v.DIE_SIZE, plant, dieNo: v.DIE_NO,
       dieType: v.SOLID ? 'SOLID' : v.HOLLOW ? 'HOLLOW' : '',
-    })
-      .then((shape) => { if (active) { setProfile(shape); setProfileNote(''); } })
-      .catch(() => { if (active) setProfileNote(TRACE_FAILED); });
+    };
+    // The overview first. When it cannot be given its true size (a stamp pasted over part of it
+    // leaves a picture the drawing's CCD does not agree with), the other view is tried, and
+    // taken only if it can.
+    (async () => {
+      let chosen = { blob: profileBlob.blob, shape: null };
+      try { chosen.shape = await profileShapesAPI.trace(profileBlob.blob, traceMeta); } catch { chosen.shape = null; }
+      if (!chosen.shape?.true_size) {
+        for (const blob of profileBlob.alternatives || []) {
+          let shape = null;
+          try { shape = await profileShapesAPI.trace(blob, traceMeta); } catch { shape = null; }
+          if (shape?.true_size) { chosen = { blob, shape }; break; }
+        }
+      }
+      if (!active) return;
+      if (chosen.shape) { setProfile(chosen.shape); setProfileNote(''); setPreviewBlob(chosen.blob); }
+      else setProfileNote(TRACE_FAILED);
+    })();
     return () => { active = false; };
   }, [profileBlob, plant, ccdForTrace]);
 
@@ -106,6 +122,7 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     setError('');
     setProfile(null);
     setProfileBlob(null);
+    setPreviewBlob(null);
     setProfileNote('');
     setCcdText('');
     setCcdForTrace('');
@@ -116,25 +133,55 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     try {
       const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
       const page1 = await pdf.getPage(1);
-      const lines = linesFromTextItems((await page1.getTextContent()).items);
-      const fields = fieldsFromDrawing(lines, lines.map((l) => l.text).join(' '), { fileName: file.name });
+      const page1Items = (await page1.getTextContent()).items;
+      // The order-details sheet behind the drawing names the customer.
+      let page2Items = null;
+      if (pdf.numPages > 1) {
+        try { page2Items = (await (await pdf.getPage(2)).getTextContent()).items; } catch { page2Items = null; }
+      }
+      const fields = fieldsFromPages(page1Items, { fileName: file.name, page2Items });
+      const { lines } = fields;
       const prefill = valuesFromFields(fields, { today: todayLocal() });
+      // The supplier typed on the drawing, when it is one the master knows; its shipment mode follows.
+      const supplier = fields.supplier
+        ? suppliers.find((sup) => String(sup.name || '').trim().toLowerCase() === fields.supplier.trim().toLowerCase())
+        : null;
+      if (supplier) {
+        prefill.values.SUPPLIER = supplier.name;
+        prefill.values.SHIPMENT = supplier.shipment_mode || '';
+        prefill.sources.SUPPLIER = 'drawing';
+      }
       prefill.values.PRESS = pressOptionName(prefill.values.PRESS, presses);
       if (token !== readToken.current) return;
       const titleBlock = readTitleBlockNumbers(lines);
+      let scales = readScales(lines);
+      // A drawing whose title block is not text: the CCD and the scales are read by OCR.
+      if (titleBlock.ccd == null || !scales.length) {
+        try {
+          const strip = await captureTitleBlockImage(page1);
+          const read = strip ? await profileShapesAPI.titleBlock(strip) : null;
+          if (read?.available) {
+            if (titleBlock.ccd == null && read.ccd != null) titleBlock.ccd = read.ccd;
+            if (!scales.length && Array.isArray(read.scales)) scales = read.scales;
+          }
+        } catch { /* the form still works; the CCD can be typed */ }
+        if (token !== readToken.current) return;
+      }
       const ccd = titleBlock.ccd != null && titleBlock.ccd > 0 ? String(titleBlock.ccd) : '';
       setValues(prefill.values);
       setSources(ccd ? { ...prefill.sources, CCD: 'drawing' } : prefill.sources);
       setCcdText(ccd);
       setCcdForTrace(ccd);
 
-      const blob = await captureProfileImage(page1);
+      const [blob, ...alternatives] = await captureProfileImages(page1);
       if (token !== readToken.current) return;
       if (!blob) { setProfileNote(TRACE_FAILED); return; }
+      setPreviewBlob(blob);
       setProfileBlob({
         blob,
+        alternatives,
         meta: {
-          renderDpi: PROFILE_RENDER_DPI, scales: readScales(lines), ccdStated: titleBlock.ccd,
+          renderDpi: PROFILE_RENDER_DPI, scales, ccdStated: titleBlock.ccd,
           externalPerimeter: titleBlock.externalPerimeter, internalPerimeter: titleBlock.internalPerimeter,
         },
       });
@@ -213,11 +260,12 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
 
   // The profile picture cut from page 1, shown beside the tooling fields.
   useEffect(() => {
-    if (!profileBlob) { setPreviewUrl(null); return undefined; }
-    const url = URL.createObjectURL(profileBlob.blob);
+    const shown = profileBlob ? previewBlob || profileBlob.blob : null;
+    if (!shown) { setPreviewUrl(null); return undefined; }
+    const url = URL.createObjectURL(shown);
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [profileBlob]);
+  }, [profileBlob, previewBlob]);
 
   // Presses can land after the drawing was read; map a drawing code ("P7") onto the master then.
   useEffect(() => {

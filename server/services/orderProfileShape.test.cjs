@@ -272,3 +272,15 @@ test('backfill: a database error on one row is rolled back to its savepoint and 
   assert.equal(stmts.filter((x) => /^INSERT INTO profile_shapes/.test(x)).length, 2);
   assert.deepEqual(verbs(client), ['BEGIN', 'COMMIT']);
 });
+
+test('a stated CCD sizes the picture when the drawing states no scale', async () => {
+  const f = await shapeFromProfilePng(ringPng(), { renderDpi: 200, scales: [], ccdStated: 40, dieListCcd: null, dieSize: null });
+  assert.equal(f.true_size, true);
+  assert.equal(f.true_size_source, 'stated-ccd');
+  assert.equal(f.true_size_confidence, 'likely');
+  assert.ok(Math.abs(f.ccd_mm - 40) < 1e-6, 'the outline is scaled so its CCD is the stated one');
+  const scaled = await shapeFromProfilePng(ringPng(), { renderDpi: 200, scales: [1], ccdStated: 40, dieListCcd: null, dieSize: null });
+  assert.equal(scaled.true_size, false, 'with scales stated, a CCD none of them agrees with sizes nothing');
+  const none = await shapeFromProfilePng(ringPng(), { renderDpi: 200, scales: [], ccdStated: null, dieListCcd: 40, dieSize: null });
+  assert.equal(none.true_size, false, 'the die list CCD alone does not size a picture');
+});

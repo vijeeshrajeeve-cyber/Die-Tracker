@@ -1053,6 +1053,12 @@ export const profileShapesAPI = {
     },
     // Reviewer-only. body: { action: 'clear'|'keep', note? }
     review: async (id, body) => apiRequest(`/profile-shapes/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify(body) }),
+    // OCR of the title-block strip cut from page 1: { available, ccd, scales }.
+    titleBlock: async (blob) => {
+        const form = new FormData();
+        form.append('file', blob, 'title-block.png');
+        return apiRequest('/profile-shapes/title-block', { method: 'POST', body: form, isMultipart: true });
+    },
     // Traces a profile PNG (cut from a drawing) without storing it. meta: { plant, dieNo?, dieType?,
     // renderDpi, scales, ccdStated, externalPerimeter, internalPerimeter, cavities, dieSize }; blank
     // values are left out and `scales` goes as JSON. Answers the traced shape (true_size, outer_mm, ...).

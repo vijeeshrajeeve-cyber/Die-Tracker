@@ -3,7 +3,8 @@ FROM node:20-alpine
 # wget is used by the docker-compose healthcheck.
 # tzdata is required for named zones (TZ=Asia/Dubai) — without it Alpine
 # silently falls back to UTC, which would send the design reminders 4h late.
-RUN apk add --no-cache wget tini tzdata
+# tesseract reads the title block of drawings whose lettering is not text (services/titleBlockOcr.cjs).
+RUN apk add --no-cache wget tini tzdata tesseract-ocr tesseract-ocr-data-eng
 
 WORKDIR /app
 
