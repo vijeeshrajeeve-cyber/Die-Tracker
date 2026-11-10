@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, FolderOpen, Search } from 'lucide-react';
+import { X, FolderOpen, Search, FileText, Check, Circle, AlertTriangle, Loader2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { newDieOrderFormsAPI, profileShapesAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
 import useDialog from '../../hooks/useDialog';
 import FindToolingPanel from './FindToolingPanel';
-import { applyChoice, finderReadiness } from '../../utils/toolingFinderView';
+import { applyChoice, finderReadiness, finderChecklist } from '../../utils/toolingFinderView';
 import {
   fieldsFromDrawing, valuesFromFields, pressOptionName, editToolingField, finderPayload, linesFromTextItems,
 } from '../../utils/newDieOrderPrefill';
@@ -24,6 +24,19 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const PLANTS = ['GEX 1', 'GEX 2'];
 const TRACE_FAILED = 'profile could not be read — finder unavailable';
+const TRACE_READING = 'reading the profile…';
+const WIDE_QUERY = '(min-width: 1000px)'; // room for the tooling pane beside the form
+
+function useWide() {
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(WIDE_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const onChange = () => setWide(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return wide;
+}
 
 const normalizePlantName = (plant) => (plant || '').toString().trim().toUpperCase().replace(/\b0+(\d+)\b/g, '$1');
 
@@ -46,6 +59,9 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
   const [finderStale, setFinderStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const wide = useWide();
   const fileInputRef = useRef(null);
   const readToken = useRef(0); // a newer pick makes an older read's answers stale
   const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !busy && !reading });
@@ -61,7 +77,7 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     const v = valuesRef.current || {};
     const { meta } = profileBlob;
     setProfile(null);
-    setProfileNote('reading the profile…');
+    setProfileNote(TRACE_READING);
     profileShapesAPI.trace(profileBlob.blob, {
       ...meta, cavities: v.NO_OF_CAV, dieSize: v.DIE_SIZE, plant, dieNo: v.DIE_NO,
       dieType: v.SOLID ? 'SOLID' : v.HOLLOW ? 'HOLLOW' : '',
@@ -147,6 +163,32 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     setFileName(file.name);
     readDrawing(file);
   };
+
+  // A dropped PDF: with a file handle (Chromium) it is saved over like a picked one.
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setDragging(false);
+    if (busy || reading) return;
+    const item = Array.from(e.dataTransfer?.items || []).find((i) => i.kind === 'file');
+    const file = item?.getAsFile() || e.dataTransfer?.files?.[0];
+    // Must be asked for before the first await; the items die with the event.
+    const handlePromise = item && typeof item.getAsFileSystemHandle === 'function' ? item.getAsFileSystemHandle() : null;
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { setError('Drop a PDF drawing.'); return; }
+    let handle = null;
+    try { handle = handlePromise ? await handlePromise : null; } catch { handle = null; }
+    if (handle?.kind === 'file') { setFileHandle(handle); setPickedFile(null); } else { setPickedFile(file); setFileHandle(null); }
+    setFileName(file.name);
+    readDrawing(file);
+  };
+
+  // The profile picture cut from page 1, shown beside the tooling fields.
+  useEffect(() => {
+    if (!profileBlob) { setPreviewUrl(null); return undefined; }
+    const url = URL.createObjectURL(profileBlob.blob);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [profileBlob]);
 
   // Presses can land after the drawing was read; map a drawing code ("P7") onto the master then.
   useEffect(() => {
@@ -247,98 +289,106 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
     }
   };
 
+  // ── Presentation ────────────────────────────────────────────────────────────
+  const locked = busy || reading;
   const inputStyle = {
-    width: '100%', padding: '10px 14px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`,
-    borderRadius: '10px', color: theme.text, fontSize: '0.875rem',
+    width: '100%', minWidth: 0, padding: '9px 12px', background: c.inset, border: `1px solid ${c.border}`,
+    borderRadius: 8, color: c.text, fontSize: '0.875rem', boxSizing: 'border-box',
   };
-  const labelStyle = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' };
-  const checkboxBoxStyle = {
-    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: theme.inputBg,
-    border: `1px solid ${theme.cardBorder}`, borderRadius: '10px', color: theme.text, fontSize: '0.875rem', cursor: 'pointer',
-  };
-  const checkStyle = { width: '16px', height: '16px', accentColor: theme.primary };
+  const labelStyle = { display: 'flex', alignItems: 'baseline', gap: 6, fontSize: '0.75rem', fontWeight: 600, color: c.muted, marginBottom: 5 };
+  const sectionTitle = { fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.dim, margin: 0 };
+  const grid2 = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 14px' };
+
   const hint = (key) => (sources[key]
-    ? <span style={{ fontSize: '0.7rem', color: theme.textMuted, marginLeft: '8px' }}>from {sources[key]}</span>
+    ? <span style={{ fontSize: '0.68rem', fontWeight: 500, color: c.link, marginLeft: 'auto', whiteSpace: 'nowrap' }}>from {sources[key]}</span>
     : null);
-  const textField = (key, label, id, extra = {}) => (
+  const required = <span aria-hidden="true" style={{ color: c.danger }}>*</span>;
+  const label = (text, id, { hintKey, isRequired } = {}) => (
+    <label style={labelStyle} htmlFor={id}>{text}{isRequired && required}{hintKey && hint(hintKey)}</label>
+  );
+  const textField = (key, text, id, extra = {}) => (
     <div style={extra.wide ? { gridColumn: '1 / -1' } : undefined}>
-      <label style={labelStyle} htmlFor={id}>{label}{hint(key)}</label>
-      <input id={id} type="text" value={values[key]} onChange={(e) => set(key, e.target.value)} style={inputStyle} placeholder={extra.placeholder} />
+      {label(text, id, { hintKey: key, isRequired: extra.required })}
+      <input id={id} type="text" value={values[key]} onChange={(e) => set(key, e.target.value)} style={inputStyle}
+        placeholder={extra.placeholder} aria-required={extra.required || undefined} inputMode={extra.inputMode} />
     </div>
   );
-  const toolingField = (key, label, id) => (
-    <input id={id} aria-label={label} type="text" value={values[key]} onChange={(e) => setTooling(key, e.target.value)} style={inputStyle} />
+  const toolingField = (key, text, id, hintKey) => (
+    <div>
+      {label(text, id, { hintKey })}
+      <input id={id} type="text" value={values[key]} onChange={(e) => setTooling(key, e.target.value)} style={inputStyle} />
+    </div>
+  );
+  // A ticked option drawn as a chip; still a real checkbox underneath.
+  const chip = (key, text) => {
+    const on = !!values[key];
+    return (
+      <label key={key} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem',
+        fontWeight: on ? 600 : 500, color: on ? c.primary : c.text, background: on ? c.primarySoft : c.inset,
+        border: `1px solid ${on ? c.primary : c.border}`,
+      }}>
+        <input type="checkbox" checked={on} onChange={(e) => set(key, e.target.checked)} style={{ width: 15, height: 15, margin: 0, accentColor: c.primary }} />
+        {text}
+      </label>
+    );
+  };
+  const chipGroup = (text, keys, hintKeys = []) => (
+    <div role="group" aria-label={text}>
+      <div style={labelStyle}>{text}{hintKeys.map((k) => <React.Fragment key={k}>{hint(k)}</React.Fragment>)}</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{keys.map(([key, t]) => chip(key, t))}</div>
+    </div>
+  );
+  const section = (title, children, note) => (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <h4 style={sectionTitle}>{title}</h4>
+        {note && <span style={{ fontSize: '0.72rem', color: c.dim }}>{note}</span>}
+      </div>
+      {children}
+    </section>
   );
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="new-die-order-title" style={{
-        background: theme.cardBg, borderRadius: '20px', padding: '2rem', width: '100%', maxWidth: '780px',
-        maxHeight: '92vh', overflowY: 'auto', border: `1px solid ${theme.cardBorder}`,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+  const checklist = values ? finderChecklist({
+    profile, profileNote, profileBusy: profileNote === TRACE_READING,
+    press: values.PRESS, dieSize: values.DIE_SIZE, cavities: values.NO_OF_CAV, plant,
+  }) : [];
+  const checkIcon = (state) => (state === 'ok' ? <Check size={14} style={{ color: c.ok }} aria-hidden="true" />
+    : state === 'warn' ? <AlertTriangle size={14} style={{ color: c.warn }} aria-hidden="true" />
+      : state === 'busy' ? <Loader2 size={14} style={{ color: c.muted }} aria-hidden="true" />
+        : <Circle size={14} style={{ color: c.dim }} aria-hidden="true" />);
+
+  const chosenLine = chosen
+    ? chosen.fromFinder ? { tone: 'ok', text: `${chosen.tooling} taken from the finder` }
+      : finderStale ? { tone: 'warn', text: `${chosen.tooling} was found for an earlier press, size or profile` }
+        : { tone: 'muted', text: `${chosen.tooling} edited by hand` }
+    : null;
+  const toneColor = { ok: c.ok, warn: c.warn, muted: c.muted };
+
+  const dieSections = values && (
+    <>
+      {section('Die', (
+        <div style={grid2}>
           <div>
-            <h3 id="new-die-order-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: theme.text }}>Prepare New Die Order PDF</h3>
-            <p style={{ fontSize: '0.8rem', color: theme.textMuted, marginTop: '4px' }}>
-              Stamps the order form onto the drawing and records it{user?.username ? ` as ${user.username}` : ''}. No order is created.
-            </p>
+            {label('Plant', 'new-die-order-plant', { hintKey: 'PLANT', isRequired: true })}
+            <select id="new-die-order-plant" value={values.PLANT} onChange={(e) => set('PLANT', e.target.value)} aria-required="true" style={{ ...inputStyle, cursor: 'pointer' }}>
+              <option value="">Select plant</option>
+              {PLANTS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
           </div>
-          <button type="button" aria-label="Close" onClick={() => !busy && onClose()} disabled={busy}
-            style={{ padding: '8px', background: 'transparent', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', color: theme.textMuted, borderRadius: '8px' }}>
-            <X size={20} />
-          </button>
+          {textField('DIE_NO', 'Die no.', 'new-die-order-die-no', { placeholder: 'e.g. 030724-701', required: true })}
+          {textField('PROFILE_NO', 'Profile no.', 'new-die-order-profile-no')}
+          {textField('CUSTOMER', 'Customer', 'new-die-order-customer')}
         </div>
+      ))}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: theme.inputBg, border: `1px dashed ${theme.cardBorder}`, marginBottom: '1rem' }}>
-          <button type="button" onClick={handlePick} disabled={busy || reading}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', borderRadius: '8px', background: theme.primary, color: theme.primaryText, border: 'none', cursor: (busy || reading) ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
-            <FolderOpen size={16} /> {hasFile ? 'Choose different PDF' : 'Select Profile Drawing PDF'}
-          </button>
-          <input aria-label="Select the profile drawing PDF" ref={fileInputRef} type="file" accept="application/pdf,.pdf" onChange={handleInput} style={{ display: 'none' }} />
-          <span style={{ fontSize: '0.85rem', color: hasFile ? theme.text : theme.textMuted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {reading ? 'Reading the drawing…'
-              : fileHandle ? fileName
-                : pickedFile ? `${fileName} (will download the stamped PDF)`
-                  : 'No file selected. The output will overwrite the chosen PDF, or download it if your browser does not support in-place save.'}
-          </span>
-        </div>
-
-        {values && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+      {section('Press and size', (
+        <>
+          <div style={grid2}>
             <div>
-              <label style={labelStyle} htmlFor="new-die-order-plant">PLANT{hint('PLANT')}</label>
-              <select id="new-die-order-plant" value={values.PLANT} onChange={(e) => set('PLANT', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">Select Plant</option>
-                {PLANTS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            {textField('DIE_NO', 'DIE NO', 'new-die-order-die-no', { placeholder: 'e.g. 030724-701' })}
-            {textField('PROFILE_NO', 'PROFILE NO', 'new-die-order-profile-no')}
-            {textField('CUSTOMER', 'CUSTOMER', 'new-die-order-customer')}
-
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-supplier">SUPPLIER</label>
-              <select id="new-die-order-supplier" value={values.SUPPLIER}
-                onChange={(e) => {
-                  const matched = suppliers.find((s) => s.name === e.target.value);
-                  setValues((prev) => ({ ...prev, SUPPLIER: e.target.value, SHIPMENT: matched?.shipment_mode || '' }));
-                }}
-                style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">Select Supplier</option>
-                {suppliers.map((s) => <option key={s.id ?? s.name} value={s.name}>{s.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-date">REQUESTED DATE</label>
-              <input id="new-die-order-date" type="date" value={values.DATE} onChange={(e) => set('DATE', e.target.value)} style={inputStyle} />
-            </div>
-
-            {textField('DIE_SIZE', 'DIE SIZE', 'new-die-order-die-size', { wide: true })}
-            {textField('NO_OF_CAV', 'No OF CAV', 'new-die-order-no-of-cav')}
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-press">PRESS{hint('PRESS')}</label>
+              {label('Press', 'new-die-order-press', { hintKey: 'PRESS' })}
               <select id="new-die-order-press" value={values.PRESS} onChange={(e) => set('PRESS', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">Select Press</option>
+                <option value="">Select press</option>
                 {pressOptions.map((p) => (
                   <option key={p.id ?? p.press_name} value={p.press_name}>{p.press_name}{p.press_code ? ` (${p.press_code})` : ''}</option>
                 ))}
@@ -347,106 +397,230 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
                 )}
               </select>
             </div>
+            {textField('NO_OF_CAV', 'Cavities', 'new-die-order-no-of-cav', { inputMode: 'numeric' })}
+            {textField('DIE_SIZE', 'Die size', 'new-die-order-die-size', { wide: true })}
+          </div>
+          {chipGroup('Die type', [['SOLID', 'Solid'], ['HOLLOW', 'Hollow']], ['SOLID', 'HOLLOW'])}
+        </>
+      ), 'Find tooling uses these')}
+    </>
+  );
 
-            <div>
-              <label style={labelStyle}>SOLID{hint('SOLID')}</label>
-              <label style={checkboxBoxStyle}>
-                <input type="checkbox" checked={!!values.SOLID} onChange={(e) => set('SOLID', e.target.checked)} style={checkStyle} /> Solid
-              </label>
-            </div>
-            <div>
-              <label style={labelStyle}>HOLLOW{hint('HOLLOW')}</label>
-              <label style={checkboxBoxStyle}>
-                <input type="checkbox" checked={!!values.HOLLOW} onChange={(e) => set('HOLLOW', e.target.checked)} style={checkStyle} /> Hollow
-              </label>
-            </div>
+  const orderSection = values && section('Order details', (
+    <>
+      <div style={grid2}>
+        <div>
+          {label('Supplier', 'new-die-order-supplier')}
+          <select id="new-die-order-supplier" value={values.SUPPLIER}
+            onChange={(e) => {
+              const matched = suppliers.find((s) => s.name === e.target.value);
+              setValues((prev) => ({ ...prev, SUPPLIER: e.target.value, SHIPMENT: matched?.shipment_mode || '' }));
+            }}
+            style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="">Select supplier</option>
+            {suppliers.map((s) => <option key={s.id ?? s.name} value={s.name}>{s.name}</option>)}
+          </select>
+        </div>
+        <div>
+          {label('Mode of shipment', 'new-die-order-shipment')}
+          <input id="new-die-order-shipment" type="text" value={values.SHIPMENT} readOnly aria-readonly="true"
+            style={{ ...inputStyle, background: 'transparent', border: `1px dashed ${c.border}`, color: c.muted, cursor: 'default' }} placeholder="Follows the supplier" />
+        </div>
+        <div>
+          {label('Requested date', 'new-die-order-date')}
+          <input id="new-die-order-date" type="date" value={values.DATE} onChange={(e) => set('DATE', e.target.value)} style={inputStyle} />
+        </div>
+        {textField('DELIVERY_DATE', 'Requested delivery date', 'new-die-order-delivery-date')}
+        {textField('PROFILE_WEIGHT_PCT', 'Profile weight start %', 'new-die-order-profile-weight', { placeholder: 'e.g. 85', inputMode: 'decimal' })}
+        {chipGroup('3D module for simulation', [['THREE_D_MODULE', 'Required']])}
+      </div>
+      {chipGroup('Finish', [['FINISH_MILL', 'Mill'], ['FINISH_ANODIZING', 'Anodizing'], ['FINISH_POWDER', 'Powder coating']])}
+    </>
+  ));
 
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-bolster-no">BOLSTER No{hint('BOLSTER_NO')}</label>
-              {toolingField('BOLSTER_NO', 'BOLSTER No', 'new-die-order-bolster-no')}
+  const finderButtonLabel = finderMode === 'similarity' ? 'Find similar (fit not run)'
+    : showFinder ? 'Hide results' : finderStale ? 'Run Find tooling again' : 'Find tooling';
+  const toolingPane = values && (
+    <>
+      {section('Profile', (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 150, borderRadius: 10, border: `1px solid ${c.border}`, background: previewUrl ? '#fff' : c.bg, overflow: 'hidden' }}>
+          {previewUrl
+            ? <img src={previewUrl} alt="Profile cut from the drawing" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            : <span style={{ fontSize: '0.8rem', color: c.muted, padding: 12, textAlign: 'center' }}>{reading ? 'Reading the drawing…' : 'No profile picture from this drawing'}</span>}
+        </div>
+      ))}
+
+      {section('Tooling', (
+        <>
+          <div style={grid2}>
+            {toolingField('INSERT_NO', 'Insert no.', 'new-die-order-insert-no', 'INSERT_NO')}
+            {toolingField('INSERT_SIZE', 'Insert size', 'new-die-order-insert-size')}
+            {toolingField('BOLSTER_NO', 'Bolster no.', 'new-die-order-bolster-no', 'BOLSTER_NO')}
+            {toolingField('BOLSTER_SIZE', 'Bolster size', 'new-die-order-bolster-size')}
+          </div>
+          {chosenLine && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: toneColor[chosenLine.tone] }}>
+              {chosenLine.tone === 'ok' && <Check size={13} aria-hidden="true" />}
+              {chosenLine.tone === 'warn' && <AlertTriangle size={13} aria-hidden="true" />}
+              {chosenLine.text}
             </div>
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-insert-no">INSERT No{hint('INSERT_NO')}</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {toolingField('INSERT_NO', 'INSERT No', 'new-die-order-insert-no')}
-                <button type="button" onClick={() => { setShowFinder((v) => !v); setFinderStale(false); }} disabled={!finderEnabled}
-                  title={gate.ready ? 'Find a tooling that fits this profile'
-                    : gate.similarityOnly ? `${gate.reason} — finds similar dies by shape only` : gate.reason}
-                  aria-expanded={showFinder}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, padding: '0 12px', borderRadius: '10px', background: 'transparent', border: `1px solid ${finderEnabled ? theme.primary : theme.cardBorder}`, color: finderEnabled ? theme.primary : theme.textMuted, cursor: finderEnabled ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                  <Search size={14} /> {finderMode === 'similarity' ? 'Find similar (fit not run)' : 'Find tooling'}
-                </button>
+          )}
+        </>
+      ), 'Type them, or take one from the finder')}
+
+      {section('Find tooling', (
+        <>
+          <ul aria-label="What Find tooling needs" style={{ listStyle: 'none', margin: 0, padding: '4px 12px', borderRadius: 10, border: `1px solid ${c.border}`, background: c.bg }}>
+            {checklist.map((item, i) => (
+              <li key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', fontSize: '0.8rem', borderTop: i ? `1px solid ${c.border}` : 'none' }}>
+                {checkIcon(item.state)}
+                <span style={{ color: c.text, fontWeight: 500 }}>{item.label}</span>
+                <span style={{ marginLeft: 'auto', textAlign: 'right', color: item.state === 'warn' ? c.warn : item.state === 'todo' ? c.dim : c.muted, overflowWrap: 'anywhere' }}>{item.note}</span>
+              </li>
+            ))}
+          </ul>
+          {finderStale && !showFinder && (
+            <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.75rem', padding: '8px 10px', borderRadius: 8, color: c.warn, background: c.warnBg }}>
+              <AlertTriangle size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+              Press, die size, cavities, plant or the profile changed since the finder ran.
+            </div>
+          )}
+          <button type="button" onClick={() => { setShowFinder((v) => !v); setFinderStale(false); }} disabled={!finderEnabled}
+            title={gate.ready ? 'Find a tooling that fits this profile'
+              : gate.similarityOnly ? `${gate.reason} — finds similar dies by shape only` : gate.reason}
+            aria-expanded={showFinder}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '10px 14px', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem',
+              cursor: finderEnabled ? 'pointer' : 'not-allowed',
+              background: !finderEnabled ? c.inset : showFinder ? 'transparent' : c.primary,
+              color: !finderEnabled ? c.dim : showFinder ? c.primary : c.primaryText,
+              border: `1px solid ${finderEnabled ? c.primary : c.border}`,
+            }}>
+            <Search size={15} aria-hidden="true" /> {finderButtonLabel}
+          </button>
+          {!finderEnabled && (
+            <div style={{ fontSize: '0.75rem', color: c.muted }}>
+              {profileNote && !profile ? `Waiting: ${profileNote}.` : `Waiting: ${gate.reason}.`}
+            </div>
+          )}
+          {showFinder && finderQuery && (
+            <FindToolingPanel query={finderQuery} mode={finderMode} onUse={handleUse} onClose={() => setShowFinder(false)} c={c}
+              minClearance={minClearance} onMinClearanceChange={finderMode === 'fit' ? setMinClearance : undefined}
+              onResult={setLastResult} chosenNumber={chosen?.fromFinder ? chosen.tooling : null} />
+          )}
+        </>
+      ))}
+    </>
+  );
+
+  const saveNote = generateBlocker && hasFile ? { text: generateBlocker, color: c.warn }
+    : fileHandle ? { text: `Saves the stamped PDF over “${fileName}”`, color: c.muted }
+      : pickedFile ? { text: 'Downloads the stamped PDF — this browser cannot save over the drawing', color: c.muted }
+        : null;
+  const dropHandlers = {
+    onDragOver: (e) => { e.preventDefault(); if (!locked) setDragging(true); },
+    onDragLeave: () => setDragging(false),
+    onDrop: handleDrop,
+  };
+  const column = { display: 'flex', flexDirection: 'column', gap: 22 };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: c.overlay, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="new-die-order-title" style={{
+        display: 'flex', flexDirection: 'column', background: c.bg, borderRadius: 16, width: '100%', maxWidth: values ? 1120 : 640,
+        maxHeight: '94vh', border: `1px solid ${c.border}`, boxShadow: c.shadowLg, overflow: 'hidden', color: c.text,
+      }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, padding: '18px 24px', borderBottom: `1px solid ${c.border}` }}>
+          <div>
+            <h3 id="new-die-order-title" style={{ fontSize: '1.15rem', fontWeight: 700, color: c.text, margin: 0 }}>Prepare New Die Order PDF</h3>
+            <p style={{ fontSize: '0.8rem', color: c.muted, margin: '4px 0 0' }}>
+              Stamps the order form onto the drawing and records it{user?.username ? ` as ${user.username}` : ''}. No order is created.
+            </p>
+          </div>
+          <button type="button" aria-label="Close" onClick={() => !busy && onClose()} disabled={busy}
+            style={{ padding: 8, background: 'transparent', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', color: c.muted, borderRadius: 8, display: 'flex' }}>
+            <X size={20} />
+          </button>
+        </header>
+
+        <input aria-label="Select the profile drawing PDF" ref={fileInputRef} type="file" accept="application/pdf,.pdf" onChange={handleInput} style={{ display: 'none' }} />
+
+        {!hasFile ? (
+          <div style={{ padding: 24 }}>
+            <div {...dropHandlers} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '36px 24px', borderRadius: 12, textAlign: 'center',
+              background: dragging ? c.primarySoft : c.inset, border: `1.5px dashed ${dragging ? c.primary : c.border}`,
+            }}>
+              <FileText size={32} aria-hidden="true" style={{ color: c.muted }} />
+              <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>Start with the profile drawing</div>
+              <div style={{ fontSize: '0.8rem', color: c.muted, maxWidth: 420 }}>
+                Page 1 fills in the form and gives the profile shape for Find tooling. Drop the PDF here, or choose it.
               </div>
-            </div>
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-bolster-size">BOLSTER SIZE</label>
-              {toolingField('BOLSTER_SIZE', 'BOLSTER SIZE', 'new-die-order-bolster-size')}
-            </div>
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-insert-size">INSERT SIZE</label>
-              {toolingField('INSERT_SIZE', 'INSERT SIZE', 'new-die-order-insert-size')}
-            </div>
-
-            <div style={{ gridColumn: '1 / -1', fontSize: '0.75rem', color: theme.textMuted }}>
-              {[
-                profileNote || (gate.ready ? '' : `Find tooling: ${gate.reason}${gate.similarityOnly ? ' (similar dies by shape only)' : ''}`),
-                chosen ? `Chosen: ${chosen.tooling} ${chosen.fromFinder ? '(from the finder)' : finderStale ? '(found for an earlier query)' : '(edited by hand)'}` : '',
-                finderStale ? 'query changed — run Find tooling again' : '',
-              ].filter(Boolean).join(' · ')}
-            </div>
-
-            {showFinder && finderQuery && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <FindToolingPanel query={finderQuery} mode={finderMode} onUse={handleUse} onClose={() => setShowFinder(false)} c={c}
-                  minClearance={minClearance} onMinClearanceChange={finderMode === 'fit' ? setMinClearance : undefined}
-                  onResult={setLastResult} />
-              </div>
-            )}
-
-            {textField('DELIVERY_DATE', 'REQUESTED DELIVERY DATE', 'new-die-order-delivery-date')}
-            <div>
-              <label style={labelStyle}>3D MODULE FOR SIMULATION</label>
-              <label style={checkboxBoxStyle}>
-                <input type="checkbox" checked={!!values.THREE_D_MODULE} onChange={(e) => set('THREE_D_MODULE', e.target.checked)} style={checkStyle} /> Required
-              </label>
-            </div>
-            <div>
-              <label style={labelStyle} htmlFor="new-die-order-shipment">MODE OF SHIPMENT</label>
-              <input id="new-die-order-shipment" type="text" value={values.SHIPMENT} readOnly style={{ ...inputStyle, opacity: 0.8, cursor: 'not-allowed' }} placeholder="Auto-filled from supplier" />
-            </div>
-            {textField('PROFILE_WEIGHT_PCT', 'PROFILE WEIGHT START %', 'new-die-order-profile-weight', { placeholder: 'e.g. 85' })}
-
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>FINISH</label>
-              <div style={{ display: 'flex', gap: '1.25rem', padding: '10px 14px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '10px' }}>
-                {[['FINISH_MILL', 'Mill'], ['FINISH_ANODIZING', 'Anodizing'], ['FINISH_POWDER', 'Powder coating']].map(([key, label]) => (
-                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: theme.text, fontSize: '0.875rem' }}>
-                    <input type="checkbox" checked={!!values[key]} onChange={(e) => set(key, e.target.checked)} style={checkStyle} /> {label}
-                  </label>
-                ))}
+              <button type="button" onClick={handlePick} disabled={locked}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, padding: '10px 18px', borderRadius: 8, background: c.primary, color: c.primaryText, border: 'none', cursor: locked ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
+                <FolderOpen size={16} aria-hidden="true" /> Select Profile Drawing PDF
+              </button>
+              <div style={{ fontSize: '0.72rem', color: c.dim, maxWidth: 420 }}>
+                The stamped PDF is saved over the chosen file, or downloaded if this browser cannot save in place.
               </div>
             </div>
           </div>
+        ) : (
+          <div {...dropHandlers} style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 24px', borderBottom: `1px solid ${c.border}`,
+            background: dragging ? c.primarySoft : c.inset,
+          }}>
+            <FileText size={18} aria-hidden="true" style={{ color: c.muted, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</div>
+              <div role="status" style={{ fontSize: '0.72rem', color: c.muted }}>
+                {reading ? 'Reading the drawing…' : fileHandle ? 'Will be saved over with the stamped order form' : 'The stamped PDF will be downloaded as a new file'}
+              </div>
+            </div>
+            <button type="button" onClick={handlePick} disabled={locked}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, background: 'transparent', color: c.text, border: `1px solid ${c.border}`, cursor: locked ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.8rem', flexShrink: 0 }}>
+              <FolderOpen size={14} aria-hidden="true" /> Choose different PDF
+            </button>
+          </div>
         )}
 
+        {values && (wide ? (
+          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+            <div style={{ ...column, flex: 1, minWidth: 0, overflowY: 'auto', padding: '20px 24px' }}>
+              {dieSections}
+              {orderSection}
+            </div>
+            <aside aria-label="Profile and tooling" style={{ ...column, width: 420, flexShrink: 0, overflowY: 'auto', padding: '20px 20px', borderLeft: `1px solid ${c.border}`, background: c.inset }}>
+              {toolingPane}
+            </aside>
+          </div>
+        ) : (
+          <div style={{ ...column, flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+            {dieSections}
+            {toolingPane}
+            {orderSection}
+          </div>
+        ))}
+
         {error && (
-          <div role="alert" style={{ marginTop: '1rem', padding: '10px 14px', borderRadius: '10px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', color: '#FCA5A5', fontSize: '0.85rem' }}>
+          <div role="alert" style={{ margin: values ? '0' : '0 24px 16px', padding: '10px 24px', borderTop: values ? `1px solid ${c.border}` : 'none', borderRadius: values ? 0 : 8, background: c.dangerBg, color: c.danger, fontSize: '0.85rem' }}>
             {error}
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: `1px solid ${theme.cardBorder}` }}>
-          {generateBlocker && hasFile && <span style={{ fontSize: '0.75rem', color: theme.textMuted, marginRight: 'auto' }}>{generateBlocker}</span>}
+        <footer style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, padding: '14px 24px', borderTop: `1px solid ${c.border}` }}>
+          {saveNote && <span style={{ fontSize: '0.75rem', color: saveNote.color, marginRight: 'auto', minWidth: 0 }}>{saveNote.text}</span>}
           <button type="button" onClick={onClose} disabled={busy}
-            style={{ padding: '10px 20px', borderRadius: '10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, color: theme.text, cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 500, fontSize: '0.875rem' }}>
+            style={{ padding: '10px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${c.border}`, color: c.text, cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 500, fontSize: '0.875rem' }}>
             Cancel
           </button>
-          <button type="button" onClick={handleGenerate} disabled={busy || reading || !!generateBlocker} title={generateBlocker || undefined}
-            style={{ padding: '10px 24px', borderRadius: '10px', background: (busy || reading || generateBlocker) ? '#475569' : theme.primary, border: 'none', color: theme.primaryText, cursor: (busy || reading || generateBlocker) ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
-            {busy ? 'Generating...' : 'Generate & Save'}
+          <button type="button" onClick={handleGenerate} disabled={locked || !!generateBlocker} title={generateBlocker || undefined}
+            style={{ padding: '10px 22px', borderRadius: 8, background: (locked || generateBlocker) ? c.inset : c.primary, border: `1px solid ${(locked || generateBlocker) ? c.border : c.primary}`, color: (locked || generateBlocker) ? c.dim : c.primaryText, cursor: (locked || generateBlocker) ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.875rem', flexShrink: 0 }}>
+            {busy ? 'Generating…' : 'Generate & Save'}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );
 }
+

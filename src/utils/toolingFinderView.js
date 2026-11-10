@@ -240,3 +240,30 @@ export function rejectedSummary(rejected, truncated) {
   const cap = truncated ? '(capped at 400 candidates)' : '';
   return [line, cap].filter(Boolean).join(' ');
 }
+
+const CAVITIES_OK = /^\s*[1-9]\d*\s*$/;
+
+// What Find tooling waits on, one line each, for the order form's tooling pane.
+// state: 'ok' | 'todo' (still needed) | 'warn' (usable for similar dies only) | 'busy'.
+// `profileNote` is the form's own word on the profile while there is none ("reading the profile…").
+export function finderChecklist({ profile, profileNote = '', profileBusy = false, press, dieSize, cavities, plant } = {}) {
+  const field = (key, label, value, ok) => ({
+    key, label, state: ok ? 'ok' : 'todo', note: ok ? String(value).trim() : 'missing',
+  });
+  let shape;
+  if (!profile) {
+    shape = { state: profileBusy ? 'busy' : 'todo', note: profileNote || 'not read yet' };
+  } else if (profile.true_size === false) {
+    shape = { state: 'warn', note: 'size unknown — similar dies by shape only' };
+  } else {
+    const ccd = typeof profile.ccd_mm === 'number' ? ` · CCD ${Math.round(profile.ccd_mm)} mm` : '';
+    shape = { state: 'ok', note: `true size${ccd}` };
+  }
+  return [
+    field('plant', 'Plant', plant, !blank(plant)),
+    field('press', 'Press', press, !blank(press)),
+    field('dieSize', 'Die size', dieSize, !blank(dieSize)),
+    field('cavities', 'Cavities', cavities, CAVITIES_OK.test(String(cavities ?? ''))),
+    { key: 'profile', label: 'Profile shape', ...shape },
+  ];
+}
