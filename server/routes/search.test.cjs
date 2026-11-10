@@ -21,7 +21,7 @@ installFakeDb(async (sql, params = []) => {
   if (q.startsWith('SELECT username FROM users WHERE id=$1')) return { rows: [{ username: 'approver' }] };
   // listQDs' child tables (files, activity, billets, FOC rounds): none here.
   if (/FROM (quality_discrepancy_files|quality_discrepancy_activity|qd_billet_parameters|qd_foc_rounds)/.test(q)) return { rows: [] };
-  if (q.startsWith("SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count, (SELECT f.id FROM die_order_files f WHERE f.order_id = o.id AND f.slot = 'profile_image' AND f.replaced_at IS NULL) AS profile_image_id FROM die_orders o WHERE")) return { rows: orderRows };
+  if (q.startsWith("SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count, (SELECT f.id FROM die_order_files f WHERE f.order_id = o.id AND f.slot = 'profile_image' AND f.replaced_at IS NULL) AS profile_image_id, (SELECT COUNT(*) FROM simulation_rounds sr WHERE sr.order_id = o.id AND sr.sim_completed_date IS NOT NULL)::int AS simulation_count FROM die_orders o WHERE")) return { rows: orderRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM die_orders')) return { rows: [{ total: totals.orders }] };
   if (q.startsWith('SELECT * FROM quality_discrepancies WHERE (')) return { rows: qdRows };
   if (q.startsWith('SELECT COUNT(*)::int AS total FROM quality_discrepancies')) return { rows: [{ total: totals.qds }] };

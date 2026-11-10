@@ -314,7 +314,8 @@ router.get('/', async (req, res) => {
 
         const [result, countResult] = await Promise.all([
             pool.query(`
-                SELECT o.*, COALESCE(c.change_count, 0)::int AS change_count
+                SELECT o.*, COALESCE(c.change_count, 0)::int AS change_count,
+                       (SELECT COUNT(*) FROM simulation_rounds sr WHERE sr.order_id = o.id AND sr.sim_completed_date IS NOT NULL)::int AS simulation_count
                 FROM die_orders o
                 LEFT JOIN (
                     SELECT order_id, COUNT(*) AS change_count

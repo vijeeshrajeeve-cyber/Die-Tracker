@@ -17,7 +17,8 @@ const QD_RANK = search.rankClause(search.QD_SEARCH);
 
 const ORDER_SELECT = `SELECT o.*, (SELECT COUNT(*) FROM order_changes c WHERE c.order_id = o.id)::int AS change_count,
   (SELECT f.id FROM die_order_files f
-    WHERE f.order_id = o.id AND f.slot = 'profile_image' AND f.replaced_at IS NULL) AS profile_image_id
+    WHERE f.order_id = o.id AND f.slot = 'profile_image' AND f.replaced_at IS NULL) AS profile_image_id,
+  (SELECT COUNT(*) FROM simulation_rounds sr WHERE sr.order_id = o.id AND sr.sim_completed_date IS NOT NULL)::int AS simulation_count
   FROM die_orders o`;
 
 const presentSearchOrder = (row) => ({ ...presentOrder(row), profileImageId: row.profile_image_id ?? null });

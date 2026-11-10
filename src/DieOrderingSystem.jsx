@@ -1521,6 +1521,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                     {specRow('Die type', dieTypeLabel(currentOrder['Die Type']) || '—')}
                     {specRow('Mandrels', `${currentOrder['Mandrels per Cavity'] || 0}/cav · ${currentOrder['Total Mandrels'] || 0} total`)}
                     {specRow('Simulation', simulation ? 'Required' : 'Not required')}
+                    {simulation && specRow('Simulations done', currentOrder['Simulation Count'] ?? '—')}
                     {specRow('Corrector', currentOrder.Corrector || '—')}
                     {specRow('Trials', trials)}
                   </dl>
