@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fieldsFromDrawing, valuesFromFields, pressOptionName, editToolingField, finderPayload, linesFromTextItems,
+  stampValuesFromItems, customerFromOrderDetails, fieldsFromPages,
 } from './newDieOrderPrefill.js';
 
 // Lines as PDFImportModal builds them: y descending, items left to right, one item per text.
@@ -160,4 +161,95 @@ test('linesFromTextItems groups pdf.js items into rows, top first, within 3 pt',
   ]);
   assert.deepEqual(lines.map((l) => [l.y, l.text]), [[280, 'DIE SIZE - DIA320X160'], [273, 'No OF CAV - 2 PRESS 7']]);
   assert.deepEqual(lines[1].items.map((i) => i.x), [158, 186, 208, 234]);
+});
+
+// Page 1 of request drawings whose order form is a stamped picture: only the typed values are
+// text. [text, x, y, height] as pdf.js gives them (30604_401, 30587_201, 30594_601, 30607_601).
+const item = ([str, x, y, h]) => ({ str, transform: [h, 0, 0, h, x, y], height: h });
+const STAMP_30604 = [
+  ['25.02.2026', 432, 440, 6], ['DIA 250X160', 392, 421, 6], ['1', 394, 414, 6], ['4', 446, 415, 6], ['OK', 441, 406, 6],
+  ['I-05043', 441, 399, 6], ['OLD', 444, 392, 6], ['12.03.2026', 434, 386, 6], ['NO', 443, 377, 6], ['BY ROAD', 411, 371, 6],
+  ['-6.5', 451, 364, 6], ['PDTMC', 390, 443, 6], ['30604-401', 492, 155, 14],
+].map(item);
+const STAMP_30587 = [
+  ['24.02.2026', 210, 307, 4], ['DIA 475X280', 164, 287, 4], ['1', 162, 280, 4], ['2', 211, 279, 4], ['OK', 213, 272, 4],
+  ['BOL-30587', 158, 265, 4], ['475X220', 163, 258, 4], ['REQUIRED', 215, 243, 4], ['30587-201', 513, 144, 12],
+  ['12.03.2026', 214, 250, 4], ['-5', 222, 229, 6], ['Phoenix', 160, 305, 4], ['BY AIR', 183, 236, 4],
+].map(item);
+const STAMP_30594 = [
+  ['25.02.2026', 506, 641, 6], ['1', 464, 615, 6], ['6', 516, 616, 6], ['OK', 517, 608, 6], ['I-30594', 513, 600, 6],
+  ['DIA 560X150', 513, 595, 4], ['18.03.2026', 513, 587, 4], ['Required', 516, 579, 4], ['-6.5', 525, 566, 4],
+  ['30594-601', 499, 150, 14], ['DIA 550X300', 466, 623, 6], ['Phoenix', 459, 641, 6], ['By air', 487, 573, 6],
+].map(item);
+const STAMP_30607 = [
+  ['25.02.2026', 244, 778, 6], ['DIA 550x250', 204, 760, 6], ['1', 204, 752, 6], ['6', 250, 752, 6], ['ok', 249, 743, 6],
+  ['bol-22772', 193, 737, 6], ['OLD', 202, 730, 6], ['18.03.2026', 252, 724, 4], ['NO', 252, 715, 4], ['-7', 261, 702, 4],
+  ['30607-601', 505, 148, 12], ['By air', 222, 708, 8], ['Compes', 196, 777, 6],
+].map(item);
+
+test('stampValuesFromItems reads the typed form values by where they sit', () => {
+  assert.deepEqual(stampValuesFromItems(STAMP_30604), {
+    supplier: 'PDTMC', orderDate: '2026-02-25', dieSize: '250X160', cavities: 1, press: '4', dieType: 'HOLLOW',
+    bolsterNo: null, insertNo: 'I-05043', bolsterSize: null, insertSize: 'OLD',
+    deliveryDate: '2026-03-12', threeD: false, shipment: 'BY ROAD', weightPct: '-6.5',
+  });
+  assert.deepEqual(stampValuesFromItems(STAMP_30587), {
+    supplier: 'Phoenix', orderDate: '2026-02-24', dieSize: '475X280', cavities: 1, press: '2', dieType: 'HOLLOW',
+    bolsterNo: 'BOL-30587', insertNo: null, bolsterSize: '475X220', insertSize: null,
+    deliveryDate: '2026-03-12', threeD: true, shipment: 'BY AIR', weightPct: '-5',
+  }, 'left column: a bolster and its size');
+  const s94 = stampValuesFromItems(STAMP_30594);
+  assert.deepEqual([s94.dieSize, s94.insertNo, s94.insertSize, s94.press, s94.threeD], ['550X300', 'I-30594', '560X150', '6', true],
+    'the die size is the size above the cavity row, whatever order the items come in');
+  const s07 = stampValuesFromItems(STAMP_30607);
+  assert.deepEqual([s07.supplier, s07.bolsterNo, s07.bolsterSize, s07.insertNo, s07.dieType], ['Compes', 'BOL-22772', 'OLD', null, 'HOLLOW']);
+});
+
+test('stampValuesFromItems answers null without a supplier-and-date row', () => {
+  assert.equal(stampValuesFromItems([]), null);
+  assert.equal(stampValuesFromItems(null), null);
+  assert.equal(stampValuesFromItems([item(['30604-401', 492, 155, 14]), item(['DIA 250X160', 392, 421, 6])]), null);
+  assert.equal(stampValuesFromItems([item(['25.02.2026', 432, 440, 6]), item(['1', 394, 414, 6])]), null, 'a date alone is not the form');
+});
+
+test('customerFromOrderDetails takes the name on the profile number line', () => {
+  const page2 = [
+    ['Sales to fill in all the information below for facilitation of die procurement.', 31, 615, 8],
+    ['Nazri', 327, 139, 8], ['Schuco Middle East Windows & Facade Systems L.L.C.', 389, 687, 8], ['30604', 124, 686, 8],
+  ].map(item);
+  assert.equal(customerFromOrderDetails(page2, '30604'), 'Schuco Middle East Windows & Facade Systems L.L.C.');
+  assert.equal(customerFromOrderDetails(page2, '99999'), null);
+  assert.equal(customerFromOrderDetails(page2, ''), null);
+  assert.equal(customerFromOrderDetails(null, '30604'), null);
+});
+
+test('fieldsFromPages fills the form from a drawing whose labels are not text', () => {
+  const page2 = [['Schuco Middle East', 389, 687, 8], ['30604', 124, 686, 8]].map(item);
+  const fields = fieldsFromPages(STAMP_30604, { fileName: '30604_401.pdf', page2Items: page2 });
+  const { values, sources } = valuesFromFields(fields, { today: '2026-11-10' });
+  assert.deepEqual(
+    [values.DIE_NO, values.PROFILE_NO, values.DIE_SIZE, values.NO_OF_CAV, values.PRESS, values.PLANT, values.HOLLOW, values.SOLID],
+    ['30604-401', '30604', '250X160', '1', 'P4', 'GEX 1', true, false],
+  );
+  assert.deepEqual(
+    [values.INSERT_NO, values.INSERT_SIZE, values.BOLSTER_NO, values.DELIVERY_DATE, values.THREE_D_MODULE, values.PROFILE_WEIGHT_PCT, values.CUSTOMER],
+    ['I-05043', 'OLD', '', '2026-03-12', false, '-6.5', 'Schuco Middle East'],
+  );
+  assert.equal(values.DATE, '2026-11-10', 'the form is dated the day it is prepared, not the drawing');
+  assert.equal(values.SUPPLIER, '', 'the supplier is matched against the master by the form, not here');
+  assert.equal(fields.supplier, 'PDTMC');
+  for (const key of ['DIE_SIZE', 'NO_OF_CAV', 'PRESS', 'HOLLOW', 'INSERT_NO', 'INSERT_SIZE', 'DELIVERY_DATE', 'PROFILE_WEIGHT_PCT', 'CUSTOMER']) {
+    assert.equal(sources[key], 'drawing', key);
+  }
+});
+
+test('fieldsFromPages reads a form printed as text by its labels alone', () => {
+  const labelled = [
+    ['DIE SIZE 320X160', 60, 781, 8], ['No OF CAV 2 PRESS P7', 60, 770, 8],
+    ...[['25.02.2026', 432, 440, 6], ['DIA 250X160', 392, 421, 6], ['1', 394, 414, 6], ['4', 446, 415, 6],
+      ['I-05043', 441, 399, 6], ['PDTMC', 390, 443, 6]],
+  ].map(item);
+  const fields = fieldsFromPages(labelled, { fileName: '30604_401.pdf' });
+  assert.deepEqual([fields.dieSize, fields.cavities, fields.press, fields.insertNo, fields.supplier], ['320X160', 2, 'P7', null, null],
+    'values typed elsewhere on the page are not mixed into a labelled form');
 });

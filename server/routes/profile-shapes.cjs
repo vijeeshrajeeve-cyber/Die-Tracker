@@ -4,6 +4,7 @@
 const path = require('node:path');
 const express = require('express');
 const multer = require('multer');
+const { readTitleBlock } = require('../services/titleBlockOcr.cjs');
 const { pool } = require('../db.cjs');
 const { reviewerMiddleware } = require('./auth.cjs');
 const { normalizePlant } = require('../services/frozenDesigns.cjs');
@@ -42,6 +43,24 @@ const TRACE_FIELDS = [
   'outer_mm', 'holes_mm', 'outer_unit', 'holes_unit', 'hole_count', 'ccd_mm', 'true_size', 'true_size_source',
   'true_size_confidence', 'style', 'needs_review', 'review_reason',
 ];
+// The title block of a drawing whose lettering is not text: the strip cut from the bottom of
+// page 1 (multipart `file`, PNG) is read by OCR. Answers { available, ccd, scales }; `available`
+// is false where the OCR program is not installed. Literal path, registered before '/:dieNo'.
+router.post('/title-block', (req, res, next) => {
+  traceUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Title block image too large' : err.message });
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file || !orderFiles.isPng(req.file.buffer)) return res.status(400).json({ error: 'Attach the title block as a PNG' });
+    res.json(await readTitleBlock(req.file.buffer));
+  } catch (err) {
+    console.error('title block read failed', err);
+    res.status(500).json({ error: 'Failed to read the title block' });
+  }
+});
+
 const TRACE_FAILURES = new Set(['no profile found in the picture', 'degenerate outline']);
 
 // The new-die-order modal's profile: the PNG cut from the drawing (multipart `file`) plus the text fields

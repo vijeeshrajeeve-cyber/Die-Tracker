@@ -147,9 +147,154 @@ export function fieldsFromDrawing(lines, fullText, { fileName } = {}) {
   return { ...fields, sources };
 }
 
+// ---- the order form drawn as a picture ------------------------------------------------
+// Many request drawings carry the die shop's order form as a stamped picture: its labels
+// ("DIE SIZE", "No OF CAV", ...) are not text, only the values typed into it are. They are
+// read by where they sit. The form is two columns of label + value:
+//   SUPPLIER   | DATE
+//   DIE SIZE (full width)
+//   No OF CAV  | PRESS
+//   SOLID      | HOLLOW
+//   BOLSTER No | INSERT No
+//   SIZE       | SIZE
+//   REQUESTED DELIVERY DATE, 3D MODULE, MODE OF SHIPMENT, PROFILE WEIGHT START (full width)
+// so a value left of the middle belongs to the left label of its row and one right of it to
+// the right label. The supplier and the order date on the top row mark the two columns.
+
+const STAMP_DATE = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/;
+const STAMP_SIZE = /^(?:DIA\.?\s*)?(\d{2,4}(?:\.\d+)?)\s*[xX×]\s*(\d{2,4}(?:\.\d+)?)$/i;
+const STAMP_TICK = /^(ok|yes|y)$/i;
+const STAMP_3D = /^(no|not\s*required|required|yes|ok)$/i;
+const STAMP_SHIP = /^(?:by\s+)?(road|air|sea|land)$/i;
+const STAMP_WEIGHT = /^([-+]\s*\d+(?:\.\d+)?)\s*%?$/;
+const STAMP_ROWS = 24; // the form is about 12 rows tall; twice that leaves room for loose typing
+
+const isoDate = (m) => `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+
+// pdf.js text items of page 1 -> the values typed into the stamped form, or null when the
+// page has no such form (no supplier-and-date row). Fields not typed are null.
+export function stampValuesFromItems(textItems) {
+  const items = (textItems || [])
+    .map((it) => ({
+      text: String(it?.str ?? '').trim(),
+      x: Number(it?.transform?.[4]), y: Number(it?.transform?.[5]),
+      h: Number(it?.height) || Math.abs(Number(it?.transform?.[3])) || 0,
+    }))
+    .filter((i) => i.text && Number.isFinite(i.x) && Number.isFinite(i.y));
+
+  // The top row: a name with the order date to its right on the same line.
+  let anchor = null;
+  for (const date of items.filter((i) => STAMP_DATE.test(i.text)).sort((a, b) => b.y - a.y)) {
+    const row = Math.max(date.h, 4);
+    const supplier = items
+      .filter((i) => i !== date && Math.abs(i.y - date.y) <= row && i.x < date.x && date.x - i.x < row * 30
+        && /[A-Za-z]{2,}/.test(i.text) && !STAMP_SIZE.test(i.text) && !STAMP_DATE.test(i.text))
+      .sort((a, b) => b.x - a.x)[0];
+    if (supplier) { anchor = { date, supplier, row }; break; }
+  }
+  if (!anchor) return null;
+
+  const { date, supplier, row } = anchor;
+  const split = (supplier.x + date.x) / 2;
+  const below = items
+    .filter((i) => i !== date && i !== supplier && i.y < date.y - row * 0.5 && i.y > date.y - row * STAMP_ROWS
+      && i.x > supplier.x - row * 12 && i.x < date.x + row * 18)
+    .sort((a, b) => b.y - a.y || a.x - b.x);
+
+  const out = {
+    supplier: supplier.text, orderDate: isoDate(date.text.match(STAMP_DATE)),
+    dieSize: null, cavities: null, press: null, dieType: null,
+    bolsterNo: null, insertNo: null, bolsterSize: null, insertSize: null,
+    deliveryDate: null, threeD: null, shipment: null, weightPct: null,
+  };
+  let seenCavRow = false; let seenToolingRow = false;
+  for (const i of below) {
+    const left = i.x < split;
+    const size = i.text.match(STAMP_SIZE);
+    const sizeText = size ? `${size[1]}X${size[2]}`.toUpperCase() : null;
+    const dateM = i.text.match(STAMP_DATE);
+    if (dateM) { if (!out.deliveryDate) out.deliveryDate = isoDate(dateM); continue; }
+    if (sizeText && !out.dieSize && !seenCavRow) { out.dieSize = sizeText; continue; }
+    if (/^\d{1,2}$/.test(i.text) && !seenToolingRow && !out.deliveryDate) {
+      seenCavRow = true;
+      if (left && out.cavities == null) out.cavities = parseInt(i.text, 10);
+      else if (!left && out.press == null) out.press = i.text;
+      continue;
+    }
+    if (STAMP_TICK.test(i.text) && !seenToolingRow && !out.deliveryDate) {
+      if (!out.dieType) out.dieType = left ? 'SOLID' : 'HOLLOW';
+      continue;
+    }
+    if (sizeText || /^(old|new)$/i.test(i.text)) {
+      const key = left ? 'bolsterSize' : 'insertSize';
+      if (!out[key]) out[key] = sizeText || i.text.toUpperCase();
+      continue;
+    }
+    const ship = i.text.match(STAMP_SHIP);
+    if (ship) { if (!out.shipment) out.shipment = i.text.toUpperCase().replace(/\s+/g, ' '); continue; }
+    const weight = i.text.match(STAMP_WEIGHT);
+    if (weight) { if (!out.weightPct) out.weightPct = weight[1].replace(/\s+/g, ''); continue; }
+    if (out.deliveryDate && STAMP_3D.test(i.text)) {
+      if (out.threeD == null) out.threeD = !/^no/i.test(i.text);
+      continue;
+    }
+    // A tooling number: letters with at least three digits ("I-05043", "BOL-30587", "25IC2-030724").
+    if (!out.deliveryDate && /[A-Za-z]/.test(i.text) && /\d{3,}/.test(i.text)) {
+      seenToolingRow = true;
+      const key = left ? 'bolsterNo' : 'insertNo';
+      if (!out[key]) out[key] = i.text.toUpperCase();
+    }
+  }
+  return out;
+}
+
+// The customer named on the order-details sheet (page 2): the text on the profile number's
+// line, right of it. `textItems` are that page's pdf.js items.
+export function customerFromOrderDetails(textItems, profileNo) {
+  const want = String(profileNo ?? '').trim();
+  if (!want) return null;
+  const items = (textItems || []).map((it) => ({
+    text: String(it?.str ?? '').trim(), x: Number(it?.transform?.[4]), y: Number(it?.transform?.[5]),
+  })).filter((i) => i.text);
+  const at = items.find((i) => i.text === want);
+  if (!at) return null;
+  const name = items
+    .filter((i) => i !== at && Math.abs(i.y - at.y) <= 4 && i.x > at.x && /[A-Za-z]{3,}/.test(i.text))
+    .sort((a, b) => b.text.length - a.text.length)[0];
+  return name ? name.text : null;
+}
+
+// Everything page 1 (and the order-details page, when given) says, as fieldsFromDrawing's
+// answer with the stamped form's extra fields. A form printed as text (labels and values, as
+// this app stamps it) is read by its labels and is the whole answer; only when the page has no
+// such form are the values read by position.
+export function fieldsFromPages(page1Items, { fileName, page2Items = null } = {}) {
+  const lines = linesFromTextItems(page1Items);
+  const base = fieldsFromDrawing(lines, lines.map((l) => l.text).join(' '), { fileName });
+  const labelled = base.dieSize != null || base.cavities != null;
+  const stamp = (labelled ? null : stampValuesFromItems(page1Items)) || {};
+  const fields = { ...base };
+  const sources = { ...base.sources };
+  const fill = (key, value) => {
+    if (fields[key] != null && fields[key] !== '') return;
+    if (value == null || value === '') return;
+    fields[key] = value;
+    sources[key] = 'drawing';
+  };
+  for (const key of ['dieSize', 'cavities', 'dieType', 'insertNo', 'bolsterNo']) fill(key, stamp[key]);
+  if (stamp.press != null) fill('press', /^\d+$/.test(stamp.press) ? `P${stamp.press}` : String(stamp.press).toUpperCase());
+  for (const key of ['supplier', 'bolsterSize', 'insertSize', 'deliveryDate', 'threeD', 'shipment', 'weightPct']) {
+    fields[key] = null;
+    fill(key, stamp[key]);
+  }
+  if (page2Items) fill('customer', customerFromOrderDetails(page2Items, fields.profileNo));
+  return { ...fields, sources, lines };
+}
+
 const FIELD_TO_KEY = {
   dieSize: 'DIE_SIZE', cavities: 'NO_OF_CAV', press: 'PRESS', insertNo: 'INSERT_NO', bolsterNo: 'BOLSTER_NO',
   dieNo: 'DIE_NO', profileNo: 'PROFILE_NO', customer: 'CUSTOMER',
+  insertSize: 'INSERT_SIZE', bolsterSize: 'BOLSTER_SIZE', deliveryDate: 'DELIVERY_DATE', weightPct: 'PROFILE_WEIGHT_PCT',
 };
 
 // The form's values: every dieOrderTemplate VALUE_KEYS entry (checkboxes false, texts '',
@@ -164,8 +309,8 @@ export function valuesFromFields(fields = {}, { today = '' } = {}) {
   const values = {
     SUPPLIER: '', DATE: today, DIE_SIZE: text(f.dieSize), NO_OF_CAV: text(f.cavities), PRESS: text(f.press),
     SOLID: type === 'SOLID', HOLLOW: type === 'HOLLOW',
-    BOLSTER_NO: text(f.bolsterNo), INSERT_NO: text(f.insertNo), BOLSTER_SIZE: '', INSERT_SIZE: '',
-    DELIVERY_DATE: '', THREE_D_MODULE: false, SHIPMENT: '', PROFILE_WEIGHT_PCT: '',
+    BOLSTER_NO: text(f.bolsterNo), INSERT_NO: text(f.insertNo), BOLSTER_SIZE: text(f.bolsterSize), INSERT_SIZE: text(f.insertSize),
+    DELIVERY_DATE: text(f.deliveryDate), THREE_D_MODULE: f.threeD === true, SHIPMENT: '', PROFILE_WEIGHT_PCT: text(f.weightPct),
     FINISH_MILL: false, FINISH_ANODIZING: false, FINISH_POWDER: false, PENDING_ORDER_KG: '0', REASON: '',
     PLANT: plant, DIE_NO: text(f.dieNo), PROFILE_NO: text(f.profileNo), CUSTOMER: text(f.customer),
   };
@@ -173,6 +318,7 @@ export function valuesFromFields(fields = {}, { today = '' } = {}) {
   for (const [field, key] of Object.entries(FIELD_TO_KEY)) if (read[field] && values[key] !== '') sources[key] = read[field];
   if (read.dieType && (values.SOLID || values.HOLLOW)) sources[values.SOLID ? 'SOLID' : 'HOLLOW'] = read.dieType;
   if (plant && read.press) sources.PLANT = read.press;
+  if (read.threeD && f.threeD != null) sources.THREE_D_MODULE = read.threeD;
   return { values, sources };
 }
 

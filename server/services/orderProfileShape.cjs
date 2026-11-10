@@ -65,6 +65,17 @@ function chooseScale({ pxCcd, renderDpi, scales, dieListCcd, dieSize }) {
   return pick(main, 'likely');
 }
 
+// With no scale stated at all, a CCD stated for this drawing (its title block, or typed on the
+// order form) sizes the picture on its own: the traced outline is scaled so its CCD is that one.
+// Nothing backs it, so it is only 'likely'. A drawing that states scales is left to chooseScale:
+// there a CCD no scale agrees with means the picture is not the whole profile.
+function sizeFromStatedCcd({ pxCcd, scales, ccdStated }) {
+  const none = !Array.isArray(scales) || !scales.some((v) => Number.isFinite(v) && v > 0);
+  const ref = referenceCcd(ccdStated);
+  if (!none || ref == null || !(pxCcd > 0)) return null;
+  return { mmPerPx: ref / pxCcd, scale: null, source: 'stated-ccd', confidence: 'likely' };
+}
+
 // PNG bytes + drawing meta -> the profile_shapes columns the shape decides. Throws when the
 // picture is not a readable PNG or holds no traceable profile. The bytes come from a request, so
 // they go through the pure-JS decoder: the canvas one can crash the process on a corrupt PNG. meta: { renderDpi, scales, ccdStated, dieListCcd, dieSize, dieType }.
@@ -82,7 +93,7 @@ async function shapeFromProfilePng(buffer, meta = {}) {
   const reference = referenceCcd(meta.ccdStated) ?? meta.dieListCcd ?? null;
   const sized = chooseScale({
     pxCcd: stats.ccd, renderDpi: meta.renderDpi, scales: meta.scales, dieListCcd: reference, dieSize: meta.dieSize,
-  });
+  }) || sizeFromStatedCcd({ pxCcd: stats.ccd, scales: meta.scales, ccdStated: meta.ccdStated });
   // Millimetre polygons share the unit frame's origin: the outer outline's centroid.
   const [cx, cy] = unit.centroid;
   const mm = (poly) => roundPoly(poly.map(([x, y]) => [(x - cx) * sized.mmPerPx, (y - cy) * sized.mmPerPx]));
