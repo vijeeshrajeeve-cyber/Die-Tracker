@@ -994,6 +994,8 @@ export const toolingsAPI = {
         if (!response.ok) throw new Error(`Could not download the drawing (HTTP ${response.status})`);
         return response.blob();
     },
+    // The die sizes the tooling chart lists for a press: { press, dieSizes: ['302.5X160', ...] }.
+    dieSizes: async ({ press }) => apiRequest(`/toolings/die-sizes?${new URLSearchParams({ press: press ?? '' })}`),
     combinations: async ({ press, dieSize }) => apiRequest(`/toolings/combinations?${new URLSearchParams({ press: press ?? '', dieSize: dieSize ?? '' })}`),
     // Finder: { plant, press, dieSize, cavities, profile | dieNo, limit? } -> ranked candidates + similar dies.
     find: async (body) => apiRequest('/toolings/find', {

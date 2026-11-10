@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FolderOpen, Search, FileText, Check, Circle, AlertTriangle, Loader2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
-import { newDieOrderFormsAPI, profileShapesAPI } from '../../api';
+import { newDieOrderFormsAPI, profileShapesAPI, toolingsAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
 import useDialog from '../../hooks/useDialog';
 import FindToolingPanel from './FindToolingPanel';
-import { applyChoice, finderReadiness, finderChecklist } from '../../utils/toolingFinderView';
+import { applyChoice, finderReadiness, finderChecklist, matchDieSize } from '../../utils/toolingFinderView';
 import {
   fieldsFromDrawing, valuesFromFields, pressOptionName, editToolingField, finderPayload, linesFromTextItems,
 } from '../../utils/newDieOrderPrefill';
@@ -25,6 +25,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const PLANTS = ['GEX 1', 'GEX 2'];
 const TRACE_FAILED = 'profile could not be read — finder unavailable';
 const TRACE_READING = 'reading the profile…';
+const CUSTOM_SIZE = '__custom__';
 const WIDE_QUERY = '(min-width: 1000px)'; // room for the tooling pane beside the form
 
 function useWide() {
@@ -213,6 +214,27 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
   }, [presses, plant]);
 
   const set = (key, value) => setValues((prev) => ({ ...prev, [key]: value }));
+
+  // The die sizes the tooling chart lists for the chosen press; the die size field offers
+  // these, with a custom size typed by hand when the die is none of them.
+  const pressName = values?.PRESS || '';
+  const [chartSizes, setChartSizes] = useState({ press: '', list: [] });
+  const [customSize, setCustomSize] = useState(false);
+  const dieSizeInput = useRef(null);
+  useEffect(() => {
+    if (!pressName) return undefined;
+    let active = true;
+    toolingsAPI.dieSizes({ press: pressName })
+      .then((res) => { if (active) setChartSizes({ press: pressName, list: Array.isArray(res?.dieSizes) ? res.dieSizes : [] }); })
+      .catch(() => { if (active) setChartSizes({ press: pressName, list: [] }); });
+    return () => { active = false; };
+  }, [pressName]);
+  const sizesLoaded = !!pressName && chartSizes.press === pressName;
+  const sizeOptions = sizesLoaded ? chartSizes.list : [];
+  const sizeMatch = matchDieSize(values?.DIE_SIZE, sizeOptions);
+  const sizeBlank = !String(values?.DIE_SIZE ?? '').trim();
+  const sizeFromList = sizeOptions.length > 0 && !customSize && (sizeBlank || sizeMatch != null);
+  useEffect(() => { if (customSize) dieSizeInput.current?.focus(); }, [customSize]);
   const setTooling = (key, value) => {
     const next = editToolingField(values, chosen, key, value);
     setValues(next.values);
@@ -423,7 +445,40 @@ export default function NewDieOrderModal({ user, theme, presses = [], suppliers 
               </select>
             </div>
             {textField('NO_OF_CAV', 'Cavities', 'new-die-order-no-of-cav', { inputMode: 'numeric' })}
-            {textField('DIE_SIZE', 'Die size', 'new-die-order-die-size', { wide: true })}
+            <div style={{ gridColumn: '1 / -1' }}>
+              {label('Die size', 'new-die-order-die-size', { hintKey: 'DIE_SIZE' })}
+              {sizeFromList ? (
+                <select id="new-die-order-die-size" value={sizeMatch ?? ''} style={{ ...inputStyle, cursor: 'pointer' }}
+                  onChange={(e) => {
+                    if (e.target.value === CUSTOM_SIZE) { setCustomSize(true); return; }
+                    set('DIE_SIZE', e.target.value);
+                  }}>
+                  <option value="">Select die size</option>
+                  {sizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
+                  <option value={CUSTOM_SIZE}>Custom size…</option>
+                </select>
+              ) : (
+                <input id="new-die-order-die-size" ref={dieSizeInput} type="text" value={values.DIE_SIZE}
+                  onChange={(e) => set('DIE_SIZE', e.target.value)} style={inputStyle}
+                  placeholder={sizeOptions.length ? 'Custom size, e.g. 302.5X160' : undefined} />
+              )}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 5, fontSize: '0.72rem', color: c.dim, minHeight: '1.1em' }}>
+                <span>
+                  {!pressName ? 'Choose the press to list its die sizes'
+                    : !sizesLoaded ? 'Loading the sizes for this press…'
+                      : !sizeOptions.length ? `The tooling chart lists no die sizes for ${pressName} — type the size`
+                        : sizeFromList ? `${sizeOptions.length} sizes on the tooling chart for ${pressName}`
+                          : sizeBlank || sizeMatch ? 'Custom size' : `Not one of the chart sizes for ${pressName}`}
+                </span>
+                {sizeOptions.length > 0 && !sizeFromList && (
+                  <button type="button"
+                    onClick={() => { setCustomSize(false); if (!sizeMatch) set('DIE_SIZE', ''); }}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', padding: 0, color: c.link, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Choose from the list
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           {chipGroup('Die type', [['SOLID', 'Solid'], ['HOLLOW', 'Hollow']], ['SOLID', 'HOLLOW'])}
         </>

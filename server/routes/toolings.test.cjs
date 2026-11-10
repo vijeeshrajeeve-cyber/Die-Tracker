@@ -107,6 +107,17 @@ test('combinations lists allowed sizes for a press and die size, and says when t
   assert.deepEqual(none.body.rows, []);
 });
 
+test('die-sizes lists the chart die sizes of a press', async () => {
+  const ok = await request(base, '/api/toolings/die-sizes?press=P6');
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.press, 'PRESS 6');
+  assert.deepEqual(ok.body.dieSizes, ['355X200']);
+  const none = await request(base, '/api/toolings/die-sizes?press=PRESS%207');
+  assert.deepEqual(none.body.dieSizes, []);
+  const bad = await request(base, '/api/toolings/die-sizes');
+  assert.equal(bad.status, 400);
+});
+
 test('combinations requires press and dieSize', async () => {
   const res = await request(base, '/api/toolings/combinations?press=PRESS%206');
   assert.equal(res.status, 400);
