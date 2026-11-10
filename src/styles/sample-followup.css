@@ -120,7 +120,10 @@
 
 /* Worklist + pane */
 .sf-work { display: grid; grid-template-columns: 400px minmax(0,1fr); gap: 1rem; align-items: start; }
-.sf-list { overflow: hidden; }
+/* The die list scrolls inside its card so a long stage does not stretch the page;
+   its header stays in view. */
+.sf-list { overflow-y: auto; max-height: calc(100dvh - 140px); overscroll-behavior: contain; }
+.sf-list-head { position: sticky; top: 0; z-index: 2; background: var(--sf-surface); }
 .sf-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--sf-line); }
 .sf-list-head h2 { font-size: .85rem; font-weight: 700; color: var(--sf-text); }
 .sf-list-head span { font-size: .72rem; color: var(--sf-dim); white-space: nowrap; }
@@ -229,6 +232,8 @@
 @media (max-width: 1280px) {
   .sf-work, .sf-summary { grid-template-columns: minmax(0,1fr); }
   .sf-row-meta { max-width: none; }
+  /* Stacked above the pane: leave room to see the pane below. */
+  .sf-list { max-height: 60dvh; }
 }
 @media (max-width: 720px) {
   .sf-header-actions, .sf-search { width: 100%; }
