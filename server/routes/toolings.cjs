@@ -108,6 +108,27 @@ router.get('/combinations', async (req, res) => {
   }
 });
 
+// The die sizes the tooling chart lists for a press, smallest first. Registered before '/:number'.
+router.get('/die-sizes', async (req, res) => {
+  try {
+    const press = await normalizePress(req.query.press);
+    if (!press) return res.status(400).json({ error: 'press is required' });
+    const { rows } = await pool.query(
+      'SELECT DISTINCT tc.die_size FROM tooling_combinations tc WHERE tc.press = $1',
+      [press],
+    );
+    const dims = (size) => String(size).split('X').map(Number);
+    const dieSizes = sortedDistinct(rows, 'die_size').sort((a, b) => {
+      const [da, ta] = dims(a); const [db, tb] = dims(b);
+      return (da - db) || (ta - tb) || String(a).localeCompare(String(b));
+    });
+    res.json({ press, dieSizes });
+  } catch (err) {
+    console.error('toolings die sizes failed', err);
+    res.status(500).json({ error: 'Failed to load die sizes' });
+  }
+});
+
 // '_' and '-' match as the same separator (the GEX 1 die list writes 13794_525, requests 13794-525).
 // Registered before '/:number'. The toolings a die is recorded with (die list, order PDF, new-order form), each with
 // its master row when the master has the number.

@@ -267,3 +267,20 @@ export function finderChecklist({ profile, profileNote = '', profileBusy = false
     { key: 'profile', label: 'Profile shape', ...shape },
   ];
 }
+
+// A die size as the tooling chart writes it: "Ø302.5 x 160" and "302.5×160" → "302.5X160".
+// Anything that is not diameter × thickness is only trimmed and upper-cased.
+const DIE_SIZE_TOKEN = /^(?:∅|Ø|DIA)?\s*(\d+(?:\.\d+)?)\s*[X×]\s*(\d+(?:\.\d+)?)$/;
+export function dieSizeKey(raw) {
+  const t = String(raw ?? '').trim().toUpperCase();
+  const m = DIE_SIZE_TOKEN.exec(t);
+  return m ? `${Number(m[1])}X${Number(m[2])}` : t;
+}
+
+// Which of the press's chart sizes a die size value is, however it was typed; null when it
+// is blank or not one of them (a custom size).
+export function matchDieSize(value, options = []) {
+  const key = dieSizeKey(value);
+  if (!key) return null;
+  return options.find((o) => dieSizeKey(o) === key) ?? null;
+}

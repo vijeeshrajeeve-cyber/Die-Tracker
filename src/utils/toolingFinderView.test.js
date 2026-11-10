@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { finderChecklist,
+import { finderChecklist, dieSizeKey, matchDieSize,
   placedProfile, overlayViewBox, svgPath, candidateTags, candidateMeta, linkedDiesText,
   similarCards, similarOnlyCards, applyChoice, finderReadiness, rejectedSummary,
   sourceLabel, similarMeta, similarFromItems,
@@ -276,4 +276,15 @@ test('finderChecklist says what Find tooling still waits on', () => {
   const busy = finderChecklist({ ...full, profileNote: 'reading the profile…', profileBusy: true })[4];
   assert.deepEqual([busy.state, busy.note], ['busy', 'reading the profile…']);
   assert.equal(finderChecklist(full)[4].note, 'not read yet');
+});
+
+test('matchDieSize finds a typed die size among the chart sizes of a press', () => {
+  const sizes = ['150X120', '302.5X160', '302.5X180'];
+  assert.equal(dieSizeKey(' ø302.5 x 160 '), '302.5X160');
+  assert.equal(dieSizeKey('302.50×160'), '302.5X160');
+  assert.equal(matchDieSize('Ø302.5 X 160', sizes), '302.5X160');
+  assert.equal(matchDieSize('150x120', sizes), '150X120');
+  assert.equal(matchDieSize('305X160', sizes), null);
+  assert.equal(matchDieSize('', sizes), null);
+  assert.equal(matchDieSize('302.5X160'), null);
 });
