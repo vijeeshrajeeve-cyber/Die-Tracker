@@ -97,8 +97,8 @@ router.post('/similar', async (req, res) => {
     // rows: a tooling's chart verdict is 'no_chart' and never a reason.
     const details = await neighbourDetails(pool, near, { plant, press: null, dieSize: null, cavities, chartRows: [] });
     const items = near.map((n, i) => {
-      const { toolings, dieSize, press, cavity } = details[i];
-      return { ...n, toolings, dieSize, press, cavity };
+      const { toolings, dieSize, press, cavity, ccd, outline } = details[i];
+      return { ...n, toolings, dieSize, press, cavity, ccd, outline };
     });
     res.json({ items, signature });
   } catch (err) {

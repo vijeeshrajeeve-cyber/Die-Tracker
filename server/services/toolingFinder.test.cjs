@@ -285,6 +285,7 @@ function finderClient(s) {
       }
       if (/max\(updated_at\)/.test(sql) && /FROM profile_shapes/.test(sql)) return { rows: [{ max_updated: 'v1', n: (s.index || []).length }] };
       if (/FROM profile_shapes WHERE plant/.test(sql)) return { rows: s.index || [] };
+      if (/FROM profile_shapes WHERE id = ANY/.test(sql)) return { rows: (s.shapeRows || []).filter((r) => params[0].includes(r.id)) };
       if (/FROM existing_die_details/.test(sql)) {
         return { rows: (s.dieList || []).filter((r) => params[0].includes(r.die_no.replace(/_/g, '-')) && params[1].includes(r.plant)) };
       }
@@ -296,7 +297,7 @@ function finderClient(s) {
 }
 
 const CANDIDATE_KEYS = ['number', 'kind', 'sizeClass', 'sizeClassConfidence', 'cavities', 'heldPresses', 'needsTransfer',
-  'location', 'confidence', 'extractionSource', 'clearance', 'clearanceCapped', 'placements', 'chart', 'linkedDies', 'pockets'].sort();
+  'location', 'confidence', 'extractionSource', 'clearance', 'clearanceCapped', 'placements', 'chart', 'linkedDies', 'pockets', 'outer'].sort();
 
 test('fits a profile by polygon and returns ranked candidates with links and placements', async () => {
   const plant = 'FIND A';
@@ -428,6 +429,10 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
       link('NOSIZE', { size_class: null }),
       link('BOL', { die_no: 'N-2', kind: 'bolster', t_kind: 'bolster', size_class: '600X150' }),
     ],
+    shapeRows: [
+      { id: 11, ccd_mm: '181.64', true_size: true, outer_unit: [[1, 0], [0, 1.00004], [-1, 0], [0, -1]], holes_unit: [[[0.1, 0], [0, 0.1], [-0.1, 0]]] },
+      { id: 12, ccd_mm: '50', true_size: false, outer_unit: JSON.stringify([[2, 0], [0, 1], [-2, 0]]), holes_unit: null },
+    ],
     dieList: [
       { die_no: 'N_1', plant, die_size: '450X250', press: 'PRESS 6', cavity: 3 },
       { die_no: 'N-1', plant, die_size: 'LATER', press: 'PRESS 9', cavity: 9 },
@@ -438,7 +443,11 @@ test('similar dies carry their toolings with scope and chart reasons', async () 
 
   assert.deepEqual(r.similar.map((s) => s.dieNo), ['N-1', 'N-2'], 'hole count must match; nearest first');
   const [n1, n2] = r.similar;
-  assert.deepEqual(Object.keys(n1).sort(), ['cavity', 'cavityMatch', 'dieNo', 'dieSize', 'distance', 'press', 'profileNumber', 'shapeId', 'toolings', 'trueSize']);
+  assert.deepEqual(Object.keys(n1).sort(), ['cavity', 'cavityMatch', 'ccd', 'dieNo', 'dieSize', 'distance', 'outline', 'press', 'profileNumber', 'shapeId', 'toolings', 'trueSize']);
+  assert.equal(n1.ccd, 181.6, 'the CCD of a true-size shape, to 0.1 mm');
+  assert.deepEqual(n1.outline, { outer: [[1, 0], [0, 1], [-1, 0], [0, -1]], holes: [[[0.1, 0], [0, 0.1], [-0.1, 0]]] });
+  assert.equal(n2.ccd, null, 'an unscaled shape states no CCD');
+  assert.deepEqual(n2.outline, { outer: [[2, 0], [0, 1], [-2, 0]], holes: [] });
   assert.deepEqual([n1.press, n1.dieSize, n1.cavity], ['PRESS 6', '450X250', 3], 'die-list facts; the first row wins, "_" matches "-"');
   assert.deepEqual([n2.press, n2.dieSize, n2.cavity], [null, null, null], 'a die the die list does not know');
   assert.equal(n1.profileNumber, 'P-1');
@@ -496,6 +505,7 @@ test('neighbourDetails uses the GEX 1 plant spellings and skips cavities when no
   const near = [{ die_no: 'X_1', profile_number: null, distance: 0.1, cavityMatch: null, trueSize: false, shapeId: 9 }];
   const [d] = await f.neighbourDetails(client, near, { plant: 'GEX 1', press: null, dieSize: null, cavities: null, chartRows: [] });
   assert.deepEqual([d.press, d.dieSize, d.cavity], ['PRESS 5', '250X160', 2]);
+  assert.deepEqual([d.ccd, d.outline], [null, null], 'a shape row that is gone leaves both unknown');
   assert.deepEqual(client.queries.find((x) => /existing_die_details/.test(x.sql)).params, [['X-1'], ['GEX 1', 'GEX 01']]);
   assert.equal(d.toolings[0].reason, null, 'no cavities asked: not a cavities reason');
   assert.equal(d.toolings[0].chartVerdict, 'no_chart');

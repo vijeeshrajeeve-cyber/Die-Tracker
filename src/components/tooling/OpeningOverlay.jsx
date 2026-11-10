@@ -28,8 +28,6 @@ export default function OpeningOverlay({ pockets, outer = null, profilePoints = 
     <svg
       role="img"
       aria-label={label}
-      width={size.w}
-      height={size.h}
       viewBox={`${vb.minX} ${vb.minY} ${vb.width} ${vb.height}`}
       preserveAspectRatio="xMidYMid meet"
       style={box}

@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, AlertTriangle, Search, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, AlertTriangle, Search, Check, ChevronDown, ChevronUp, CircleCheck, CircleX, Maximize2, Minimize2 } from 'lucide-react';
 import { toolingsAPI, profileShapesAPI } from '../../api';
 import OpeningOverlay from './OpeningOverlay';
+import ProfileOutline from './ProfileOutline';
 import {
-  candidateTags, candidateMeta, linkedDiesText, similarCards, similarOnlyCards, rejectedSummary, similarFromItems,
+  candidateTags, linkedDiesText, similarCards, similarOnlyCards, rejectedSummary, similarFromItems,
+  sizeClassText, openingText, profileSizeText, chartCheck, chartSummary,
 } from '../../utils/toolingFinderView';
 
 // The Find tooling panel both order forms embed. `query` is the finder request
@@ -57,35 +59,114 @@ const linkButton = (c) => ({
   color: c.link || c.primary, fontSize: 12, fontWeight: 600, cursor: 'pointer',
 });
 
+const KIND_WORD = { insert: 'Insert', bolster: 'Bolster' };
+
+// One fact of a suggestion: a quiet label over the value.
+function Spec({ label, value, c, wide = false }) {
+  return (
+    <div style={{ minWidth: 0, gridColumn: wide ? '1 / -1' : undefined }}>
+      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: c.dim }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: value ? c.text : c.dim, overflowWrap: 'anywhere' }}>{value || 'not known'}</div>
+    </div>
+  );
+}
+
+function ChartLine({ check, c }) {
+  if (!check) return null;
+  const t = toneColors(check.tone, c);
+  const Icon = check.tone === 'ok' ? CircleCheck : check.tone === 'no' ? CircleX : AlertTriangle;
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 9px', borderRadius: 8, background: t.background, color: t.color, fontSize: 12, lineHeight: 1.4 }}>
+      <Icon size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
+      <div>
+        <div style={{ fontWeight: 600 }}>Combination chart: {check.text}</div>
+        {check.detail && <div style={{ color: c.muted }}>{check.detail}</div>}
+      </div>
+    </div>
+  );
+}
+
 function CandidateCard({ candidate, best, inUse, profilePoints, tagCtx, onUse, c }) {
-  const tags = candidateTags(candidate, tagCtx);
+  const [big, setBig] = useState(false);
+  const tags = candidateTags(candidate, { ...tagCtx, skipChart: true });
   const accent = inUse ? c.primary : best ? c.ok : c.border;
+  const kind = KIND_WORD[candidate.kind] || 'Tooling';
+  const cav = candidate.cavities == null ? null : `${candidate.cavities}`;
+  const picture = (
+    <button
+      type="button"
+      onClick={() => setBig((v) => !v)}
+      aria-expanded={big}
+      aria-label={big ? `Shrink the picture of ${candidate.number}` : `Enlarge the picture of ${candidate.number}`}
+      title={big ? 'Shrink' : 'Enlarge'}
+      style={{ position: 'relative', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'block', width: big ? '100%' : 164 }}
+    >
+      <OpeningOverlay
+        pockets={candidate.pockets}
+        outer={candidate.outer || null}
+        profilePoints={profilePoints}
+        placements={candidate.placements}
+        size={big ? { w: '100%', h: 280 } : { w: 164, h: 124 }}
+        c={c}
+      />
+      <span aria-hidden="true" style={{ position: 'absolute', right: 5, bottom: 5, display: 'flex', padding: 3, borderRadius: 5, background: c.bg, border: `1px solid ${c.border}`, color: c.muted }}>
+        {big ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+      </span>
+    </button>
+  );
+  const heading = (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {best && <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: c.ok, marginBottom: 2 }}>Best fit</div>}
+      <div style={{ fontWeight: 700, fontSize: 15, color: c.text, overflowWrap: 'anywhere' }}>{candidate.number}</div>
+      <div style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{kind}</div>
+    </div>
+  );
+  const useButton = (
+    <button
+      type="button"
+      onClick={() => onUse(candidate)}
+      aria-pressed={inUse}
+      style={{
+        flexShrink: 0, alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        background: inUse ? c.primarySoft : best ? c.primary : 'transparent',
+        color: inUse ? c.primary : best ? c.primaryText : c.primary,
+        border: `1px solid ${c.primary}`,
+      }}
+    >
+      {inUse ? <><Check size={13} aria-hidden="true" /> In use</> : 'Use this'}
+    </button>
+  );
+  const specs = (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px 12px' }}>
+      <Spec label={`${kind} size`} value={sizeClassText(candidate.sizeClass)} c={c} />
+      <Spec label="Cavities" value={cav} c={c} />
+      <Spec label="Opening" value={openingText(candidate.pockets)} c={c} wide />
+    </div>
+  );
   return (
     <div
       aria-label={best ? `Best fit ${candidate.number}` : `Candidate ${candidate.number}`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10, borderRadius: 10, background: c.bg, border: `1px solid ${accent}`, boxShadow: (best || inUse) ? `inset 3px 0 0 ${accent}` : 'none' }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 9, padding: 10, borderRadius: 10, background: c.bg, border: `1px solid ${accent}`, boxShadow: (best || inUse) ? `inset 3px 0 0 ${accent}` : 'none' }}
     >
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <OpeningOverlay pockets={candidate.pockets} profilePoints={profilePoints} placements={candidate.placements} size={{ w: 104, h: 72 }} c={c} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {best && <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: c.ok, marginBottom: 2 }}>Best fit</div>}
-          <div style={{ fontWeight: 700, fontSize: 15, color: c.text, overflowWrap: 'anywhere' }}>{candidate.number}</div>
-          <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{candidateMeta(candidate)}</div>
-        </div>
-        <button
-          type="button"
-          onClick={() => onUse(candidate)}
-          aria-pressed={inUse}
-          style={{
-            flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            background: inUse ? c.primarySoft : best ? c.primary : 'transparent',
-            color: inUse ? c.primary : best ? c.primaryText : c.primary,
-            border: `1px solid ${c.primary}`,
-          }}
-        >
-          {inUse ? <><Check size={13} aria-hidden="true" /> In use</> : 'Use this'}
-        </button>
-      </div>
+      {big ? (
+        <>
+          <div style={{ display: 'flex', gap: 12 }}>{heading}{useButton}</div>
+          {picture}
+          <div style={{ fontSize: 11, color: c.dim }}>
+            {candidate.outer ? 'Outline of the tooling, its opening, and the profile placed in it (blue).' : 'The opening, and the profile placed in it (blue). The tooling outline is not stored.'}
+          </div>
+          {specs}
+        </>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 12 }}>{heading}{useButton}</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            {picture}
+            <div style={{ flex: 1, minWidth: 0 }}>{specs}</div>
+          </div>
+        </>
+      )}
+      <ChartLine check={chartCheck(candidate, tagCtx)} c={c} />
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {tags.map((t, i) => <Tag key={i} text={t.text} tone={t.tone} c={c} />)}
       </div>
@@ -110,24 +191,43 @@ function SimilarOnlyCard({ item, c }) {
 function SimilarStrip({ similar, dieMeta, c, infoOnly = false }) {
   const cards = similarCards(similar, 8, dieMeta);
   if (cards.length === 0) return null;
+  const fact = (label, value, missing) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 }}>
+      <span style={{ color: c.dim }}>{label}</span>
+      <span style={{ fontWeight: 600, color: value ? c.text : c.dim, textAlign: 'right', overflowWrap: 'anywhere' }}>{value || missing}</span>
+    </div>
+  );
   return (
     <div style={{ paddingTop: 10, borderTop: `1px solid ${c.border}` }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: c.text }}>Similar existing profiles</div>
       <div style={{ fontSize: 11, color: c.muted, margin: '2px 0 8px' }}>
         {infoOnly ? 'Toolings for information only — no fit was checked.' : 'Nearest dies by shape, with the tooling each one runs in.'}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8 }}>
         {cards.map((card) => (
-          <div key={card.dieNo} style={{ padding: 8, borderRadius: 8, border: `1px solid ${c.border}`, background: c.bg }}>
-            <div style={{ fontWeight: 700, fontSize: 12, color: c.text, overflowWrap: 'anywhere' }}>{card.dieNo}</div>
-            {card.meta && <div style={{ fontSize: 11, color: c.muted }}>{card.meta}</div>}
-            {card.cavityMatch === false && <div style={{ fontSize: 11, color: c.warn }}>cavities differ</div>}
-            {card.cavityMatch === null && <div style={{ fontSize: 11, color: c.dim }}>cavities unknown</div>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+          <div key={card.dieNo} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, borderRadius: 8, border: `1px solid ${c.border}`, background: c.bg }}>
+            <ProfileOutline outline={card.outline} height={84} label={`Profile of die ${card.dieNo}`} c={c} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: c.text, overflowWrap: 'anywhere' }}>{card.dieNo}</div>
+              {card.otherDies.length > 0 && (
+                <div style={{ fontSize: 11, color: c.muted, overflowWrap: 'anywhere' }} title={card.otherDies.join(', ')}>
+                  same for {card.otherDies.slice(0, 3).join(', ')}{card.otherDies.length > 3 ? ` and ${card.otherDies.length - 3} more` : ''}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {fact('CCD', card.ccd != null ? `${Math.round(card.ccd)} mm` : null, 'not known')}
+              {fact('Die size', card.dieSize, 'not in die list')}
+              {fact('Press', card.press, 'not in die list')}
+              {fact('Cavities', card.cavity != null ? String(card.cavity) : null, 'not known')}
+            </div>
+            {card.cavityMatch === false && <div style={{ fontSize: 11, color: c.warn }}>cavities differ from this order</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 6, borderTop: `1px solid ${c.border}` }}>
               {card.toolings.length === 0 && <span style={{ fontSize: 11, color: c.dim }}>no tooling recorded</span>}
               {card.toolings.map((t) => (
                 <div key={t.number} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, fontWeight: 600, color: c.text }}>{t.number}</span>
+                  {t.sizeClass && <span style={{ fontSize: 11, color: c.muted }}>{t.sizeClass}</span>}
                   <Tag text={t.tag} tone={t.tone} c={c} />
                 </div>
               ))}
@@ -147,6 +247,8 @@ function queryLine(q) {
     q.cavities != null && q.cavities !== '' ? `${q.cavities} ${Number(q.cavities) === 1 ? 'cavity' : 'cavities'}` : null,
   ];
   if (q.profile && typeof q.profile.ccd === 'number') parts.push(`CCD ${Math.round(q.profile.ccd)} mm`);
+  const size = q.profile ? profileSizeText(q.profile.points) : null;
+  if (size) parts.push(`profile ${size}`);
   return parts.filter(Boolean).join(' · ');
 }
 
@@ -276,6 +378,7 @@ function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, ch
   const q = data.query || {};
   const chartBasis = data.chart?.basis;
   const tagCtx = { press: q.press, dieSize: q.dieSize, chartBasis };
+  const chart = chartSummary(data.chart, q);
   const candidates = data.candidates || [];
   const greyed = similarOnlyCards(data.similar, candidates);
   const summary = rejectedSummary(data.rejected, data.truncated);
@@ -288,7 +391,9 @@ function FinderResult({ data, onUse, c, tight, onMinClearanceChange, dieMeta, ch
 
   return (
     <>
-      {chartBasis === 'no_chart' && <Note c={c}>No combination chart for this press — chart gate not applied</Note>}
+      {chart && (
+        <Note tone={chart.tone === 'ok' ? 'muted' : chart.tone} icon={chart.tone !== 'ok'} c={c}>{chart.text}</Note>
+      )}
 
       {tight && (
         <Note c={c} icon={false}>

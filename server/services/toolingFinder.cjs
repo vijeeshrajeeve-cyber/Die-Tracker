@@ -57,7 +57,7 @@ const FILTER = `FROM toolings t JOIN tooling_openings o ON o.tooling_id = t.id
   WHERE t.plant = $1 AND t.status = 'active' AND o.confidence <> 'none' AND o.pockets IS NOT NULL`;
 
 const CANDIDATE_SQL = `SELECT t.id, t.number, t.kind, t.plant, t.held_presses, t.size_class, t.size_class_confidence,
-  t.cavities, t.location, t.status, o.pockets, o.confidence, o.extraction_source AS extraction_source, o.pocket_gap_mm
+  t.cavities, t.location, t.status, o.pockets, o.outer_outline, o.confidence, o.extraction_source AS extraction_source, o.pocket_gap_mm
   ${FILTER}`;
 
 const STAMP_SQL = `SELECT max(GREATEST(t.updated_at, o.updated_at)) AS max_updated, count(*)::int AS n
@@ -80,6 +80,14 @@ const isPoint = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]
 // pairs, or -1 when every pocket is one.
 function badPocketIndex(pockets) {
   return pockets.findIndex((p) => !(Array.isArray(p) && p.length >= 3 && p.every(isPoint)));
+}
+
+// The tooling's own outline, for the picture only (the fit never reads it): a polygon of at
+// least 3 finite points, else null.
+function outlineOrNull(raw) {
+  let v = raw;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { return null; } }
+  return Array.isArray(v) && v.length >= 3 && v.every(isPoint) ? v : null;
 }
 
 const isOversize = (c) => c.pocketStats.some((p) => p.bbox.width > MAX_POCKET_MM || p.bbox.height > MAX_POCKET_MM);
@@ -106,6 +114,7 @@ function candidateFromRow(row) {
     extraction_source: row.extraction_source ?? null,
     pocket_gap_mm: numOrNull(row.pocket_gap_mm),
     pockets,
+    outer: outlineOrNull(row.outer_outline),
     pocketStats: pockets.map(pocketStats),
     grids: [],
   };
@@ -302,6 +311,7 @@ const toCandidate = (c, linkedDies) => ({
   chart: { verdict: c.chart.verdict, rows: c.chart.rows },
   linkedDies: linkedDies.get(c.number) || [],
   pockets: c.pockets,
+  outer: c.outer ?? null,
 });
 
 // Why a neighbour die's tooling is not among the candidates: the first that applies.
@@ -329,6 +339,33 @@ function annotateNeighbourTooling(r, { plant, press, dieSize, cavities, chartRow
 const DIE_META_SQL = `SELECT die_no, die_size, press, cavity FROM existing_die_details
   WHERE translate(die_no, '_', '-') = ANY($1) AND plant = ANY($2) ORDER BY plant, id`;
 const dieKey = (dieNo) => String(dieNo).replace(/_/g, '-');
+
+// The neighbour shapes themselves, for the strip's picture and CCD. The outline is the unit
+// frame one (every shape has it); the CCD is only stated for a true-size shape.
+const NEIGHBOUR_SHAPES_SQL = 'SELECT id, ccd_mm, true_size, outer_unit, holes_unit FROM profile_shapes WHERE id = ANY($1)';
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+const roundPoly = (poly) => poly.map(([x, y]) => [r4(x), r4(y)]);
+
+async function neighbourShapesFor(client, shapeIds) {
+  const byId = new Map();
+  const ids = [...new Set(shapeIds.filter((id) => id != null))];
+  if (!ids.length) return byId;
+  const { rows } = await client.query(NEIGHBOUR_SHAPES_SQL, [ids]);
+  for (const r of rows) {
+    const outer = outlineOrNull(r.outer_unit);
+    let holes = r.holes_unit;
+    if (typeof holes === 'string') { try { holes = JSON.parse(holes); } catch { holes = []; } }
+    const ccd = numOrNull(r.ccd_mm);
+    byId.set(r.id, {
+      ccd: r.true_size && ccd != null && ccd > 0 ? Math.round(ccd * 10) / 10 : null,
+      outline: outer ? {
+        outer: roundPoly(outer),
+        holes: (Array.isArray(holes) ? holes : []).map(outlineOrNull).filter(Boolean).map(roundPoly),
+      } : null,
+    });
+  }
+  return byId;
+}
 const textOrNull = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
 
 async function dieListMetaFor(client, dieNos, plant) {
@@ -358,8 +395,10 @@ async function neighbourDetails(client, near, scope) {
     byDie.set(r.die_no, list);
   }
   const meta = await dieListMetaFor(client, dieNos, scope.plant);
+  const shapes = await neighbourShapesFor(client, near.map((n) => n.shapeId));
   return near.map((n) => {
     const m = meta.get(dieKey(n.die_no)) || { dieSize: null, press: null, cavity: null };
+    const shape = shapes.get(n.shapeId) || { ccd: null, outline: null };
     return {
       dieNo: n.die_no,
       profileNumber: n.profile_number,
@@ -371,6 +410,8 @@ async function neighbourDetails(client, near, scope) {
       dieSize: m.dieSize,
       press: m.press,
       cavity: m.cavity,
+      ccd: shape.ccd,
+      outline: shape.outline,
     };
   });
 }
