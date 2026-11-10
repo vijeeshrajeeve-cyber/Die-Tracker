@@ -44,5 +44,7 @@ function presentOrder(order) { return {
             'Design Revision Count': order.design_revision_count || 0,
             'Last Revision Date': order.last_revision_date,
             'changeCount': order.change_count || 0,
+            // Finished simulation rounds; only list and search queries count them.
+            ...(order.simulation_count !== undefined ? { 'Simulation Count': order.simulation_count || 0 } : {}),
         }; }
 module.exports = { presentOrder };
