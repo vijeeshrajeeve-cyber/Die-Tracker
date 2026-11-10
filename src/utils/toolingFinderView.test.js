@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { finderChecklist,
   placedProfile, overlayViewBox, svgPath, candidateTags, candidateMeta, linkedDiesText,
   similarCards, similarOnlyCards, applyChoice, finderReadiness, rejectedSummary,
   sourceLabel, similarMeta, similarFromItems,
@@ -259,4 +259,21 @@ test('rejectedSummary lists the non-zero reasons, largest first, and the cap', (
   assert.equal(rejectedSummary({ 'size-prefilter': 4, 'cavities-unknown': 1, 'no-size-class': 1 }, true),
     '6 rejected: 4 too small, 1 cavities unknown, 1 no size class (capped at 400 candidates)');
   assert.equal(rejectedSummary(null, false), '');
+});
+
+test('finderChecklist says what Find tooling still waits on', () => {
+  const states = (list) => Object.fromEntries(list.map((i) => [i.key, i.state]));
+  const full = { plant: 'GEX 1', press: 'PRESS 6', dieSize: '450X250', cavities: '2' };
+  assert.deepEqual(states(finderChecklist({})), { plant: 'todo', press: 'todo', dieSize: 'todo', cavities: 'todo', profile: 'todo' });
+  assert.deepEqual(states(finderChecklist({ ...full, cavities: '0' })).cavities, 'todo');
+  const done = finderChecklist({ ...full, profile: { true_size: true, ccd_mm: 181.6 } });
+  assert.deepEqual(states(done), { plant: 'ok', press: 'ok', dieSize: 'ok', cavities: 'ok', profile: 'ok' });
+  assert.equal(done[4].note, 'true size · CCD 182 mm');
+  assert.equal(done[1].note, 'PRESS 6');
+  // Unscaled: usable for similar dies only.
+  assert.equal(finderChecklist({ ...full, profile: { true_size: false } })[4].state, 'warn');
+  // No profile yet: the form's own note, busy while the trace runs.
+  const busy = finderChecklist({ ...full, profileNote: 'reading the profile…', profileBusy: true })[4];
+  assert.deepEqual([busy.state, busy.note], ['busy', 'reading the profile…']);
+  assert.equal(finderChecklist(full)[4].note, 'not read yet');
 });
