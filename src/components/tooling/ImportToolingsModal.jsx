@@ -324,7 +324,7 @@ export default function ImportToolingsModal({ theme = {}, onClose, onImported })
           {step === 'run' && (
             <div style={{ padding: '26px 0' }} role="status" aria-live="polite">
               <div style={{ height: 8, borderRadius: 4, background: c.inset, overflow: 'hidden', border: `1px solid ${c.border}` }}>
-                <div style={{ height: '100%', width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%`, background: c.primary, transition: 'width .2s ease' }} />
+                <div style={{ height: '100%', width: '100%', transformOrigin: 'left', transform: `scaleX(${progress.total ? progress.done / progress.total : 0})`, background: c.primary, transition: 'transform .2s ease' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 10, fontSize: 13, color: c.muted }}>
                 <span style={{ overflowWrap: 'anywhere' }}>{progress.label}</span>
