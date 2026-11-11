@@ -45,7 +45,7 @@ test('matches, groups, copies and extracts; known toolings are hinted, unknown o
   assert.deepEqual(r.toolings.map((t) => [t.number, t.status, t.source]), [['25IC1-027847', 'retired', 'drawing-archive']]);
   assert.equal(r.drawings.filter((d) => d.toolingNumber === 'I-21599').length, 2);
   assert.equal(r.drawings.find((d) => d.toolingNumber === 'I-21599' && d.isPrimary).format, 'dxf');
-  assert.deepEqual(r.hints.find((h) => h.toolingNumber === 'BOL-14017').hints, { sizeClass: '475X220', cavities: null, inventoryDims: { a_len: 250, b_wid: 150 } });
+  assert.deepEqual(r.hints.find((h) => h.toolingNumber === 'BOL-14017').hints, { sizeClass: '475X220', cavities: null, inventoryDims: { a_len: 250, b_wid: 150 }, steppedPockets: null });
   assert.equal(r.openings.length, 3);
   assert.deepEqual(r.report.skipped.map((s) => s.reason).sort(), ['scrap']);
   assert.ok(io.copied.length > 0 && io.copied.every((p) => p.startsWith('files/')));
@@ -122,7 +122,7 @@ test('hints never leak between toolings', async () => {
     pdf: async (b, h) => { seen.push(h); h.sizeClass = 'MUTATED'; return pdfResult(); },
   };
   const r = await buildBundle({ files: ALL, known: known(), io: fakeIo(), extractors });
-  assert.deepEqual(r.hints.find((h) => h.toolingNumber === '25IC1-027847').hints, { sizeClass: null, cavities: 1, inventoryDims: null });
+  assert.deepEqual(r.hints.find((h) => h.toolingNumber === '25IC1-027847').hints, { sizeClass: null, cavities: 1, inventoryDims: null, steppedPockets: 1 });
   assert.deepEqual(r.hints.find((h) => h.toolingNumber === 'BOL-14017').hints.inventoryDims, { a_len: 250, b_wid: 150 });
   assert.equal(r.hints.find((h) => h.toolingNumber === 'I-21599').hints.sizeClass, '175X80');
   assert.equal(seen.length, 3);

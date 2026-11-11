@@ -229,8 +229,20 @@ function cleanScale(stated, drawn) {
   return n >= 2 && n <= 5 && Math.abs(ratio - n) <= 0.01 * n ? n : null;
 }
 
+// The joint bbox of the loops that matter: those with at least a tenth of the largest loop's area (title-block
+// symbols and fastener holes are left out), grown on every side by `pad` x its longer side. null without loops.
+function mainLoopsBox(loops, pad = 0) {
+  if (!loops || !loops.length) return null;
+  const areas = loops.map((l) => polygonArea(l.points));
+  const largest = Math.max(...areas);
+  const b = bbox(loops.filter((l, i) => areas[i] >= 0.1 * largest).flatMap((l) => l.points));
+  const grow = pad * Math.max(b.width, b.height);
+  return { ...b, minX: b.minX - grow, minY: b.minY - grow, maxX: b.maxX + grow, maxY: b.maxY + grow };
+}
+
 // Two long straight open chains crossing near their midpoints (the drawing's centre lines): their intersection.
-function centreLineCrossing(openChains, minLength) {
+// `within` (a bbox) keeps only a crossing that falls inside it: title-block rules also cross each other.
+function centreLineCrossing(openChains, minLength, within = null) {
   const lines = [];
   for (const c of openChains || []) {
     const pts = c.points;
@@ -257,8 +269,10 @@ function centreLineCrossing(openChains, minLength) {
       const t = (w[0] * s[1] - w[1] * s[0]) / cross;
       const u = (w[0] * r[1] - w[1] * r[0]) / cross;
       if (Math.abs(t - 0.5) > 0.15 || Math.abs(u - 0.5) > 0.15) continue;
+      const point = [p.a[0] + t * r[0], p.a[1] + t * r[1]];
+      if (within && !(point[0] >= within.minX && point[0] <= within.maxX && point[1] >= within.minY && point[1] <= within.maxY)) continue;
       const score = Math.min(p.len, q.len);
-      if (!best || score > best.score) best = { score, point: [p.a[0] + t * r[0], p.a[1] + t * r[1]] };
+      if (!best || score > best.score) best = { score, point };
     }
   }
   return best ? best.point : null;
@@ -375,6 +389,7 @@ function synthesiseCircle(cx, cy, diameter, n = 64) {
 }
 
 const fmtMm = (n) => String(Math.round(n * 10) / 10);
+const CENTRE_LINE_SHARE = 0.4;
 
 // noOuterFallback: with no expected diameter and no circle, do not promote the largest loop to outer
 // (an outline-only drawing, e.g. a scan, has pockets and no outer).
@@ -382,7 +397,14 @@ const fmtMm = (n) => String(Math.round(n * 10) / 10);
 // Returns { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes, drawingScale } where outerBasis is
 // 'drawn-circle' | 'promoted' | 'synthesised-rim' | 'synthesised-centre-lines' | 'synthesised-bbox' | null, and
 // drawingScale is n when the centring rim is the stated diameter at a clean 1:n (the geometry is not rescaled).
-function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = false, openChains = [] } = {}) {
+// knownCavities: the cavity count from the master or the tooling number, when known.
+// steppedPockets: the number of openings the tooling number promises, for a drawing family that draws a standard
+// recess around the die-specific openings (TALEX inserts): a loop holding exactly that many openings is the recess
+// and they are the pockets. null for every other drawing.
+// pocketsInferred is true when the cavity count decided which loops are the pockets.
+function classifyLoops(loops, {
+  expectedOuterDiameter = null, noOuterFallback = false, openChains = [], knownCavities = null, steppedPockets = null,
+} = {}) {
   const ignored = [];
   const notes = [];
   let outer = null;
@@ -436,7 +458,11 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
           ? `drawn rim Ø${fmtMm(rim.fit.r * 2)} is the stated Ø${fmtMm(expectedOuterDiameter)} at 1:${drawingScale}; outer centred on the rim`
           : `drawn rim Ø${fmtMm(rim.fit.r * 2)} disagrees with the stated Ø${fmtMm(expectedOuterDiameter)}; outer centred on the rim`);
       } else {
-        centre = centreLineCrossing(openChains, 0.6 * expectedOuterDiameter);
+        // Centre lines longer than 60 % of the diameter are taken as they are. They are often drawn only a little
+        // past the pocket, so shorter ones (down to 40 %) count when they cross on or near the drawn pockets -
+        // title-block rules of that length cross each other too.
+        centre = centreLineCrossing(openChains, 0.6 * expectedOuterDiameter)
+          || centreLineCrossing(openChains, CENTRE_LINE_SHARE * expectedOuterDiameter, mainLoopsBox(live, 0.5));
         if (centre) {
           outerBasis = 'synthesised-centre-lines';
           notes.push('outer centred on the drawn centre lines');
@@ -526,6 +552,38 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
     });
   }
 
+  // Rule 5c: a stepped pocket. The recess holding exactly the known number of openings is not a pocket; they are.
+  let pocketsInferred = false;
+  if (steppedPockets) {
+    const area = new Map(rest.map((l) => [l, polygonArea(l.points)]));
+    const fastener = (l) => isCircleLike(l.points) && circleFit(l.points).r * 2 <= 30;
+    const inside = (p) => rest.filter((l) => l !== p && area.get(l) < area.get(p) && area.get(l) >= 0.05 * area.get(p)
+      && !fastener(l) && polygonContains(p.points, l.points));
+    const hosts = [];
+    for (const p of rest) {
+      const all = inside(p);
+      const direct = all.filter((l) => !all.some((o) => o !== l && area.get(o) > area.get(l) && polygonContains(o.points, l.points)));
+      if (direct.length === steppedPockets) hosts.push({ p, kids: direct });
+    }
+    // The recess is the largest loop inside the outer; a smaller loop holding the right number is a coincidence.
+    const largest = rest.reduce((m, l) => (m && area.get(m) >= area.get(l) ? m : l), null);
+    const host = hosts.find((h) => h.p === largest);
+    if (host) {
+      const keep = (l) => host.kids.some((k) => l === k || polygonContains(k.points, l.points));
+      let beside = 0;
+      rest = rest.filter((l) => {
+        if (keep(l)) return true;
+        ignored.push({ loop: l, reason: l === host.p ? 'step' : 'beside-step' });
+        if (l !== host.p) beside++;
+        return false;
+      });
+      pocketsInferred = true;
+      const one = steppedPockets === 1;
+      notes.push(`recess holding ${steppedPockets} opening${one ? '' : 's'} is not a pocket; the opening${one ? ' is' : 's are'}`
+        + (beside ? ` (${beside} other loop${beside === 1 ? '' : 's'} ignored)` : ''));
+    }
+  }
+
   // Rule 6: loops contained by a larger remaining loop.
   const areas = new Map(rest.map((l) => [l, polygonArea(l.points)]));
   const afterNested = rest.filter((l) => {
@@ -544,7 +602,46 @@ function classifyLoops(loops, { expectedOuterDiameter = null, noOuterFallback = 
   });
   pockets.sort((a, b) => areas.get(b) - areas.get(a));
 
-  return { outer, outerSynthesised, outerFit, outerBasis, pockets, ignored, notes, drawingScale };
+  // Rule 7b: more loops than cavities. When the known count's largest loops are alike (the smallest at least half the
+  // largest) and every other loop is under 30 % of them, those are the pockets and the rest are minor features
+  // (stamp slots, plug seats).
+  if (knownCavities && pockets.length > knownCavities) {
+    const top = pockets.slice(0, knownCavities);
+    const last = areas.get(top[top.length - 1]);
+    if (last >= 0.5 * areas.get(top[0]) && areas.get(pockets[knownCavities]) < 0.3 * last) {
+      const extra = pockets.length - knownCavities;
+      for (const l of pockets.slice(knownCavities)) ignored.push({ loop: l, reason: 'minor-feature' });
+      pockets.length = knownCavities;
+      pocketsInferred = true;
+      notes.push(`${extra} smaller loop${extra === 1 ? '' : 's'} beside the ${knownCavities} pocket${knownCavities === 1 ? '' : 's'} ignored (not cavities)`);
+    }
+  }
+
+  // Rule 8: a pocket-only drawing (no outer, drawn or synthesised). Its centre lines, when they cross on the pockets,
+  // give the tooling's centre; small loops away from the pockets are title-block symbols, not cavities.
+  let patternCentre = null;
+  let kept = pockets;
+  if (!outer && pockets.length) {
+    const main = mainLoopsBox(pockets);
+    const around = mainLoopsBox(pockets, 0.1);
+    const near = (l) => {
+      const [x, y] = centroid(l.points);
+      return x >= around.minX && x <= around.maxX && y >= around.minY && y <= around.maxY;
+    };
+    const limit = 0.1 * areas.get(pockets[0]);
+    kept = pockets.filter((l) => {
+      if (areas.get(l) >= limit || near(l)) return true;
+      ignored.push({ loop: l, reason: 'stray-symbol' });
+      return false;
+    });
+    if (kept.length < pockets.length) {
+      const n = pockets.length - kept.length;
+      notes.push(`${n} small loop${n === 1 ? '' : 's'} away from the pockets ignored (title-block symbols)`);
+    }
+    patternCentre = centreLineCrossing(openChains, 0.5 * Math.max(main.width, main.height), main);
+  }
+
+  return { outer, outerSynthesised, outerFit, outerBasis, pockets: kept, ignored, notes, drawingScale, patternCentre, pocketsInferred };
 }
 
 function pocketGapMm(pockets) {
@@ -558,10 +655,12 @@ function pocketGapMm(pockets) {
 }
 
 // offset: the [cx, cy] subtracted from every point (source mm), so a viewer can put the outline back on the drawing.
-function normaliseFrame({ outer, pockets }) {
+// centre: the frame's origin when there is no outer (a pocket-only drawing centred on its centre lines).
+function normaliseFrame({ outer, pockets, centre = null }) {
   const ref = outer ? outer.points : pockets.flatMap((p) => p.points);
   if (!ref.length) return { outer, pockets, offset: [0, 0] };
-  const { cx, cy } = bbox(ref);
+  const box = bbox(ref);
+  const [cx, cy] = !outer && centre ? centre : [box.cx, box.cy];
   const shift = (l) => ({ ...l, points: l.points.map(([x, y]) => [x - cx, y - cy]) });
   return { outer: outer ? shift(outer) : outer, pockets: pockets.map(shift), offset: [cx, cy] };
 }
@@ -573,15 +672,24 @@ const NATIVE_SCALES = new Set(['native-mm', 'native-inch', 'native-feet']);
 
 // outerFit: the circle the outer is drawn on (a keyed rim's least-squares fit is dragged by the slot), when known.
 // outerBasis: as returned by classifyLoops; 'synthesised-bbox' and a non-circular 'promoted' outer cap at uncertain.
+// centred: a pocket-only drawing whose centre lines cross on the pockets. In the drawing's own units its pockets
+// are measured and placed, so it grades likely; only the outer (and so the size class) is missing.
 function gradeConfidence({
   outer, outerSynthesised, outerFit = null, outerBasis = null, pockets, bridged, source, statedDiameter, knownCavities, scaleBasis,
+  centred = false,
 }) {
   if (!scaleBasis) return { confidence: 'none', notes: ['no scale basis'] };
   if (!pockets || !pockets.length) return { confidence: 'none', notes: ['no pocket found'] };
   if (source === 'pdf-raster') return { confidence: 'uncertain', notes: ['raster PDF: geometry is only approximate'] };
-  if (!outer && !outerSynthesised) return { confidence: 'uncertain', notes: ['no outer outline'] };
+  const pocketOnly = !outer && !outerSynthesised;
+  if (pocketOnly && !(centred && NATIVE_SCALES.has(scaleBasis))) return { confidence: 'uncertain', notes: ['no outer outline'] };
   if (knownCavities != null && knownCavities !== pockets.length) {
     return { confidence: 'uncertain', notes: [`pocket count ${pockets.length} disagrees with ${knownCavities} cavities`] };
+  }
+  if (pocketOnly) {
+    const notes = ['no outer outline; pockets centred on the drawn centre lines'];
+    if (bridged > 0) notes.push(`${bridged} gap${bridged === 1 ? '' : 's'} bridged`);
+    return { confidence: 'likely', notes };
   }
   if (outerBasis === 'synthesised-bbox') {
     return { confidence: 'uncertain', notes: ['outer synthesised from the stated size and centred on the drawn loops (no rim or centre lines)'] };
@@ -603,6 +711,6 @@ function gradeConfidence({
 
 module.exports = {
   chainLoops, polygonArea, centroid, bbox, pointInPolygon, polygonContains,
-  circleFit, isCircleLike, robustCircle, isAxisRect, frameLoops, cleanScale, centreLineCrossing,
+  circleFit, isCircleLike, robustCircle, isAxisRect, frameLoops, cleanScale, centreLineCrossing, mainLoopsBox,
   classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, NATIVE_SCALES,
 };

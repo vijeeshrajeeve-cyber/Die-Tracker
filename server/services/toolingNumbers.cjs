@@ -87,6 +87,15 @@ function resolveToolingRef(raw, known) {
     return { kind: 'unknown', toolingNumber: null, raw: rawText };
 }
 
+// What a tooling number alone tells a drawing reader: TALEX insert drawings show a standard recess around the
+// die-specific openings, and the number carries how many there are (25IC2-090454, 35IC8A). The count is only a
+// pointer to that recess: a letter variant's digits are not a sure cavity count (35IC12A).
+const TALEX_INSERT = /^(?:25|35)IC(\d{1,2})(?:[A-Z])?(?:-|$)/;
+function drawingHintsFromNumber(raw) {
+    const m = TALEX_INSERT.exec(raw == null ? '' : String(raw).trim().toUpperCase());
+    return m && Number(m[1]) > 0 ? { steppedPockets: Number(m[1]) } : { steppedPockets: null };
+}
+
 function pressFromGex2Location(raw) {
     const text = raw == null ? '' : String(raw).trim().toUpperCase();
     if (text === '25MN' || text === 'P25') return 'PRESS 7';
@@ -94,4 +103,4 @@ function pressFromGex2Location(raw) {
     return null;
 }
 
-module.exports = { parseToolingNumber, normalizeSizeClass, resolveToolingRef, pressFromGex2Location };
+module.exports = { parseToolingNumber, normalizeSizeClass, resolveToolingRef, pressFromGex2Location, drawingHintsFromNumber };

@@ -4,7 +4,7 @@
 // is injected (`io`) so the tests use fakes. Errors meant for the caller carry an HTTP `status`.
 const path = require('node:path');
 const { storedRelativePath, absolutePath, formatOf, sha256Of } = require('./toolingDrawings.cjs');
-const { parseToolingNumber, normalizeSizeClass } = require('./toolingNumbers.cjs');
+const { parseToolingNumber, normalizeSizeClass, drawingHintsFromNumber } = require('./toolingNumbers.cjs');
 const { pocketGapMm } = require('./openingGeometry.cjs');
 const { normalizePlant } = require('./frozenDesigns.cjs');
 // Called through the module objects so a test can spy on invalidate.
@@ -194,8 +194,13 @@ async function attachDrawing(client, tooling, { buffer, originalName, root, io }
   // A file the reader cannot parse is the uploader's to fix: nothing is stored.
   let extraction;
   try {
+    const fromNumber = drawingHintsFromNumber(tooling.number);
     extraction = await extractForUpload({
-      buffer, format, hints: { sizeClass: tooling.size_class ?? null, cavities: tooling.cavities ?? null },
+      buffer, format,
+      hints: {
+        sizeClass: tooling.size_class ?? null, cavities: tooling.cavities ?? null,
+        steppedPockets: fromNumber.steppedPockets,
+      },
     });
   } catch (err) {
     throw httpError(422, `Could not read the drawing: ${err.message}`);

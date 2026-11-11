@@ -9,7 +9,7 @@
 // A DWG without a converted DXF is recorded as a 'dwg' drawing with no bundle file and reported.
 const { interpretStem, groupByTooling } = require('./archiveMatcher.cjs');
 const { storedRelativePath, sha256Of, formatOf, absolutePath } = require('./toolingDrawings.cjs');
-const { parseToolingNumber } = require('./toolingNumbers.cjs');
+const { parseToolingNumber, drawingHintsFromNumber } = require('./toolingNumbers.cjs');
 const { openingRowFromExtraction, openingParams } = require('./toolingReview.cjs');
 
 const NO_DXF = 'no DXF — run convert-dwg-to-dxf';
@@ -50,10 +50,12 @@ function matchFiles(files) {
 
 function hintsFor(number, match, known) {
   const k = known.get(number);
+  const fromNumber = drawingHintsFromNumber(number);
   return {
     sizeClass: (k && k.size_class) ?? match.sizeClass ?? null,
     cavities: (k && k.cavities) ?? parseToolingNumber(number).cavities ?? null,
     inventoryDims: (k && k.inventory_dims) ?? null,
+    steppedPockets: fromNumber.steppedPockets,
   };
 }
 
