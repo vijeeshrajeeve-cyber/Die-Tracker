@@ -120,5 +120,5 @@ re-apply" in `docs/tooling-geometry-import-runbook.md`.
 - The dialog was checked in the browser against a stubbed API; the full path against a
   running server has not been exercised yet.
 - Still uncertain after these changes (318): outer centred on the drawn loops with no
-  centre lines (107), no outer and no centre lines (84), small loops among the pockets
-  (110), drawings naming another number (27).
+  centre lines (100), no outer and no centre lines (84), small loops among the pockets
+  (119), drawings naming another number (28). A drawing can carry more than one of these.
