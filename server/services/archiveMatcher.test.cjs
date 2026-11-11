@@ -40,6 +40,20 @@ const CASES = [
   ['I-12345 (P4)', G1I, { toolingNumber: 'I-12345', press: 'PRESS 4' }],
   ['I-29651 (BOL-29651) (700X200)', ROOT, { toolingNumber: 'I-29651', kind: 'insert', sizeClass: '700X200' }],
   ['I-29651 (BOL-29651) (P6)', ROOT, { toolingNumber: 'I-29651', kind: 'insert', press: 'PRESS 6' }],
+  // a bolster prefix in front of a press-position-letter code
+  ['Bol-4-6-B', G1I, { toolingNumber: 'BOL-4-6-B', kind: 'bolster' }], ['BOL-5-1-F-Rev', G1B, { toolingNumber: 'BOL-5-1-F' }],
+  ['Bol-6-1-L(700x196)', G1B, { toolingNumber: 'BOL-6-1-L', sizeClass: '700X196' }], ['BOL-6-1-E200x200', G1I, { toolingNumber: 'BOL-6-1-E', sizeClass: '200X200' }],
+  ['B_2-2-A (475x220)-Model', G1B, { toolingNumber: 'BOL-2-2-A', sizeClass: '475X220' }], ['BOL_5_4_E-REV', ROOT, { toolingNumber: 'BOL-5-4-E' }],
+  ['BO_6_1_H_FIN', G1B, { toolingNumber: 'BOL-6-1-H', variant: 'FIN' }],
+  ['14093-1-2-B', G1B, { toolingNumber: 'BOL-14093' }],
+  // four-digit die numbers and the INSERT / INST spellings
+  ['9053-Ins', G1I, { toolingNumber: 'I-09053', kind: 'insert' }], ['9029-Ins', G1I, { toolingNumber: 'I-09029' }],
+  ['Insert 11928 (4 CAV)', G1I, { toolingNumber: 'I-11928' }], ['INSERT_28579', G1I, { toolingNumber: 'I-28579' }],
+  ['16456 INSERT', ROOT, { toolingNumber: 'I-16456' }], ['INST-08022', G1I, { toolingNumber: 'I-08022' }],
+  ['14106-Insert.', ROOT, { toolingNumber: 'I-14106' }], ['15116 Inst.', ROOT, { toolingNumber: 'I-15116' }], ['23442.Ins', ROOT, { toolingNumber: 'I-23442' }],
+  ['INS-027690', ROOT, { skip: 'unrecognised' }], ['INS_10822CAV-1', G1I, { skip: 'unrecognised' }], ['801-Ins(220x80)', G1I, { skip: 'unrecognised' }],
+  ['MANDREL INSERT 19798_401', ROOT, { skip: 'unrecognised' }], ['INSERT MANDREL_06176_401-69-66', ROOT, { skip: 'unrecognised' }],
+  ['23496%2520ins%2520bolster[1]', ROOT, { toolingNumber: 'BOL-23496', kind: 'bolster' }],
 ];
 for (const [stem, ctx, expected] of CASES) test(`interprets "${stem}"`, () => {
   const got = interpretStem(stem, ctx);

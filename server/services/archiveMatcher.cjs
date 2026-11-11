@@ -97,7 +97,11 @@ const PRESS_PART_WORDS = [
 const PAREN_BOLSTER_CODE = /\(\s*\d-\d-[A-Z]\s*\)/;
 const TALEX_CODE = /\b(25|35)(IC\d{1,2}[A-Z]?|B\d+C\d+[A-Z]?)(?:-?([A-Z]?)-?(\d{5,6}))?\b/;
 const SIZE_TOKEN = /(?<!\d)(\d{3,4})\s*X\s*(\d{2,3})(?!\d)/;
-const BOLSTER_CODE = /(?<![\d-])(\d-\d-[A-Z])\b/;
+// A press-position-letter code. A leading digit or dash would make it part of a longer number - unless the dash
+// belongs to a bolster prefix (BOL-4-6-B, B-2-2-A).
+const BOLSTER_CODE = /(?:(?<![\d-])|(?<=\bBOLS?-)|(?<=\bBO-)|(?<=\bB-))(\d-\d-[A-Z])\b/;
+// Parts that are not toolings: the wider insert spellings below never read one of these as an insert.
+const NOT_TOOLING = /\bMANDREL\b|\bBACKER\b/;
 // "BOL", "BOLS", "BO", "BOLSTER" as a word, a trailing BOL / BOL1, BOL glued to digits, or a "B-" prefix.
 const BOL_WORD = /\b(?:BOLS?|BO|BOLSTER)\b|BOL\d?$|\bBOL(?=\d{3,5}\b)|\bB(?=[- ]\d{3,5}\b)/;
 const LEADING_KIND = /^(?:I-|INS\b|BOLS?\b|BOL(?=\d)|BO\b|B-|(?:TLX-)?(?:25|35)(?:IC|B\d))/;
@@ -108,7 +112,7 @@ const DIGIT_TOKEN = /(?<!\d)\d{3,5}(?!\d)/g;
 function normaliseStem(stem) {
     return String(stem)
         .toUpperCase()
-        .replace(/%20/g, ' ')
+        .replace(/%(?:25)*20/g, ' ')
         .replace(/_/g, '-')
         .replace(/\[\d+\]|\(\d+\)|\(OK\)|\(A\)/g, ' ')
         .replace(/-OK\b/g, ' ')
@@ -179,8 +183,11 @@ function interpretStem(stem, { plant, kindHint }) {
     // (d) Insert markers.
     const ins = /\bI-(\d{5})\b/.exec(text)
         || /\bINS[-. ]*(\d{5})\b/.exec(text)
-        || /(?<!\d)(\d{5})(?:-\d)?[- ]*INS\b/.exec(text);
-    if (ins) return make(`I-${ins[1]}`, 'insert', 'filename-die');
+        || /(?<!\d)(\d{5})(?:-\d)?[- ]*INS\b/.exec(text)
+        // "INST" and "INSERT" also mark an insert, and an old four-digit die number is padded (9053-Ins is I-09053).
+        || (!NOT_TOOLING.test(text) && (/\bINS(?:ERT|T)?[-. ]*(\d{4,5})\b/.exec(text)
+            || /(?<!\d)(\d{4,5})(?:-\d)?[-. ]*INS(?:ERT|T)?\b/.exec(text)));
+    if (ins) return make(`I-${ins[1].padStart(5, '0')}`, 'insert', 'filename-die');
 
     // (e) Bare numbers, disambiguated by the folder. A trailing letter (01049B) is an unresolvable variant.
     if (kindHint === 'insert') {
