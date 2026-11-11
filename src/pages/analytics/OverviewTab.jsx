@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from 'recharts';
 import { CHART_COLORS } from '../../utils/constants';
-import { isCancelled, orderYear, leadTimesBy, supplierProgress } from '../../utils/analyticsOverview.js';
+import { isCancelled, orderYear, leadTimesBy, outOfOrderDates, supplierProgress } from '../../utils/analyticsOverview.js';
 
 const isSimulationEnabled = (value) => {
   if (value === true || value === 1) return true;
@@ -31,8 +31,37 @@ function Section({ title, theme, children }) {
   );
 }
 
+const fmtDay = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// The orders a lead-time chart could not use, named under the chart. Without
+// this a die with its dates the wrong way round simply vanished from the
+// figure and nobody knew to correct it.
+function BadDates({ bad, fromLabel, toLabel, theme }) {
+  if (!bad.length) return null;
+  return (
+    <details style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: theme.textMuted }}>
+      <summary style={{ cursor: 'pointer', color: '#D97706', fontWeight: 600 }}>
+        {bad.length} {bad.length === 1 ? 'order' : 'orders'} left out · {toLabel} is before {fromLabel}
+      </summary>
+      <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.1rem', maxHeight: '160px', overflowY: 'auto', lineHeight: 1.7 }}>
+        {bad.map(({ order, from, to }, i) => (
+          <li key={order.id ?? i}>
+            <strong style={{ color: theme.text }}>{order['DIE NO'] || 'No die number'}</strong>
+            {order.Supplier ? ` · ${order.Supplier}` : ''} · {fromLabel} {fmtDay(from)}, {toLabel} {fmtDay(to)}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export default function OverviewTab({ data, suppliers, theme }) {
   const [analyticsFilter, setAnalyticsFilter] = useState({ year: 'all', period: 'all', quarter: 'all' });
+  // Average or median for every lead-time chart. Average first: it is the
+  // figure people compare with their own sheet.
+  const [measure, setMeasure] = useState('average');
+  const measureName = measure === 'median' ? 'Median' : 'Average';
+  const measureNote = `bars show ${measure === 'median' ? 'median' : 'average'} days (orders)`;
 
   const styles = {
     chartCard: { background: theme.cardBg, borderRadius: '8px', padding: '1.5rem', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowSm },
@@ -87,46 +116,36 @@ export default function OverviewTab({ data, suppliers, theme }) {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [analyticsData]);
 
-  // Chart data. Every lead time is a median per supplier (or month, or
-  // plant), carrying the number of orders behind it; the rules are in
-  // utils/analyticsOverview.js.
+  // Chart data. Every lead time is an average or a median per supplier (or
+  // month, or plant), carrying the number of orders behind it; the rules are
+  // in utils/analyticsOverview.js. Each chart also gets the orders it had to
+  // leave out because their two dates are the wrong way round.
   const nonSimulation = useMemo(
     () => analyticsData.filter(o => !isSimulationEnabled(o.simulationEnabled)),
     [analyticsData],
   );
 
-  const designLeadData = useMemo(
-    () => leadTimesBy(analyticsData, o => o.Supplier, o => o['Ordered date'], o => o['Design Received Date']),
-    [analyticsData],
-  );
-
-  const approvalLeadData = useMemo(
-    () => leadTimesBy(nonSimulation, o => o.Supplier, o => o['Design Received Date'], approvedDateOf),
-    [nonSimulation],
-  );
-
-  const approvalByMonthData = useMemo(() => {
-    const byMonth = Object.fromEntries(
-      leadTimesBy(nonSimulation, o => o.month, o => o['Design Received Date'], approvedDateOf).map(r => [r.name, r]),
-    );
-    return MONTHS.filter(m => byMonth[m]).map(m => ({ ...byMonth[m], month: m }));
-  }, [nonSimulation]);
-
-  const approvalByPlantData = useMemo(
-    () => leadTimesBy(nonSimulation, o => o.Plant, o => o['Design Received Date'], approvedDateOf)
-      .map(r => ({ ...r, plant: r.name })),
-    [nonSimulation],
-  );
-
-  const deliveryData = useMemo(
-    () => leadTimesBy(analyticsData, o => o.Supplier?.trim() && o.Supplier, o => o['Ordered date'], o => o['Die Received Date']),
-    [analyticsData],
-  );
-
-  const mfgData = useMemo(
-    () => leadTimesBy(analyticsData, o => o.Supplier?.trim() && o.Supplier, approvedDateOf, o => o['Die Received Date']),
-    [analyticsData],
-  );
+  const charts = useMemo(() => {
+    const bySupplier = o => o.Supplier?.trim() && o.Supplier;
+    const ordered = o => o['Ordered date'];
+    const designReceived = o => o['Design Received Date'];
+    const dieReceived = o => o['Die Received Date'];
+    const chart = (orders, keyOf, fromOf, toOf) => ({
+      rows: leadTimesBy(orders, keyOf, fromOf, toOf, measure),
+      bad: outOfOrderDates(orders, keyOf, fromOf, toOf),
+    });
+    const approvalByMonth = chart(nonSimulation, o => o.month, designReceived, approvedDateOf);
+    const monthRows = Object.fromEntries(approvalByMonth.rows.map(r => [r.name, r]));
+    const approvalByPlant = chart(nonSimulation, o => o.Plant, designReceived, approvedDateOf);
+    return {
+      design: chart(analyticsData, bySupplier, ordered, designReceived),
+      approval: chart(nonSimulation, bySupplier, designReceived, approvedDateOf),
+      approvalByMonth: { ...approvalByMonth, rows: MONTHS.filter(m => monthRows[m]).map(m => ({ ...monthRows[m], month: m })) },
+      approvalByPlant: { ...approvalByPlant, rows: approvalByPlant.rows.map(r => ({ ...r, plant: r.name })) },
+      delivery: chart(analyticsData, bySupplier, ordered, dieReceived),
+      mfg: chart(analyticsData, bySupplier, approvedDateOf, dieReceived),
+    };
+  }, [analyticsData, nonSimulation, measure]);
 
   const supplierRows = useMemo(
     () => [...new Set(analyticsData.map(o => o.Supplier))].filter(Boolean).sort()
@@ -163,6 +182,13 @@ export default function OverviewTab({ data, suppliers, theme }) {
             <select id="analyticspage-month" value={analyticsFilter.period} onChange={(e) => setAnalyticsFilter({ ...analyticsFilter, period: e.target.value, quarter: 'all' })} style={styles.filterSelect}>
               <option value="all">All Months</option>
               {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.8rem', color: theme.textDim }} htmlFor="analyticspage-measure">Lead times:</label>
+            <select id="analyticspage-measure" value={measure} onChange={(e) => setMeasure(e.target.value)} style={styles.filterSelect}>
+              <option value="average">Average days</option>
+              <option value="median">Median days</option>
             </select>
           </div>
           <span style={{ fontSize: '0.8rem', color: theme.textDim, marginLeft: 'auto' }}>
@@ -241,95 +267,101 @@ export default function OverviewTab({ data, suppliers, theme }) {
 
       <Section title="Lead Times" theme={theme}>
       <div style={styles.chartCard}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>Median Design Lead Time by Supplier</h3>
-        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Ordered Date to Design Received Date · bars show median days (orders)</p>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', color: theme.text }}>{measureName} Design Lead Time by Supplier</h3>
+        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Ordered Date to Design Received Date · {measureNote}</p>
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={designLeadData} layout="vertical" margin={{ right: 80 }}>
+          <BarChart data={charts.design.rows} layout="vertical" margin={{ right: 80 }}>
             <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
-            <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Median Lead Time']} />
-            <Bar dataKey="medianDays" fill="#10B981" radius={[0, 6, 6, 0]} name="Median Days">
+            <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, `${measureName} Lead Time`]} />
+            <Bar dataKey="days" fill="#10B981" radius={[0, 6, 6, 0]}>
               <LabelList dataKey="label" position="right" fill="#64748B" fontSize={11} fontWeight={600} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        <BadDates bad={charts.design.bad} fromLabel="Ordered" toLabel="Design Received" theme={theme} />
       </div>
-      {deliveryData.length > 0 && (
+      {charts.delivery.rows.length > 0 && (
               <div style={styles.chartCard}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Median Delivery Lead Time by Supplier</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Die Order Date to Die Received Date · orders with a recorded die received date · bars show median days (orders)</p>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>{measureName} Delivery Lead Time by Supplier</h3>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Die Order Date to Die Received Date · orders with a recorded die received date · {measureNote}</p>
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={deliveryData} layout="vertical" margin={{ right: 80 }}>
+                  <BarChart data={charts.delivery.rows} layout="vertical" margin={{ right: 80 }}>
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
-                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Median Delivery Lead Time']} />
-                    <Bar dataKey="medianDays" fill="#0EA5E9" radius={[0, 6, 6, 0]}>
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, `${measureName} Delivery Lead Time`]} />
+                    <Bar dataKey="days" fill="#0EA5E9" radius={[0, 6, 6, 0]}>
                       <LabelList dataKey="label" position="right" fill="#64748B" fontSize={11} fontWeight={600} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                <BadDates bad={charts.delivery.bad} fromLabel="Ordered" toLabel="Die Received" theme={theme} />
               </div>
       )}
-      {mfgData.length > 0 && (
+      {charts.mfg.rows.length > 0 && (
               <div style={styles.chartCard}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>Median Manufacturing Lead Time by Supplier</h3>
-                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Approval Date to Die Received Date · orders with both dates recorded · bars show median days (orders)</p>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: theme.text }}>{measureName} Manufacturing Lead Time by Supplier</h3>
+                <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Approval Date to Die Received Date · orders with both dates recorded · {measureNote}</p>
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={mfgData} layout="vertical" margin={{ right: 80 }}>
+                  <BarChart data={charts.mfg.rows} layout="vertical" margin={{ right: 80 }}>
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
-                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, 'Median Manufacturing Lead Time']} />
-                    <Bar dataKey="medianDays" fill="#F59E0B" radius={[0, 6, 6, 0]}>
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#FFFFFF', fontWeight: 500 }} labelStyle={{ color: '#94A3B8', marginBottom: '4px' }} formatter={(value, _, props) => [`${value} days (${props.payload.count} orders)`, `${measureName} Manufacturing Lead Time`]} />
+                    <Bar dataKey="days" fill="#F59E0B" radius={[0, 6, 6, 0]}>
                       <LabelList dataKey="label" position="right" fill="#64748B" fontSize={11} fontWeight={600} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                <BadDates bad={charts.mfg.bad} fromLabel="Design Approved" toLabel="Die Received" theme={theme} />
               </div>
       )}
       </Section>
 
       <Section title="Design Approval" theme={theme}>
       <div style={styles.chartCard}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Median Design Approval Lead Time by Supplier</h3>
-        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Design Approved · excludes simulation orders · bars show median days (orders)</p>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>{measureName} Design Approval Lead Time by Supplier</h3>
+        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Design Approved · excludes simulation orders · {measureNote}</p>
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={approvalLeadData} layout="vertical" margin={{ right: 80 }}>
+          <BarChart data={charts.approval.rows} layout="vertical" margin={{ right: 80 }}>
             <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit=" days" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} width={90} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Median Approval Time']} />
-            <Bar dataKey="medianDays" fill="#8B5CF6" radius={[0, 6, 6, 0]} name="Median Days">
+            <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, `${measureName} Approval Time`]} />
+            <Bar dataKey="days" fill="#8B5CF6" radius={[0, 6, 6, 0]}>
               <LabelList dataKey="label" position="right" fill="#64748B" fontSize={11} fontWeight={600} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        <BadDates bad={charts.approval.bad} fromLabel="Design Received" toLabel="Design Approved" theme={theme} />
       </div>
       <div style={styles.chartCard}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Median Design Approval Time by Month</h3>
-        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders · bars show median days (orders)</p>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>{measureName} Design Approval Time by Month</h3>
+        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders · {measureNote}</p>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={approvalByMonthData} margin={{ top: 20 }}>
+          <BarChart data={charts.approvalByMonth.rows} margin={{ top: 20 }}>
             <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
             <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Median Days']} />
-            <Bar dataKey="medianDays" fill="#F59E0B" radius={[6, 6, 0, 0]}>
+            <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, `${measureName} Days`]} />
+            <Bar dataKey="days" fill="#F59E0B" radius={[6, 6, 0, 0]}>
               <LabelList dataKey="label" position="top" fill="#64748B" fontSize={11} fontWeight={600} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        <BadDates bad={charts.approvalByMonth.bad} fromLabel="Design Received" toLabel="Design Approved" theme={theme} />
       </div>
       <div style={styles.chartCard}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>Median Design Approval Time by Plant</h3>
-        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders · bars show median days (orders)</p>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: theme.text }}>{measureName} Design Approval Time by Plant</h3>
+        <p style={{ fontSize: '0.75rem', color: theme.textDim, marginBottom: '1rem' }}>Days from Design Received to Approved · excludes simulation orders · {measureNote}</p>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={approvalByPlantData} margin={{ top: 20 }}>
+          <BarChart data={charts.approvalByPlant.rows} margin={{ top: 20 }}>
             <XAxis dataKey="plant" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
             <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} unit="d" domain={[0, (dataMax) => Math.ceil((dataMax || 0) + Math.max(15, (dataMax || 0) * 0.15))]} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, 'Median Days']} />
-            <Bar dataKey="medianDays" fill="#EC4899" radius={[6, 6, 0, 0]}>
+            <Tooltip contentStyle={tooltipStyle} formatter={(value, name, props) => [`${value} days (${props.payload.count} orders)`, `${measureName} Days`]} />
+            <Bar dataKey="days" fill="#EC4899" radius={[6, 6, 0, 0]}>
               <LabelList dataKey="label" position="top" fill="#64748B" fontSize={11} fontWeight={600} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        <BadDates bad={charts.approvalByPlant.bad} fromLabel="Design Received" toLabel="Design Approved" theme={theme} />
       </div>
       </Section>
     </div>

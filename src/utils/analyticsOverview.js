@@ -61,10 +61,18 @@ export const median = (values) => {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
-// Median lead time per group. A median, not a mean: one die that took 243
-// days dragged a supplier's average up by a week. Each row carries how many
-// orders it rests on, since a median of one order is not a track record.
-export const leadTimesBy = (orders, keyOf, fromOf, toOf) => {
+const oneDecimal = (n) => Math.round(n * 10) / 10;
+
+// Lead time per group, as both an average and a median, each row carrying how
+// many orders it rests on. `measure` picks which of the two the bar shows and
+// the rows are sorted by.
+//
+// The average is the default because it is the figure people check against
+// their own sheet, and it shows the slow orders a median hides: one supplier's
+// delivery median read 22 days while the average was 29. The median stays one
+// click away for the opposite case, where a single 243-day die drags an
+// otherwise steady supplier up by a week.
+export const leadTimesBy = (orders, keyOf, fromOf, toOf, measure = 'average') => {
   const groups = {};
   for (const o of orders) {
     const key = keyOf(o);
@@ -74,11 +82,27 @@ export const leadTimesBy = (orders, keyOf, fromOf, toOf) => {
     (groups[key] ||= []).push(days);
   }
   return Object.entries(groups)
-    .map(([name, days]) => {
-      const medianDays = Math.round(median(days));
-      return { name, medianDays, count: days.length, label: `${medianDays}d (${days.length})` };
+    .map(([name, list]) => {
+      const medianDays = Math.round(median(list));
+      const avgDays = oneDecimal(list.reduce((sum, d) => sum + d, 0) / list.length);
+      const days = measure === 'median' ? medianDays : avgDays;
+      return { name, medianDays, avgDays, days, count: list.length, label: `${days}d (${list.length})` };
     })
-    .sort((a, b) => a.medianDays - b.medianDays);
+    .sort((a, b) => a.days - b.days);
+};
+
+// Orders a lead-time chart has to leave out because the second date is before
+// the first: a data entry error, not a negative lead time. Returned so the
+// chart can name them instead of dropping them without a word.
+export const outOfOrderDates = (orders, keyOf, fromOf, toOf) => {
+  const bad = [];
+  for (const order of orders) {
+    if (!keyOf(order)) continue;
+    const from = parseOrderCalendarDate(fromOf(order));
+    const to = parseOrderCalendarDate(toOf(order));
+    if (from && to && to < from) bad.push({ order, from, to });
+  }
+  return bad;
 };
 
 // One supplier's orders split by where they stand. Before approval and with
