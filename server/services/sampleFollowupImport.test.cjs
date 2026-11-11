@@ -163,7 +163,6 @@ const sheetRow = (over = {}) => ({
 test('planRowUpdate fills an empty order from the sheet', () => {
   const { updates } = imp.planRowUpdate({ row: sheetRow(), order: order() });
   assert.deepEqual(updates, {
-    die_received_date: '2025-10-24',
     submission_date: '2025-10-24',
     sample_approval_date: '2025-10-24',
     corrector: 'Dinesh',
@@ -188,12 +187,142 @@ test('planRowUpdate skips fields the order already agrees with', () => {
   const { updates } = imp.planRowUpdate({
     row: sheetRow(),
     order: order({
-      die_received_date: '2025-10-24', submission_date: '2025-10-24',
+      submission_date: '2025-10-24',
       sample_approval_date: '2025-10-24', corrector: 'Dinesh',
       sample_status: 'Approved',
     }),
   });
   assert.deepEqual(updates, {});
+});
+
+test('planRowUpdate never writes the die received date', () => {
+  const { updates } = imp.planRowUpdate({
+    row: sheetRow({ 'Die Received Date': 45954 }),
+    order: order(),
+  });
+  assert.equal('die_received_date' in updates, false);
+  assert.equal(imp.WRITABLE_COLUMNS.has('die_received_date'), false);
+});
+
+test('planRowUpdate keeps an existing value and reports the difference', () => {
+  const { updates, conflicts } = imp.planRowUpdate({
+    row: sheetRow({ 'Submission Date': 45954, 'Corrector': 'Dinesh', 'No. of Trial': 3 }),
+    order: order({ submission_date: '2026-01-15', corrector: 'Kailash', no_of_trial: 2 }),
+  });
+  assert.equal('submission_date' in updates, false);
+  assert.equal('corrector' in updates, false);
+  assert.equal('no_of_trial' in updates, false);
+  assert.deepEqual(conflicts, [
+    { col: 'submission_date', current: '2026-01-15', sheet: '2025-10-24' },
+    { col: 'no_of_trial', current: 2, sheet: 3 },
+    { col: 'corrector', current: 'Kailash', sheet: 'Dinesh' },
+  ]);
+});
+
+test('planRowUpdate treats the default trial count of 0 as blank', () => {
+  const { updates, conflicts } = imp.planRowUpdate({
+    row: sheetRow({ 'No. of Trial': 2 }),
+    order: order({ no_of_trial: 0 }),
+  });
+  assert.equal(updates.no_of_trial, 2);
+  assert.equal(conflicts.length, 0);
+});
+
+test('planRowUpdate does not call a capitalisation difference a conflict', () => {
+  const { updates, conflicts } = imp.planRowUpdate({
+    row: sheetRow({ 'Corrector': 'DINESH' }),
+    order: order({ corrector: 'Dinesh' }),
+  });
+  assert.equal('corrector' in updates, false);
+  assert.equal(conflicts.length, 0);
+});
+
+test('planRowUpdate leaves the trial count alone when trials are logged', () => {
+  const { updates, trialsIgnored } = imp.planRowUpdate({
+    row: sheetRow({ 'No. of Trial': 5 }),
+    order: order(),
+    loggedTrials: 2,
+  });
+  assert.equal('no_of_trial' in updates, false);
+  assert.deepEqual(trialsIgnored, { logged: 2, sheet: 5 });
+});
+
+test('planRowUpdate raises nothing when the sheet agrees with logged trials', () => {
+  const { trialsIgnored } = imp.planRowUpdate({
+    row: sheetRow({ 'No. of Trial': 2 }),
+    order: order(),
+    loggedTrials: 2,
+  });
+  assert.equal(trialsIgnored, null);
+});
+
+test('planRowUpdate warns when an approval date lands on a Rejected sample', () => {
+  const { updates, warnings } = imp.planRowUpdate({
+    row: sheetRow(),
+    order: order({ sample_status: 'Rejected' }),
+  });
+  assert.equal(updates.sample_approval_date, '2025-10-24');
+  assert.equal('sample_status' in updates, false);
+  assert.equal(warnings.some((w) => w.includes('Rejected')), true);
+});
+
+test('readColumn accepts the other spellings of each header', () => {
+  const row = {
+    'die no': '1', 'Sample Submission Date': 45954, 'SAMPLE APPROVAL': 46085,
+    'Number of Trials ': 2, 'Corrector Name': 'Dinesh',
+  };
+  assert.equal(imp.readColumn(row, 'die'), '1');
+  assert.equal(imp.readColumn(row, 'submission'), 45954);
+  assert.equal(imp.readColumn(row, 'approval'), 46085);
+  assert.equal(imp.readColumn(row, 'trials'), 2);
+  assert.equal(imp.readColumn(row, 'corrector'), 'Dinesh');
+});
+
+test('checkColumns names the columns a sheet is missing', () => {
+  assert.deepEqual(imp.checkColumns([sheetRow()]), { missing: [] });
+  assert.deepEqual(
+    imp.checkColumns([{ 'Die': '1', 'Submission Dt': 45954, 'Corrector': 'A' }]).missing,
+    ['Submission Date', 'Sample Approval Date', 'No. of Trial'],
+  );
+});
+
+test('correctorInDropdown follows the plant rule of the Corrector dropdown', () => {
+  const list = [
+    { name: 'Dinesh', plant: 'GEX 01', is_active: true },
+    { name: 'Kailash', plant: 'GEX 02', is_active: true },
+    { name: 'Old', plant: 'GEX 01', is_active: false },
+  ];
+  assert.equal(imp.correctorInDropdown(list, 'GEX 1', 'Dinesh'), true);   // loose plant match
+  assert.equal(imp.correctorInDropdown(list, 'GEX 1', 'Kailash'), false); // other plant
+  assert.equal(imp.correctorInDropdown(list, 'GEX 1', 'Old'), false);     // deactivated
+  assert.equal(imp.correctorInDropdown(list, 'GEX 9', 'Kailash'), true);  // nobody assigned: all active
+  assert.equal(imp.correctorInDropdown(list, 'GEX 1', 'dinesh'), false);  // saved as typed
+});
+
+test('ledgerRows marks newly written past submissions as already reported', () => {
+  const plan = {
+    updates: [
+      { orderId: 1, before: { type: 'N' }, updates: { submission_date: '2026-03-01' } },
+      { orderId: 2, before: { type: 'B' }, updates: { submission_date: '2026-03-02' } },
+      { orderId: 3, before: { type: 'T' }, updates: { submission_date: '2026-03-03' } },
+      { orderId: 4, before: { type: 'N' }, updates: { corrector: 'Dinesh' } },
+      { orderId: 5, before: { type: 'N' }, updates: { submission_date: '2026-11-01' } },
+    ],
+  };
+  assert.deepEqual(imp.ledgerRows(plan, '2026-11-01'), [
+    { orderId: 1, stage: 'sample_new', stageDate: '2026-03-01' },
+    { orderId: 2, stage: 'sample_backup', stageDate: '2026-03-02' },
+    { orderId: 3, stage: 'sample_other', stageDate: '2026-03-03' },
+  ]);
+});
+
+test('ledgerRows uses the stage keys the Daily Summary counts', () => {
+  const { STAGES } = require('./dailySummaryData.cjs');
+  const stageFor = (type) => STAGES.find((s) => s.column === 'submission_date' && s.match({ type })).key;
+  for (const type of ['N', 'B', 'T', null]) {
+    const plan = { updates: [{ orderId: 1, before: { type }, updates: { submission_date: '2026-03-01' } }] };
+    assert.equal(imp.ledgerRows(plan, '2026-11-01')[0].stage, stageFor(type));
+  }
 });
 
 test('planRowUpdate compares trial counts numerically', () => {
@@ -206,11 +335,11 @@ test('planRowUpdate compares trial counts numerically', () => {
 
 test('planRowUpdate warns about an unreadable date without changing it', () => {
   const { updates, warnings } = imp.planRowUpdate({
-    row: sheetRow({ 'Die Received Date': 'sometime' }),
+    row: sheetRow({ 'Submission Date': 'sometime' }),
     order: order(),
   });
-  assert.equal('die_received_date' in updates, false);
-  assert.equal(warnings.some((w) => w.includes('Die Received Date')), true);
+  assert.equal('submission_date' in updates, false);
+  assert.equal(warnings.some((w) => w.includes('Submission Date')), true);
 });
 
 test('planRowUpdate reports a supplier disagreement but never writes it', () => {
@@ -266,6 +395,31 @@ test('buildImportPlan separates rows that need no change', () => {
   });
   assert.equal(plan.updates.length, 0);
   assert.equal(plan.noop.length, 1);
+});
+
+test('buildImportPlan collects every list the report needs to flag', () => {
+  const plan = imp.buildImportPlan({
+    rows: [
+      sheetRow({ 'Die': 'A', 'Corrector': 'Stranger' }),
+      sheetRow({ 'Die': 'B', 'Corrector': 'Stranger', 'No. of Trial': 4 }),
+      sheetRow({ 'Die': 'C', 'Corrector': 'Dinesh' }),
+      sheetRow({ 'Die': 'D' }),
+    ],
+    orders: [
+      order({ id: 1, die_no: 'A', die_received_date: null }),
+      order({ id: 2, die_no: 'B', die_received_date: '2025-01-01' }),
+      order({ id: 3, die_no: 'C', die_received_date: '2025-01-01', corrector: 'Kailash' }),
+    ],
+    correctors: [{ name: 'Dinesh', plant: 'GEX 2', is_active: true }],
+    loggedTrials: new Map([[2, 1]]),
+    standaloneProfiles: new Set(['D']),
+  });
+  assert.deepEqual(plan.notReceived.map((e) => e.orderId), [1]);
+  assert.deepEqual(plan.unknownCorrectors, [{ name: 'Stranger', dies: ['A', 'B'] }]);
+  assert.deepEqual(plan.trialsIgnored.map((e) => e.orderId), [2]);
+  assert.deepEqual(plan.conflicts.map((e) => e.die), ['C']);
+  assert.deepEqual(plan.standalone.map((e) => e.die), ['D']);
+  assert.equal(plan.notFound.length, 0);
 });
 
 test('buildImportPlan flags a blank die number and a repeated one', () => {

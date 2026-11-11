@@ -15,14 +15,53 @@ const COLUMNS = {
   corrector: 'Corrector',
 };
 
+// Other spellings of the same headers. A misread header would look exactly
+// like a column of blank cells and silently import nothing.
+const COLUMN_ALIASES = {
+  die: ['Die No', 'Die No.', 'Die Number'],
+  submission: ['Sample Submission Date', 'Sample Submission'],
+  approval: ['Sample Approval', 'Approval Date'],
+  trials: ['No of Trial', 'No. of Trials', 'No of Trials', 'Number of Trial', 'Number of Trials'],
+  corrector: ['Corrector Name', 'Corrector Names'],
+};
+
+// Columns the import needs. Plant, supplier and received date are not here:
+// they are cross-checks at most.
+const REQUIRED_COLUMNS = ['die', 'submission', 'approval', 'trials', 'corrector'];
+
 // No of Trial ceiling, matching the validator in server/routes/orders.cjs.
 const MAX_TRIALS = 1000;
 
 // Sheet headers sometimes carry stray trailing spaces (the QD sheet did).
 function readCell(row, name) {
   if (row[name] !== undefined) return row[name];
-  const key = Object.keys(row).find((k) => k.trim() === name);
+  const wanted = name.toLowerCase();
+  const key = Object.keys(row).find((k) => k.trim().toLowerCase() === wanted);
   return key === undefined ? '' : row[key];
+}
+
+function headersFor(key) {
+  return [COLUMNS[key], ...(COLUMN_ALIASES[key] || [])];
+}
+
+function readColumn(row, key) {
+  for (const header of headersFor(key)) {
+    const value = readCell(row, header);
+    if (value !== '') return value;
+  }
+  return '';
+}
+
+// Which required columns does the sheet not have at all?
+function checkColumns(rows) {
+  const headers = new Set();
+  for (const row of rows || []) {
+    for (const k of Object.keys(row)) headers.add(k.trim().toLowerCase());
+  }
+  const missing = REQUIRED_COLUMNS
+    .filter((key) => !headersFor(key).some((h) => headers.has(h.toLowerCase())))
+    .map((key) => COLUMNS[key]);
+  return { missing };
 }
 
 function normalizeDieNo(v) {
@@ -112,13 +151,12 @@ function deriveSampleStatus({ approvalDate, submissionDate, currentStatus }) {
 
 // The only columns this import may ever write.
 const WRITABLE_COLUMNS = new Set([
-  'die_received_date', 'submission_date', 'sample_approval_date',
+  'submission_date', 'sample_approval_date',
   'no_of_trial', 'corrector', 'sample_status',
 ]);
 
 // Sheet column → order column, with the parser that reads it.
 const FIELDS = [
-  { col: 'die_received_date',    key: 'received',   parse: parseSheetDate },
   { col: 'submission_date',      key: 'submission', parse: parseSheetDate },
   { col: 'sample_approval_date', key: 'approval',   parse: parseSheetDate },
   { col: 'no_of_trial',          key: 'trials',     parse: parseTrialCount },
@@ -133,18 +171,42 @@ function sameText(a, b) {
 // Does the order already hold this value? Dates arrive from pg as 'YYYY-MM-DD'
 // strings; trial counts may arrive as either number or string.
 function alreadyEqual(current, next) {
-  if (current == null || String(current).trim() === '') return false;
   if (typeof next === 'number') return Number(current) === next;
-  return String(current).trim() === String(next);
+  return sameText(current, next);
 }
 
-function planRowUpdate({ row, order }) {
+// no_of_trial defaults to 0, so a 0 there means nobody has recorded anything.
+function isBlank(col, current) {
+  if (current == null || String(current).trim() === '') return true;
+  return col === 'no_of_trial' && Number(current) === 0;
+}
+
+// Same rule as src/utils/correctorOptions.js: "GEX 01", "gex 1" and "GEX 1"
+// are one plant.
+function normalizePlant(raw) {
+  return String(raw || '').trim().toUpperCase().replace(/\s+/g, ' ').replace(/\b0+(\d)/g, '$1');
+}
+
+// Would the Corrector dropdown offer this name for this plant? Mirrors
+// correctorOptions in src/utils/correctorOptions.js; a name it would not offer
+// is stored as typed and shows as "not in list".
+function correctorInDropdown(correctors, plant, name) {
+  const active = (correctors || []).filter((c) => c.is_active);
+  const wanted = normalizePlant(plant);
+  const forPlant = wanted ? active.filter((c) => normalizePlant(c.plant) === wanted) : active;
+  const pool = forPlant.length ? forPlant : active;
+  return pool.some((c) => c.name === name);
+}
+
+function planRowUpdate({ row, order, loggedTrials = 0 }) {
   const updates = {};
   const warnings = [];
+  const conflicts = [];
   const parsed = {};
+  let trialsIgnored = null;
 
   for (const f of FIELDS) {
-    const raw = readCell(row, COLUMNS[f.key]);
+    const raw = readColumn(row, f.key);
     const value = f.parse(raw);
     parsed[f.col] = value;
 
@@ -155,7 +217,23 @@ function planRowUpdate({ row, order }) {
       }
       continue;
     }
-    if (!alreadyEqual(order[f.col], value)) updates[f.col] = value;
+
+    if (f.col === 'no_of_trial' && loggedTrials > 0) {
+      // Logged trials win on screen, so a typed count would never be seen.
+      if (value > 0 && value !== loggedTrials) trialsIgnored = { logged: loggedTrials, sheet: value };
+      continue;
+    }
+
+    if (isBlank(f.col, order[f.col])) {
+      if (!(f.col === 'no_of_trial' && value === 0)) updates[f.col] = value;
+    } else if (!alreadyEqual(order[f.col], value)) {
+      // The app may be newer than the sheet, so an existing value always stands.
+      conflicts.push({ col: f.col, current: order[f.col], sheet: value });
+    }
+  }
+
+  if (updates.sample_approval_date && sameText(order.sample_status, 'Rejected')) {
+    warnings.push('status is Rejected — approval date will be saved, status left as Rejected');
   }
 
   const status = deriveSampleStatus({
@@ -167,17 +245,17 @@ function planRowUpdate({ row, order }) {
 
   // Plant and supplier are cross-checks only — reported, never written.
   for (const key of ['plant', 'supplier']) {
-    const sheetValue = cleanText(readCell(row, COLUMNS[key]));
+    const sheetValue = cleanText(readColumn(row, key));
     const appValue = cleanText(order[key]);
     if (sheetValue && appValue && !sameText(sheetValue, appValue)) {
       warnings.push(`${key}: sheet says ${sheetValue}, app says ${appValue} — not changed`);
     }
   }
 
-  return { updates, warnings };
+  return { updates, warnings, conflicts, trialsIgnored };
 }
 
-function buildImportPlan({ rows, orders }) {
+function buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles }) {
   const byDie = new Map();
   for (const o of orders || []) {
     const key = normalizeDieNo(o.die_no);
@@ -186,12 +264,16 @@ function buildImportPlan({ rows, orders }) {
     byDie.get(key).push(o);
   }
 
-  const plan = { updates: [], noop: [], notFound: [], ambiguous: [], warnings: [] };
+  const plan = {
+    updates: [], noop: [], notFound: [], ambiguous: [], warnings: [],
+    conflicts: [], notReceived: [], trialsIgnored: [], standalone: [], unknownCorrectors: [],
+  };
   const seen = new Map();
+  const unknownNames = new Map();
 
   (rows || []).forEach((row, i) => {
     const sheetRow = i + 2;                       // +1 for the header, +1 for 1-based
-    const dieRaw = cleanText(readCell(row, COLUMNS.die));
+    const dieRaw = cleanText(readColumn(row, 'die'));
     const die = normalizeDieNo(dieRaw);
     if (!die) {
       plan.warnings.push(`row ${sheetRow}: blank die number — skipped`);
@@ -204,7 +286,9 @@ function buildImportPlan({ rows, orders }) {
 
     const selection = selectOrder(byDie.get(die));
     if (selection.reason === 'not-found') {
-      plan.notFound.push({ sheetRow, die: dieRaw });
+      // A hand-added Sample Followup record holds its die number in `profile`.
+      const list = standaloneProfiles && standaloneProfiles.has(die) ? plan.standalone : plan.notFound;
+      list.push({ sheetRow, die: dieRaw });
       return;
     }
     if (selection.reason !== 'matched') {
@@ -215,19 +299,48 @@ function buildImportPlan({ rows, orders }) {
       return;
     }
 
-    const { updates, warnings } = planRowUpdate({ row, order: selection.order });
+    const order = selection.order;
+    const { updates, warnings, conflicts, trialsIgnored } = planRowUpdate({
+      row, order, loggedTrials: loggedTrials ? loggedTrials.get(order.id) || 0 : 0,
+    });
     warnings.forEach((w) => plan.warnings.push(`row ${sheetRow} (${dieRaw}): ${w}`));
 
-    const entry = { sheetRow, die: dieRaw, orderId: selection.order.id, before: selection.order, updates };
+    const entry = { sheetRow, die: dieRaw, orderId: order.id, before: order, updates };
     if (Object.keys(updates).length === 0) plan.noop.push(entry);
     else plan.updates.push(entry);
+
+    if (conflicts.length) plan.conflicts.push({ ...entry, conflicts });
+    if (trialsIgnored) plan.trialsIgnored.push({ ...entry, ...trialsIgnored });
+    if (Object.keys(updates).length && !order.die_received_date) plan.notReceived.push(entry);
+    if (correctors && updates.corrector && !correctorInDropdown(correctors, order.plant, updates.corrector)) {
+      if (!unknownNames.has(updates.corrector)) unknownNames.set(updates.corrector, []);
+      unknownNames.get(updates.corrector).push(dieRaw);
+    }
   });
 
+  plan.unknownCorrectors = [...unknownNames].map(([name, dies]) => ({ name, dies }));
   return plan;
+}
+
+// Daily Summary lists any stage dated before the report date that has no ledger
+// row as "Recorded late". These are old dates being backfilled, not late entries,
+// so they go into the ledger with the import. Stage keys match STAGES in
+// dailySummaryData.cjs (a test pins this); that module is not required here so
+// the importer can still be copied onto a server that does not have it.
+function ledgerRows(plan, today) {
+  const rows = [];
+  for (const entry of plan.updates) {
+    const stageDate = entry.updates.submission_date;
+    if (!stageDate || stageDate >= today) continue;
+    const type = entry.before.type;
+    const stage = type === 'N' ? 'sample_new' : type === 'B' ? 'sample_backup' : 'sample_other';
+    rows.push({ orderId: entry.orderId, stage, stageDate });
+  }
+  return rows;
 }
 
 module.exports = {
   COLUMNS, MAX_TRIALS, STATUS_RANK, WRITABLE_COLUMNS, FIELDS,
-  readCell, normalizeDieNo, cleanText, parseSheetDate, parseTrialCount,
-  selectOrder, deriveSampleStatus, planRowUpdate, buildImportPlan,
+  readCell, readColumn, checkColumns, normalizeDieNo, cleanText, parseSheetDate, parseTrialCount,
+  selectOrder, deriveSampleStatus, correctorInDropdown, planRowUpdate, buildImportPlan, ledgerRows,
 };
