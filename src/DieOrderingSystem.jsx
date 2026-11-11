@@ -3457,7 +3457,7 @@ export default function DieOrderingSystem() {
 
           {activeTab === 'analytics' && hasPageAccess('analytics') && (
             <Suspense fallback={<ChunkFallback theme={theme} />}>
-              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} />
+              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} user={user} />
             </Suspense>
           )}
           {/* Settings Tab (Admin Only) */}

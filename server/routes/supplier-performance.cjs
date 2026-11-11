@@ -8,6 +8,7 @@ const settings = require('../services/supplierPerformanceSettings.cjs');
 const model = require('../services/supplierPerformance.cjs');
 const data = require('../services/supplierPerformanceData.cjs');
 const dieLife = require('../services/supplierDieLife.cjs');
+const trialRatio = require('../services/supplierTrialRatio.cjs');
 const { generateSupplierReportPdf } = require('../services/supplierReportPdf.cjs');
 
 const handle = (res, error, fallback) => {
@@ -53,6 +54,25 @@ router.put('/die-life', authMiddleware, async (req, res) => {
         const { year, month, entries } = req.body || {};
         res.json(await dieLife.saveDieLife(pool, { year, month, entries }, req.user && req.user.id));
     } catch (error) { handle(res, error, 'Failed to save die life data'); }
+});
+
+// The trial ratio shown beside the die life figures: calculated from the
+// orders, with any admin correction over it. Anyone signed in can read it.
+router.get('/trial-ratio', authMiddleware, async (req, res) => {
+    try {
+        const year = Number(req.query.year) || new Date().getFullYear();
+        const month = Number(req.query.month) || (new Date().getMonth() + 1);
+        res.json(await trialRatio.listTrialRatios(pool, { year, month }));
+    } catch (error) { handle(res, error, 'Failed to fetch trial ratios'); }
+});
+
+// Admin-only, unlike the die life counts: this overrides a figure the system
+// worked out for itself, and it changes a supplier's score.
+router.put('/trial-ratio', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const { supplier, year, month, value, reason } = req.body || {};
+        res.json(await trialRatio.saveCorrection(pool, { supplier, year, month, value, reason }, req.user && req.user.id));
+    } catch (error) { handle(res, error, 'Failed to save the trial ratio correction'); }
 });
 
 // One builder for both the screen and the document. The PDF must never be

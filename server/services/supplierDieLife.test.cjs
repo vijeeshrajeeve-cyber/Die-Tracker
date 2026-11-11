@@ -35,7 +35,7 @@ test('validateEntry rejects negative numbers', () => {
 test('validateEntry rejects a failure count with no denominator', () => {
   assert.throws(
     () => s.validateEntry({ supplier: 'PHME', diesFailed: 2 }),
-    (e) => e.status === 400 && /dies in service/i.test(e.message)
+    (e) => e.status === 400 && /dies extruded/i.test(e.message)
   );
   assert.throws(
     () => s.validateEntry({ supplier: 'PHME', diesInService: 0, diesFailed: 0 }),
@@ -51,6 +51,13 @@ test('validateEntry allows die life alone — it scores on its own', () => {
 
 test('validateEntry requires a supplier', () => {
   assert.throws(() => s.validateEntry({ supplier: '  ' }), (e) => e.status === 400);
+});
+
+test('validateEntry keeps dies scrapped, and a blank stays not recorded', () => {
+  assert.equal(s.validateEntry({ supplier: 'PHME', diesScrapped: 4 }).diesScrapped, 4);
+  assert.equal(s.validateEntry({ supplier: 'PHME', diesScrapped: 0 }).diesScrapped, 0);
+  assert.equal(s.validateEntry({ supplier: 'PHME', diesScrapped: '' }).diesScrapped, null);
+  assert.throws(() => s.validateEntry({ supplier: 'PHME', diesScrapped: -1 }), (e) => e.status === 400);
 });
 
 // ---------- aggregateDieLife ----------
@@ -119,12 +126,12 @@ const listDieLifeOf = (pool) => s.listDieLife(pool, { year: 2026, month: 8 });
 
 test('listDieLife maps snake_case columns to the API shape', async () => {
   const pool = makePool([{ rows: [{
-    supplier: 'PDTMC', avg_die_life_mt: '72.5', dies_in_service: 40, dies_failed: 6,
+    supplier: 'PDTMC', avg_die_life_mt: '72.5', dies_in_service: 40, dies_failed: 6, dies_scrapped: 3,
     updated_by_name: 'admin', updated_at: '2026-08-05T10:00:00Z',
   }] }]);
   const rows = await listDieLifeOf(pool);
   assert.deepEqual(rows[0], {
-    supplier: 'PDTMC', avgDieLifeMt: 72.5, diesInService: 40, diesFailed: 6,
+    supplier: 'PDTMC', avgDieLifeMt: 72.5, diesInService: 40, diesFailed: 6, diesScrapped: 3,
     updatedBy: 'admin', updatedAt: '2026-08-05T10:00:00Z',
   });
 });
@@ -158,7 +165,7 @@ test('saveDieLife upserts on supplier, year and month', async () => {
   ] }, 3);
   const ins = pool.calls.find(c => /INSERT INTO supplier_die_life/.test(c.sql));
   assert.ok(/ON CONFLICT/.test(ins.sql), 'saving the same month twice must update, not duplicate');
-  assert.deepEqual(ins.params, ['PHME', 2026, 8, 80, 10, 1, 3]);
+  assert.deepEqual(ins.params, ['PHME', 2026, 8, 80, 10, 1, null, 3]);
 });
 
 test('saveDieLife records who saved it', async () => {
@@ -167,7 +174,7 @@ test('saveDieLife records who saved it', async () => {
     { supplier: 'PHME', avgDieLifeMt: 80, diesInService: 10, diesFailed: 1 },
   ] }, 7);
   const ins = pool.calls.find(c => /INSERT INTO supplier_die_life/.test(c.sql));
-  assert.equal(ins.params[6], 7);
+  assert.equal(ins.params[7], 7);
 });
 
 test('getDieLifeForPeriod aggregates the rows it reads', async () => {

@@ -31,19 +31,22 @@ function validateEntry(entry) {
   if (!supplier) throw fail(400, 'A supplier is required');
 
   const avgDieLifeMt = nullableNumber(entry.avgDieLifeMt, `${supplier}: die life`);
-  const diesInService = nullableNumber(entry.diesInService, `${supplier}: dies in service`);
+  const diesInService = nullableNumber(entry.diesInService, `${supplier}: dies extruded`);
   const diesFailed = nullableNumber(entry.diesFailed, `${supplier}: dies failed`);
+  // Recorded only. It has no denominator and feeds no percentage, so it needs
+  // no cross-check against the other counts.
+  const diesScrapped = nullableNumber(entry.diesScrapped, `${supplier}: dies scrapped`);
 
   // A failure count with no denominator cannot become a percentage. Leaving
   // both blank is the way to say "not recorded this month".
   if (diesFailed !== null && (diesInService === null || diesInService === 0)) {
-    throw fail(400, `${supplier}: dies failed needs a dies in service count above zero — leave both blank if there is nothing to record`);
+    throw fail(400, `${supplier}: dies failed needs a dies extruded count above zero — leave both blank if there is nothing to record`);
   }
   if (diesFailed !== null && diesInService !== null && diesFailed > diesInService) {
-    throw fail(400, `${supplier}: more dies failed (${diesFailed}) than were in service (${diesInService})`);
+    throw fail(400, `${supplier}: more dies failed (${diesFailed}) than were extruded (${diesInService})`);
   }
 
-  return { supplier, avgDieLifeMt, diesInService, diesFailed };
+  return { supplier, avgDieLifeMt, diesInService, diesFailed, diesScrapped };
 }
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -96,13 +99,14 @@ const toRow = (r) => ({
   avgDieLifeMt: num(r.avg_die_life_mt),
   diesInService: num(r.dies_in_service),
   diesFailed: num(r.dies_failed),
+  diesScrapped: num(r.dies_scrapped),
   updatedBy: r.updated_by_name || null,
   updatedAt: r.updated_at || null,
 });
 
 async function listDieLife(pool, { year, month }) {
   const { rows } = await pool.query(`
-    SELECT d.supplier, d.avg_die_life_mt, d.dies_in_service, d.dies_failed,
+    SELECT d.supplier, d.avg_die_life_mt, d.dies_in_service, d.dies_failed, d.dies_scrapped,
            d.updated_at, u.username AS updated_by_name
       FROM supplier_die_life d
       LEFT JOIN users u ON u.id = d.updated_by
@@ -125,15 +129,16 @@ async function saveDieLife(pool, { year, month, entries }, userId) {
   for (const e of clean) {
     await pool.query(`
       INSERT INTO supplier_die_life
-             (supplier, year, month, avg_die_life_mt, dies_in_service, dies_failed, updated_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+             (supplier, year, month, avg_die_life_mt, dies_in_service, dies_failed, dies_scrapped, updated_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (supplier, year, month) DO UPDATE
          SET avg_die_life_mt = EXCLUDED.avg_die_life_mt,
              dies_in_service = EXCLUDED.dies_in_service,
              dies_failed     = EXCLUDED.dies_failed,
+             dies_scrapped   = EXCLUDED.dies_scrapped,
              updated_by      = EXCLUDED.updated_by,
              updated_at      = CURRENT_TIMESTAMP`,
-      [e.supplier, y, m, e.avgDieLifeMt, e.diesInService, e.diesFailed, userId || null]);
+      [e.supplier, y, m, e.avgDieLifeMt, e.diesInService, e.diesFailed, e.diesScrapped, userId || null]);
   }
   return listDieLife(pool, { year: y, month: m });
 }

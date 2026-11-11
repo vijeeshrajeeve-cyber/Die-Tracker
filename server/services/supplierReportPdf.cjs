@@ -330,7 +330,7 @@ function drawMatrix(page, report, y, { bold, font }) {
 
   text(page, 'DIE LIFE & FAILURE', { x: MARGIN, y, size: 8.5, font: bold, color: MUTED });
   y -= 14;
-  tableRow(page, ['Month', 'Avg Die Life (MT)', 'Dies In Service', 'Dies Failed', 'Failure %'], cols,
+  tableRow(page, ['Month', 'Avg Die Life (MT)', 'Dies Extruded', 'Dies Failed', 'Failure %'], cols,
     { y, font: bold, color: MUTED, size: 8.5 });
   y -= 6;
   rule(page, y);

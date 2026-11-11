@@ -5,6 +5,7 @@
 // place.
 
 const { getDieLifeForPeriod } = require('./supplierDieLife.cjs');
+const trial = require('./supplierTrialRatio.cjs');
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -125,6 +126,17 @@ async function getSnapshot(pool, { supplier, from, to }) {
   const die = await getDieLifeForPeriod(pool, { supplier, year, months });
 
   const o = ordered.rows[0] || {};
+
+  // An admin may have corrected the calculated trial ratio for some months.
+  // With no correction in the period the figure above stands untouched; with
+  // one, the period is rebuilt month by month so the corrected month replaces
+  // only its own share.
+  let trialRatio = num(o.trial_ratio);
+  const fixes = await trial.activeCorrections(pool, { supplier, year, months });
+  if (fixes.length) {
+    const monthly = await trial.calculatedByMonth(pool, { supplier, year, months });
+    trialRatio = trial.combineTrialRatio(monthly, fixes);
+  }
   const r = received.rows[0] || {};
   const diesReceived = num(r.dies_received) || 0;
   const qdCount = num(qd.rows[0] && qd.rows[0].qd_count) || 0;
@@ -134,7 +146,7 @@ async function getSnapshot(pool, { supplier, from, to }) {
     dieFailure: die.dieFailure,
     ordersPlaced: num(o.orders_placed) || 0,
     designLeadTime: num(o.design_lead_time),
-    trialRatio: num(o.trial_ratio),
+    trialRatio,
     designRevisions: num(o.design_revisions),
     deliveryLeadTime: num(r.delivery_lead_time),
     // 0 QDs out of 0 dies is unknown, not a perfect 0%.

@@ -41,7 +41,7 @@ export default function DieLifeMatrix({ rows, theme }) {
               <tr>
                 <th scope="col" style={{ ...head, textAlign: 'left' }}>Month</th>
                 <th scope="col" style={head}>Avg Die Life (MT)</th>
-                <th scope="col" style={head}>Dies In Service</th>
+                <th scope="col" style={head}>Dies Extruded</th>
                 <th scope="col" style={head}>Dies Failed</th>
                 <th scope="col" style={head}>Failure %</th>
               </tr>

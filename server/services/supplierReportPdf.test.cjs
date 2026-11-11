@@ -88,7 +88,7 @@ test('the document survives a supplier with no rating at all', async () => {
 
 test('the matrix page lists each month with its counts', async () => {
   const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
-  const matrix = pages.find((p) => /Dies In Service/.test(p));
+  const matrix = pages.find((p) => /Dies Extruded/.test(p));
   assert.ok(matrix, 'no matrix section found');
   assert.match(matrix, /Jun/);
   assert.match(matrix, /Jul/);
@@ -97,14 +97,14 @@ test('the matrix page lists each month with its counts', async () => {
 test('the matrix total is weighted, agreeing with the score on page 1', async () => {
   // 10 dies at 60 MT and 20 at 70 MT weights to 66.7, not the simple mean 65.
   const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
-  const matrix = pages.find((p) => /Dies In Service/.test(p));
+  const matrix = pages.find((p) => /Dies Extruded/.test(p));
   assert.match(matrix, /66\.7/);
 });
 
 test('no matrix section when nothing was ever entered', async () => {
   const report = { ...baseReport, dieLifeRows: [] };
   const pages = await textOf(await generateSupplierReportPdf(report, {}));
-  assert.ok(!pages.some((p) => /Dies In Service/.test(p)), 'an empty table is worse than no table');
+  assert.ok(!pages.some((p) => /Dies Extruded/.test(p)), 'an empty table is worse than no table');
 });
 
 test('a metric with no trend data produces no chart', async () => {
@@ -241,7 +241,7 @@ test('an unscored metric gets no movement claim', async () => {
 test('the trend page comes before the die life detail', async () => {
   const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
   const trendPage = pages.findIndex((p) => /MONTHLY TREND/.test(p));
-  const matrixPage = pages.findIndex((p) => /Dies In Service/.test(p));
+  const matrixPage = pages.findIndex((p) => /Dies Extruded/.test(p));
   assert.ok(trendPage > 0, 'trend page missing');
   assert.ok(matrixPage > 0, 'matrix page missing');
   assert.equal(trendPage, 1, 'trends should be page 2');

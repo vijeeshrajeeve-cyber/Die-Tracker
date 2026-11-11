@@ -409,6 +409,17 @@ export const supplierPerformanceAPI = {
         body: JSON.stringify({ year, month, entries }),
     }),
 
+    getTrialRatios: async ({ year, month }) => {
+        const qs = new URLSearchParams({ year: String(year), month: String(month) });
+        return apiRequest(`/supplier-performance/trial-ratio?${qs}`);
+    },
+
+    // value null removes the correction and returns to the calculated figure.
+    saveTrialRatioCorrection: async ({ supplier, year, month, value, reason }) => apiRequest('/supplier-performance/trial-ratio', {
+        method: 'PUT',
+        body: JSON.stringify({ supplier, year, month, value, reason }),
+    }),
+
     getSettings: async (year) => {
         const qs = new URLSearchParams(year ? { year: String(year) } : {});
         return apiRequest(`/supplier-performance/settings${qs.toString() ? `?${qs}` : ''}`);

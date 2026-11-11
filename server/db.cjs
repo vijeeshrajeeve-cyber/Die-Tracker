@@ -617,6 +617,31 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_supplier_die_life_lookup
         ON supplier_die_life (upper(btrim(supplier)), year, month);
 
+      -- Dies scrapped in the month. Recorded only: it feeds no percentage and
+      -- no score. dies_in_service keeps its name although the screen now calls
+      -- it "Dies Extruded" -- the figures already entered mean the same thing.
+      ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS dies_scrapped INTEGER;
+
+      -- Admin corrections to the calculated trial ratio, one row per change.
+      -- The ratio itself is still worked out from die_orders; this is a log of
+      -- overrides for months where that figure is known to be wrong. The latest
+      -- row for a supplier and month wins, and a NULL corrected_value means the
+      -- correction was removed, so the history of who changed what and why is
+      -- never overwritten.
+      CREATE TABLE IF NOT EXISTS supplier_trial_ratio_corrections (
+        id               SERIAL PRIMARY KEY,
+        supplier         TEXT     NOT NULL,
+        year             INTEGER  NOT NULL,
+        month            SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+        calculated_value NUMERIC,
+        corrected_value  NUMERIC,
+        reason           TEXT     NOT NULL,
+        changed_by       INTEGER REFERENCES users(id),
+        changed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_trial_ratio_corrections_lookup
+        ON supplier_trial_ratio_corrections (upper(btrim(supplier)), year, month, id DESC);
+
       CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
         id SERIAL PRIMARY KEY,
         qd_id       INTEGER NOT NULL REFERENCES quality_discrepancies(id) ON DELETE CASCADE,

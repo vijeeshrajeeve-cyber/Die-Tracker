@@ -11,7 +11,7 @@ const TABS = [
   { id: 'simulation', label: 'Simulation' },
 ];
 
-export default function AnalyticsPage({ data, suppliers, theme }) {
+export default function AnalyticsPage({ data, suppliers, theme, user }) {
   const [tab, setTab] = useState('overview');
   // Bumped when die life figures are saved. The panels below stay mounted, so
   // without this the Supplier Report keeps showing the report it fetched on
@@ -54,7 +54,7 @@ export default function AnalyticsPage({ data, suppliers, theme }) {
         <SupplierReportTab theme={theme} refreshKey={dieLifeVersion} />
       </div>
       <div style={{ display: tab === 'dielife' ? 'block' : 'none' }}>
-        <DieLifeTab theme={theme} onSaved={() => setDieLifeVersion((v) => v + 1)} />
+        <DieLifeTab theme={theme} isAdmin={user?.role === 'admin'} onSaved={() => setDieLifeVersion((v) => v + 1)} />
       </div>
       <div style={{ display: tab === 'simulation' ? 'block' : 'none' }}>
         <SimulationSummaryTab theme={theme} active={tab === 'simulation'} />

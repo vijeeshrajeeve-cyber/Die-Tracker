@@ -667,6 +667,7 @@ CREATE TABLE IF NOT EXISTS supplier_die_life (
     avg_die_life_mt   NUMERIC,
     dies_in_service   INTEGER,
     dies_failed       INTEGER,
+    dies_scrapped     INTEGER,
     updated_by        INTEGER REFERENCES users(id),
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -674,6 +675,23 @@ CREATE TABLE IF NOT EXISTS supplier_die_life (
 );
 CREATE INDEX IF NOT EXISTS idx_supplier_die_life_lookup
     ON supplier_die_life (upper(btrim(supplier)), year, month);
+
+-- Admin corrections to the calculated trial ratio, one row per change. The
+-- latest row for a supplier and month wins; a NULL corrected_value means the
+-- correction was removed. Rationale in db.cjs.
+CREATE TABLE IF NOT EXISTS supplier_trial_ratio_corrections (
+    id               SERIAL PRIMARY KEY,
+    supplier         TEXT     NOT NULL,
+    year             INTEGER  NOT NULL,
+    month            SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+    calculated_value NUMERIC,
+    corrected_value  NUMERIC,
+    reason           TEXT     NOT NULL,
+    changed_by       INTEGER REFERENCES users(id),
+    changed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_trial_ratio_corrections_lookup
+    ON supplier_trial_ratio_corrections (upper(btrim(supplier)), year, month, id DESC);
 
 CREATE TABLE IF NOT EXISTS quality_discrepancy_activity (
     id SERIAL PRIMARY KEY,
