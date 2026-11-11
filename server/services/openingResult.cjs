@@ -9,7 +9,7 @@
 //   bridged      number of gaps bridged while chaining
 //   scaleBasis   as in ExtractionResult (never null here)
 //   texts        plain drawing texts;  numbers  canonical tooling numbers found in them
-//   hints        { sizeClass, cavities, inventoryDims }
+//   hints        { sizeClass, cavities, inventoryDims, steppedPockets }
 //   stated       sizeFromTexts() result or null
 //   canConfirm   true only when the scale is native (DXF): a drawn outer then confirms stated text. A PDF is scaled
 //                from its own text/hint/inventory dims, so its drawn circle can never confirm anything.
@@ -25,7 +25,7 @@
 // the drawing at a clean 1:n scale (the geometry is not rescaled); a reader warning.
 
 const {
-  classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, bbox, polygonArea,
+  classifyLoops, pocketGapMm, normaliseFrame, gradeConfidence, bbox, polygonArea, robustCircle, cleanScale, NATIVE_SCALES,
 } = require('./openingGeometry.cjs');
 const { normalizeSizeClass } = require('./toolingNumbers.cjs');
 
@@ -39,6 +39,57 @@ function hintDiameter(sizeClass) {
 
 const SMALL_POCKET_SHARE = 0.1;
 
+// The scales a drawing states, as reductions n (1 for 1:1, 2 for 1:2 or a 0.5 view scale). A ratio counts when it
+// follows a SCALE / SCALA label in the same text or stands alone as a text of its own (title blocks keep the label
+// and the value in separate texts, not always next to each other). Empty without a SCALE label.
+const SCALE_LABEL = /\bSCAL[EA]\b/i;
+const RATIO_AFTER_LABEL = /\bSCAL[EA]\b[^\d]*1\s*[:/]\s*(\d)(?![\d.:])/i;
+const RATIO_ALONE = /^\s*1\s*[:/]\s*(\d)\s*$/;
+const DECIMAL_AFTER_LABEL = /\bSCAL[EA]\b[^\d]*(0\.\d+)\s*$/i;
+function statedScales(texts) {
+  const list = (texts || []).map(String);
+  const found = new Set();
+  if (!list.some((t) => SCALE_LABEL.test(t))) return found;
+  for (const t of list) {
+    const m = RATIO_AFTER_LABEL.exec(t) || RATIO_ALONE.exec(t);
+    if (m) found.add(Number(m[1]));
+    const d = DECIMAL_AFTER_LABEL.exec(t);
+    if (d && Number(d[1]) > 0) {
+      const n = 1 / Number(d[1]);
+      if (Math.abs(n - Math.round(n)) < 0.01) found.add(Math.round(n));
+    }
+  }
+  return found;
+}
+
+// The one reduction (2..5) a drawing states, or null: no statement, 1:1, or several different scales.
+function scaleFromTexts(texts) {
+  const found = statedScales(texts);
+  if (found.size !== 1) return null;
+  const [n] = found;
+  return n >= 2 && n <= 5 ? n : null;
+}
+
+// A drawing in its own units can still be drawn reduced: the sheet is true size and the part is at 1:n. Returns
+// { n, basis: 'rim' | 'text' } when the geometry has to be multiplied by n, else null.
+//   rim   a drawn rim is the expected diameter at a clean 1:n, none is near the expected diameter itself, and the
+//         drawing states that scale (a circle a quarter of the die's size is otherwise just a round pocket)
+//   text  the drawing states one scale 1:n and its largest rim, multiplied by n, is a possible tooling diameter
+function reductionOf(loops, { expectedDiameter, texts }) {
+  const rims = loops.map((l) => robustCircle(l.points)).filter((f) => f && f.r * 2 >= 50).map((f) => f.r * 2);
+  if (!rims.length) return null;
+  if (expectedDiameter) {
+    if (rims.some((d) => Math.abs(d - expectedDiameter) <= 0.1 * expectedDiameter)) return null;
+    const stated = statedScales(texts);
+    const clean = rims.map((d) => cleanScale(expectedDiameter, d)).filter((n) => n && stated.has(n));
+    if (clean.length) return { n: Math.max(...clean), basis: 'rim' };
+  }
+  const n = scaleFromTexts(texts);
+  const largest = Math.max(...rims);
+  if (n && largest * n >= 100 && largest * n <= 1500) return { n, basis: 'text' };
+  return null;
+}
+
 function capUncertain(state, note) {
   state.notes.push(note);
   if (state.confidence === 'confirmed' || state.confidence === 'likely') state.confidence = 'uncertain';
@@ -48,7 +99,7 @@ function buildExtractionResult({
   source, loops, bridged, scaleBasis, texts, numbers, hints, stated, canConfirm, notes,
   openChains = [], mmPerUnit = 1, warnings = [],
 }) {
-  const { sizeClass: hintSize = null, cavities: hintCavities = null, inventoryDims = null } = hints || {};
+  const { sizeClass: hintSize = null, cavities: hintCavities = null, inventoryDims = null, steppedPockets = null } = hints || {};
   const normHint = hintSize ? normalizeSizeClass(hintSize) : null;
   const validHint = normHint && hintDiameter(normHint) != null ? normHint : null;
   if (normHint && !validHint) notes.push('ignored malformed size hint');
@@ -56,13 +107,24 @@ function buildExtractionResult({
   const hintedDiameter = hinted ? hintDiameter(hinted) : null;
   const expectedDiameter = stated ? stated.diameter : hintedDiameter;
 
+  // A reduced drawing is brought to true size before anything is classified.
+  const reduction = NATIVE_SCALES.has(scaleBasis) ? reductionOf(loops, { expectedDiameter, texts }) : null;
+  if (reduction) {
+    const grow = (c) => ({ ...c, points: c.points.map(([x, y]) => [x * reduction.n, y * reduction.n]) });
+    loops = loops.map(grow);
+    openChains = openChains.map(grow);
+    mmPerUnit *= reduction.n;
+  }
+
   const cls = classifyLoops(loops, {
     expectedOuterDiameter: expectedDiameter,
     noOuterFallback: scaleBasis === 'inventory-dims' && !expectedDiameter,
     openChains,
+    knownCavities: hintCavities,
+    steppedPockets,
   });
   notes.push(...cls.notes);
-  const framed = normaliseFrame({ outer: cls.outer, pockets: cls.pockets });
+  const framed = normaliseFrame({ outer: cls.outer, pockets: cls.pockets, centre: cls.patternCentre });
   const outer = framed.outer ? framed.outer.points : null;
   const pockets = framed.pockets.map((p) => p.points);
 
@@ -81,6 +143,7 @@ function buildExtractionResult({
     statedDiameter: drawnCircle || cls.outerSynthesised ? expectedDiameter : null,
     knownCavities: hintCavities,
     scaleBasis,
+    centred: !!cls.patternCentre,
   });
   let confidence = graded.confidence;
   notes.push(...graded.notes);
@@ -133,6 +196,16 @@ function buildExtractionResult({
     if (small) capUncertain(state, `${small} pocket${small === 1 ? '' : 's'} under a tenth of the largest pocket's area`);
   }
   if (cls.drawingScale) capUncertain(state, `drawing appears to be at 1:${cls.drawingScale} scale; geometry not rescaled`);
+  // Pockets picked out by the cavity count are a reading, not a measurement of an unambiguous drawing.
+  if (cls.pocketsInferred && state.confidence === 'confirmed') state.confidence = 'likely';
+  if (reduction) {
+    // Rescaled geometry is measured from a reduced drawing: never better than likely.
+    state.notes.push(reduction.basis === 'text'
+      ? `drawing states scale 1:${reduction.n}; geometry multiplied by ${reduction.n}`
+      : `drawn rim is the stated size at 1:${reduction.n}; geometry multiplied by ${reduction.n}`);
+    if (state.confidence === 'confirmed') state.confidence = 'likely';
+    if (sizeClassConfidence === 'confirmed') sizeClassConfidence = 'likely';
+  }
   for (const w of warnings) capUncertain(state, w);
   confidence = state.confidence;
 
@@ -155,4 +228,4 @@ function buildExtractionResult({
   };
 }
 
-module.exports = { buildExtractionResult, hintDiameter };
+module.exports = { buildExtractionResult, hintDiameter, statedScales, scaleFromTexts, reductionOf };

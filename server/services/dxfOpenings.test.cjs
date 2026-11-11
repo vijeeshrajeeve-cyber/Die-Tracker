@@ -36,10 +36,11 @@ test('bolster 14017: no outer drawn, size from MTEXT, outer synthesised, pocket 
   assert.equal(r.pockets.length, 1);
   const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 250) < 0.1 && Math.abs(b.height - 150) < 0.1);
   assert.equal(r.sizeClass, '475X220'); assert.equal(r.sizeClassSource, 'drawing-text');
-  // No rim is drawn and its centre lines (222 and 287 mm) are not both longer than 60 % of Ø475, so the outer is
-  // centred on the pocket's own bbox: that is a guess about where the die centre is, graded uncertain.
-  assert.equal(r.confidence, 'uncertain');
-  assert.ok(r.notes.some((n) => /centred on the drawn loops/.test(n)));
+  // No rim is drawn. Its centre lines (222 and 287 mm) are shorter than 60 % of Ø475 but longer than 40 % and they
+  // cross on the pocket, so they centre the outer.
+  assert.equal(r.confidence, 'likely');
+  assert.ok(r.notes.includes('outer centred on the drawn centre lines'));
+  const pb = bbox(r.pockets[0]); assert.ok(Math.hypot(pb.cx, pb.cy) < 1);
   assert.ok(r.numbersInDrawing.includes('BOL-14017'));
   assert.ok(r.notes.some((n) => /inventory dims agree/.test(n)));
 });
@@ -111,11 +112,15 @@ test('BOL-25B1C1A: keyed Ø474 rim inside a double sheet frame; one 324.8 x 245 
   assert.equal(r.sizeClass, '475X335');
 });
 
-test('I-15296: a frame-only drawing has no outer; the real pocket is kept and the result is uncertain', () => {
+test('I-15296: a frame-only drawing has no outer; its pocket, centred on the centre lines, is the only one kept', () => {
   const r = extractFromDxf(fixture('insert-15296-frame-only.dxf'));
   assert.equal(r.outer, null);
-  assert.ok(r.pockets.some((p) => { const b = bbox(p); return Math.abs(b.width - 95) < 1 && Math.abs(b.height - 95) < 1; }));
-  assert.equal(r.confidence, 'uncertain');
+  assert.equal(r.pockets.length, 1, 'the title-block symbol is not a pocket');
+  const pb = bbox(r.pockets[0]); assert.ok(Math.abs(pb.width - 95) < 1 && Math.abs(pb.height - 95) < 1);
+  assert.equal(r.confidence, 'likely');
+  assert.ok(r.notes.includes('no outer outline; pockets centred on the drawn centre lines'));
+  assert.ok(r.notes.some((n) => /small loop away from the pockets ignored/.test(n)));
+  assert.equal(r.sizeClass, null, 'the size class still needs the die shop');
   assert.ok(!r.pockets.some((p) => Math.max(bbox(p).width, bbox(p).height) > 300), 'the 400 x 268 frame is not a pocket');
 });
 
@@ -168,16 +173,45 @@ test('numbersFromTexts reads INS-nnnnn and ignores BOL words without digits', ()
 
 // ---- regression fixtures from the final re-review (v2 bundle) --------------------------------------------------------
 
-test('BOL-2-1-H: a 1:3 drawing - the Ø158.3 centring rim is not a pocket, the 90 x 30 profile is; capped uncertain', () => {
+test('BOL-2-1-H: a drawing stated and drawn at 1:3 is brought to true size - Ø475 outer, 270 x 90 pocket, likely', () => {
   const r = extractFromDxf(fixture('bolster-BOL-2-1-H-1to3.dxf'), { sizeClass: '475X220' });
-  assert.equal(r.outerSynthesised, true);
-  assert.ok(Math.abs(circleFit(r.outer).r * 2 - 475) < 0.01, 'the outer is the stated size, not rescaled');
+  assert.equal(r.outerSynthesised, false, 'the drawn rim, multiplied by 3, is the outer');
+  const ob = bbox(r.outer); assert.ok(Math.abs(ob.width - 475) < 1.5, `outer ${ob.width}`);
   assert.equal(r.pockets.length, 1);
-  assert.ok(!r.pockets.some((p) => { const b = bbox(p); return Math.abs(b.width - 158.3) < 2 && Math.abs(b.height - 158.3) < 2; }),
-    'the Ø158.3 rim is not a pocket');
-  const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 90) < 0.5 && Math.abs(b.height - 30) < 0.5, `pocket ${b.width} x ${b.height}`);
-  assert.equal(r.confidence, 'uncertain');
-  assert.ok(r.notes.includes('drawing appears to be at 1:3 scale; geometry not rescaled'));
+  const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 270) < 1.5 && Math.abs(b.height - 90) < 1.5, `pocket ${b.width} x ${b.height}`);
+  assert.equal(r.confidence, 'likely', 'rescaled geometry is never confirmed');
+  assert.equal(r.sizeClass, '475X220');
+  assert.ok(r.notes.includes('drawn rim is the stated size at 1:3; geometry multiplied by 3'));
+  assert.equal(r.meta.mmPerUnit, 3, 'a source point is (x + offset) / mmPerUnit');
+});
+
+// A sheet like the press-4 insert drawings: 280 x 195 frame, "SCALE :" and "1 : 2" as separate texts, a Ø110 rim.
+const halfScaleInsert = (extraTexts = []) => dxfOf({ entities: [
+  rectLines(280, 195, 140, 97.5),
+  circleEntity(100, 100, 55),
+  rectLines(40, 20, 100, 100),
+  text('SCALE :', 200, 20), text('1 : 2', 230, 20), text('DRG No.: P4 (INS- 12495)', 200, 10),
+  ...extraTexts,
+] });
+
+test('a drawing that states 1:2 and has no size text is doubled: Ø220 outer, 80 x 40 pocket', () => {
+  const r = extractFromDxf(halfScaleInsert());
+  assert.ok(Math.abs(circleFit(r.outer).r * 2 - 220) < 0.5);
+  assert.equal(r.pockets.length, 1);
+  const b = bbox(r.pockets[0]); assert.ok(Math.abs(b.width - 80) < 0.5 && Math.abs(b.height - 40) < 0.5, `pocket ${b.width} x ${b.height}`);
+  assert.equal(r.confidence, 'likely');
+  assert.ok(r.notes.includes('drawing states scale 1:2; geometry multiplied by 2'));
+  assert.ok(r.notes.some((n) => /outer diameter 220 mm found/.test(n)));
+});
+
+test('a stated 1:1, two different stated scales, or no SCALE label leave the geometry alone', () => {
+  for (const texts of [[text('1:1', 230, 30)], [text('1 : 3', 230, 30)]]) {
+    const r = extractFromDxf(halfScaleInsert(texts));
+    assert.ok(Math.abs(circleFit(r.outer).r * 2 - 110) < 0.5);
+    assert.ok(!r.notes.some((n) => /multiplied/.test(n)));
+  }
+  const noLabel = extractFromDxf(dxfOf({ entities: [circleEntity(100, 100, 55), rectLines(40, 20, 100, 100), text('1 : 2', 230, 20)] }));
+  assert.ok(Math.abs(circleFit(noLabel.outer).r * 2 - 110) < 0.5);
 });
 
 test('I-05091: the drawn Ø175 is the outer and its 110 x 68.4 pocket is kept (a drawn outer is never a centring rim)', () => {

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Wrench, Plus, ChevronRight, ChevronLeft, ImageOff } from 'lucide-react';
+import { Wrench, Plus, Upload, ChevronRight, ChevronLeft, ImageOff } from 'lucide-react';
 import { toolingsAPI, profileShapesAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import ToolingDrawer, { Pill } from '../components/tooling/ToolingDrawer';
 import AddToolingModal from '../components/tooling/AddToolingModal';
+import ImportToolingsModal from '../components/tooling/ImportToolingsModal';
 import { usePalette } from '../utils/palette';
 import { confidenceTone, filtersToParams, isToolingReviewer, matchesConfidence, queueRowsFromApi, statusTone } from '../utils/toolingsView';
 
@@ -61,6 +62,7 @@ export default function ToolingsPage({ user, theme = {}, search = '' }) {
   const [loadError, setLoadError] = useState('');
   const [openNumber, setOpenNumber] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [queue, setQueue] = useState({ openings: [], profiles: [], openingsTotal: 0, profilesTotal: 0 });
   const [queuePlant, setQueuePlant] = useState('');
   const [queueKind, setQueueKind] = useState('');
@@ -156,9 +158,14 @@ export default function ToolingsPage({ user, theme = {}, search = '' }) {
           <p style={{ fontSize: '0.875rem', color: c.muted, margin: '6px 0 0' }}>Inserts and bolsters, their drawings and openings, and the dies they serve</p>
         </div>
         {reviewer && (
-          <button type="button" onClick={() => setShowAdd(true)} style={{ ...btn, background: c.primary, color: c.primaryText, border: 'none' }}>
-            <Plus size={16} aria-hidden="true" /> Add tooling
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setShowImport(true)} style={btn}>
+              <Upload size={16} aria-hidden="true" /> Import toolings
+            </button>
+            <button type="button" onClick={() => setShowAdd(true)} style={{ ...btn, background: c.primary, color: c.primaryText, border: 'none' }}>
+              <Plus size={16} aria-hidden="true" /> Add tooling
+            </button>
+          </div>
         )}
       </div>
 
@@ -305,6 +312,9 @@ export default function ToolingsPage({ user, theme = {}, search = '' }) {
       )}
       {showAdd && (
         <AddToolingModal user={user} theme={theme} onClose={() => setShowAdd(false)} onCreated={() => loadList()} />
+      )}
+      {showImport && (
+        <ImportToolingsModal theme={theme} onClose={() => setShowImport(false)} onImported={onChanged} />
       )}
     </div>
   );

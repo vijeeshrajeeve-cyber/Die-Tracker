@@ -4,7 +4,7 @@
 // is injected (`io`) so the tests use fakes. Errors meant for the caller carry an HTTP `status`.
 const path = require('node:path');
 const { storedRelativePath, absolutePath, formatOf, sha256Of } = require('./toolingDrawings.cjs');
-const { parseToolingNumber, normalizeSizeClass } = require('./toolingNumbers.cjs');
+const { parseToolingNumber, normalizeSizeClass, drawingHintsFromNumber } = require('./toolingNumbers.cjs');
 const { pocketGapMm } = require('./openingGeometry.cjs');
 const { normalizePlant } = require('./frozenDesigns.cjs');
 // Called through the module objects so a test can spy on invalidate.
@@ -184,7 +184,11 @@ async function createTooling(client, { number, kind, plant, sizeClass, cavities,
 
 // Store an uploaded drawing, link it to the tooling and write the opening it yields. A confirmed or reviewed opening
 // is never replaced (openingKept: true). io = { exists(abs), mkdirp(dir), writeFile(abs, buffer) }.
-async function attachDrawing(client, tooling, { buffer, originalName, root, io }) {
+// A drawing whose own text names other toolings and not this one may be filed under the wrong number: its opening
+// is kept for review, never better than uncertain.
+// fillMaster (the mass import): a confirmed or likely opening also fills the tooling's blank size class and
+// cavities, as the drawing-archive import does; `filled` lists what it wrote.
+async function attachDrawing(client, tooling, { buffer, originalName, root, io, fillMaster = false }) {
   const format = formatOf(originalName);
   if (!UPLOAD_FORMATS.has(format)) throw httpError(400, 'Only .dxf and .pdf drawings can be uploaded');
   const sha256 = sha256Of(buffer);
@@ -194,11 +198,22 @@ async function attachDrawing(client, tooling, { buffer, originalName, root, io }
   // A file the reader cannot parse is the uploader's to fix: nothing is stored.
   let extraction;
   try {
+    const fromNumber = drawingHintsFromNumber(tooling.number);
     extraction = await extractForUpload({
-      buffer, format, hints: { sizeClass: tooling.size_class ?? null, cavities: tooling.cavities ?? null },
+      buffer, format,
+      hints: {
+        sizeClass: tooling.size_class ?? null, cavities: tooling.cavities ?? null,
+        steppedPockets: fromNumber.steppedPockets,
+      },
     });
   } catch (err) {
     throw httpError(422, `Could not read the drawing: ${err.message}`);
+  }
+  // Required lazily: toolingBundle requires this module.
+  const named = require('./toolingBundle.cjs').namesAnotherTooling(tooling.number, extraction.numbersInDrawing);
+  if (named) {
+    extraction = { ...extraction, notes: [...(extraction.notes || []), `drawing names ${named.join(', ')}, not ${tooling.number}`] };
+    if (extraction.confidence === 'confirmed' || extraction.confidence === 'likely') extraction.confidence = 'uncertain';
   }
 
   if (!io.exists(abs)) {
@@ -235,9 +250,29 @@ async function attachDrawing(client, tooling, { buffer, originalName, root, io }
     const opening = openingKept
       ? (await client.query('SELECT * FROM tooling_openings WHERE tooling_id = $1', [tooling.id])).rows[0] || null
       : written.rows[0];
+
+    const filled = [];
+    const sure = extraction.confidence === 'confirmed' || extraction.confidence === 'likely';
+    if (fillMaster && sure && !openingKept) {
+      const size = tooling.size_class == null ? extraction.sizeClass || null : null;
+      const cavities = tooling.cavities == null ? extraction.cavities || null : null;
+      if (size || cavities) {
+        await client.query(
+          `UPDATE toolings SET
+             size_class_source = CASE WHEN size_class IS NULL AND $2::text IS NOT NULL THEN 'drawing' ELSE size_class_source END,
+             size_class_confidence = CASE WHEN size_class IS NULL AND $2::text IS NOT NULL THEN $3 ELSE size_class_confidence END,
+             size_class = COALESCE(size_class, $2),
+             cavities = COALESCE(cavities, $4),
+             updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [tooling.id, size, extraction.sizeClassConfidence || 'likely', cavities]);
+        if (size) filled.push(`size class ${size}`);
+        if (cavities) filled.push(`cavities ${cavities}`);
+      }
+    }
     await client.query('COMMIT');
     toolingFinder.invalidate(tooling.plant);
-    return { drawing, opening, openingKept, extraction: { confidence: extraction.confidence, notes: extraction.notes || [] } };
+    return { drawing, opening, openingKept, filled, extraction: { confidence: extraction.confidence, notes: extraction.notes || [] } };
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch { /* the original error matters more */ }
     throw err;

@@ -10,6 +10,7 @@ const { normalizeSizeClass } = require('../services/toolingNumbers.cjs');
 const drawingStore = require('../services/toolingDrawings.cjs');
 const { findToolings, MIN_CLEARANCE_MM } = require('../services/toolingFinder.cjs');
 const toolingReview = require('../services/toolingReview.cjs');
+const toolingImport = require('../services/toolingImport.cjs');
 
 const router = express.Router();
 
@@ -415,6 +416,53 @@ const diskIo = {
   mkdirp: (dir) => fs.mkdirSync(dir, { recursive: true }),
   writeFile: (p, buffer) => fs.writeFileSync(p, buffer),
 };
+
+// ---- mass import (registered before '/:number/...' so "import" is not read as a tooling number) ---------------------
+// Preview: what each sheet row and each drawing file name would do. Writes nothing.
+router.post('/import/plan', reviewerMiddleware, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const opts = { defaultPlant: b.defaultPlant, bareNumbers: b.bareNumbers };
+    const rows = await toolingImport.planRows(pool, b.rows || [], opts);
+    const sheetNumbers = [...(Array.isArray(b.sheetNumbers) ? b.sheetNumbers : []),
+      ...rows.filter((r) => r.action !== 'error').map((r) => r.number)];
+    const files = await toolingImport.planDrawings(pool, b.files || [], { ...opts, sheetNumbers });
+    res.json({ rows, files });
+  } catch (err) {
+    fail(res, err, 'preview the import');
+  }
+});
+
+// Adds the toolings of a sheet and fills the blanks of the ones already there. One answer per row.
+router.post('/import/rows', reviewerMiddleware, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const results = await toolingImport.applyRows(pool, b.rows || [], { defaultPlant: b.defaultPlant, userId: req.user.id });
+    res.json({ results });
+  } catch (err) {
+    fail(res, err, 'import the toolings');
+  }
+});
+
+// One drawing of a batch: filed under the tooling its name (or its own text) stands for.
+router.post('/import/drawing', reviewerMiddleware, acceptDrawing, async (req, res) => {
+  let client = null;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'file is required' });
+    const b = req.body || {};
+    client = await pool.connect();
+    const out = await toolingImport.importDrawing(client, {
+      buffer: req.file.buffer, originalName: req.file.originalname, number: b.number, defaultPlant: b.defaultPlant,
+      bareNumbers: b.bareNumbers, createMissing: b.createMissing === 'true' || b.createMissing === true,
+      userId: req.user.id, root: drawingStore.getRoot(), io: diskIo,
+    });
+    res.json(out);
+  } catch (err) {
+    fail(res, err, 'import the drawing');
+  } finally {
+    if (client) client.release();
+  }
+});
 
 router.post('/', reviewerMiddleware, async (req, res) => {
   try {
