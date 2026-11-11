@@ -356,4 +356,4 @@ async function applyBundle(client, bundle, { root, io, dryRun = false, log = () 
   }
 }
 
-module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle, readBundle, applyBundle, sameTooling };
+module.exports = { NO_DXF, knownFromExport, matchFiles, buildBundle, readBundle, applyBundle, sameTooling, namesAnotherTooling: mismatch };

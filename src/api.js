@@ -1020,6 +1020,20 @@ export const toolingsAPI = {
         form.append('file', file);
         return apiRequest(`/toolings/${encodeURIComponent(number)}/drawing`, { method: 'POST', body: form, isMultipart: true });
     },
+    // Mass import (reviewers). Preview: { rows, files (names), defaultPlant, bareNumbers, sheetNumbers } -> { rows, files }.
+    importPlan: async (body) => apiRequest('/toolings/import/plan', { method: 'POST', body: JSON.stringify(body) }),
+    // { rows, defaultPlant } -> { results }: adds toolings and fills the blanks of existing ones.
+    importRows: async (body) => apiRequest('/toolings/import/rows', { method: 'POST', body: JSON.stringify(body) }),
+    // One drawing of a batch, filed by its name (or the number written in it).
+    importDrawing: async (file, { number, defaultPlant, bareNumbers, createMissing } = {}) => {
+        const form = new FormData();
+        form.append('file', file);
+        if (number) form.append('number', number);
+        if (defaultPlant) form.append('defaultPlant', defaultPlant);
+        if (bareNumbers) form.append('bareNumbers', bareNumbers);
+        if (createMissing) form.append('createMissing', 'true');
+        return apiRequest('/toolings/import/drawing', { method: 'POST', body: form, isMultipart: true });
+    },
 };
 
 // Profile library: a die's stored shapes and its nearest neighbours by shape.
