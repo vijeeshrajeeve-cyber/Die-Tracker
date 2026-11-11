@@ -5,43 +5,10 @@ import { ordersAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import DieAttentionLabels from '../components/DieAttentionLabels';
 import DatePickerField from '../components/DatePickerField';
-import { parseDateDMY, formatDate } from '../utils/helpers';
-import { designToEmsSince } from '../utils/oracleEntry';
+import { formatDate } from '../utils/helpers';
 import { typeLabel, dieTypeLabel } from '../utils/dieType';
-import { exportToExcel } from '../utils/exportExcel';
+import { parseDieSize, calcLeadDays, daysInStage } from '../utils/orderExport';
 import StatusPill from '../components/ui/StatusPill';
-
-const parseDieSize = (dieSize) => {
-  if (!dieSize) return { diameter: null, thickness: null };
-  const cleaned = String(dieSize).toUpperCase().replace(/^DIA\s+/i, '');
-  const match = cleaned.match(/^(\d+(?:\.\d+)?)[Xx×](\d+(?:\.\d+)?)/);
-  if (match) return { diameter: match[1], thickness: match[2] };
-  const single = cleaned.match(/^(\d+(?:\.\d+)?)/);
-  return single ? { diameter: single[1], thickness: null } : { diameter: null, thickness: null };
-};
-
-const calcLeadDays = (startDate, endDate) => {
-  if (!startDate || !endDate) return null;
-  const start = new Date(startDate), end = new Date(endDate);
-  if (isNaN(start) || isNaN(end)) return null;
-  const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
-  return days >= 0 ? days : null;
-};
-
-const getStageEntryDate = (order) => {
-  switch (order.STATUS) {
-    case 'PENDING FOR ORDERING': return order['Die Requested Date'] || order.created_at;
-    case 'AWAITING FOR DESIGN': return order['Ordered date'];
-    case 'UNDER SIMULATION': return order['Design Received Date'];
-    case 'PENDING FOR DESIGN APPROVAL':
-      return order.simulationEnabled ? order['Simulation Completed Date'] : order['Design Received Date'];
-    case 'PENDING FOR PR': return order['Design Approved Date'];
-    case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
-    case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);
-    case 'DONE': return order['Design to EMS Date'];
-    default: return null;
-  }
-};
 
 export default function OrdersPage({
   theme,
@@ -60,20 +27,8 @@ export default function OrdersPage({
   setChangelogOrder,
   setToast,
   fetchOrders,
+  onExport,
 }) {
-  const daysInStage = (order) => {
-    const entry = getStageEntryDate(order);
-    if (!entry) return null;
-    const iso = typeof entry === 'string' && /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}/.test(entry)
-      ? parseDateDMY(entry)
-      : entry;
-    const start = new Date(iso);
-    if (isNaN(start)) return null;
-    const today = new Date();
-    const days = Math.floor((today.setHours(0,0,0,0) - start.setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
-    return days >= 0 ? days : null;
-  };
-
   const DaysBadge = ({ order }) => {
     const days = daysInStage(order);
     if (days === null) return <span style={{ color: '#64748B' }}>—</span>;
@@ -83,40 +38,6 @@ export default function OrdersPage({
         {days}d
       </span>
     );
-  };
-
-  const handleExport = async () => {
-    const leadTime = (startKey) => (_, order) => {
-      const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
-      const days = calcLeadDays(order[startKey], receivedDate);
-      return days !== null ? days : '';
-    };
-    await exportToExcel({
-      rows: filteredData,
-      filename: 'die_orders',
-      sheetName: 'Die Orders',
-      columns: [
-        { key: 'DIE NO', label: 'Die No' },
-        { key: 'Order No', label: 'Order No' },
-        { key: 'Plant', label: 'Plant' },
-        { key: 'TYPE', label: 'Item Type', format: (v) => typeLabel(v) },
-        { key: 'Die Type', label: 'Die Type', format: (v) => dieTypeLabel(v) },
-        { key: 'Die Size', label: 'Diameter', format: (v) => parseDieSize(v).diameter || '' },
-        { key: 'Die Size', label: 'Thickness', format: (v) => parseDieSize(v).thickness || '' },
-        { key: 'Cavity', label: 'Cavity' },
-        { key: 'Supplier', label: 'Supplier' },
-        { key: 'Customer Name', label: 'Customer' },
-        { key: 'PR Number', label: 'PR Number' },
-        { key: 'Mandrels per Cavity', label: 'Mandrels per Cavity' },
-        { key: 'Total Mandrels', label: 'Total Mandrels' },
-        { key: 'Die Requested Date', label: 'Requested Date', format: 'date' },
-        { key: 'Type of shipment', label: 'Shipment' },
-        { key: 'STATUS', label: 'Status', format: (v) => STATUS_CONFIG[v]?.label || v || '' },
-        { key: 'Ordered date', label: 'Delivery Lead Time (days)', format: leadTime('Ordered date') },
-        { key: 'Design Approved Date', label: 'Mfg Lead Time (days)', format: leadTime('Design Approved Date') },
-        { key: 'STATUS', label: 'Days in Stage', format: (_, order) => { const d = daysInStage(order); return d === null ? '' : d; } },
-      ],
-    });
   };
 
   const filterBar = { background: theme.cardBg, borderRadius: '8px', padding: '1.25rem', border: `1px solid ${theme.cardBorder}`, marginBottom: '1.5rem', boxShadow: theme.shadowSm };
@@ -200,10 +121,10 @@ export default function OrdersPage({
           <span style={{ fontSize: '0.875rem', color: theme.textMuted }}>Showing <strong style={{ color: theme.text }}>{filteredData.length}</strong> orders</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <button
-              onClick={handleExport}
+              onClick={onExport}
               disabled={filteredData.length === 0}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', fontSize: '0.8rem', fontWeight: 600, color: 'white', background: 'linear-gradient(135deg, #10B981, #059669)', border: 'none', borderRadius: '8px', cursor: filteredData.length === 0 ? 'not-allowed' : 'pointer', opacity: filteredData.length === 0 ? 0.5 : 1 }}
-              title="Export the currently filtered orders to Excel"
+              title="Export orders to Excel or CSV"
             >
               <Download size={14} /> Export to Excel
             </button>

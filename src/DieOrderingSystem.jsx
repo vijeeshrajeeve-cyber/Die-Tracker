@@ -26,7 +26,7 @@ import EmailInbox from './components/email/EmailInbox';
 import EmailSettings from './components/email/EmailSettings';
 import { CONTROLLABLE_PAGES, STATUS_CONFIG, APP_NAME, pageTitle, pageSearchHint, statusColors } from './utils/constants';
 import { parseDateDMY, formatDate } from './utils/helpers';
-import { toExcelDate } from './utils/exportExcel';
+import ExportDialog from './components/export/ExportDialog';
 import usePIImport from './hooks/usePIImport';
 
 import FlowPage from './pages/FlowPage';
@@ -2718,14 +2718,6 @@ export default function DieOrderingSystem() {
     return map;
   }, [sampleFollowups]);
 
-  const calcLeadDays = (startDate, endDate) => {
-    if (!startDate || !endDate) return null;
-    const start = new Date(startDate), end = new Date(endDate);
-    if (isNaN(start) || isNaN(end)) return null;
-    const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
-    return days >= 0 ? days : null;
-  };
-
   // Date when the order entered its current stage (used to compute delay days)
   const getStageEntryDate = (order) => {
     switch (order.STATUS) {
@@ -2768,36 +2760,10 @@ export default function DieOrderingSystem() {
 
   const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
 
-  const exportData = async () => {
-    const exportRows = data.map(order => {
-      const receivedDate = dieReceivedDateMap[order['DIE NO']?.trim()];
-      const deliveryDays = calcLeadDays(order['Ordered date'], receivedDate);
-      const mfgDays = calcLeadDays(order['Design Approved Date'], receivedDate);
-      const row = { ...order };
-      // Convert any pure date-string fields into real JS Dates so Excel stores
-      // them as native date cells (columns are otherwise left untouched).
-      Object.keys(row).forEach(key => {
-        const d = toExcelDate(row[key]);
-        if (d) row[key] = d;
-      });
-      return {
-        ...row,
-        'Delivery Lead Time (days)': deliveryDays !== null ? deliveryDays : '',
-        'Manufacturing Lead Time (days)': mfgDays !== null ? mfgDays : '',
-      };
-    });
-    const XLSX = await loadXLSX();
-    const ws = XLSX.utils.json_to_sheet(exportRows, { cellDates: true });
-    // Render every date cell with a readable, sortable date format.
-    Object.keys(ws).forEach(addr => {
-      if (addr[0] === '!') return;
-      const cell = ws[addr];
-      if (cell && cell.t === 'd') cell.z = 'dd mmm yyyy';
-    });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Die Orders');
-    XLSX.writeFile(wb, 'die_orders_export.xlsx');
-  };
+  // The top bar's Export and the Orders page's Export to Excel open the same dialog.
+  const [showExport, setShowExport] = useState(false);
+  const exportData = () => setShowExport(true);
+  const requestedDateOf = useCallback((order) => parseOrderCalendarDate(order['Die Requested Date']), []);
 
   // Theme colors - Shadcn Zinc Aesthetic
   //
@@ -3377,6 +3343,7 @@ export default function DieOrderingSystem() {
               setChangelogOrder={setChangelogOrder}
               setToast={setToast}
               fetchOrders={fetchOrders}
+              onExport={exportData}
             />
           )}
 
@@ -3540,6 +3507,11 @@ export default function DieOrderingSystem() {
           </>}
         </main>
 
+        {showExport && (
+          <ExportDialog theme={theme} onClose={() => setShowExport(false)}
+            allRows={data} filteredRows={filteredData} filters={filters} searchTerm={searchTerm}
+            dateOf={requestedDateOf} dieReceivedDateMap={dieReceivedDateMap} />
+        )}
         {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showSearch && !forcePasswordChange && (
           <SearchPalette open onClose={() => setShowSearch(false)} theme={theme} userId={user?.id}
