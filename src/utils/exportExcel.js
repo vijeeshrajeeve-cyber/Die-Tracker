@@ -87,16 +87,34 @@ const applyDateFormats = (XLSX, ws, columns, rowCount) => {
 export const buildSheetData = ({ rows, columns }) =>
   (Array.isArray(rows) ? rows : []).map((r) => buildRow(r, columns));
 
-// Export an array of source rows to an .xlsx file using a curated column map.
+// CSV has no date cells: dates go out as YYYY-MM-DD text, which every
+// spreadsheet and script reads back as a date.
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const toCsvRows = (rows) => rows.map((r) => Object.fromEntries(
+  Object.entries(r).map(([k, v]) => [k, v instanceof Date ? isoDay(v) : v])));
+
+// Export an array of source rows to an .xlsx (default) or .csv file using a
+// curated column map.
 //
 // Accepts either a single sheet ({ rows, columns, sheetName }) or several
 // ({ sheets: [{ name, rows, columns }] }). Callers passing one sheet keep
-// working unchanged.
-export const exportToExcel = async ({ rows, columns, filename, sheetName = 'Export', sheets }) => {
+// working unchanged. CSV holds one sheet, so it writes the first.
+export const exportToExcel = async ({ rows, columns, filename, sheetName = 'Export', sheets, format = 'xlsx' }) => {
   const XLSX = await loadXLSX();
   const plan = sheets && sheets.length
     ? sheets
     : [{ name: sheetName, rows, columns }];
+
+  if (format === 'csv') {
+    const [{ rows: csvSource, columns: csvColumns }] = plan;
+    const csvRows = toCsvRows(buildSheetData({ rows: csvSource, columns: csvColumns }));
+    const ws = XLSX.utils.json_to_sheet(csvRows, { header: csvColumns.map((c) => c.label) });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Export');
+    const stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, filename.endsWith('.csv') ? filename : `${filename}_${stamp}.csv`, { bookType: 'csv' });
+    return;
+  }
 
   const wb = XLSX.utils.book_new();
   plan.forEach(({ name, rows: sheetRows, columns: sheetColumns }) => {
