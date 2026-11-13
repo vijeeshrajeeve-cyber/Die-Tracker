@@ -303,3 +303,14 @@ test('a supplier modification clears an earlier skip', async () => {
   assert.equal(db.order.simulation_skipped_reason, null);
   assert.equal(db.order.simulation_skipped_by, null);
 });
+
+test('an OK result clears a leftover skip, so the die reads as simulated', async () => {
+  const db = fakeDb({ order: order({ simulation_skipped_date: '2026-10-15', simulation_skipped_reason: 'old', simulation_skipped_by: 'eng' }),
+    rounds: [round({ model_received_date: '2026-10-19', prep_done_date: '2026-10-20' })] });
+  const out = await svc.recordStep(db.client, 7, { step: 'sim_completed', date: '2026-10-21', result: 'OK' }, user, TODAY);
+  assert.equal(out.ok, true);
+  assert.equal(db.order.simulation_completed_date, '2026-10-21');
+  assert.equal(db.order.simulation_skipped_date, null);
+  assert.equal(db.order.simulation_skipped_reason, null);
+  assert.equal(db.order.simulation_skipped_by, null);
+});

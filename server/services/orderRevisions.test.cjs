@@ -59,3 +59,13 @@ test('a missing order returns null and writes nothing', async () => {
   assert.equal(await createRevision(client, { orderId: 9, targetStatus: 'PENDING FOR PR', notes: 'x', user }), null);
   assert.equal(client.calls.length, 1);
 });
+
+test('a skip is cleared for a status that puts the design back before or into Simulation, and no other', () => {
+  const { clearSkipSql } = require('./orderRevisions.cjs');
+  for (const status of ['AWAITING FOR DESIGN', 'UNDER SIMULATION']) {
+    assert.equal(clearSkipSql(status), ', simulation_skipped_date = NULL, simulation_skipped_reason = NULL, simulation_skipped_by = NULL');
+  }
+  for (const status of ['PENDING FOR DESIGN APPROVAL', 'PENDING FOR PR', 'HOLD', 'CANCELLED', undefined]) {
+    assert.equal(clearSkipSql(status), '');
+  }
+});

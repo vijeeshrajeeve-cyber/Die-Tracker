@@ -163,3 +163,16 @@ test('filling the ordered date completes pending backup requests for the die', a
   assert.equal(status, 200);
   assert.deepEqual(queries('UPDATE backup_die_requests')[0].params, ['2026-09-23', '30533_201']);
 });
+
+test('moving the status back into Simulation clears a leftover skip', async () => {
+  const { status, body } = await save({ fields: { STATUS: 'UNDER SIMULATION' } });
+  assert.equal(status, 200, JSON.stringify(body));
+  const [update] = queries('UPDATE die_orders');
+  assert.match(update.q, /status = \$1, simulation_skipped_date = NULL, simulation_skipped_reason = NULL, simulation_skipped_by = NULL, updated_at/);
+});
+
+test('a status move forward leaves the skip alone', async () => {
+  const { status } = await save({ fields: { STATUS: 'PENDING FOR PR' } });
+  assert.equal(status, 200);
+  assert.doesNotMatch(queries('UPDATE die_orders')[0].q, /simulation_skipped/);
+});

@@ -27,3 +27,10 @@ test('simulation required is read from the flag in any of its stored forms', () 
   for (const yes of [true, 1, 'true', 'Yes', ' required ']) assert.equal(isSimulationEnabled(yes), true);
   for (const no of [false, 0, null, undefined, '', 'no']) assert.equal(isSimulationEnabled(no), false);
 });
+
+test('a real pass outranks a leftover skip', () => {
+  const both = { simulationEnabled: true, 'Simulation Completed Date': '2026-11-12', 'Simulation Skipped Date': '2026-11-05' };
+  assert.equal(simulationSkipped(both), false);
+  assert.equal(wasSimulated(both), true);
+  assert.equal(simulationPassDate(both), '2026-11-12');
+});

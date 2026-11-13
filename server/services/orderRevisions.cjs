@@ -7,8 +7,13 @@ const { todayLocal } = require('./dates.cjs');
 // status rule start fresh. The rounds and the change log keep the history.
 const CLEARS_SIMULATION_PASS = ['AWAITING FOR DESIGN', 'UNDER SIMULATION'];
 
-const CLEAR_PASS_SQL = ', simulation_completed_date = NULL, simulation_skipped_date = NULL'
-  + ', simulation_skipped_reason = NULL, simulation_skipped_by = NULL';
+const CLEAR_SKIP_SQL = ', simulation_skipped_date = NULL, simulation_skipped_reason = NULL, simulation_skipped_by = NULL';
+const CLEAR_PASS_SQL = `, simulation_completed_date = NULL${CLEAR_SKIP_SQL}`;
+
+// For a status change made outside a revision (the drawer, a Flow page step):
+// a die put back before or into Simulation is no longer "skipped". Returns a
+// SET fragment, or '' when the status leaves the skip standing.
+const clearSkipSql = (status) => (CLEARS_SIMULATION_PASS.includes(status) ? CLEAR_SKIP_SQL : '');
 
 // Record a design revision: history row, counter and status on the order, and
 // an audit entry. Runs inside the caller's transaction -- the revisions route
@@ -60,4 +65,4 @@ async function createRevision(client, { orderId, targetStatus, notes, revisionDa
   };
 }
 
-module.exports = { createRevision, CLEARS_SIMULATION_PASS };
+module.exports = { createRevision, CLEARS_SIMULATION_PASS, CLEAR_SKIP_SQL, clearSkipSql };

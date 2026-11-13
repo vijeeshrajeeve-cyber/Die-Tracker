@@ -11,7 +11,9 @@ export const isSimulationEnabled = (value) => {
   return false;
 };
 
-export const simulationSkipped = (order) => filled(order?.['Simulation Skipped Date']);
+// A real pass outranks a skip: a die skipped once and simulated later was simulated.
+export const simulationSkipped = (order) => filled(order?.['Simulation Skipped Date'])
+  && !filled(order?.['Simulation Completed Date']);
 
 // The date the order got past Simulation, by a pass or by a skip.
 export const simulationPassDate = (order) => {

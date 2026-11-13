@@ -8,7 +8,7 @@ const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { RECEIVED_FIELDS, planReceivedDate } = require('../services/stageCompletion.cjs');
 const { todayLocal } = require('../services/dates.cjs');
-const { createRevision } = require('../services/orderRevisions.cjs');
+const { createRevision, clearSkipSql } = require('../services/orderRevisions.cjs');
 const { planEtaChange, insertEtaEvent, DeliveryRuleError } = require('../services/deliveryFollowup.cjs');
 const {
     EDITABLE_FIELDS, OrderEditError, planChanges, needsReason, changeNeedsReason,
@@ -554,8 +554,10 @@ router.patch('/:id/details', requireOrderEditor, orderIdValidation, handleValida
 
         const sets = changes.map((c, i) => `${EDITABLE_FIELDS[c.field].col} = $${i + 1}`);
         const values = [...changes.map((c) => columnValue(c.field, c.after)), id];
+        // A status put back before or into Simulation drops an earlier skip.
+        const skipClear = clearSkipSql(changes.find((c) => c.field === 'STATUS')?.after);
         const updated = await client.query(
-            `UPDATE die_orders SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length} RETURNING *`,
+            `UPDATE die_orders SET ${sets.join(', ')}${skipClear}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length} RETURNING *`,
             values
         );
         if (etaPlan) await insertEtaEvent(client, id, etaPlan, req.user);
@@ -1050,7 +1052,7 @@ router.patch('/:id/complete-stage', orderIdValidation, completeStageValidation, 
 
         if (plan.writeTo === 'order') {
             await client.query(
-                `UPDATE die_orders SET ${mapping.orderCol} = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+                `UPDATE die_orders SET ${mapping.orderCol} = $1, status = $2${clearSkipSql(nextStatus)}, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
                 [date, nextStatus, id]
             );
         } else {
@@ -1074,7 +1076,7 @@ router.patch('/:id/complete-stage', orderIdValidation, completeStageValidation, 
                 target = 'revision';
             }
             await client.query(
-                `UPDATE die_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+                `UPDATE die_orders SET status = $1${clearSkipSql(nextStatus)}, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
                 [nextStatus, id]
             );
         }

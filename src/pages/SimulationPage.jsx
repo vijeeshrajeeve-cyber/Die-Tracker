@@ -78,6 +78,7 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
     if (die.stage) { setStage(die.stage); setStageChosen(true); setSelectedId(die.order_id); }
   };
 
+  // Resolves true when the action went through.
   const run = async (action, success) => {
     setBusy(true);
     try {
@@ -85,10 +86,12 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
       notify(success, 'success');
       // The summary's 90-day figures include rounds of dies that left the page.
       load();
+      return true;
     } catch (error) {
       notify(error.message, 'error');
       // 409: someone else moved this die on, or it left Simulation.
       if (error.status === 409) await load();
+      return false;
     } finally {
       setBusy(false);
     }
@@ -115,8 +118,10 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
   // moves the selection can never skip a different die.
   const skipDie = skipOrderId === null ? null : dies.find(d => d.order_id === skipOrderId) || null;
   const skip = async (reason) => {
-    await run(() => simulationAPI.skip(skipDie.order_id, reason), 'Simulation skipped — moved to Design Approval');
-    setSkipOrderId(null);
+    // A failed save keeps the dialog and the typed reason. After a 409 the die
+    // is gone from the reloaded list, which closes the dialog by itself.
+    const done = await run(() => simulationAPI.skip(skipDie.order_id, reason), 'Simulation skipped — moved to Design Approval');
+    if (done) setSkipOrderId(null);
   };
 
   const openOrder = () => {

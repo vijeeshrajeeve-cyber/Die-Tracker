@@ -7,7 +7,7 @@
 
 const rules = require('./simulationRounds.cjs');
 const { planReceivedDate } = require('./stageCompletion.cjs');
-const { createRevision } = require('./orderRevisions.cjs');
+const { createRevision, CLEAR_SKIP_SQL } = require('./orderRevisions.cjs');
 const { presentOrder } = require('./orderPresentation.cjs');
 
 const ROUND_INSERT_COLS = 'order_id, round_no, started_from, revision_id, model_received_date, created_by, created_by_name';
@@ -166,7 +166,8 @@ async function recordStep(client, orderId, input, user, today) {
         });
         if (v.result === 'OK') {
           await client.query(
-            `UPDATE die_orders SET simulation_completed_date = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+            // A die skipped earlier and brought back has now really passed.
+            `UPDATE die_orders SET simulation_completed_date = $1, status = $2${CLEAR_SKIP_SQL}, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
             [v.date, 'PENDING FOR DESIGN APPROVAL', orderId]
           );
           await client.query(
