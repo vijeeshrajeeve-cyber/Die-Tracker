@@ -1163,6 +1163,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const flagged = currentOrder.specialFollowUp === true || currentOrder.specialFollowUp === 1;
   const simulation = isSimulationEnabled(currentOrder.simulationEnabled);
   const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+  const skipped = simulationSkipped(currentOrder);
   const today = todayLocal();
   const daysSince = (raw) => {
     const iso = parseOrderCalendarDate(raw);
@@ -1177,7 +1178,12 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     { field: 'Die Requested Date', label: 'Die requested' },
     { field: 'Ordered date', label: 'Ordered' },
     { field: 'Design Received Date', label: 'Design received' },
-    ...(simulation ? [
+    // A skipped simulation shows as its own step, never as an empty
+    // "Simulation completed"; the model step stays only if a model came.
+    ...(simulation && skipped ? [
+      ...(hasValue(currentOrder['3D Model Received Date']) ? [{ field: '3D Model Received Date', label: '3D model received' }] : []),
+      { field: 'Simulation Skipped Date', label: 'Simulation skipped' },
+    ] : simulation ? [
       { field: '3D Model Received Date', label: '3D model received' },
       { field: 'Simulation Completed Date', label: 'Simulation completed' },
     ] : []),
@@ -1196,6 +1202,10 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
   const stageNote = (s, i) => {
     const eta = s.field === 'Die Received Date' && !hasValue(currentOrder[s.field]) && hasValue(currentOrder.ETA)
       ? `ETA ${formatDate(currentOrder.ETA)}` : '';
+    if (s.field === 'Simulation Skipped Date') {
+      return [currentOrder['Simulation Skipped Reason'], currentOrder['Simulation Skipped By'] && `by ${currentOrder['Simulation Skipped By']}`]
+        .filter(Boolean).join(' · ');
+    }
     if (i === currentIdx) return eta ? `Current step · ${eta}` : 'Current step';
     if (eta) return eta;
     if (s.field === 'Sample Approval Date' && trials > 0) return plural(trials, 'trial');

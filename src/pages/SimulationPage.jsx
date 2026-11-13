@@ -6,6 +6,7 @@ import { exportToExcel } from '../utils/exportExcel';
 import { todayLocal } from '../utils/today';
 import { SIMULATION_STAGE_LABELS } from '../utils/constants';
 import SimulationDetail from '../components/simulation/SimulationDetail';
+import SkipSimulationDialog from '../components/simulation/SkipSimulationDialog';
 import {
   SIM_STAGES, LATE_STAGES, TARGET_WORKING_DAYS, scopeDies, sortDies, bandsFor, stageSummary,
   modelToResult, topReason, initialStage, plural,
@@ -26,6 +27,7 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
   const [selectedId, setSelectedId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [stageChosen, setStageChosen] = useState(false);
+  const [skipOrderId, setSkipOrderId] = useState(null);
   const today = todayLocal();
 
   const notify = useCallback((message, type) => {
@@ -107,6 +109,14 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
       confirmLabel: 'Undo step',
     });
     if (ok) await run(() => simulationAPI.undoLastStep(selected.order_id), 'Last step undone');
+  };
+
+  // The dialog is tied to the die it was opened for, so a list refresh that
+  // moves the selection can never skip a different die.
+  const skipDie = skipOrderId === null ? null : dies.find(d => d.order_id === skipOrderId) || null;
+  const skip = async (reason) => {
+    await run(() => simulationAPI.skip(skipDie.order_id, reason), 'Simulation skipped — moved to Design Approval');
+    setSkipOrderId(null);
   };
 
   const openOrder = () => {
@@ -280,13 +290,18 @@ export default function SimulationPage({ theme, user, data, setData, setToast, s
         </section>
 
         {selected ? (
-          <SimulationDetail die={selected} user={user} busy={busy} onStep={recordStep} onUndo={undo} onOpenOrder={openOrder} />
+          <SimulationDetail die={selected} user={user} busy={busy} onStep={recordStep} onUndo={undo}
+            onSkip={() => setSkipOrderId(selected.order_id)} onOpenOrder={openOrder} />
         ) : (
           <section className="sf-card sf-pane sf-empty">
             <p>Pick a die from the list to see its rounds.</p>
           </section>
         )}
       </div>
+      {skipDie && (
+        <SkipSimulationDialog dieNo={skipDie.die_no || skipDie.order_no} busy={busy}
+          onSkip={skip} onClose={() => setSkipOrderId(null)} />
+      )}
     </section>
   );
 }

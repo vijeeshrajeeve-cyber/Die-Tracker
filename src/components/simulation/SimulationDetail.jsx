@@ -72,7 +72,7 @@ function Round({ round }) {
   );
 }
 
-export default function SimulationDetail({ die, user, busy, onStep, onUndo, onOpenOrder }) {
+export default function SimulationDetail({ die, user, busy, onStep, onUndo, onSkip, onOpenOrder }) {
   const facts = [
     ['Order', die.order_no], ['Plant', die.plant], ['Supplier', die.supplier],
     ['Press', die.press], ['Customer', die.customer], ['Revisions', die.design_revision_count],
@@ -91,6 +91,7 @@ export default function SimulationDetail({ die, user, busy, onStep, onUndo, onOp
           <p>Round {die.round_no} · {daysNote}{die.late ? ` · past the ${TARGET_WORKING_DAYS}-day target` : ''}</p>
         </div>
         <div className="sf-pane-actions">
+          <button type="button" className="sf-button sf-button-sm" disabled={busy} onClick={onSkip}>Skip simulation</button>
           <button type="button" className="sf-button sf-button-sm" onClick={onOpenOrder}>Open order</button>
         </div>
       </header>
