@@ -73,3 +73,9 @@ test('parseDieSize splits diameter and thickness', () => {
 test('toCsvRows writes dates as YYYY-MM-DD and leaves the rest', () => {
   assert.deepEqual(toCsvRows([{ a: new Date(2026, 0, 5, 12), b: 3, c: '' }]), [{ a: '2026-01-05', b: 3, c: '' }]);
 });
+
+test('daysInStage counts a skipped simulation order from the day it was skipped', () => {
+  const order = { STATUS: 'PENDING FOR DESIGN APPROVAL', simulationEnabled: true,
+    'Design Received Date': '2026-11-01', 'Simulation Skipped Date': '2026-11-08' };
+  assert.equal(daysInStage(order, new Date(2026, 10, 11)), 3);
+});

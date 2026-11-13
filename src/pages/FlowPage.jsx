@@ -9,6 +9,7 @@ import { todayLocal } from '../utils/today.js';
 import { designToEmsSince, isTooling, nextStatusAfter } from '../utils/oracleEntry';
 import OracleBatchBar from '../components/oracle/OracleBatchBar';
 import useDialog from '../hooks/useDialog';
+import { simulationPassDate } from '../utils/simulationState.js';
 
 // Received-date fields are write-once on the order; re-receipts after a revision
 // are recorded on the revision row via the complete-stage endpoint.
@@ -47,7 +48,7 @@ const getStageEntryDate = (order) => {
     case 'AWAITING FOR DESIGN': return order['Ordered date'];
     case 'UNDER SIMULATION': return order['Design Received Date'];
     case 'PENDING FOR DESIGN APPROVAL':
-      return order.simulationEnabled ? order['Simulation Completed Date'] : order['Design Received Date'];
+      return order.simulationEnabled ? simulationPassDate(order) : order['Design Received Date'];
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
     case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);

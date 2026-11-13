@@ -73,7 +73,8 @@ function fakeDb({ order, rounds = [], revisions = [], failOn = null }) {
 }
 
 const order = (over = {}) => ({ id: 7, die_no: 'D-1', plant: 'P1', status: 'UNDER SIMULATION', design_revision_count: 0,
-  design_received_date: '2026-10-10', three_d_model_received_date: null, simulation_completed_date: null, ...over });
+  design_received_date: '2026-10-10', three_d_model_received_date: null, simulation_completed_date: null,
+  simulation_skipped_date: null, simulation_skipped_reason: null, simulation_skipped_by: null, ...over });
 const round = (over = {}) => ({ id: 1, order_id: 7, round_no: 1, started_from: 'initial', revision_id: null,
   model_received_date: null, model_date_target: null, prep_done_date: null, sim_completed_date: null, result: null,
   fail_reason: null, modification: null, supplier_revision_id: null, modification_done_date: null, comments: null, ...over });
@@ -237,4 +238,79 @@ test('undo does not touch a stale round left over from before a revision', async
   const out = await svc.undoLastStep(db.client, 7, user, TODAY);
   assert.equal(out.status, 409);
   assert.equal(db.rounds[0].prep_done_date, '2026-09-02');
+});
+
+test('skip moves the order to Design Approval and records who, when and why', async () => {
+  const db = fakeDb({ order: order() });
+  const out = await svc.skipSimulation(db.client, 7, { reason: '  Repeat of die D-0, same design  ' }, user, TODAY);
+  assert.equal(out.ok, true);
+  assert.equal(db.order.status, 'PENDING FOR DESIGN APPROVAL');
+  assert.equal(db.order.simulation_skipped_date, TODAY);
+  assert.equal(db.order.simulation_skipped_reason, 'Repeat of die D-0, same design');
+  assert.equal(db.order.simulation_skipped_by, 'eng');
+  assert.equal(db.order.simulation_completed_date, null);
+  assert.equal(db.order.three_d_model_received_date, null);
+  assert.equal(out.die.stage, null);
+  assert.equal(out.order['Simulation Skipped Date'], TODAY);
+  const change = db.changes[0];
+  assert.equal(change[4], 'STATUS');
+  assert.equal(change[5], 'UNDER SIMULATION');
+  assert.equal(change[6], 'PENDING FOR DESIGN APPROVAL');
+  assert.equal(change[7], 'Simulation skipped: Repeat of die D-0, same design');
+  assert.ok(committed(db));
+});
+
+test('skip part-way through a round leaves the round as it was', async () => {
+  const open = round({ model_received_date: '2026-10-19', prep_done_date: '2026-10-20' });
+  const db = fakeDb({ order: order({ three_d_model_received_date: '2026-10-19' }), rounds: [open] });
+  const out = await svc.skipSimulation(db.client, 7, { reason: 'Customer deadline' }, user, TODAY);
+  assert.equal(out.ok, true);
+  assert.deepEqual(db.rounds, [open]);
+  assert.equal(out.die.rounds[0].stage, 'left');
+});
+
+test('skip needs a reason', async () => {
+  for (const reason of [undefined, '', '   ']) {
+    const db = fakeDb({ order: order() });
+    const out = await svc.skipSimulation(db.client, 7, { reason }, user, TODAY);
+    assert.deepEqual([out.ok, out.status], [false, 400]);
+    assert.equal(db.order.status, 'UNDER SIMULATION');
+    assert.equal(db.changes.length, 0);
+  }
+});
+
+test('a long skip reason is kept to 500 characters', async () => {
+  const db = fakeDb({ order: order() });
+  await svc.skipSimulation(db.client, 7, { reason: 'x'.repeat(600) }, user, TODAY);
+  assert.equal(db.order.simulation_skipped_reason.length, 500);
+});
+
+test('skip is refused once the die has left Simulation', async () => {
+  const db = fakeDb({ order: order({ status: 'PENDING FOR DESIGN APPROVAL' }) });
+  const out = await svc.skipSimulation(db.client, 7, { reason: 'x' }, user, TODAY);
+  assert.deepEqual([out.ok, out.status, out.error], [false, 409, 'This die is no longer in Simulation']);
+  assert.equal(db.order.simulation_skipped_date ?? null, null);
+});
+
+test('a supplier modification clears an earlier skip', async () => {
+  const db = fakeDb({ order: order({ simulation_skipped_date: '2026-10-15', simulation_skipped_reason: 'old', simulation_skipped_by: 'eng' }),
+    rounds: [round({ model_received_date: '2026-10-19', prep_done_date: '2026-10-20' })] });
+  const out = await svc.recordStep(db.client, 7, { step: 'sim_completed', date: '2026-10-21', result: 'Not OK',
+    fail_reason: 'Other', modification: 'Supplier', revision_notes: 'rework' }, user, TODAY);
+  assert.equal(out.ok, true);
+  assert.equal(db.order.status, 'AWAITING FOR DESIGN');
+  assert.equal(db.order.simulation_skipped_date, null);
+  assert.equal(db.order.simulation_skipped_reason, null);
+  assert.equal(db.order.simulation_skipped_by, null);
+});
+
+test('an OK result clears a leftover skip, so the die reads as simulated', async () => {
+  const db = fakeDb({ order: order({ simulation_skipped_date: '2026-10-15', simulation_skipped_reason: 'old', simulation_skipped_by: 'eng' }),
+    rounds: [round({ model_received_date: '2026-10-19', prep_done_date: '2026-10-20' })] });
+  const out = await svc.recordStep(db.client, 7, { step: 'sim_completed', date: '2026-10-21', result: 'OK' }, user, TODAY);
+  assert.equal(out.ok, true);
+  assert.equal(db.order.simulation_completed_date, '2026-10-21');
+  assert.equal(db.order.simulation_skipped_date, null);
+  assert.equal(db.order.simulation_skipped_reason, null);
+  assert.equal(db.order.simulation_skipped_by, null);
 });

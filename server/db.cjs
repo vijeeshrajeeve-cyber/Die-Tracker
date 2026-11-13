@@ -1536,6 +1536,11 @@ const initializeDatabase = async () => {
     // column -- Design Approval aging reads that one.
     await client.query(`
       ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_completed_date DATE;
+      -- Simulation required but not run: who skipped it, when and why. Kept
+      -- apart from the completed date so a skip never reads as a pass.
+      ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_skipped_date DATE;
+      ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_skipped_reason TEXT;
+      ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_skipped_by TEXT;
 
       CREATE TABLE IF NOT EXISTS simulation_rounds (
         id                     SERIAL PRIMARY KEY,

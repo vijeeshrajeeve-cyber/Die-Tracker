@@ -910,6 +910,10 @@ export const simulationAPI = {
     undoLastStep: async (orderId) => apiRequest(`/simulation/${orderId}/last-step`, {
         method: 'DELETE',
     }),
+    skip: async (orderId, reason) => apiRequest(`/simulation/${orderId}/skip`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+    }),
     summary: async () => apiRequest('/simulation-summary'),
 };
 

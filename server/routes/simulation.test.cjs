@@ -57,3 +57,14 @@ test('a non-numeric order id is rejected before any query', async () => {
   assert.equal(status, 400);
   assert.equal(log.length, 0);
 });
+
+test('a skip on a missing order is 404', async () => {
+  const { status } = await request(base, '/api/simulation/7/skip', { body: { reason: 'No model available' } });
+  assert.equal(status, 404);
+});
+
+test('a skip without a reason is 400 and touches nothing', async () => {
+  const { status } = await request(base, '/api/simulation/7/skip', { body: {} });
+  assert.equal(status, 400);
+  assert.equal(log.length, 0);
+});

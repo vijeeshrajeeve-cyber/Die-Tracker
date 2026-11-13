@@ -2,12 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from 'recharts';
 import { CHART_COLORS } from '../../utils/constants';
 import { isCancelled, orderYear, leadTimesBy, outOfOrderDates, supplierProgress } from '../../utils/analyticsOverview.js';
+import { wasSimulated } from '../../utils/simulationState.js';
 
-const isSimulationEnabled = (value) => {
-  if (value === true || value === 1) return true;
-  if (typeof value === 'string') return /^(true|1|yes|ok|required)$/i.test(value.trim());
-  return false;
-};
 
 const approvedDateOf = (o) => o['Design Approved Date'] ?? o.design_approved_date;
 
@@ -121,7 +117,7 @@ export default function OverviewTab({ data, suppliers, theme }) {
   // in utils/analyticsOverview.js. Each chart also gets the orders it had to
   // leave out because their two dates are the wrong way round.
   const nonSimulation = useMemo(
-    () => analyticsData.filter(o => !isSimulationEnabled(o.simulationEnabled)),
+    () => analyticsData.filter(o => !wasSimulated(o)),
     [analyticsData],
   );
 

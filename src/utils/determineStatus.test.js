@@ -27,3 +27,11 @@ test('orders without simulation keep the old ladder', () => {
   assert.equal(determineStatus({ STATUS: 'HOLD', 'Ordered date': '2026-10-01' }), 'HOLD');
   assert.equal(determineStatus({}), 'PENDING FOR ORDERING');
 });
+
+test('a skipped simulation order stays in Design Approval even with a 3D model date', () => {
+  assert.equal(determineStatus({
+    simulationEnabled: true, STATUS: 'PENDING FOR DESIGN APPROVAL',
+    'Ordered date': '2026-11-01', 'Design Received Date': '2026-11-05',
+    '3D Model Received Date': '2026-11-06', 'Simulation Skipped Date': '2026-11-07',
+  }), 'PENDING FOR DESIGN APPROVAL');
+});

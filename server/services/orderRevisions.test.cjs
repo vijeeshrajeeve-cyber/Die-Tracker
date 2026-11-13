@@ -36,6 +36,18 @@ test('a revision to Simulation also clears the simulation pass', async () => {
   assert.match(client.calls.find(c => /UPDATE die_orders/.test(c.sql)).sql, /simulation_completed_date = NULL/);
 });
 
+test('a revision to Simulation clears a skip, and one to Pending PR leaves it alone', async () => {
+  const back = fakeClient({ status: 'PENDING FOR DESIGN APPROVAL', design_revision_count: 0 });
+  await createRevision(back, { orderId: 7, targetStatus: 'UNDER SIMULATION', notes: 'x', revisionDate: '2026-10-20', user });
+  const sql = back.calls.find(c => /UPDATE die_orders/.test(c.sql)).sql;
+  for (const col of ['simulation_skipped_date', 'simulation_skipped_reason', 'simulation_skipped_by']) {
+    assert.match(sql, new RegExp(`${col} = NULL`));
+  }
+  const on = fakeClient({ status: 'PENDING FOR ORACLE ENTRY', design_revision_count: 0 });
+  await createRevision(on, { orderId: 7, targetStatus: 'PENDING FOR PR', notes: 'x', revisionDate: '2026-10-20', user });
+  assert.doesNotMatch(on.calls.find(c => /UPDATE die_orders/.test(c.sql)).sql, /simulation_skipped/);
+});
+
 test('a revision to Pending PR leaves the simulation pass alone', async () => {
   const client = fakeClient({ status: 'PENDING FOR ORACLE ENTRY', design_revision_count: 0 });
   await createRevision(client, { orderId: 7, targetStatus: 'PENDING FOR PR', notes: 'x', revisionDate: '2026-10-20', user });
@@ -46,4 +58,14 @@ test('a missing order returns null and writes nothing', async () => {
   const client = fakeClient(null);
   assert.equal(await createRevision(client, { orderId: 9, targetStatus: 'PENDING FOR PR', notes: 'x', user }), null);
   assert.equal(client.calls.length, 1);
+});
+
+test('a skip is cleared for a status that puts the design back before or into Simulation, and no other', () => {
+  const { clearSkipSql } = require('./orderRevisions.cjs');
+  for (const status of ['AWAITING FOR DESIGN', 'UNDER SIMULATION']) {
+    assert.equal(clearSkipSql(status), ', simulation_skipped_date = NULL, simulation_skipped_reason = NULL, simulation_skipped_by = NULL');
+  }
+  for (const status of ['PENDING FOR DESIGN APPROVAL', 'PENDING FOR PR', 'HOLD', 'CANCELLED', undefined]) {
+    assert.equal(clearSkipSql(status), '');
+  }
 });

@@ -2,10 +2,18 @@
 
 const { todayLocal } = require('./dates.cjs');
 
-// A design sent back for rework invalidates the simulation pass that let it
-// through, so Design Approval timing and the drawer's status rule start fresh.
-// The rounds keep the history.
+// A design sent back for rework invalidates the simulation pass -- or the
+// skip -- that let it through, so Design Approval timing and the drawer's
+// status rule start fresh. The rounds and the change log keep the history.
 const CLEARS_SIMULATION_PASS = ['AWAITING FOR DESIGN', 'UNDER SIMULATION'];
+
+const CLEAR_SKIP_SQL = ', simulation_skipped_date = NULL, simulation_skipped_reason = NULL, simulation_skipped_by = NULL';
+const CLEAR_PASS_SQL = `, simulation_completed_date = NULL${CLEAR_SKIP_SQL}`;
+
+// For a status change made outside a revision (the drawer, a Flow page step):
+// a die put back before or into Simulation is no longer "skipped". Returns a
+// SET fragment, or '' when the status leaves the skip standing.
+const clearSkipSql = (status) => (CLEARS_SIMULATION_PASS.includes(status) ? CLEAR_SKIP_SQL : '');
 
 // Record a design revision: history row, counter and status on the order, and
 // an audit entry. Runs inside the caller's transaction -- the revisions route
@@ -32,7 +40,7 @@ async function createRevision(client, { orderId, targetStatus, notes, revisionDa
     revisionPdf || null, user?.id || null, user?.username || null,
   ]);
 
-  const clearPass = CLEARS_SIMULATION_PASS.includes(targetStatus) ? ', simulation_completed_date = NULL' : '';
+  const clearPass = CLEARS_SIMULATION_PASS.includes(targetStatus) ? CLEAR_PASS_SQL : '';
   await client.query(`
       UPDATE die_orders
       SET status = $1, design_revision_count = $2, last_revision_date = $3${clearPass}, updated_at = CURRENT_TIMESTAMP
@@ -57,4 +65,4 @@ async function createRevision(client, { orderId, targetStatus, notes, revisionDa
   };
 }
 
-module.exports = { createRevision, CLEARS_SIMULATION_PASS };
+module.exports = { createRevision, CLEARS_SIMULATION_PASS, CLEAR_SKIP_SQL, clearSkipSql };

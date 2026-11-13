@@ -3,12 +3,8 @@ import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, L
 import { Package, Clock, CheckCircle, AlertTriangle, XCircle, Truck, Layers, ArrowRight } from 'lucide-react';
 import { STATUS_CONFIG, BACKUP_REQUEST_STATUS_CONFIG } from '../utils/constants';
 import DieAttentionLabels from '../components/DieAttentionLabels';
+import { wasSimulated } from '../utils/simulationState.js';
 
-const isSimulationEnabled = (value) => {
-  if (value === true || value === 1) return true;
-  if (typeof value === 'string') return /^(true|1|yes|ok|required)$/i.test(value.trim());
-  return false;
-};
 
 const hasDieReceivedDate = (order) => {
   const d = order?.['Die Received Date'];
@@ -52,7 +48,7 @@ export default function DashboardPage({ data, plantBudgets, backupRequests, them
       if (isNaN(received) || isNaN(approved)) return;
       const days = Math.round((approved - received) / (1000 * 60 * 60 * 24));
       if (days < 0) return;
-      if (isSimulationEnabled(o.simulationEnabled)) durationsSimulation.push(days);
+      if (wasSimulated(o)) durationsSimulation.push(days);
       else durationsNoSimulation.push(days);
     });
     const avgOf = (arr) => arr.length > 0 ? (arr.reduce((s, d) => s + d, 0) / arr.length).toFixed(1) : '0';
