@@ -3,6 +3,7 @@ import { STATUS_CONFIG } from './constants.js';
 import { typeLabel, dieTypeLabel } from './dieType.js';
 import { designToEmsSince } from './oracleEntry.js';
 import { toExcelDate } from './exportExcel.js';
+import { simulationPassDate } from './simulationState.js';
 
 /**
  * Die order export: the columns the Export dialog offers and the rows it
@@ -33,7 +34,7 @@ export const getStageEntryDate = (order) => {
     case 'AWAITING FOR DESIGN': return order['Ordered date'];
     case 'UNDER SIMULATION': return order['Design Received Date'];
     case 'PENDING FOR DESIGN APPROVAL':
-      return order.simulationEnabled ? order['Simulation Completed Date'] : order['Design Received Date'];
+      return order.simulationEnabled ? simulationPassDate(order) : order['Design Received Date'];
     case 'PENDING FOR PR': return order['Design Approved Date'];
     case 'PENDING FOR ORACLE ENTRY': return order['PR Entry'];
     case 'PENDING FOR DESIGN TO EMS': return designToEmsSince(order);

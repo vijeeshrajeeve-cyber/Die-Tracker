@@ -1,4 +1,5 @@
 import { isTooling } from './oracleEntry.js';
+import { simulationPassDate } from './simulationState.js';
 
 export const hasDieReceivedDate = (order) => {
   const d = order?.['Die Received Date'];
@@ -21,11 +22,11 @@ export const determineStatus = (orderData) => {
   if (orderData['Design Approved Date'] && orderData['Design Received Date'] && orderData['Ordered date']) {
     return 'PENDING FOR PR';
   }
-  // Simulation is passed only by an OK result, which records the Simulation
-  // Completed Date. A die already in Simulation stays there even before its 3D
+  // Simulation is passed by an OK result, which records the Simulation
+  // Completed Date, or left by a skip, which records its own date. A die already in Simulation stays there even before its 3D
   // model arrives; a model date typed in for a simulation order puts it there.
   if (orderData.simulationEnabled && orderData['Design Received Date'] && orderData['Ordered date']
-    && !orderData['Simulation Completed Date']
+    && !simulationPassDate(orderData)
     && (orderData.STATUS === 'UNDER SIMULATION' || orderData['3D Model Received Date'])) {
     return 'UNDER SIMULATION';
   }
