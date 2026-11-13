@@ -1,6 +1,6 @@
 'use strict';
 // Simulation page: dies in Simulation with their rounds, recording a step,
-// and admin undo of the latest step.
+// skipping simulation with a reason, and admin undo of the latest step.
 const express = require('express');
 const { param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
@@ -49,6 +49,19 @@ router.post('/:orderId/steps', orderIdValidation, handleValidationErrors, async 
         send(res, out);
     } catch (error) {
         console.error('Record simulation step error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Simulation was required but will not be run: on to Design Approval, with
+// the reason on record. Open to whoever may record a step.
+router.post('/:orderId/skip', orderIdValidation, handleValidationErrors, async (req, res) => {
+    try {
+        const out = await withClient(client =>
+            svc.skipSimulation(client, Number(req.params.orderId), req.body || {}, req.user, todayLocal()));
+        send(res, out);
+    } catch (error) {
+        console.error('Skip simulation error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
