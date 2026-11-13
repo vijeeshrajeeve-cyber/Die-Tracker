@@ -36,6 +36,18 @@ test('a revision to Simulation also clears the simulation pass', async () => {
   assert.match(client.calls.find(c => /UPDATE die_orders/.test(c.sql)).sql, /simulation_completed_date = NULL/);
 });
 
+test('a revision to Simulation clears a skip, and one to Pending PR leaves it alone', async () => {
+  const back = fakeClient({ status: 'PENDING FOR DESIGN APPROVAL', design_revision_count: 0 });
+  await createRevision(back, { orderId: 7, targetStatus: 'UNDER SIMULATION', notes: 'x', revisionDate: '2026-10-20', user });
+  const sql = back.calls.find(c => /UPDATE die_orders/.test(c.sql)).sql;
+  for (const col of ['simulation_skipped_date', 'simulation_skipped_reason', 'simulation_skipped_by']) {
+    assert.match(sql, new RegExp(`${col} = NULL`));
+  }
+  const on = fakeClient({ status: 'PENDING FOR ORACLE ENTRY', design_revision_count: 0 });
+  await createRevision(on, { orderId: 7, targetStatus: 'PENDING FOR PR', notes: 'x', revisionDate: '2026-10-20', user });
+  assert.doesNotMatch(on.calls.find(c => /UPDATE die_orders/.test(c.sql)).sql, /simulation_skipped/);
+});
+
 test('a revision to Pending PR leaves the simulation pass alone', async () => {
   const client = fakeClient({ status: 'PENDING FOR ORACLE ENTRY', design_revision_count: 0 });
   await createRevision(client, { orderId: 7, targetStatus: 'PENDING FOR PR', notes: 'x', revisionDate: '2026-10-20', user });

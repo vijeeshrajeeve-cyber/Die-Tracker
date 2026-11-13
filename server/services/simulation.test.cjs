@@ -291,3 +291,15 @@ test('skip is refused once the die has left Simulation', async () => {
   assert.deepEqual([out.ok, out.status, out.error], [false, 409, 'This die is no longer in Simulation']);
   assert.equal(db.order.simulation_skipped_date ?? null, null);
 });
+
+test('a supplier modification clears an earlier skip', async () => {
+  const db = fakeDb({ order: order({ simulation_skipped_date: '2026-10-15', simulation_skipped_reason: 'old', simulation_skipped_by: 'eng' }),
+    rounds: [round({ model_received_date: '2026-10-19', prep_done_date: '2026-10-20' })] });
+  const out = await svc.recordStep(db.client, 7, { step: 'sim_completed', date: '2026-10-21', result: 'Not OK',
+    fail_reason: 'Other', modification: 'Supplier', revision_notes: 'rework' }, user, TODAY);
+  assert.equal(out.ok, true);
+  assert.equal(db.order.status, 'AWAITING FOR DESIGN');
+  assert.equal(db.order.simulation_skipped_date, null);
+  assert.equal(db.order.simulation_skipped_reason, null);
+  assert.equal(db.order.simulation_skipped_by, null);
+});

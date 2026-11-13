@@ -19,3 +19,11 @@ test('an order carries its finished simulations under "Simulation Count" only wh
   // A row read without the count (a saved row) must not overwrite the client's copy with 0.
   assert.equal('Simulation Count' in presentOrder({ id: 1 }), false);
 });
+
+test('a skipped simulation is presented with its date, reason and who', () => {
+  const out = presentOrder({ simulation_skipped_date: '2026-11-13', simulation_skipped_reason: 'Repeat die', simulation_skipped_by: 'eng' });
+  assert.equal(out['Simulation Skipped Date'], '2026-11-13');
+  assert.equal(out['Simulation Skipped Reason'], 'Repeat die');
+  assert.equal(out['Simulation Skipped By'], 'eng');
+  assert.equal(presentOrder({})['Simulation Skipped Date'], null);
+});
