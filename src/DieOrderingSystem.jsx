@@ -34,6 +34,8 @@ import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
 import ProfileThumb from './components/orders/ProfileThumb';
 import EnhancementForm from './components/orders/EnhancementForm';
 import EnhancementBlock from './components/orders/EnhancementBlock';
+import EnhancementResultPanel from './components/orders/EnhancementResultPanel';
+import { canRecordVerdict } from './utils/enhancementVerdict';
 import { EnhancementTag } from './components/DieAttentionLabels';
 import { isEnhancement, validateBaselineForm, emptyBaselineForm, canMarkEnhancement, markNeedsReason } from './utils/designEnhancement';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
@@ -393,6 +395,19 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
   const enhAllowed = canMarkEnhancement({ STATUS: form.STATUS }, getUser());
   const enhActive = enhOn && enhAllowed;
   const enhNeedsReason = markNeedsReason({ STATUS: form.STATUS });
+  // Active dies of the typed die's profile, listed beside "Existing dies referred".
+  const [enhActiveDies, setEnhActiveDies] = React.useState([]);
+  const enhDieNo = String(form['DIE NO'] || '').trim();
+  React.useEffect(() => {
+    if (!enhActive || !enhDieNo) { setEnhActiveDies([]); return undefined; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      designEnhancementsAPI.activeDies(enhDieNo)
+        .then((res) => { if (!cancelled) setEnhActiveDies(res.activeDies || []); })
+        .catch(() => { if (!cancelled) setEnhActiveDies([]); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [enhActive, enhDieNo]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -617,7 +632,7 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
             {enhActive && (
               <div style={{ marginTop: '14px' }}>
                 <EnhancementForm
-                  value={enhForm} onChange={setEnhForm} errors={enhErrors} theme={theme}
+                  value={enhForm} onChange={setEnhForm} errors={enhErrors} theme={theme} activeDies={enhActiveDies}
                   reason={enhReason} onReasonChange={setEnhReason} reasonRequired={enhNeedsReason} reasonError={enhReasonError}
                 />
                 <p style={{ margin: '12px 0 0', fontSize: '0.78rem', color: textMuted }}>
@@ -961,7 +976,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], canEdit = true, showViewOnly = false, onViewRevisions, enhancement = null, onEnhancementChanged }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], canEdit = true, showViewOnly = false, onViewRevisions, enhancement = null, enhancementTrials = [], onEnhancementChanged }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
@@ -1608,6 +1623,11 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                 {(isEnhancement(order) || canMarkEnhancement(order, getUser())) && (
                   <div style={{ ...panel, gridColumn: '1 / -1' }}>
                     <EnhancementBlock order={order} enhancement={enhancement} user={getUser()} theme={theme} onChanged={onEnhancementChanged} />
+                  </div>
+                )}
+                {isEnhancement(order) && enhancement && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <EnhancementResultPanel order={order} enhancement={enhancement} trials={enhancementTrials} canRecord={canRecordVerdict(getUser())} theme={theme} onSaved={onEnhancementChanged} />
                   </div>
                 )}
               </section>
@@ -3493,6 +3513,8 @@ export default function DieOrderingSystem() {
               fetchSampleFollowups={fetchSampleFollowups}
               sampleTrials={sampleTrials}
               fetchSampleTrials={fetchSampleTrials}
+              enhancements={enhancements}
+              onEnhancementChanged={fetchOrders}
             />
           )}
 
@@ -3600,7 +3622,7 @@ export default function DieOrderingSystem() {
             allRows={data} filteredRows={filteredData} filters={filters} searchTerm={searchTerm}
             dateOf={requestedDateOf} dieReceivedDateMap={dieReceivedDateMap} />
         )}
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} enhancement={enhancements[selectedOrder.id] || null} onEnhancementChanged={async () => { const fresh = await fetchOrders(); const again = (fresh || []).find((o) => o.id === selectedOrder.id); if (again) setSelectedOrder(again); }} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} enhancement={enhancements[selectedOrder.id] || null} enhancementTrials={sampleTrials.filter((t) => t.die_order_id === selectedOrder.id)} onEnhancementChanged={async () => { const fresh = await fetchOrders(); const again = (fresh || []).find((o) => o.id === selectedOrder.id); if (again) setSelectedOrder(again); }} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showSearch && !forcePasswordChange && (
           <SearchPalette open onClose={() => setShowSearch(false)} theme={theme} userId={user?.id}
             onOpenOrder={openSearchOrder} onOpenQd={openSearchQd}

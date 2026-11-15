@@ -2,7 +2,7 @@ import React, { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import useDialog from '../../hooks/useDialog';
 import { usePalette } from '../../utils/palette';
-import { designEnhancementsAPI, sampleTrialsAPI } from '../../api';
+import { designEnhancementsAPI } from '../../api';
 import {
   isEnhancement, formFromRow, validateBaselineForm, canMarkEnhancement, canEditBaseline,
   canRemoveEnhancement, markNeedsReason,
@@ -40,7 +40,7 @@ const button = (p, primary, disabled) => ({
 });
 
 // Mark the order (no enhancement yet) or edit its baseline.
-function BaselineDialog({ order, enhancement, theme, onClose, onSaved }) {
+function BaselineDialog({ order, enhancement, activeDies, theme, onClose, onSaved }) {
   const p = usePalette(theme);
   const [form, setForm] = useState(() => formFromRow(enhancement));
   const [errors, setErrors] = useState({});
@@ -76,7 +76,7 @@ function BaselineDialog({ order, enhancement, theme, onClose, onSaved }) {
           <button type="button" onClick={save} disabled={saving} style={button(p, true, saving)}>{saving ? 'Saving…' : 'Save'}</button>
         </>
       )}>
-      <EnhancementForm value={form} onChange={setForm} errors={errors} theme={theme} disabled={saving}
+      <EnhancementForm value={form} onChange={setForm} errors={errors} theme={theme} disabled={saving} activeDies={activeDies}
         reason={reason} onReasonChange={setReason} reasonRequired={reasonRequired} reasonError={reasonError} />
       {!enhancement && (
         <p style={{ margin: '12px 0 0', fontSize: '0.78rem', color: p.dim }}>
@@ -142,20 +142,23 @@ export default function EnhancementBlock({ order, enhancement, user, theme, onCh
   const [dialog, setDialog] = useState(null); // 'mark' | 'edit' | 'remove'
   const on = isEnhancement(order);
 
-  // Non-admins cannot remove the flag once a trial is logged, so count them.
-  // An admin may always remove it, which spares the lookup.
+  // The profile's active dies (for the form) and the order's trial count
+  // (non-admins cannot remove the flag once a trial is logged).
   const needsTrialCount = on && user?.role !== 'admin';
   const [trialCount, setTrialCount] = useState(null);
+  const [activeDies, setActiveDies] = useState([]);
   useEffect(() => {
-    if (!needsTrialCount) return undefined;
+    if (!order.id) return undefined;
     let cancelled = false;
-    sampleTrialsAPI.getAll()
+    designEnhancementsAPI.context(order.id)
       .then((res) => {
-        if (!cancelled) setTrialCount((res.sampleTrials || []).filter((t) => t.die_order_id === order.id).length);
+        if (cancelled) return;
+        setActiveDies(res.activeDies || []);
+        setTrialCount(res.trialCount);
       })
       .catch(() => { if (!cancelled) setTrialCount(null); });
     return () => { cancelled = true; };
-  }, [needsTrialCount, order.id]);
+  }, [order.id]);
 
   const canMark = canMarkEnhancement(order, user);
   const canEdit = canEditBaseline(order, user);
@@ -230,8 +233,8 @@ export default function EnhancementBlock({ order, enhancement, user, theme, onCh
         </div>
       )}
 
-      {dialog === 'mark' && <BaselineDialog order={order} enhancement={null} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
-      {dialog === 'edit' && <BaselineDialog order={order} enhancement={enhancement} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
+      {dialog === 'mark' && <BaselineDialog order={order} enhancement={null} activeDies={activeDies} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
+      {dialog === 'edit' && <BaselineDialog order={order} enhancement={enhancement} activeDies={activeDies} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
       {dialog === 'remove' && <RemoveDialog order={order} theme={theme} onClose={() => setDialog(null)} onRemoved={finish} />}
     </section>
   );

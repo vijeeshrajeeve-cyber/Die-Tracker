@@ -1363,6 +1363,23 @@ export const designEnhancementsAPI = {
         method: 'DELETE',
         body: JSON.stringify({ reason }),
     }),
+    // { activeDies: string[], trialCount: number } for one order.
+    context: (orderId) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}/context`),
+    // Active dies of a profile, for an order that has no id yet.
+    activeDies: (dieNo) => apiRequest(`/design-enhancements/active-dies?dieNo=${encodeURIComponent(dieNo)}`),
+    // { stage, suggested, actuals, targets, defaultReviewDate }; `actualFailurePct` previews a final verdict.
+    suggestion: (orderId, actualFailurePct) => apiRequest(
+        `/design-enhancements/order/${encodeURIComponent(orderId)}/suggestion${actualFailurePct === undefined || actualFailurePct === null ? '' : `?actual_failure_pct=${encodeURIComponent(actualFailurePct)}`}`),
+    // body: { verdict, remark, life_review_due_date, reason }
+    saveTrialVerdict: (orderId, body) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}/trial-verdict`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }),
+    // body: { actual_failure_pct, remark, verdict, reason }
+    saveLifeReview: (orderId, body) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}/life-review`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }),
 };
 
 // Plant Budgets API

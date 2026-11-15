@@ -95,6 +95,8 @@ export default function SampleFollowupPage({
   fetchSampleFollowups,
   sampleTrials,
   fetchSampleTrials,
+  enhancements = {},
+  onEnhancementChanged,
 }) {
   const [stage, setStage] = useState('Pending');
   const [sort, setSort] = useState('overdue');
@@ -524,7 +526,8 @@ export default function SampleFollowupPage({
             sample={selected} trials={trialsOf(selected)} parent={trialParentOf(selected)} today={today}
             theme={theme} user={user} correctors={correctors} correctorsError={correctorsError}
             onEdit={editSample} onDelete={handleDeleteSampleFollowup} onSaveDate={saveSfFields} onSaveField={saveSfField}
-            onTrialsChanged={fetchSampleTrials} setToast={setToast} />
+            onTrialsChanged={fetchSampleTrials} setToast={setToast}
+            enhancement={enhancements[selected._order?.id] || null} onEnhancementChanged={onEnhancementChanged} />
         ) : (
           <section className="sf-card sf-pane sf-empty">
             <p>Pick a die from the list to see its timeline and trials.</p>

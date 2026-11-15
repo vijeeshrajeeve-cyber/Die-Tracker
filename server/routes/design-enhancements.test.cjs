@@ -12,6 +12,9 @@ let hasTrial;
 let trials = [];
 let persist = false; // true: an UPDATE design_enhancements is applied to `enhancement`
 let log = [];
+let dieList = [];   // existing_die_details die numbers for the profile
+let inProcess = []; // die_orders rows in process for the profile
+const DISTINCT_ONLY = (q) => /DISTINCT/.test(q);
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim().replace(/\s+/g, ' ');
   log.push({ q, params });
@@ -41,6 +44,15 @@ installFakeDb(async (sql, params = []) => {
   if (/^DELETE FROM design_enhancements/.test(q)) return { rows: [] };
   if (/^UPDATE die_orders SET/.test(q)) return { rows: [], rowCount: 1 };
   if (/^INSERT INTO order_changes/.test(q)) return { rows: [] };
+  if (/^SELECT die_no FROM die_orders WHERE id = \$1$/.test(q)) return { rows: order ? [{ die_no: order.die_no }] : [] };
+  if (/^SELECT COUNT\(\*\)::int AS n FROM sample_trials WHERE die_order_id = \$1$/.test(q)) return { rows: [{ n: trials.length }] };
+  // collectJFileData's lookups (services/jFileData.cjs)
+  if (/FROM existing_die_details/.test(q)) {
+    if (/DISTINCT/.test(q)) return { rows: [] };
+    if (/^SELECT die_no FROM existing_die_details/.test(q)) return { rows: dieList.map((d) => ({ die_no: d })) };
+    return { rows: dieList.map((d) => ({ die_no: d, tonnage: null, supplier: null })) };
+  }
+  if (/FROM die_orders WHERE regexp_replace/.test(q)) return { rows: DISTINCT_ONLY(q) ? [] : inProcess };
   throw new Error(`enhancement test: unexpected query ${q}`);
 });
 
@@ -544,5 +556,43 @@ test.describe('suggestion', () => {
     assert.equal((await suggestion()).status, 404);
     enhancement = { die_order_id: 7, ...TARGETS };
     assert.equal((await suggestion('?actual_failure_pct=abc')).status, 400);
+  });
+});
+
+test.describe('context and active dies', () => {
+  test.beforeEach(() => {
+    order.die_no = '30533-210';
+    dieList = ['30533_101', '30533_102'];
+    inProcess = [];
+    trials = [{ id: 1 }, { id: 2 }];
+  });
+
+  test('context returns the active dies of the profile and the trial count of the order', async () => {
+    const { status, body } = await request(base, '/api/design-enhancements/order/7/context');
+    assert.equal(status, 200);
+    assert.deepEqual(body, { activeDies: ['30533_101', '30533_102'], trialCount: 2 });
+  });
+
+  test('the own die of the order is not listed as one it refers to', async () => {
+    inProcess = [{ die_no: '30533-210', supplier: 'X', status: 'IN ORDER' }, { die_no: '30533-300', supplier: 'X', status: 'IN ORDER' }];
+    const { body } = await request(base, '/api/design-enhancements/order/7/context');
+    assert.deepEqual(body.activeDies, ['30533_101', '30533_102', '30533-300']);
+  });
+
+  test('404 for an unknown order, 400 for a bad id', async () => {
+    order = null;
+    assert.equal((await request(base, '/api/design-enhancements/order/7/context')).status, 404);
+    assert.equal((await request(base, '/api/design-enhancements/order/x/context')).status, 400);
+  });
+
+  test('active-dies for a new order looks the profile up from a die number', async () => {
+    const { status, body } = await request(base, '/api/design-enhancements/active-dies?dieNo=30533-999');
+    assert.equal(status, 200);
+    assert.deepEqual(body, { activeDies: ['30533_101', '30533_102'] });
+  });
+
+  test('active-dies with no die number is an empty list', async () => {
+    const { body } = await request(base, '/api/design-enhancements/active-dies');
+    assert.deepEqual(body, { activeDies: [] });
   });
 });

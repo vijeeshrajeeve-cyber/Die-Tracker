@@ -9,6 +9,7 @@ const { SIMULATION_STATUSES, markAccess, removeAccess, verdictAccess } = require
 const { trialsForParent, normaliseDate } = require('../services/sampleTrials.cjs');
 const { todayLocal } = require('../services/dates.cjs');
 const { pageAccessMiddleware } = require('./auth.cjs');
+const { collectJFileData, dieKey } = require('../services/jFileData.cjs');
 
 const router = express.Router();
 
@@ -147,6 +148,46 @@ router.delete('/order/:orderId', async (req, res) => {
     res.json({ removed: true });
   } catch (error) {
     console.error('Remove design enhancement error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---- context for the form and the drawer -------------------------------------
+
+// The die numbers the plant runs (or has on order) for a die's profile, minus
+// the die itself. Informational only: the form lists them beside "Existing dies
+// referred". Same lookup the J-file uses, so the two never disagree.
+async function activeDiesFor(dieNo) {
+  const { activeDies } = await collectJFileData(pool, dieNo);
+  const own = dieKey(dieNo);
+  return activeDies.map((d) => d.die_no).filter((n) => dieKey(n) !== own);
+}
+
+// For a new order, before it has an id.
+router.get('/active-dies', async (req, res) => {
+  const dieNo = typeof req.query.dieNo === 'string' ? req.query.dieNo.trim() : '';
+  if (!dieNo) return res.json({ activeDies: [] });
+  try {
+    res.json({ activeDies: await activeDiesFor(dieNo) });
+  } catch (error) {
+    console.error('Design enhancement active dies error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/order/:orderId/context', async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  if (!Number.isInteger(orderId) || orderId < 1) return res.status(400).json({ error: 'Invalid order id' });
+  try {
+    const found = await pool.query('SELECT die_no FROM die_orders WHERE id = $1', [orderId]);
+    if (!found.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const [activeDies, count] = await Promise.all([
+      activeDiesFor(found.rows[0].die_no),
+      pool.query('SELECT COUNT(*)::int AS n FROM sample_trials WHERE die_order_id = $1', [orderId]),
+    ]);
+    res.json({ activeDies, trialCount: count.rows[0].n });
+  } catch (error) {
+    console.error('Design enhancement context error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -5,13 +5,14 @@ import DieAttentionLabels from '../DieAttentionLabels';
 import CorrectorSelect from '../ui/CorrectorSelect';
 import { todayLocal } from '../../utils/today.js';
 import useDialog from '../../hooks/useDialog';
+import { isEnhancement } from '../../utils/designEnhancement';
 import { skipTrialAllowed, skipTrialDefault, buildReceivancePatch } from '../../utils/dieReceivance';
 import { typeLabel, dieTypeLabel } from '../../utils/dieType';
 
 // Confirm Die Receivance, moved out of FlowPage unchanged when In Manufacturing
 // got its own page. The parent decides what happens after a confirmed receipt.
 export default function DieReceivanceModal({ order, theme, correctors, correctorsError, setToast, onClose, onConfirmed }) {
-  const [form, setForm] = useState({ die_received_date: todayLocal(), corrector: '', skip_trial: skipTrialDefault(order.TYPE) });
+  const [form, setForm] = useState({ die_received_date: todayLocal(), corrector: '', skip_trial: skipTrialAllowed(order.TYPE, order) && skipTrialDefault(order.TYPE) });
   const [saving, setSaving] = useState(false);
   const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !saving });
 
@@ -67,7 +68,10 @@ export default function DieReceivanceModal({ order, theme, correctors, corrector
               style={{ width: '100%', padding: '10px 12px', background: theme.inputBg || '#0F172A', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px', color: theme.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
-          {skipTrialAllowed(order.TYPE) && (
+          {isEnhancement(order) && (order.TYPE === 'T' || order.TYPE === 'B') && (
+            <p style={{ margin: 0, fontSize: '0.78rem', color: theme.textMuted }}>Trials are required on a Design enhancement die</p>
+          )}
+          {skipTrialAllowed(order.TYPE, order) && (
             <label htmlFor="flowpage-skip-trial" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', cursor: 'pointer' }}>
               <input
                 id="flowpage-skip-trial"

@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CalendarCheck, CheckSquare, Pencil, Trash2 } from 'lucide-react';
 import TrialsSection from './TrialsSection';
+import EnhancementResultPanel from '../orders/EnhancementResultPanel';
+import { isEnhancement } from '../../utils/designEnhancement';
+import { canRecordVerdict } from '../../utils/enhancementVerdict';
 import { useStampToday } from './useStampToday';
 import CorrectorSelect from '../ui/CorrectorSelect';
 import { formatDate } from '../../utils/helpers';
@@ -13,6 +16,18 @@ const orDash = (value) => (value === null || value === undefined || value === ''
 // one save for the date and the status it implies, with the overwrite confirm.
 function StampAction({ sample, kind, onSave, setToast }) {
   const submission = kind === 'submission';
+  // A refused approval (an enhancement die with no measured OK trial) keeps its
+  // message beside the button; the toast alone disappears after a few seconds.
+  const [blocked, setBlocked] = useState('');
+  const guardedSave = async (...args) => {
+    setBlocked('');
+    try {
+      return await onSave(...args);
+    } catch (error) {
+      if (!submission) setBlocked(error.message);
+      throw error;
+    }
+  };
   const { stamp, busy } = useStampToday({
     sf: sample,
     dateField: submission ? 'Submission Date' : 'Sample Approval Date',
@@ -21,20 +36,25 @@ function StampAction({ sample, kind, onSave, setToast }) {
     label: submission ? 'Submission date' : 'Approval date',
     currentDate: submission ? sample.submission_date : sample.sample_approval_date,
     currentStatus: sample.status,
-    onSave, setToast,
+    onSave: guardedSave, setToast,
   });
   return (
-    <button type="button" className={`sf-button sf-button-pane ${submission ? 'sf-button-accent' : 'sf-button-tint'}`} disabled={busy} onClick={stamp}>
-      {submission ? <CalendarCheck size={14} /> : <CheckSquare size={14} />}
-      {busy ? 'Saving…' : submission ? 'Mark submitted today' : 'Mark approved today'}
-    </button>
+    <>
+      <button type="button" className={`sf-button sf-button-pane ${submission ? 'sf-button-accent' : 'sf-button-tint'}`} disabled={busy} onClick={stamp}>
+        {submission ? <CalendarCheck size={14} /> : <CheckSquare size={14} />}
+        {busy ? 'Saving…' : submission ? 'Mark submitted today' : 'Mark approved today'}
+      </button>
+      {blocked && <span role="alert" className="sf-dim" style={{ flexBasis: '100%', color: 'var(--sf-late)' }}>{blocked}</span>}
+    </>
   );
 }
 
 export default function SampleFollowupDetail({
   sample, trials, parent, today, theme, user, correctors, correctorsError,
   onEdit, onDelete, onSaveDate, onSaveField, onTrialsChanged, setToast,
+  enhancement = null, onEnhancementChanged,
 }) {
+  const enhanced = sample._source === 'order' && isEnhancement(sample._order);
   const count = trialCountFor(trials, sample.no_of_trial);
   const submitted = Boolean(sample.submission_date);
   const approved = Boolean(sample.sample_approval_date);
@@ -113,7 +133,11 @@ export default function SampleFollowupDetail({
           {facts.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{orDash(value)}</dd></div>)}
         </dl>
 
-        <TrialsSection pane parent={parent} trials={trials} legacyCount={count.isLegacy ? count.count : 0} theme={theme} user={user} onChanged={onTrialsChanged} setToast={setToast} />
+        <TrialsSection pane parent={parent} trials={trials} legacyCount={count.isLegacy ? count.count : 0} theme={theme} user={user} onChanged={onTrialsChanged} setToast={setToast} enhanced={enhanced} enhancement={enhancement} />
+
+        {enhanced && enhancement && (
+          <EnhancementResultPanel order={sample._order} enhancement={enhancement} trials={trials} canRecord={canRecordVerdict(user)} theme={theme} onSaved={onEnhancementChanged} />
+        )}
 
         <div className="sf-notes">
           <div className="sf-field">
