@@ -1,7 +1,8 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { VERDICTS, validateBaseline, suggestVerdict, projectState, needsLifeReview } = require('./designEnhancement.cjs');
+const { VERDICTS, validateBaseline, suggestVerdict, projectState, needsLifeReview,
+  latestOkTrial, defaultReviewDate, isIsoDate } = require('./designEnhancement.cjs');
 
 test('verdict vocabulary is fixed', () => {
   assert.deepEqual(VERDICTS, ['Achieved', 'Partly achieved', 'Not achieved']);
@@ -73,4 +74,28 @@ test('project state', () => {
   assert.equal(needsLifeReview({ trial_verdict: 'Achieved', failure_assessment_required: false }, o), false);
   assert.equal(needsLifeReview({ failure_assessment_required: true }, o), false);
   assert.equal(needsLifeReview({ trial_verdict: 'Achieved', failure_assessment_required: true, final_verdict: 'Achieved' }, o), false);
+});
+
+test('latestOkTrial picks the highest trial_no with result OK', () => {
+  assert.equal(latestOkTrial([]), null);
+  assert.equal(latestOkTrial(null), null);
+  assert.equal(latestOkTrial([{ trial_no: 1, result: 'Not OK' }]), null);
+  const trials = [{ id: 1, trial_no: 1, result: 'OK' }, { id: 3, trial_no: 3, result: 'Not OK' }, { id: 2, trial_no: 2, result: 'OK' }];
+  assert.equal(latestOkTrial(trials).id, 2);
+});
+
+test('defaultReviewDate is six calendar months on, clamped to month end', () => {
+  assert.equal(defaultReviewDate('2026-08-31'), '2027-02-28');
+  assert.equal(defaultReviewDate('2026-01-15'), '2026-07-15');
+  assert.equal(defaultReviewDate('2026-09-30'), '2027-03-30');
+  assert.equal(defaultReviewDate('2023-08-31'), '2024-02-29');
+  assert.equal(defaultReviewDate(null), null);
+  assert.equal(defaultReviewDate('not a date'), null);
+});
+
+test('isIsoDate accepts only real calendar days', () => {
+  assert.equal(isIsoDate('2026-02-28'), true);
+  assert.equal(isIsoDate('2026-02-30'), false);
+  assert.equal(isIsoDate('28/02/2026'), false);
+  assert.equal(isIsoDate(null), false);
 });

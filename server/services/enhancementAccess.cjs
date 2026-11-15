@@ -33,4 +33,11 @@ function removeAccess(user, hasTrial, reason) {
   return adminPath(user, reason, 'Only an admin can remove the enhancement once a trial is logged');
 }
 
-module.exports = { SIMULATION_STATUSES, markAccess, removeAccess };
+// Record a trial verdict or a life review: anyone with Sample Followup access
+// (checked by the route) the first time; once one exists, only an admin, with a reason.
+function verdictAccess(user, alreadyRecorded, reason) {
+  if (!alreadyRecorded) return { ok: true, adminPath: false };
+  return adminPath(user, reason, 'Only an admin can redo a verdict that is already recorded');
+}
+
+module.exports = { SIMULATION_STATUSES, markAccess, removeAccess, verdictAccess };

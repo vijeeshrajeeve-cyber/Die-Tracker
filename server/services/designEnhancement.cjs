@@ -95,4 +95,36 @@ function projectState(row, order) {
   return 'Open';
 }
 
-module.exports = { parseNumber, isBlank, VERDICTS, validateBaseline, suggestVerdict, projectState, needsLifeReview };
+// The trial whose numbers a verdict snapshots: highest trial_no with result OK.
+function latestOkTrial(trials) {
+  let best = null;
+  for (const t of Array.isArray(trials) ? trials : []) {
+    if (t && t.result === 'OK' && (!best || Number(t.trial_no) > Number(best.trial_no))) best = t;
+  }
+  return best;
+}
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// A real calendar day written YYYY-MM-DD ("2026-02-30" is not one).
+function isIsoDate(raw) {
+  const m = typeof raw === 'string' ? ISO_DAY.exec(raw) : null;
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  return probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d;
+}
+
+// Six calendar months after the sample was approved; a day that does not exist
+// in the later month falls back to that month's last day (31 Aug -> 28 Feb).
+function defaultReviewDate(sampleApprovalDate) {
+  if (!isIsoDate(sampleApprovalDate)) return null;
+  const [y, mo, d] = sampleApprovalDate.split('-').map(Number);
+  const first = new Date(Date.UTC(y, mo - 1 + 6, 1));
+  const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  const out = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, lastDay)));
+  return out.toISOString().slice(0, 10);
+}
+
+module.exports = { parseNumber, isBlank, VERDICTS, validateBaseline, suggestVerdict, projectState, needsLifeReview,
+  latestOkTrial, isIsoDate, defaultReviewDate };

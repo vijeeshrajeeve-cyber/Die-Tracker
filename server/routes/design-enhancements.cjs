@@ -1,9 +1,14 @@
 'use strict';
 const express = require('express');
 const { pool } = require('../db.cjs');
-const { validateBaseline } = require('../services/designEnhancement.cjs');
+const {
+  VERDICTS, validateBaseline, suggestVerdict, needsLifeReview, latestOkTrial, defaultReviewDate, isIsoDate, parseNumber, isBlank,
+} = require('../services/designEnhancement.cjs');
 const { insertChangeLog } = require('../services/orderChangeLog.cjs');
-const { SIMULATION_STATUSES, markAccess, removeAccess } = require('../services/enhancementAccess.cjs');
+const { SIMULATION_STATUSES, markAccess, removeAccess, verdictAccess } = require('../services/enhancementAccess.cjs');
+const { trialsForParent, normaliseDate } = require('../services/sampleTrials.cjs');
+const { todayLocal } = require('../services/dates.cjs');
+const { pageAccessMiddleware } = require('./auth.cjs');
 
 const router = express.Router();
 
@@ -31,9 +36,10 @@ async function withTransaction(work) {
   }
 }
 
-const lockOrder = async (client, orderId) => {
+const lockOrder = async (client, orderId, lock = true) => {
   const { rows } = await client.query(
-    'SELECT id, status, design_enhancement, simulation_enabled FROM die_orders WHERE id = $1 FOR UPDATE', [orderId]);
+    `SELECT id, status, design_enhancement, simulation_enabled, sample_status, sample_approval_date FROM die_orders WHERE id = $1${lock ? ' FOR UPDATE' : ''}`,
+    [orderId]);
   return rows[0] || null;
 };
 
@@ -141,6 +147,223 @@ router.delete('/order/:orderId', async (req, res) => {
     res.json({ removed: true });
   } catch (error) {
     console.error('Remove design enhancement error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---- verdicts and the life review -------------------------------------------
+
+const num = (v) => (v === null || v === undefined ? null : Number(v));
+const remarkOf = (raw) => (typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 1000) : null);
+const parseOrderId = (raw) => { const n = Number(raw); return Number.isInteger(n) && n > 0 ? n : null; };
+const notFound = (error) => ({ refused: { status: 404, json: { error } } });
+const bad = (error) => ({ refused: { status: 400, json: { error } } });
+
+// A failure %: strict number, 0 to 100.
+function parseFailure(raw, key) {
+  if (isBlank(raw)) return { error: `${key} is required` };
+  const n = parseNumber(raw);
+  if (Number.isNaN(n)) return { error: `${key} must be a number of 0 or more` };
+  if (n > 100) return { error: `${key} cannot be more than 100` };
+  return { value: n };
+}
+
+// The remark is required whenever the chosen verdict is not the suggestion.
+// With no suggestion (no numbers to compare) every verdict is an override.
+function remarkRule(verdict, suggested, rawRemark) {
+  const remark = remarkOf(rawRemark);
+  if (verdict !== suggested && !remark) return { error: 'A remark is required when the verdict differs from the suggestion' };
+  return { remark };
+}
+
+const targetsOf = (row, withFailure) => ({
+  failure: withFailure ? num(row.target_failure_pct) : null,
+  productivity: num(row.target_productivity_kgh),
+  recovery: num(row.target_recovery_pct),
+});
+
+async function updateColumns(client, orderId, columns) {
+  const names = Object.keys(columns);
+  const { rows } = await client.query(
+    `UPDATE design_enhancements SET ${names.map((c, i) => `${c} = $${i + 1}`).join(', ')}, updated_at = now() WHERE die_order_id = $${names.length + 1} RETURNING *`,
+    [...names.map((c) => columns[c]), orderId]);
+  return rows[0];
+}
+
+const LIFE_REVIEW_COLUMNS = ['actual_failure_pct', 'life_review_remark', 'life_review_by', 'life_review_date'];
+const FINAL_COLUMNS = ['final_verdict', 'final_verdict_remark', 'final_verdict_by', 'final_verdict_date'];
+const cleared = (names) => Object.fromEntries(names.map((c) => [c, null]));
+
+// What the verdict form needs: the suggestion, the numbers behind it, and the
+// default life-review date. Trial stage reads the live latest OK trial; final
+// stage reads the stored snapshot. `?actual_failure_pct=` previews a final one.
+router.get('/order/:orderId/suggestion', async (req, res) => {
+  const orderId = parseOrderId(req.params.orderId);
+  if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+  let preview = null;
+  if (!isBlank(req.query.actual_failure_pct)) {
+    const checked = parseFailure(req.query.actual_failure_pct, 'actual_failure_pct');
+    if (checked.error) return res.status(400).json({ error: checked.error });
+    preview = checked.value;
+  }
+  try {
+    const order = await lockOrder(pool, orderId, false);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const found = await pool.query('SELECT * FROM design_enhancements WHERE die_order_id = $1', [orderId]);
+    const row = found.rows[0];
+    if (!row) return res.status(404).json({ error: 'This order is not a Design enhancement' });
+
+    const reviewing = Boolean(row.trial_verdict) && (row.life_review_date != null || needsLifeReview(row, order));
+    let targets;
+    let actuals;
+    if (reviewing) {
+      targets = targetsOf(row, true);
+      actuals = { failure: preview !== null ? preview : num(row.actual_failure_pct),
+        productivity: num(row.trial_productivity_kgh), recovery: num(row.trial_recovery_pct) };
+    } else {
+      const latest = latestOkTrial(await trialsForParent(pool, { column: 'die_order_id', id: orderId }));
+      targets = targetsOf(row, false);
+      actuals = { failure: null, productivity: latest ? num(latest.productivity_kgh) : null, recovery: latest ? num(latest.recovery_pct) : null };
+    }
+    res.json({
+      stage: reviewing ? 'final' : 'trial',
+      suggested: suggestVerdict({ targets, actuals }),
+      actuals,
+      targets,
+      defaultReviewDate: defaultReviewDate(normaliseDate(order.sample_approval_date)),
+    });
+  } catch (error) {
+    console.error('Design enhancement suggestion error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Save the trial verdict. It snapshots the latest OK trial's numbers, so a
+// later edit to that trial cannot change what the verdict was based on.
+router.post('/order/:orderId/trial-verdict', pageAccessMiddleware('flow-sample-followup'), async (req, res) => {
+  const orderId = parseOrderId(req.params.orderId);
+  if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+  const body = req.body || {};
+  if (!VERDICTS.includes(body.verdict)) return res.status(400).json({ error: `verdict must be one of: ${VERDICTS.join(', ')}` });
+  const verdict = body.verdict;
+  const reason = reasonOf(body.reason);
+  const today = todayLocal();
+
+  try {
+    const out = await withTransaction(async (client) => {
+      const order = await lockOrder(client, orderId);
+      if (!order) return notFound('Order not found');
+      const found = await client.query('SELECT * FROM design_enhancements WHERE die_order_id = $1', [orderId]);
+      const row = found.rows[0];
+      if (!row) return notFound('This order is not a Design enhancement');
+      if (String(order.status || '').toUpperCase() === 'CANCELLED') return bad('A cancelled order cannot get a verdict');
+      if (order.sample_status !== 'Approved' && order.sample_status !== 'Rejected') {
+        return bad('The trial verdict can be saved once the sample is Approved or Rejected');
+      }
+      const access = verdictAccess(req.user, Boolean(row.trial_verdict), reason);
+      if (!access.ok) return refusal(access);
+
+      const latest = latestOkTrial(await trialsForParent(client, { column: 'die_order_id', id: orderId }));
+      const snapshot = {
+        trial_productivity_kgh: latest ? num(latest.productivity_kgh) : null,
+        trial_recovery_pct: latest ? num(latest.recovery_pct) : null,
+        source_trial_id: latest ? latest.id : null,
+      };
+      const suggested = suggestVerdict({
+        targets: targetsOf(row, false),
+        actuals: { failure: null, productivity: snapshot.trial_productivity_kgh, recovery: snapshot.trial_recovery_pct },
+      });
+      const ruled = remarkRule(verdict, suggested, body.remark);
+      if (ruled.error) return bad(ruled.error);
+
+      // Would a life review be owed once this verdict is saved?
+      const owed = needsLifeReview(
+        { trial_verdict: verdict, failure_assessment_required: row.failure_assessment_required, final_verdict: null }, order);
+      let dueDate = null;
+      if (owed) {
+        dueDate = body.life_review_due_date;
+        if (!isIsoDate(dueDate) || dueDate < today) return bad('life_review_due_date is required: a date of today or later');
+      }
+
+      const by = req.user.username || null;
+      const columns = {
+        ...snapshot,
+        trial_verdict: verdict, trial_verdict_remark: ruled.remark, trial_verdict_by: by, trial_verdict_date: today,
+        life_review_due_date: dueDate,
+      };
+      if (owed) {
+        Object.assign(columns, cleared(LIFE_REVIEW_COLUMNS), cleared(FINAL_COLUMNS));
+      } else {
+        Object.assign(columns, { final_verdict: verdict, final_verdict_remark: ruled.remark, final_verdict_by: by, final_verdict_date: today });
+      }
+      const enhancement = await updateColumns(client, orderId, columns);
+
+      const entries = [{ field: 'Design enhancement: trial verdict', oldValue: row.trial_verdict || null, newValue: verdict, reason, stage: order.status }];
+      if (!owed || row.final_verdict) {
+        entries.push({ field: 'Design enhancement: final verdict', oldValue: row.final_verdict || null, newValue: owed ? null : verdict, reason, stage: order.status });
+      }
+      await insertChangeLog(client, orderId, entries, req.user);
+      return { enhancement };
+    });
+    if (out.refused) return res.status(out.refused.status).json(out.refused.json);
+    res.json({ enhancement: out.enhancement });
+  } catch (error) {
+    console.error('Save trial verdict error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// The die failure % life review: judged against all three targets, using the
+// snapshot numbers plus the failure % now measured. Writes the final verdict.
+router.post('/order/:orderId/life-review', pageAccessMiddleware('flow-sample-followup'), async (req, res) => {
+  const orderId = parseOrderId(req.params.orderId);
+  if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+  const body = req.body || {};
+  const failure = parseFailure(body.actual_failure_pct, 'actual_failure_pct');
+  if (failure.error) return res.status(400).json({ error: failure.error });
+  if (!VERDICTS.includes(body.verdict)) return res.status(400).json({ error: `verdict must be one of: ${VERDICTS.join(', ')}` });
+  const verdict = body.verdict;
+  const reason = reasonOf(body.reason);
+  const today = todayLocal();
+
+  try {
+    const out = await withTransaction(async (client) => {
+      const order = await lockOrder(client, orderId);
+      if (!order) return notFound('Order not found');
+      const found = await client.query('SELECT * FROM design_enhancements WHERE die_order_id = $1', [orderId]);
+      const row = found.rows[0];
+      if (!row) return notFound('This order is not a Design enhancement');
+      if (!row.trial_verdict) return bad('Save the trial verdict before the life review');
+      // A final verdict written by the trial verdict has no review behind it;
+      // one written by a review (life_review_date set) may be redone.
+      const reviewed = row.life_review_date != null;
+      const owed = needsLifeReview({ ...row, final_verdict: null }, order);
+      if (!owed || (row.final_verdict && !reviewed)) return bad('No life review is due for this order');
+      const access = verdictAccess(req.user, reviewed, reason);
+      if (!access.ok) return refusal(access);
+
+      const suggested = suggestVerdict({
+        targets: targetsOf(row, true),
+        actuals: { failure: failure.value, productivity: num(row.trial_productivity_kgh), recovery: num(row.trial_recovery_pct) },
+      });
+      const ruled = remarkRule(verdict, suggested, body.remark);
+      if (ruled.error) return bad(ruled.error);
+
+      const by = req.user.username || null;
+      const enhancement = await updateColumns(client, orderId, {
+        actual_failure_pct: failure.value, life_review_remark: ruled.remark, life_review_by: by, life_review_date: today,
+        final_verdict: verdict, final_verdict_remark: ruled.remark, final_verdict_by: by, final_verdict_date: today,
+      });
+      await insertChangeLog(client, orderId, [
+        { field: 'Design enhancement: life review', oldValue: shown(row.actual_failure_pct), newValue: shown(failure.value), reason, stage: order.status },
+        { field: 'Design enhancement: final verdict', oldValue: row.final_verdict || null, newValue: verdict, reason, stage: order.status },
+      ], req.user);
+      return { enhancement };
+    });
+    if (out.refused) return res.status(out.refused.status).json(out.refused.json);
+    res.json({ enhancement: out.enhancement });
+  } catch (error) {
+    console.error('Save life review error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
