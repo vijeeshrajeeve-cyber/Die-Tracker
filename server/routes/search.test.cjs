@@ -100,6 +100,16 @@ test("an order's change-log count survives into the presented row", async () => 
   assert.equal(body.orders.items[0].changeCount, 3);
 });
 
+test("an order's Design enhancement flag survives into the presented row", async () => {
+  orderRows = [
+    { id: 1, die_no: 'D-1', order_no: 'O-1', supplier: 'ALPHA', created_at: '2026-01-01', design_enhancement: 1 },
+    { id: 2, die_no: 'D-2', order_no: 'O-2', supplier: 'ALPHA', created_at: '2026-01-02', design_enhancement: 0 },
+  ];
+  const { body } = await find('D-');
+  const flags = Object.fromEntries(body.orders.items.map((i) => [i['DIE NO'], i.designEnhancement]));
+  assert.deepEqual(flags, { 'D-1': true, 'D-2': false });
+});
+
 test("an order's profile image id rides along for the palette thumbnail, null when it has none", async () => {
   orderRows = [
     { id: 1, die_no: 'D-1', order_no: 'O-1', supplier: 'ALPHA', created_at: '2026-01-02', profile_image_id: 31 },

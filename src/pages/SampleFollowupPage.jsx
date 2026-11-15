@@ -4,6 +4,7 @@ import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import { exportToExcel } from '../utils/exportExcel';
 import { todayLocal } from '../utils/today';
+import { EnhancementTag, isEnhancementOrder } from '../components/DieAttentionLabels';
 import SampleFollowupForm from '../components/sample/SampleFollowupForm';
 import SampleFollowupDetail from '../components/sample/SampleFollowupDetail';
 import { trialCountFor } from '../utils/trials';
@@ -478,6 +479,7 @@ export default function SampleFollowupPage({
                     <span className={`sf-row-stripe sf-stripe-${stripe}`} aria-hidden="true" />
                     <span className="sf-row-main">
                       <span className="sf-row-die">{row.die || row.profile || 'Untitled die'}</span>
+                      {isEnhancementOrder(row._order) && <span><EnhancementTag dense /></span>}
                       <span className="sf-row-meta">{[row.profile, row.press, row.customer].filter(Boolean).join(' · ') || 'No details yet'}</span>
                     </span>
                     <span className="sf-row-side">

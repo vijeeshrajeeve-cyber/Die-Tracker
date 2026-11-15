@@ -16,7 +16,7 @@ const FIELDS = [
     'oracle_entry', 'supplier', 'status', 'overall_delay', 'eta', 'month',
     'die_received_date', 'submission_date', 'sample_approval_date', 'no_of_trial',
     'corrector', 'press', 'ascona_reference', 'sample_status', 'remark', 'sample_remark',
-    'urgency', 'special_follow_up'
+    'urgency', 'special_follow_up', 'design_enhancement'
 ];
 
 const HEADERS = [
@@ -28,7 +28,7 @@ const HEADERS = [
     'Oracle Entry', 'Supplier', 'STATUS', 'OVERALL DELAY', 'ETA', 'Month',
     'Die Received Date', 'Submission Date', 'Sample Approval Date', 'No of Trial',
     'Corrector', 'Press', 'Ascona Reference', 'Sample Status', 'Remark', 'Sample Remark',
-    'Urgency', 'Special Follow-Up'
+    'Urgency', 'Special Follow-Up', 'Design Enhancement'
 ];
 
 const pad2 = (n) => String(n).padStart(2, '0');

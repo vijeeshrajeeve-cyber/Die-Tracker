@@ -95,6 +95,7 @@ export function orderExportColumns({ dieReceivedDateMap = {}, today = new Date()
     { key: 'Press', label: 'Press' },
     { key: 'Urgency', label: 'Urgency', format: urgencyLabel },
     { key: 'specialFollowUp', label: 'Special Follow-up', format: yesNo },
+    { key: 'designEnhancement', label: 'Design Enhancement', format: yesNo },
     { key: 'Ordered date', label: 'Ordered Date', format: 'date' },
     { key: 'Design Received Date', label: 'Design Received Date', format: 'date' },
     { key: '3D Model Received Date', label: '3D Model Received Date', format: 'date' },
@@ -144,6 +145,7 @@ export function exportRows({ allRows, filteredRows, applyFilters, from, to, date
 const FILTER_LABELS = {
   plant: 'Plant', status: 'Status', supplier: 'Supplier', type: 'Item type', month: 'Month',
   year: 'Year', customer: 'Customer', urgency: 'Urgency', specialFollowUp: 'Special follow-up',
+  enhancement: 'Design enhancement',
 };
 
 // The Orders page filters that are on, in words, for the "Apply current filters" line.
@@ -158,6 +160,7 @@ export function describeFilters(filters = {}, searchTerm = '') {
     else if (field === 'type') shown = typeLabel(v);
     else if (field === 'urgency') shown = urgencyLabel(v);
     else if (field === 'specialFollowUp') shown = v === 'yes' ? 'Flagged' : 'Not flagged';
+    else if (field === 'enhancement') shown = v === 'yes' ? 'Enhancement only' : 'Not an enhancement';
     parts.push(`${label}: ${shown}`);
   }
   if (filters.dateFrom || filters.dateTo) {

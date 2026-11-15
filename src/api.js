@@ -1349,6 +1349,22 @@ export const searchAPI = {
     order: (id) => apiRequest(`/search/order/${encodeURIComponent(id)}`),
 };
 
+// Design enhancement projects: the baseline and targets recorded when an order is marked.
+export const designEnhancementsAPI = {
+    // { enhancements } - snake_case rows keyed by die_order_id.
+    list: () => apiRequest('/design-enhancements'),
+    // Create or update. `baseline` is the validated form value; `reason` is needed once the die is received.
+    save: (orderId, baseline, reason) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...baseline, ...(reason ? { reason } : {}) }),
+    }),
+    // A reason is always required to remove the flag.
+    remove: (orderId, reason) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ reason }),
+    }),
+};
+
 // Plant Budgets API
 export const plantBudgetsAPI = {
     getAll: async () => {

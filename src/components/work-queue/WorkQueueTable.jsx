@@ -1,7 +1,9 @@
 import { ArrowUpRight, Inbox } from 'lucide-react';
+import { EnhancementTag } from '../DieAttentionLabels';
 import { BUCKETS, dateLabel, deadlineState, ownerLabel, sourceLabel } from './view';
 
-export default function WorkQueueTable({ items, loading, onSelect, scope }) {
+// enhancementOrderIds: ids of Design enhancement orders; an order work item is tagged when its source is one.
+export default function WorkQueueTable({ items, loading, onSelect, scope, enhancementOrderIds }) {
   if (!items.length) return <div className="wq-empty">
     <Inbox size={32} aria-hidden="true" />
     <h2>{loading ? 'Loading your work…' : scope === 'mine' ? 'No matching work assigned to you' : 'No matching work items'}</h2>
@@ -14,6 +16,7 @@ export default function WorkQueueTable({ items, loading, onSelect, scope }) {
         const state = deadlineState(item);
         return <tr key={item.id}>
           <td><button className="wq-record-link" type="button" onClick={() => onSelect(item.id)}>{item.die_no || item.profile || `Record ${item.source_id}`}</button>
+            {item.source_kind === 'order' && enhancementOrderIds?.has(Number(item.source_id)) && <> <EnhancementTag dense /></>}
             <small>{item.plant || 'Plant not set'}{item.supplier ? ` · ${item.supplier}` : ''}</small></td>
           <td><strong>{item.stage_label || item.stage_key}</strong><small>{sourceLabel(item.source_kind)}{item.occurrence ? ` · occurrence ${item.occurrence}` : ''}</small></td>
           <td><span className={item.owner_id ? '' : 'wq-muted'}>{ownerLabel(item)}</span>

@@ -45,7 +45,8 @@ const FIELD_MAP = {
     'remark': 'remark',
     'sample_remark': 'sample_remark',
     'urgency': 'urgency',
-    'special_follow_up': 'special_follow_up'
+    'special_follow_up': 'special_follow_up',
+    'design_enhancement': 'design_enhancement'
 };
 
 // Display-friendly column headers
@@ -89,7 +90,15 @@ const DISPLAY_NAMES = {
     'remark': 'Remark',
     'sample_remark': 'Sample Remark',
     'urgency': 'Urgency',
-    'special_follow_up': 'Special Follow-Up'
+    'special_follow_up': 'Special Follow-Up',
+    'design_enhancement': 'Design Enhancement'
+};
+
+// Columns stored as 0/1 that the export shows as Yes / No.
+const YES_NO_FIELDS = new Set(['design_enhancement']);
+const fieldValue = (field, row) => {
+    const raw = row[FIELD_MAP[field]];
+    return YES_NO_FIELDS.has(field) ? (raw ? 'Yes' : 'No') : formatDateValue(raw);
 };
 
 // Extract API key from Authorization header, X-API-Key header, or query param (deprecated)
@@ -205,7 +214,7 @@ router.get('/orders', async (req, res) => {
             const rows = result.rows.map(row => {
                 const obj = {};
                 for (const field of selectedFields) {
-                    obj[DISPLAY_NAMES[field]] = formatDateValue(row[FIELD_MAP[field]]);
+                    obj[DISPLAY_NAMES[field]] = fieldValue(field, row);
                 }
                 return obj;
             });
@@ -217,7 +226,7 @@ router.get('/orders', async (req, res) => {
         let csv = headers.map(csvEscape).join(',') + '\r\n';
 
         for (const row of result.rows) {
-            const values = selectedFields.map(f => csvEscape(formatDateValue(row[FIELD_MAP[f]])));
+            const values = selectedFields.map(f => csvEscape(fieldValue(f, row)));
             csv += values.join(',') + '\r\n';
         }
 

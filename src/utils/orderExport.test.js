@@ -43,6 +43,21 @@ test('extra columns format their values', () => {
   assert.ok(row['Design Received Date'] instanceof Date);
 });
 
+test('Design Enhancement exports Yes or No', () => {
+  const cols = pickColumns(orderExportColumns(), ['Design Enhancement']);
+  assert.equal(cols.length, 1);
+  const rows = buildSheetData({
+    rows: [{ designEnhancement: true }, { designEnhancement: false }, {}],
+    columns: cols,
+  });
+  assert.deepEqual(rows.map((r) => r['Design Enhancement']), ['Yes', 'No', 'No']);
+});
+
+test('describeFilters names the Enhancement filter', () => {
+  assert.deepEqual(describeFilters({ enhancement: 'yes' }, ''), ['Design enhancement: Enhancement only']);
+  assert.deepEqual(describeFilters({ enhancement: 'all' }, ''), []);
+});
+
 test('exportRows uses filtered or all rows, then the inclusive date range', () => {
   const all = [{ d: '2026-01-01' }, { d: '2026-02-01' }, { d: '2026-03-01' }, { d: null }];
   const dateOf = (o) => o.d;
