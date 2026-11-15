@@ -163,12 +163,24 @@ test('an admin baseline edit after receipt without a reason is 400, with one it 
 test('an editor removes the flag while no trial exists; the order row and a log row follow', async () => {
   order.design_enhancement = 1;
   enhancement = { die_order_id: 7, ...BASELINE };
-  const { status } = await del();
+  const { status } = await del({ reason: 'Marked the wrong die' });
   assert.equal(status, 200);
   assert.equal(queries('DELETE FROM design_enhancements').length, 1);
+  assert.equal(changes()[0].reason, 'Marked the wrong die');
   assert.match(orderUpdate().q, /design_enhancement = 0/);
   assert.doesNotMatch(orderUpdate().q, /simulation_enabled/);
   assert.equal(changes()[0].new, 'No');
+});
+
+test('removing the flag without a reason is 400 for an editor, and nothing is deleted', async () => {
+  order.design_enhancement = 1;
+  enhancement = { die_order_id: 7, ...BASELINE };
+  for (const body of [{}, { reason: '   ' }]) {
+    const { status } = await del(body);
+    assert.equal(status, 400);
+  }
+  assert.equal(queries('DELETE FROM design_enhancements').length, 0);
+  assert.ok(log.some(({ q }) => q === 'ROLLBACK'));
 });
 
 test('removing with an existing trial is 403 for an editor and needs a reason from an admin', async () => {

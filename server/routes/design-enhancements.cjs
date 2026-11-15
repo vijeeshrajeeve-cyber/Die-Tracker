@@ -122,6 +122,8 @@ router.delete('/order/:orderId', async (req, res) => {
       const trial = await client.query('SELECT 1 FROM sample_trials WHERE die_order_id = $1 LIMIT 1', [orderId]);
       const access = removeAccess(req.user, trial.rows.length > 0, reason);
       if (!access.ok) return refusal(access);
+      // Every removal needs a reason, not only the admin path.
+      if (!reason) return refusal({ status: 400, error: 'Give a reason for removing the Design enhancement', code: 'REASON_REQUIRED' });
 
       await client.query('DELETE FROM design_enhancements WHERE die_order_id = $1', [orderId]);
       await client.query('UPDATE die_orders SET design_enhancement = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [orderId]);
