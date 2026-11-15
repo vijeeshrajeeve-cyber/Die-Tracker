@@ -63,25 +63,22 @@ export function latestOkTrial(trials) {
   return best;
 }
 
-const sampleDecided = (order) => {
-  const s = order?.['Sample Status'];
-  return s === 'Approved' || s === 'Rejected';
-};
-
 const snakeOf = (order) => ({ status: order?.STATUS, sample_status: order?.['Sample Status'] });
 
 /**
  * Where the project is, for the panel. `order` is the display-shaped order
  * (STATUS, 'Sample Status'); `row` the stored enhancement row.
- *   cancelled | waiting (sample undecided) | trial (verdict owed)
- *   review (life review owed) | done
+ *   cancelled | waiting (sample undecided) | rework (sample Rejected, project open)
+ *   trial (verdict owed, sample Approved) | review (life review owed) | done
  */
 export function panelStage(row, order) {
   const r = row || {};
   if (String(order?.STATUS || '').toUpperCase() === 'CANCELLED') return 'cancelled';
   if (r.final_verdict) return 'done';
+  // A Rejected sample reopens the project, even one already awaiting its life review.
+  if (order?.['Sample Status'] === 'Rejected') return 'rework';
   if (r.trial_verdict) return needsLifeReview(r, snakeOf(order)) ? 'review' : 'done';
-  return sampleDecided(order) ? 'trial' : 'waiting';
+  return order?.['Sample Status'] === 'Approved' ? 'trial' : 'waiting';
 }
 
 /**
@@ -117,11 +114,12 @@ export function resultRows(row, trials) {
 // The trial-stage suggestion, worked out here for when the server's suggestion
 // is the final-stage one (a life review is owed). Same rule as the server's
 // trialSuggestion: the latest OK trial against the productivity and recovery
-// targets; a Rejected sample with no OK trial is "Not achieved".
+// targets. A Rejected sample is in rework and gets no suggestion (the server
+// answers the same).
 export function trialSuggestion(row, order, trials) {
   const r = row || {};
   const latest = latestOkTrial(trials);
-  if (!latest) return order?.['Sample Status'] === 'Rejected' ? 'Not achieved' : null;
+  if (!latest || order?.['Sample Status'] === 'Rejected') return null;
   return suggestVerdict({
     targets: { productivity: num(r.target_productivity_kgh), recovery: num(r.target_recovery_pct) },
     actuals: { productivity: num(latest.productivity_kgh), recovery: num(latest.recovery_pct) },
@@ -179,6 +177,34 @@ export function validateVerdictForm({ form, row, order, values, suggested, today
     else body.life_review_due_date = v.dueDate;
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, errors: {}, body };
+}
+
+/**
+ * The explicit close of a project whose Rejected sample will not be reworked:
+ * a remark is required. Returns { ok, errors, body }; the body is what the
+ * server's trial-verdict endpoint accepts while the sample is Rejected.
+ */
+export function validateAbandonForm({ row, values }) {
+  const remark = typeof values?.remark === 'string' ? values.remark.trim() : '';
+  const reason = typeof values?.reason === 'string' ? values.reason.trim() : '';
+  const errors = {};
+  if (!remark) errors.remark = 'Say why the project is being closed';
+  if (row?.trial_verdict && !reason) errors.reason = 'Give a reason for this change';
+  if (Object.keys(errors).length) return { ok: false, errors };
+  const body = { verdict: 'Not achieved', remark, abandon: true };
+  if (reason) body.reason = reason;
+  return { ok: true, errors: {}, body };
+}
+
+/**
+ * Who may close a Rejected project as Not achieved. Anyone who can record a
+ * verdict, until a trial verdict exists; after that it overwrites a saved
+ * verdict, which is admin-only and needs a reason (the server's redo rule).
+ */
+export function closeRejectedAccess(user, row) {
+  const saved = Boolean(row?.trial_verdict);
+  const allowed = canRecordVerdict(user) && (!saved || user?.role === 'admin');
+  return { allowed, needsReason: saved };
 }
 
 // The date the review-due box starts on: the stored one when a redo opens on a

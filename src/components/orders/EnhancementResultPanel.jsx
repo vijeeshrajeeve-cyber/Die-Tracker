@@ -3,12 +3,13 @@ import { usePalette } from '../../utils/palette';
 import { designEnhancementsAPI, getUser } from '../../api';
 import { VERDICTS, parseNumber, isBlank } from '../../utils/designEnhancement';
 import {
-  panelStage, resultRows, showNumber, validateVerdictForm, reviewOwedAfter, formNeedsReason, latestOkTrial, trialSuggestion, prefillDueDate,
+  panelStage, resultRows, showNumber, validateVerdictForm, validateAbandonForm, closeRejectedAccess, reviewOwedAfter, formNeedsReason, latestOkTrial, trialSuggestion, prefillDueDate,
 } from '../../utils/enhancementVerdict';
 import { todayLocal } from '../../utils/today.js';
 
 const STAGE_TITLE = {
   waiting: 'Waiting for the sample result',
+  rework: 'Sample rejected, in rework',
   trial: 'Trial verdict',
   review: 'Awaiting life review',
   done: 'Completed',
@@ -145,6 +146,63 @@ function VerdictForm({ form, order, row, suggestion, theme, onSaved, onCancel, o
   );
 }
 
+// The explicit close of a project whose Rejected sample will not be reworked.
+// A remark is required; the server writes both verdicts as Not achieved.
+function AbandonForm({ order, row, theme, onSaved, onCancel }) {
+  const p = usePalette(theme);
+  const uid = useId();
+  const [remark, setRemark] = useState('');
+  const [reason, setReason] = useState('');
+  const [errors, setErrors] = useState({});
+  const error = errors.remark || '';
+  const [failure, setFailure] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const checked = validateAbandonForm({ row, values: { remark, reason } });
+    setErrors(checked.errors);
+    if (!checked.ok) return;
+    setSaving(true);
+    setFailure('');
+    try {
+      await designEnhancementsAPI.saveTrialVerdict(order.id, checked.body);
+      await onSaved?.();
+    } catch (e) {
+      setFailure(e.message || 'Could not close the project');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div>
+        <label htmlFor={`${uid}-remark`} style={smallLabel(p)}>Why is the project being closed? <span style={{ color: p.danger }}>*</span></label>
+        <textarea id={`${uid}-remark`} rows={2} maxLength={1000} disabled={saving} aria-invalid={!!error}
+          value={remark} onChange={(e) => setRemark(e.target.value)} style={{ ...inputStyle(p, !!error), resize: 'vertical' }} />
+        {error && <span role="alert" style={{ display: 'block', marginTop: '3px', fontSize: '0.72rem', color: p.danger }}>{error}</span>}
+      </div>
+      {row?.trial_verdict && (
+        <div>
+          <label htmlFor={`${uid}-reason`} style={smallLabel(p)}>Reason for this change <span style={{ color: p.danger }}>*</span></label>
+          <input id={`${uid}-reason`} type="text" maxLength={500} disabled={saving} aria-invalid={!!errors.reason}
+            value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle(p, !!errors.reason)} />
+          {errors.reason && <span role="alert" style={{ display: 'block', marginTop: '3px', fontSize: '0.72rem', color: p.danger }}>{errors.reason}</span>}
+        </div>
+      )}
+      {failure && <p role="alert" style={{ margin: 0, fontSize: '0.82rem', color: p.danger }}>{failure}</p>}
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <button type="button" onClick={onCancel} disabled={saving}
+          style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: 'transparent', color: p.muted, border: `1px solid ${p.border}`, cursor: 'pointer' }}>Cancel</button>
+        <button type="button" onClick={save} disabled={saving}
+          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: p.primary, color: p.primaryText, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+          {saving ? 'Saving…' : 'Close project as Not achieved'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The Design enhancement result: Current / Target / Actual for the three
  * numbers, the suggested verdict, and the forms that record the trial verdict
@@ -159,6 +217,7 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
   const [change, setChange] = useState(null); // an admin redoing a saved verdict: 'trial' | 'review'
   const [fetched, setFetched] = useState(null); // { ...server suggestion, previewFor }
   const [previewFailure, setPreviewFailure] = useState(undefined);
+  const [abandoning, setAbandoning] = useState(false); // closing a Rejected project as Not achieved
 
   const stage = enhancement ? panelStage(enhancement, order) : null;
   const form = change || (stage === 'trial' ? 'trial' : stage === 'review' ? 'review' : null);
@@ -192,9 +251,10 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
 
   const cell = { padding: '6px 8px', fontSize: '0.85rem', color: p.text };
   const head = { padding: '4px 8px', fontWeight: 600, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: p.dim, textAlign: 'left' };
-  const finish = async () => { setChange(null); setPreviewFailure(undefined); await onSaved?.(); };
+  const canClose = stage === 'rework' && canRecord && closeRejectedAccess(getUser(), enhancement).allowed;
+  const finish = async () => { setChange(null); setAbandoning(false); setPreviewFailure(undefined); await onSaved?.(); };
   // A trial-stage final verdict repeats the trial verdict, so show it once.
-  const showTrialLine = stage === 'review' || stage === 'cancelled' || (stage === 'done' && enhancement.life_review_date != null);
+  const showTrialLine = stage === 'review' || stage === 'cancelled' || stage === 'rework' || (stage === 'done' && enhancement.life_review_date != null);
 
   const saved = (label, verdict, by, date, remark) => verdict && (
     <p style={{ margin: 0, fontSize: '0.85rem', color: p.text }}>
@@ -234,7 +294,10 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
         <p style={{ margin: 0, fontSize: '0.78rem', color: p.dim }}>Trial numbers are visible to users with Sample Followup access</p>
       )}
       {stage === 'waiting' && (
-        <p style={{ margin: 0, fontSize: '0.8rem', color: p.dim }}>The verdict can be recorded once the sample is Approved or Rejected</p>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: p.dim }}>The verdict can be recorded once the sample is Approved</p>
+      )}
+      {stage === 'rework' && (
+        <p style={{ margin: 0, fontSize: '0.8rem', color: p.dim }}>Sample rejected — the project stays open through rework. Record the verdict once the sample is approved.</p>
       )}
       {stage === 'cancelled' && !enhancement.trial_verdict && (
         <p style={{ margin: 0, fontSize: '0.8rem', color: p.dim }}>A cancelled order cannot get a verdict.</p>
@@ -259,6 +322,20 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
         <VerdictForm key={`${order.id}:${form}:${enhancement.updated_at || ''}`} form={form} order={order} row={enhancement}
           suggestion={suggestion} theme={theme} onSaved={finish} onPreview={setPreviewFailure} onCancel={change ? () => setChange(null) : undefined} />
       )}
+      {stage === 'rework' && canRecord && !canClose && (
+        <p style={{ margin: 0, fontSize: '0.78rem', color: p.dim }}>An admin can close this project.</p>
+      )}
+      {stage === 'rework' && canClose && !abandoning && (
+        <div>
+          <button type="button" onClick={() => setAbandoning(true)}
+            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: 'transparent', color: p.muted, border: `1px solid ${p.border}`, cursor: 'pointer' }}>
+            Close project as Not achieved
+          </button>
+        </div>
+      )}
+      {stage === 'rework' && canClose && abandoning && (
+        <AbandonForm key={order.id} order={order} row={enhancement} theme={theme} onSaved={finish} onCancel={() => setAbandoning(false)} />
+      )}
       {(stage === 'trial' || stage === 'review') && !canRecord && (
         <p style={{ margin: 0, fontSize: '0.78rem', color: p.dim }}>You need Sample Followup access to record the verdict.</p>
       )}
@@ -270,7 +347,7 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
           </button>
         </div>
       )}
-      {stage === 'done' && canRecord && isAdmin && !change && (
+      {stage === 'done' && canRecord && isAdmin && !change && order?.['Sample Status'] !== 'Rejected' && (
         <div>
           <button type="button" onClick={() => setChange(enhancement.life_review_date != null ? 'review' : 'trial')}
             style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: 'transparent', color: p.muted, border: `1px solid ${p.border}`, cursor: 'pointer' }}>
