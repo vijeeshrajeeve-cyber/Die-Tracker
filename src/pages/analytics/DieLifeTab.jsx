@@ -4,7 +4,7 @@ import { supplierPerformanceAPI, plantsAPI } from '../../api';
 import { MONTHS } from '../../utils/constants';
 import { dialogs } from '../../components/ui/DialogProvider';
 import { BRAND } from '../../utils/brand';
-import { COUNT_FIELDS, calculatedFor, supplierKey, formatDieLife, rowErrors } from '../../utils/dieLifeCalc';
+import { COUNT_FIELDS, calculatedFor, supplierKey, formatDieLife, rowErrors, pairedCell } from '../../utils/dieLifeCalc';
 
 // Manual monthly die life entry, per plant. Nothing in this system records
 // tonnage, so these counts per supplier and plant are typed in once a month.
@@ -48,6 +48,9 @@ const COLUMNS = [
   { calc: 'backupRatio', head: 'Backup trial ratio' },
 ];
 
+// A paired count cell on All plants: blank stays empty, a blank with a star
+// shows a dash so the star has something to sit on.
+const countText = ({ value, star }) => `${value == null ? (star ? '—' : '') : Math.round(Number(value) * 100) / 100}${star ? '*' : ''}`;
 const blankCounts = () => Object.fromEntries(COUNT_FIELDS.map((f) => [f, null]));
 const countsOf = (r) => {
   const out = blankCounts();
@@ -233,6 +236,15 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
     );
   };
 
+  // On All plants the count cells are the paired sums the calculated cells
+  // were worked out from. A star marks a count where some plant typed half a
+  // pair; the footnote under the table explains.
+  const allCells = readOnly ? suppliers.map((s) => {
+    const calc = calculatedFor({ readOnly, row: rows[supplierKey(s)], counts: countsOf(rows[supplierKey(s)]) });
+    return COLUMNS.filter((c) => c.input).map((c) => pairedCell(c.input, calc.paired, calc.totals));
+  }) : [];
+  const anyStar = allCells.some((cells) => cells.some((c) => c.star));
+
   const noPlants = plants !== null && plants.length === 0 && !plantsFailed;
 
   return (
@@ -308,7 +320,7 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
                         {COLUMNS.map((c) => (
                           <td key={c.input || c.calc} style={cell}>
                             {c.calc ? calcCell(c.calc, res) : readOnly ? (
-                              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{counts[c.input] == null ? '' : counts[c.input]}</span>
+                              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{countText(pairedCell(c.input, res.paired, res.totals))}</span>
                             ) : (
                               <>
                                 <input type="number" step={c.input === 'tonnageMt' ? 'any' : '1'} min="0"
@@ -333,10 +345,15 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
                     );
                   })}
                   {suppliers.length === 0 && (
-                    <tr><td colSpan={COLUMNS.length + 2} style={{ padding: 24, textAlign: 'center', color: theme.textDim }}>No suppliers found</td></tr>
+                    <tr><td colSpan={COLUMNS.length + (readOnly ? 1 : 2)} style={{ padding: 24, textAlign: 'center', color: theme.textDim }}>No suppliers found</td></tr>
                   )}
                 </tbody>
               </table>
+              {anyStar && (
+                <p style={{ fontSize: 11, color: theme.textDim, margin: 0, padding: '8px 12px' }}>
+                  * Some figures were entered without their matching count and are left out of the calculation.
+                </p>
+              )}
             </div>
           )}
 

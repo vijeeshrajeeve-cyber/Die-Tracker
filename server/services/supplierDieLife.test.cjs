@@ -250,3 +250,10 @@ test('aggregateDieLife paired sums are null when no row qualified', () => {
   const out = s.aggregateDieLife([]);
   for (const v of Object.values(out.paired)) assert.equal(v, null);
 });
+
+test('periodLabel names the span from the first month with a row to the report month', () => {
+  assert.equal(s.periodLabel([{ month: 1 }, { month: 5 }, { month: 11 }], 11), 'Jan-Nov');
+  assert.equal(s.periodLabel([{ month: 3 }, { month: 6 }], 8), 'Mar-Aug');
+  assert.equal(s.periodLabel([{ month: 11 }], 11), 'Nov total');
+  assert.equal(s.periodLabel([], 11), 'Total');
+});

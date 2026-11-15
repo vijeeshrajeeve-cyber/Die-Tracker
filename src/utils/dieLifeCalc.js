@@ -110,3 +110,20 @@ export function calculatedFor({ readOnly, row, counts }) {
   if (readOnly && row && row.calculated) return row.calculated;
   return calcDieLife([counts]);
 }
+
+const sameValue = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(Number(a) - Number(b)) < 1e-9);
+
+// One count cell beside a calculated figure. The value is the paired sum the
+// figure was worked out from, so the counts always divide to it. The star says
+// some typed count was left out of the calculation because its partner was
+// blank. Dies unloaded left blank is not half a pair (it counts as nothing
+// failed), so it is a plain blank. A count typed but never paired is a blank
+// with a star. The supplier report PDF keeps its own copy of this rule
+// (server/services/supplierReportPdf.cjs); keep the two in step.
+export function pairedCell(field, paired, totals) {
+  const total = totals ? totals[field] : null;
+  const value = paired && paired[field] != null ? paired[field] : null;
+  if (field === 'diesFailed' && total == null) return { value: null, star: false };
+  if (value == null) return { value: null, star: total != null };
+  return { value, star: !sameValue(total, value) };
+}

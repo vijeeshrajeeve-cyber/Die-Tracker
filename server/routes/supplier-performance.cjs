@@ -84,9 +84,12 @@ async function buildReport({ supplier, year, month, frequency }) {
     const dieMonths = [];
     for (let i = 1; i <= data.MONTHS.indexOf(month) + 1; i += 1) dieMonths.push(i);
     const dieLifeRows = await dieLife.getDieLifeRows(pool, { supplier, year, months: dieMonths });
-    // The Period row of that table, from the raw rows (not the monthly totals),
-    // so it pairs per plant exactly as the score does.
+    // The total row of that table, from the raw rows (not the monthly totals),
+    // so it pairs per plant. It covers January to the report month, which is
+    // wider than the score's period for a Monthly or Quarterly report, so the
+    // row is labelled with its months rather than "Period".
     const dieLifePeriod = await dieLife.getDieLifeForPeriod(pool, { supplier, year, months: dieMonths });
+    const dieLifePeriodLabel = dieLife.periodLabel(dieLifeRows, dieMonths.length);
 
     // The same supplier one period back, for the movement line on each metric
     // card. Never another supplier: this document goes to the one it names.
@@ -100,7 +103,7 @@ async function buildReport({ supplier, year, month, frequency }) {
     return {
         supplier,
         period: { from, to, frequency, year, month },
-        metrics, snapshot, scores, trend, dieLifeRows, dieLifePeriod,
+        metrics, snapshot, scores, trend, dieLifeRows, dieLifePeriod, dieLifePeriodLabel,
         previous: { label: prev.label, from: prev.from, to: prev.to, snapshot: previousSnapshot },
         rating: overall ? { ...overall, band: model.ratingBand(overall.score) } : null,
     };

@@ -415,7 +415,7 @@ test('the Period row prints the server period figure from paired counts, not a r
     dieLifeRows: [{ month: 8, ...aggregateDieLife(rows) }],
     dieLifePeriod: aggregateDieLife(rows) };
   const m = await matrixText(report);
-  assert.match(m, /Period\s+300\*\s+5\s+60\.0/);
+  assert.match(m, /Aug total\s+300\*\s+5\s+60\.0/);
   assert.ok(!/160\.0/.test(m));
 });
 
@@ -437,4 +437,28 @@ test('trial counts are the paired counts the ratio used', async () => {
     trialTotals: { newDiesReceived: 3, newDieTrials: 5, backupDiesReceived: null, backupDieTrials: null } } };
   const pages = await textOf(await generateSupplierReportPdf(report, {}));
   assert.match(pages[0], /New dies: 1\.67 \(5 trials on 3 dies\)/);
+});
+
+test('the total row is labelled with its months, not "Period"', async () => {
+  const m = await matrixText(baseReport);
+  assert.match(m, /Jun-Aug\s+2000/);
+  assert.ok(!/Period/.test(m));
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5 };
+  const one = await matrixText({ ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) });
+  assert.match(one, /Aug total/);
+});
+
+test('dies unloaded left blank prints a dash with no star and no footnote', async () => {
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5, diesInService: 10 };
+  const m = await matrixText({ ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) });
+  assert.match(m, /Aug\s+500\s+5\s+100\.0\s+10\s+-\s+0\.0%/);
+  assert.ok(!/0\*/.test(m));
+  assert.ok(!/Some figures were entered/.test(m));
+});
+
+test('a count typed but never paired prints a dash with a star and is footnoted', async () => {
+  const c8 = { ...NONE, tonnageMt: 500 };
+  const m = await matrixText({ ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) });
+  assert.match(m, /Aug\s+-\*\s+-\s+-/);
+  assert.match(m, /\* Some figures were entered without their matching count/);
 });

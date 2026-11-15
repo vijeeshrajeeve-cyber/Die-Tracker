@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { calcDieLife, formatDieLife, rowErrors, calculatedFor, supplierKey } from './dieLifeCalc.js';
+import { calcDieLife, formatDieLife, rowErrors, calculatedFor, supplierKey, pairedCell } from './dieLifeCalc.js';
 
 const require = createRequire(import.meta.url);
 const server = require('../../server/services/supplierDieLife.cjs');
@@ -75,4 +75,33 @@ test('calculatedFor: All plants uses the server figures, one plant calculates li
 test('supplierKey ignores case and surrounding spaces', () => {
   assert.equal(supplierKey(' wefa '), supplierKey('WEFA'));
   assert.equal(supplierKey(null), '');
+});
+
+test('pairedCell shows the paired sum and stars it only when the per-field total differs', () => {
+  // Plant A: 500 MT, scrapped blank. Plant B: 300 MT, 5 scrapped.
+  const c = calcDieLife([row({ tonnageMt: 500 }), row({ tonnageMt: 300, diesScrapped: 5 })]);
+  assert.deepEqual(pairedCell('tonnageMt', c.paired, c.totals), { value: 300, star: true });
+  assert.deepEqual(pairedCell('diesScrapped', c.paired, c.totals), { value: 5, star: false });
+});
+
+test('pairedCell: dies unloaded left blank is a blank with no star', () => {
+  const c = calcDieLife([row({ diesInService: 10 })]);
+  assert.deepEqual(pairedCell('diesInService', c.paired, c.totals), { value: 10, star: false });
+  assert.deepEqual(pairedCell('diesFailed', c.paired, c.totals), { value: null, star: false });
+});
+
+test('pairedCell: a typed zero for dies unloaded is a real zero, not starred', () => {
+  const c = calcDieLife([row({ diesInService: 10, diesFailed: 0 })]);
+  assert.deepEqual(pairedCell('diesFailed', c.paired, c.totals), { value: 0, star: false });
+});
+
+test('pairedCell: a count typed but never paired is a blank with a star', () => {
+  const c = calcDieLife([row({ tonnageMt: 100 })]);
+  assert.deepEqual(pairedCell('tonnageMt', c.paired, c.totals), { value: null, star: true });
+});
+
+test('pairedCell: nothing typed is a blank with no star', () => {
+  const c = calcDieLife([row({})]);
+  assert.deepEqual(pairedCell('tonnageMt', c.paired, c.totals), { value: null, star: false });
+  assert.deepEqual(pairedCell('tonnageMt', undefined, undefined), { value: null, star: false });
 });

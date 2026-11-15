@@ -276,6 +276,19 @@ async function saveDieLife(pool, { year, month, plant, entries }, userId) {
   return listDieLife(pool, { year: y, month: m, plant: plantName });
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// The label for the matrix's total row: the span it sums, from the first month
+// with a row to the report month ("Jan-Nov"). A single month reads "Nov total".
+function periodLabel(rows, throughMonth) {
+  const months = (rows || []).map((r) => Number(r.month)).filter((m) => m >= 1 && m <= 12);
+  if (!months.length) return 'Total';
+  const first = Math.min(...months);
+  const last = Number(throughMonth) >= first ? Number(throughMonth) : Math.max(...months);
+  if (first === last) return `${SHORT_MONTHS[first - 1]} total`;
+  return `${SHORT_MONTHS[first - 1]}-${SHORT_MONTHS[last - 1]}`;
+}
+
 // Only an old plant-less row can be removed this way; a figure that belongs to
 // a plant is cleared from the grid.
 async function deleteLegacyRow(pool, id) {
@@ -316,5 +329,5 @@ async function getDieLifeForPeriod(pool, { supplier, year, months }) {
 
 module.exports = {
   validateEntry, aggregateDieLife, num,
-  listDieLife, saveDieLife, deleteLegacyRow, getDieLifeRows, getDieLifeForPeriod,
+  listDieLife, saveDieLife, deleteLegacyRow, periodLabel, getDieLifeRows, getDieLifeForPeriod,
 };

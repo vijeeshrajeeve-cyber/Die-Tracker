@@ -14,7 +14,7 @@
 // a certification record with fixed coordinates, this is a report that may
 // reflow freely. The constants below are layout, not contract.
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
-const { aggregateDieLife } = require('./supplierDieLife.cjs');
+const { aggregateDieLife, periodLabel } = require('./supplierDieLife.cjs');
 
 const PAGE_W = 595.28; // A4 portrait
 const PAGE_H = 841.89;
@@ -348,15 +348,25 @@ const lifeCell = (calc) => (calc.noDiesScrapped ? 'no dies scrapped' : (calc.die
 const failureCell = (calc) => (calc.dieFailure == null ? '-' : `${calc.dieFailure.toFixed(1)}%`);
 
 // The count cells are the paired sums the figure beside them was calculated
-// from, so every row divides. When a per-field total differs (some plant typed
-// half a pair) the count is starred and the footnote explains.
+// from, so every row divides. A star marks a count where some plant typed half
+// a pair. Dies unloaded left blank is a plain dash (it is not half a pair); a
+// count typed but never paired is a dash with a star. This is the server copy
+// of pairedCell in src/utils/dieLifeCalc.js; keep the two in step.
 const PAIRED_FIELDS = ['tonnageMt', 'diesScrapped', 'diesInService', 'diesFailed'];
 const same = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(Number(a) - Number(b)) < 1e-9);
-const starred = (calc, f) => !same((calc.totals || {})[f], (calc.paired || {})[f]);
+function pairedCell(calc, f) {
+  const total = (calc.totals || {})[f];
+  const value = (calc.paired || {})[f];
+  if (f === 'diesFailed' && total == null) return { value: null, star: false };
+  if (value == null) return { value: null, star: total != null };
+  return { value, star: !same(total, value) };
+}
 
 function matrixCells(label, calc) {
-  const p = calc.paired || {};
-  const cell = (f) => (p[f] == null ? '-' : countCell(p[f]) + (starred(calc, f) ? '*' : ''));
+  const cell = (f) => {
+    const c = pairedCell(calc, f);
+    return countCell(c.value) + (c.star ? '*' : '');
+  };
   return [label, cell('tonnageMt'), cell('diesScrapped'), lifeCell(calc),
     cell('diesInService'), cell('diesFailed'), failureCell(calc)];
 }
@@ -391,14 +401,18 @@ function drawMatrix(page, report, y, { bold, font }) {
     y -= 17;
   }
 
-  // The server's period aggregate, taken from the raw rows so it pairs per
-  // plant exactly as the score does. Re-adding the monthly totals here would
-  // re-pair at month level and could print a figure that disagrees with page 1.
+  // The server's total over the same months as the rows above (January to the
+  // report month), taken from the raw rows so it pairs per plant. Re-adding the
+  // monthly totals here would re-pair at month level. For a Monthly or
+  // Quarterly report this spans more than the score's period, so the row is
+  // labelled with its months.
   const period = report.dieLifePeriod || aggregateDieLife([]);
+  const through = MONTH_NAMES.indexOf(report.period && report.period.month) + 1;
+  const label = report.dieLifePeriodLabel || periodLabel(rows, through);
   rule(page, y + 6, { thickness: 1.1 });
   y -= 6;
-  tableRow(page, matrixCells('Period', period), cols, { y, font: bold, size: 9 });
-  const anyStar = [period, ...rows].some((c) => PAIRED_FIELDS.some((f) => c.paired && c.paired[f] != null && starred(c, f)));
+  tableRow(page, matrixCells(label, period), cols, { y, font: bold, size: 9 });
+  const anyStar = [period, ...rows].some((c) => PAIRED_FIELDS.some((f) => pairedCell(c, f).star));
 
   y -= 20;
   text(page, 'Figures entered monthly, all plants combined. Die life and failure % are calculated from the counts, never entered directly.',
