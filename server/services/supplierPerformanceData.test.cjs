@@ -115,13 +115,15 @@ test('getSnapshot returns null die life when nothing was entered', async () => {
 
 test('getSnapshot takes the trial ratios from the typed die life counts, not from the orders', async () => {
   const pool = makePool([
-    [/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '40', trial_ratio: '9' }]],
+    [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '40', trial_ratio: '9' }]],
     [/FROM supplier_die_life/, [
       { month: 4, plant: 'GEX 01', new_dies_received: 2, new_die_trials: 3, backup_dies_received: 2, backup_die_trials: 2 },
       { month: 4, plant: 'GEX 02', new_dies_received: 2, new_die_trials: 2 },
     ]],
   ]);
   const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-04-30' });
+  assert.equal(out.ordersPlaced, 40, 'the orders rule really matched');
+  assert.notEqual(out.trialRatio, 9, 'not the decoy served by the orders rule');
   assert.equal(out.newTrialRatio, 5 / 4);
   assert.equal(out.backupTrialRatio, 1);
   assert.equal(out.trialRatio, 7 / 6, 'pooled (3+2+2) over (2+2+2)');
@@ -131,7 +133,7 @@ test('getSnapshot takes the trial ratios from the typed die life counts, not fro
 
 test('getSnapshot trialTotals are the paired counts: received typed without trials is left out', async () => {
   const pool = makePool([
-    [/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '1' }]],
+    [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '1' }]],
     [/FROM supplier_die_life/, [
       { month: 4, plant: 'GEX 01', new_dies_received: 3, new_die_trials: 5 },
       { month: 4, plant: 'GEX 02', new_dies_received: 9 },
@@ -144,7 +146,7 @@ test('getSnapshot trialTotals are the paired counts: received typed without tria
 });
 
 test('getSnapshot leaves the trial ratios null when no counts were typed', async () => {
-  const pool = makePool([[/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '40' }]]]);
+  const pool = makePool([[/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '40' }]]]);
   const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-05-31' });
   assert.equal(out.trialRatio, null); assert.equal(out.newTrialRatio, null); assert.equal(out.backupTrialRatio, null);
 });

@@ -189,9 +189,7 @@ ALMAX       [ 150 ]  [ 0 ]     no dies scrapped  ...
   counts when both new dies received and new die trials are recorded; its
   backup pair likewise. A row with only one pair recorded still contributes
   that pair to the scored ratio.
-- **Plant rename and delete.** The plant is stored by name. Renaming a plant in
-  Settings renames it on the die life rows in the same transaction. Deleting a
-  plant that has die life rows is refused with a message saying so.
+- **Plant rename and delete.** The plant is stored by name. The app has no plant rename, so no rename rule is needed. Deleting a plant that has die life rows is refused with a message saying so.
 - **Uniqueness.** A unique index on `(upper(btrim(supplier)), plant, year,
   month)` for rows with a plant. The old inline `UNIQUE (supplier, year, month)`
   constraint is dropped by looking its name up, not by assuming it. Legacy rows

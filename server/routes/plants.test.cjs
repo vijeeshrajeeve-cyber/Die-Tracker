@@ -18,8 +18,6 @@ installFakeDb(async (sql, params = []) => {
   if (/^SELECT \* FROM plants WHERE id = \$1/.test(q)) return { rows: plants.filter((p) => p.id === Number(params[0])) };
   if (/^SELECT id FROM plants WHERE name = \$1/.test(q)) return { rows: plants.filter((p) => p.name === params[0] && p.id !== Number(params[1] || 0)) };
   if (/^SELECT 1 FROM supplier_die_life WHERE plant = \$1/.test(q)) return { rows: dieLifeRows ? [{ '?column?': 1 }] : [] };
-  if (/^UPDATE plants SET name/.test(q)) return { rows: [{ id: Number(params[1]), name: params[0] }] };
-  if (/^UPDATE supplier_die_life SET plant/.test(q)) return { rows: [] };
   if (/^DELETE FROM plants/.test(q)) return { rows: [] };
   throw new Error(`plants test: unexpected query ${q}`);
 });
@@ -58,27 +56,12 @@ test('a plant with no die life figures is deleted', async () => {
   assert.deepEqual(log.find((l) => /FROM supplier_die_life WHERE plant/.test(l.q)).params, ['GEX 01']);
 });
 
-test('renaming a plant moves its die life figures in the same transaction', async () => {
-  const { status, body } = await call('/1', { method: 'PUT', body: { name: ' gex 03 ' } });
-  assert.equal(status, 200);
-  assert.equal(body.name, 'GEX 03');
-  const qs = log.map((l) => l.q);
-  const ix = (re) => qs.findIndex((q) => re.test(q));
-  assert.ok(ix(/^BEGIN$/) < ix(/^UPDATE plants SET name/));
-  assert.ok(ix(/^UPDATE plants SET name/) < ix(/^UPDATE supplier_die_life SET plant/));
-  assert.ok(ix(/^UPDATE supplier_die_life SET plant/) < ix(/^COMMIT$/));
-  assert.deepEqual(log[ix(/^UPDATE supplier_die_life SET plant/)].params, ['GEX 03', 'GEX 01']);
-});
-
-test('a rename to an existing name or a blank name is refused and changes nothing', async () => {
-  assert.equal((await call('/1', { method: 'PUT', body: { name: 'gex 02' } })).status, 400);
-  assert.equal((await call('/1', { method: 'PUT', body: { name: '  ' } })).status, 400);
-  assert.equal((await call('/99', { method: 'PUT', body: { name: 'X' } })).status, 404);
-  assert.ok(!log.some((l) => /^UPDATE/.test(l.q)));
-});
-
-test('only an admin can rename or delete a plant', async () => {
+test('only an admin can delete a plant', async () => {
   currentUser = { id: 5, username: 'planner', role: 'user' };
-  assert.equal((await call('/1', { method: 'PUT', body: { name: 'X' } })).status, 403);
   assert.equal((await call('/1', { method: 'DELETE' })).status, 403);
+});
+
+test('there is no plant rename route', () => {
+  const methods = require('./plants.cjs').stack.filter((l) => l.route).flatMap((l) => Object.keys(l.route.methods));
+  assert.ok(!methods.includes('put'));
 });

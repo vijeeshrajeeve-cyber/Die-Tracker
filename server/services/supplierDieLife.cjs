@@ -233,7 +233,16 @@ async function saveDieLife(pool, { year, month, plant, entries }, userId) {
   const known = await pool.query('SELECT 1 FROM plants WHERE name = $1', [plantName]);
   if (!known.rows.length) throw fail(400, 'Choose a plant to save figures for');
 
-  const clean = (entries || []).map(validateEntry);
+  // The grid shows one plant at a time, but the message may be read away from
+  // it, so it names the plant as well as the supplier.
+  const clean = (entries || []).map((e) => {
+    try {
+      return validateEntry(e);
+    } catch (err) {
+      if (err && err.status === 400) err.message = `${plantName} - ${err.message}`;
+      throw err;
+    }
+  });
 
   const client = await pool.connect();
   try {

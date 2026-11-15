@@ -1262,7 +1262,8 @@ const initializeDatabase = async () => {
       ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS backup_dies_received INTEGER;
       ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS backup_die_trials INTEGER;
       -- One row per supplier, plant, year and month. The old inline
-      -- UNIQUE (supplier, year, month) is dropped by looking its name up. Rows with
+      -- UNIQUE (supplier, year, month) is dropped by looking its name up, matched on
+      -- exactly those three columns so a unique constraint added later is never dropped. Rows with
       -- no plant are legacy and unconstrained. Collisions that differ only in
       -- supplier case keep the latest updated_at so the index can never fail boot.
       DO $$
@@ -1271,6 +1272,10 @@ const initializeDatabase = async () => {
         FOR c IN
           SELECT conname FROM pg_constraint
            WHERE conrelid = 'supplier_die_life'::regclass AND contype = 'u'
+             AND (SELECT array_agg(a.attname::text ORDER BY a.attname)
+                    FROM pg_attribute a
+                   WHERE a.attrelid = conrelid AND a.attnum = ANY(conkey))
+                 = ARRAY['month', 'supplier', 'year']
         LOOP
           EXECUTE format('ALTER TABLE supplier_die_life DROP CONSTRAINT %I', c);
         END LOOP;

@@ -43,39 +43,6 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     }
 });
 
-// Rename a plant (admin only). Die life figures are stored under the plant's
-// name, so they move with it in the same transaction; a half-renamed plant
-// would strand its figures under a name the plants list no longer has.
-router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
-    let client;
-    try {
-        const { id } = req.params;
-        const name = String((req.body && req.body.name) || '').trim().toUpperCase();
-        if (!name) return res.status(400).json({ error: 'Plant name is required' });
-
-        const existing = await pool.query('SELECT * FROM plants WHERE id = $1', [id]);
-        if (existing.rows.length === 0) return res.status(404).json({ error: 'Plant not found' });
-        const oldName = existing.rows[0].name;
-        if (name === oldName) return res.json(existing.rows[0]);
-
-        const clash = await pool.query('SELECT id FROM plants WHERE name = $1 AND id <> $2', [name, id]);
-        if (clash.rows.length > 0) return res.status(400).json({ error: 'Plant already exists' });
-
-        client = await pool.connect();
-        await client.query('BEGIN');
-        const updated = await client.query('UPDATE plants SET name = $1 WHERE id = $2 RETURNING *', [name, id]);
-        await client.query('UPDATE supplier_die_life SET plant = $1 WHERE plant = $2', [name, oldName]);
-        await client.query('COMMIT');
-        res.json(updated.rows[0]);
-    } catch (error) {
-        if (client) await client.query('ROLLBACK').catch(() => {});
-        console.error('Error renaming plant:', error);
-        res.status(500).json({ error: 'Failed to rename plant' });
-    } finally {
-        if (client) client.release();
-    }
-});
-
 // Delete plant (admin only)
 router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     try {

@@ -140,6 +140,13 @@ test('saveDieLife validates every entry before writing anything', async () => {
   assert.equal(writes(pool).length, 0, 'a bad row must not leave a good row half-written');
 });
 
+test('saveDieLife names the plant as well as the supplier in a validation error', async () => {
+  const pool = makePool([PLANTS]);
+  await assert.rejects(() => save(pool, { entries: [
+    { supplier: 'WEFA', diesInService: 3, diesFailed: 4 },
+  ] }), (e) => e.status === 400 && e.message === 'GEX 01 - WEFA: more dies unloaded (4) than dies run (3)');
+});
+
 test('saveDieLife upserts on the plant-month unique index inside a transaction', async () => {
   const pool = makePool([PLANTS]);
   await save(pool);
@@ -249,6 +256,19 @@ test('aggregateDieLife returns the paired sums the ratios actually used', () => 
 test('aggregateDieLife paired sums are null when no row qualified', () => {
   const out = s.aggregateDieLife([]);
   for (const v of Object.values(out.paired)) assert.equal(v, null);
+});
+
+test('the migration drops only the unique constraint on exactly supplier, year, month', () => {
+  const fs = require('fs');
+  const path = require('path');
+  for (const file of ['server/db.cjs', 'init.sql']) {
+    const text = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
+    const start = text.indexOf("conrelid = 'supplier_die_life'::regclass");
+    assert.ok(start > 0, `${file}: loop found`);
+    const loop = text.slice(start, text.indexOf('END $$', start));
+    assert.match(loop, /conkey/, `${file}: matches on the constraint's columns`);
+    for (const col of ['supplier', 'year', 'month']) assert.match(loop, new RegExp(`'${col}'`), `${file}: names ${col}`);
+  }
 });
 
 test('periodLabel names the span from the first month with a row to the report month', () => {
