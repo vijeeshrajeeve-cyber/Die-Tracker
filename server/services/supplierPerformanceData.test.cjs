@@ -126,6 +126,7 @@ test('getSnapshot takes the trial ratios from the typed die life counts, not fro
   assert.equal(out.backupTrialRatio, 1);
   assert.equal(out.trialRatio, 7 / 6, 'pooled (3+2+2) over (2+2+2)');
   assert.ok(!pool.calls.some((c) => /no_of_trial|supplier_trial_ratio_corrections/.test(c.sql)));
+  assert.deepEqual(out.trialTotals, { newDiesReceived: 4, newDieTrials: 5, backupDiesReceived: 2, backupDieTrials: 2 });
 });
 
 test('getSnapshot leaves the trial ratios null when no counts were typed', async () => {

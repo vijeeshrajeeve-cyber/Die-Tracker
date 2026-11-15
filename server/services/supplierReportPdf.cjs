@@ -14,6 +14,7 @@
 // a certification record with fixed coordinates, this is a report that may
 // reflow freely. The constants below are layout, not contract.
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { aggregateDieLife } = require('./supplierDieLife.cjs');
 
 const PAGE_W = 595.28; // A4 portrait
 const PAGE_H = 841.89;
@@ -186,8 +187,25 @@ function movementLine(m, value, previousValue, label) {
   return `${fmt(size, m.decimals)}${unit} ${improved ? 'better' : 'worse'} than ${label} (${fmt(previousValue, m.decimals)}${unit})`;
 }
 
+// "New dies: 1.67 (5 trials on 3 dies)". A ratio that was not calculated reads
+// "not recorded", never 0.
+function trialLine(label, ratio, trials, dies) {
+  if (ratio == null) return `${label}: not recorded`;
+  const counts = trials != null && dies != null ? ` (${trials} trials on ${dies} dies)` : '';
+  return `${label}: ${Number(ratio).toFixed(2)}${counts}`;
+}
+
+function trialLines(snapshot) {
+  const s = snapshot || {};
+  const t = s.trialTotals || {};
+  return [
+    trialLine('New dies', s.newTrialRatio, t.newDieTrials, t.newDiesReceived),
+    trialLine('Backup dies', s.backupTrialRatio, t.backupDieTrials, t.backupDiesReceived),
+  ];
+}
+
 function drawMetricCard(page, m, ctx, { x, y, w, h }, { bold, font }) {
-  const { value, score, previousValue, previousLabel } = ctx;
+  const { value, score, previousValue, previousLabel, trial } = ctx;
   const top = y + h;
 
   page.drawRectangle({ x, y, width: w, height: h, borderColor: RULE, borderWidth: 0.6 });
@@ -240,6 +258,10 @@ function drawMetricCard(page, m, ctx, { x, y, w, h }, { bold, font }) {
     page.drawRectangle({ x: x + 12, y: top - 70, width: barW * (score / 10), height: 3, color: hexColor(scoreBandColor(score)) });
   }
 
+  if (trial) {
+    trial.forEach((line, i) => text(page, line, { x: x + 12, y: top - 80 - i * 8, size: 5.9, font, color: MUTED }));
+  }
+
   const move = movementLine(m, value, previousValue, previousLabel);
   if (move) {
     rule(page, y + 15, { x: x + 12, w: w - 24 });
@@ -256,7 +278,7 @@ function drawMetricCards(page, report, y, { bold, font }) {
 
   const GAP = 11;
   const cardW = (CONTENT_W - GAP * 2) / 3;
-  const cardH = 97;
+  const cardH = 108;
   const prev = (report.previous && report.previous.snapshot) || {};
   const prevLabel = report.previous && report.previous.label;
 
@@ -269,6 +291,7 @@ function drawMetricCards(page, report, y, { bold, font }) {
       score: report.scores ? report.scores[m.key] : null,
       previousValue: prev[m.key],
       previousLabel: prevLabel,
+      trial: m.key === 'trialRatio' ? trialLines(report.snapshot) : null,
     }, {
       x: MARGIN + col * (cardW + GAP),
       y: y - cardH - row * (cardH + GAP),
@@ -314,68 +337,70 @@ function drawSignOff(page, y, preparedBy, { bold, font }) {
   return y - 26;
 }
 
-// The counts sit beside the percentage on purpose: a supplier who disputes a
-// failure rate can be shown the two numbers it came from.
+// Counts and the figures calculated from them, one row per month, all plants
+// combined. The counts sit beside the percentage on purpose: a supplier who
+// disputes a failure rate can be shown the numbers it came from.
+//
+// A figure nobody entered prints "-", never 0. A month with tonnage but no dies
+// scrapped has no die life to print and says so.
+const countCell = (v) => (v == null ? '-' : String(Math.round(Number(v) * 100) / 100));
+const lifeCell = (calc) => (calc.noDiesScrapped ? 'no dies scrapped' : (calc.dieLife == null ? '-' : calc.dieLife.toFixed(1)));
+const failureCell = (calc) => (calc.dieFailure == null ? '-' : `${calc.dieFailure.toFixed(1)}%`);
+
+function matrixCells(label, totals, calc) {
+  const t = totals || {};
+  return [
+    label,
+    countCell(t.tonnageMt),
+    countCell(t.diesScrapped),
+    lifeCell(calc),
+    countCell(t.diesInService),
+    countCell(t.diesFailed),
+    failureCell(calc),
+  ];
+}
+
 function drawMatrix(page, report, y, { bold, font }) {
   const rows = report.dieLifeRows || [];
   if (!rows.length) return y;
 
+  // Seven columns on a 499pt measure: narrow figure columns, and the headers
+  // set a size down so "Dies unloaded" does not run into its neighbour.
   const cols = [
-    { x: MARGIN, w: 90, align: 'left' },
-    { x: MARGIN + 95, w: 100, align: 'right' },
-    { x: MARGIN + 200, w: 95, align: 'right' },
-    { x: MARGIN + 300, w: 90, align: 'right' },
-    { x: MARGIN + 395, w: 104, align: 'right' },
+    { x: MARGIN, w: 36, align: 'left' },
+    { x: MARGIN + 40, w: 62, align: 'right' },
+    { x: MARGIN + 106, w: 62, align: 'right' },
+    { x: MARGIN + 172, w: 100, align: 'right' },
+    { x: MARGIN + 276, w: 56, align: 'right' },
+    { x: MARGIN + 336, w: 70, align: 'right' },
+    { x: MARGIN + 410, w: 62, align: 'right' },
   ];
 
   text(page, 'DIE LIFE & FAILURE', { x: MARGIN, y, size: 8.5, font: bold, color: MUTED });
   y -= 14;
-  tableRow(page, ['Month', 'Avg Die Life (MT)', 'Dies Extruded', 'Dies Failed', 'Failure %'], cols,
-    { y, font: bold, color: MUTED, size: 8.5 });
+  tableRow(page, ['Month', 'Tonnage (MT)', 'Dies scrapped', 'Die life (MT)', 'Dies run', 'Dies unloaded', 'Failure %'], cols,
+    { y, font: bold, color: MUTED, size: 7.6 });
   y -= 6;
   rule(page, y);
   y -= 15;
 
-  let failed = 0, inService = 0, weighted = 0, weight = 0;
   for (const r of rows) {
-    const pct = (r.diesInService != null && r.diesInService > 0 && r.diesFailed != null)
-      ? (r.diesFailed / r.diesInService) * 100 : null;
-    tableRow(page, [
-      MONTH_NAMES[r.month - 1] || String(r.month),
-      fmt(r.avgDieLifeMt, 1) || '-',
-      r.diesInService == null ? '-' : String(r.diesInService),
-      r.diesFailed == null ? '-' : String(r.diesFailed),
-      pct == null ? '-' : `${pct.toFixed(1)}%`,
-    ], cols, { y, font, size: 9.5 });
-
-    if (r.diesInService != null) {
-      inService += r.diesInService;
-      if (r.diesFailed != null) failed += r.diesFailed;
-      if (r.avgDieLifeMt != null && r.diesInService > 0) {
-        weighted += r.avgDieLifeMt * r.diesInService;
-        weight += r.diesInService;
-      }
-    }
+    tableRow(page, matrixCells(MONTH_NAMES[r.month - 1] || String(r.month), r.totals, r), cols,
+      { y, font, size: 9 });
     y -= 17;
   }
 
-  // Weighted exactly as the server aggregates. A simple mean here would print a
-  // figure that quietly disagrees with the score on page 1.
-  const totalLife = weight > 0 ? weighted / weight : null;
-  const totalRate = inService > 0 ? (failed / inService) * 100 : null;
+  // Summed from the monthly counts exactly as the server aggregates, so this
+  // never disagrees with the score on page 1. A simple mean of the monthly
+  // ratios would.
+  const period = aggregateDieLife(rows.map((r) => r.totals || {}));
   rule(page, y + 6, { thickness: 1.1 });
   y -= 6;
-  tableRow(page, [
-    'Period',
-    fmt(totalLife, 1) || '-',
-    inService ? String(inService) : '-',
-    inService ? String(failed) : '-',
-    totalRate == null ? '-' : `${totalRate.toFixed(1)}%`,
-  ], cols, { y, font: bold, size: 9.5 });
+  tableRow(page, matrixCells('Period', period.totals, period), cols, { y, font: bold, size: 9 });
 
   y -= 20;
-  text(page, 'Figures entered monthly. Failure % is derived from the counts, never entered directly.',
-    { x: MARGIN, y, size: 8, font, color: MUTED });
+  text(page, 'Figures entered monthly, all plants combined. Die life and failure % are calculated from the counts, never entered directly.',
+    { x: MARGIN, y, size: 7.4, font, color: MUTED });
   return y - 26;
 }
 

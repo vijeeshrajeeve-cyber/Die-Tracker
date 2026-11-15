@@ -137,6 +137,13 @@ async function getSnapshot(pool, { supplier, from, to }) {
     trialRatio: die.trialRatio,
     newTrialRatio: die.newTrialRatio,
     backupTrialRatio: die.backupTrialRatio,
+    // The counts behind the trial ratios, so a supplier can be shown them.
+    trialTotals: {
+      newDiesReceived: die.totals ? die.totals.newDiesReceived : null,
+      newDieTrials: die.totals ? die.totals.newDieTrials : null,
+      backupDiesReceived: die.totals ? die.totals.backupDiesReceived : null,
+      backupDieTrials: die.totals ? die.totals.backupDieTrials : null,
+    },
     designRevisions: num(o.design_revisions),
     deliveryLeadTime: num(r.delivery_lead_time),
     // 0 QDs out of 0 dies is unknown, not a perfect 0%.
