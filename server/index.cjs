@@ -41,6 +41,7 @@ const qualityDiscrepanciesRouter = require('./routes/quality-discrepancies.cjs')
 const searchRouter = require('./routes/search.cjs');
 const signaturesRouter = require('./routes/signatures.cjs');
 const { createWorkQueueRouter } = require('./routes/work-queue.cjs');
+const designEnhancementsRouter = require('./routes/design-enhancements.cjs');
 const deliveryFollowupsRouter = require('./routes/delivery-followups.cjs');
 const { scheduleWorkQueueNotifications } = require('./services/workQueueNotifications.cjs');
 
@@ -105,6 +106,7 @@ app.use('/api/orders', authMiddleware, pageAccessMiddleware([
     'flow-completed',
     'flow-sample-followup'
 ]), ordersRouter);
+app.use('/api/design-enhancements', authMiddleware, designEnhancementsRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/plants', plantsRouter);
 app.use('/api/presses', pressesRouter);

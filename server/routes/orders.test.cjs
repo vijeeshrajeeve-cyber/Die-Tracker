@@ -13,6 +13,7 @@ let storedEta;
 let log = [];
 // While a create test runs, the follow-on queries of POST / get an empty answer.
 let createDefaults = false;
+let storedEnhancement = 0;
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   log.push({ q, params });
@@ -20,6 +21,8 @@ installFakeDb(async (sql, params = []) => {
   if (/^SELECT eta FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) {
     return { rows: storedEta === undefined ? [] : [{ eta: storedEta }] };
   }
+  if (/^SELECT design_enhancement FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: [{ design_enhancement: storedEnhancement }] };
+  if (/^INSERT INTO design_enhancements/.test(q)) return { rows: [{ id: 1 }] };
   if (/^UPDATE die_orders SET/.test(q)) return { rows: [], rowCount: storedEta === undefined ? 0 : 1 };
   if (/^INSERT INTO die_delivery_events/.test(q)) return { rows: [{ id: 1 }] };
   if (/^INSERT INTO order_changes/.test(q)) return { rows: [] };
@@ -45,7 +48,7 @@ let base;
 let close;
 test.before(async () => { ({ base, close } = await listen(app)); });
 test.after(() => close());
-test.beforeEach(() => { createDefaults = false; log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
+test.beforeEach(() => { storedEnhancement = 0; createDefaults = false; log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
 
 const kinds = () => log.map(({ q }) => q.split(/\s+/).slice(0, 3).join(' '));
 const events = () => log.filter(({ q }) => q.startsWith('INSERT INTO die_delivery_events'));
@@ -152,4 +155,72 @@ test('an unrecognised insert number still creates the order and records an unkno
   assert.ok(linkInsert.params.includes('BOL-12345'));
   assert.ok(linkInsert.params.includes('old'));
   assert.ok(log.some(({ q, params }) => /^DELETE FROM die_tooling_links WHERE source = 'order-pdf' AND die_no = \$1/.test(q) && params[0] === '30725-201'));
+});
+
+const put = (body) => request(base, '/api/orders/7', { method: 'PUT', body });
+const create = (body) => request(base, '/api/orders', { method: 'POST', body });
+const NO_SIM = 'Simulation is required on a Design enhancement order';
+
+test('PATCH refuses to switch simulation off on a Design enhancement order', async () => {
+  storedEnhancement = 1;
+  const { status, body } = await patch({ simulationEnabled: false });
+  assert.equal(status, 400);
+  assert.equal(body.error, NO_SIM);
+  assert.ok(!log.some(({ q }) => q.startsWith('UPDATE die_orders')));
+  assert.ok(log.some(({ q }) => q === 'ROLLBACK'));
+});
+
+test('PATCH switches simulation on, or off for an ordinary order', async () => {
+  storedEnhancement = 1;
+  assert.equal((await patch({ simulationEnabled: true })).status, 200);
+  storedEnhancement = 0;
+  assert.equal((await patch({ simulationEnabled: false })).status, 200);
+});
+
+test('PUT refuses to switch simulation off on a Design enhancement order', async () => {
+  storedEnhancement = 1;
+  const { status, body } = await put({ 'DIE NO': 'X1', simulationEnabled: false });
+  assert.equal(status, 400);
+  assert.equal(body.error, NO_SIM);
+});
+
+const ENHANCEMENT = {
+  current_issue: 'Early wear', baseline_failure_pct: 10, baseline_productivity_kgh: 800,
+  baseline_recovery_pct: 70, target_productivity_kgh: 900, target_recovery_pct: 75,
+};
+
+test('creating an order with an enhancement inserts both in one transaction', async () => {
+  const { status } = await create({ 'DIE NO': 'X1', STATUS: 'AWAITING FOR DESIGN', enhancement: ENHANCEMENT });
+  assert.equal(status, 201);
+  const insertOrder = log.find(({ q }) => q.startsWith('INSERT INTO die_orders'));
+  assert.match(insertOrder.q, /design_enhancement/);
+  const enh = log.find(({ q }) => q.startsWith('INSERT INTO design_enhancements'));
+  assert.equal(enh.params[0], 501);
+  assert.equal(enh.params[1], 'Early wear');
+  const order = kinds();
+  assert.equal(order[0], 'BEGIN');
+  assert.ok(order.indexOf('COMMIT') > order.indexOf('INSERT INTO design_enhancements'));
+  // AWAITING FOR DESIGN: simulation is switched on.
+  assert.equal(insertOrder.params[12], 1);
+  assert.ok(log.some(({ q }) => q.startsWith('INSERT INTO order_changes')));
+});
+
+test('an enhancement on a new order is validated before anything is written', async () => {
+  const { status, body } = await create({ 'DIE NO': 'X1', enhancement: { ...ENHANCEMENT, current_issue: '' } });
+  assert.equal(status, 400);
+  assert.equal(body.error, 'current_issue is required');
+  assert.equal(log.length, 0);
+});
+
+test('someone without the edit switch cannot create an order as an enhancement', async () => {
+  currentUser = { id: 9, username: 'viewer', role: 'user', canEditOrderDetails: false };
+  const { status } = await create({ 'DIE NO': 'X1', enhancement: ENHANCEMENT });
+  assert.equal(status, 403);
+  assert.equal(log.length, 0);
+});
+
+test('an order created without an enhancement is unchanged', async () => {
+  const { status } = await create({ 'DIE NO': 'X1', STATUS: 'AWAITING FOR DESIGN' });
+  assert.equal(status, 201);
+  assert.ok(!log.some(({ q }) => q.startsWith('INSERT INTO design_enhancements')));
 });

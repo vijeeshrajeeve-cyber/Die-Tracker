@@ -27,3 +27,9 @@ test('a skipped simulation is presented with its date, reason and who', () => {
   assert.equal(out['Simulation Skipped By'], 'eng');
   assert.equal(presentOrder({})['Simulation Skipped Date'], null);
 });
+
+test('an order says whether it is a Design enhancement', () => {
+  assert.equal(presentOrder({ design_enhancement: 1 }).designEnhancement, true);
+  assert.equal(presentOrder({ design_enhancement: 0 }).designEnhancement, false);
+  assert.equal(presentOrder({}).designEnhancement, false);
+});

@@ -167,6 +167,12 @@ function displayValue(field, value) {
   return value === null || value === undefined ? null : String(value);
 }
 
+// A Design enhancement order always goes through Simulation.
+const SIMULATION_REQUIRED = 'Simulation is required on a Design enhancement order';
+function assertSimulationAllowed(designEnhancement, simulationEnabled) {
+  if (designEnhancement && !simulationEnabled) throw new OrderEditError(SIMULATION_REQUIRED, 'SIMULATION_REQUIRED');
+}
+
 function validateReason(reason) {
   const text = textOf(reason);
   if (text.length > REASON_MAX) {
@@ -192,5 +198,5 @@ function columnValue(field, value) {
 module.exports = {
   EDITABLE_FIELDS, STATUSES, REASON_MAX, OrderEditError,
   canonical, planChanges, changeNeedsReason, needsReason, displayValue,
-  validateReason, canEditOrderDetails, fromRow, columnValue,
+  validateReason, canEditOrderDetails, fromRow, columnValue, assertSimulationAllowed,
 };

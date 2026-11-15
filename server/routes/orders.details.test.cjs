@@ -176,3 +176,17 @@ test('a status move forward leaves the skip alone', async () => {
   assert.equal(status, 200);
   assert.doesNotMatch(queries('UPDATE die_orders')[0].q, /simulation_skipped/);
 });
+
+test('simulation cannot be switched off on a Design enhancement order', async () => {
+  stored = { ...stored, simulation_enabled: 1, design_enhancement: 1 };
+  const { status, body } = await save({ fields: { simulationEnabled: false } });
+  assert.equal(status, 400);
+  assert.equal(body.error, 'Simulation is required on a Design enhancement order');
+  assert.equal(queries('UPDATE die_orders').length, 0);
+});
+
+test('simulation can still be switched off on an ordinary order', async () => {
+  stored = { ...stored, simulation_enabled: 1, design_enhancement: 0 };
+  const { status } = await save({ fields: { simulationEnabled: false }, reason: 'Not needed' });
+  assert.equal(status, 200);
+});
