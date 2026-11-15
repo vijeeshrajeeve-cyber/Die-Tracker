@@ -182,6 +182,14 @@ const targetsOf = (row, withFailure) => ({
   recovery: num(row.target_recovery_pct),
 });
 
+// Trial-stage suggestion. A Rejected sample with no OK trial has nothing to
+// measure but did not work, so it is suggested "Not achieved".
+function trialSuggestion(order, row, latest) {
+  const actuals = { failure: null, productivity: latest ? num(latest.productivity_kgh) : null, recovery: latest ? num(latest.recovery_pct) : null };
+  if (!latest && order.sample_status === 'Rejected') return { suggested: 'Not achieved', actuals };
+  return { suggested: suggestVerdict({ targets: targetsOf(row, false), actuals }), actuals };
+}
+
 async function updateColumns(client, orderId, columns) {
   const names = Object.keys(columns);
   const { rows } = await client.query(
@@ -216,6 +224,7 @@ router.get('/order/:orderId/suggestion', async (req, res) => {
     const reviewing = Boolean(row.trial_verdict) && (row.life_review_date != null || needsLifeReview(row, order));
     let targets;
     let actuals;
+    let suggested = null;
     if (reviewing) {
       targets = targetsOf(row, true);
       actuals = { failure: preview !== null ? preview : num(row.actual_failure_pct),
@@ -223,11 +232,11 @@ router.get('/order/:orderId/suggestion', async (req, res) => {
     } else {
       const latest = latestOkTrial(await trialsForParent(pool, { column: 'die_order_id', id: orderId }));
       targets = targetsOf(row, false);
-      actuals = { failure: null, productivity: latest ? num(latest.productivity_kgh) : null, recovery: latest ? num(latest.recovery_pct) : null };
+      ({ actuals, suggested } = trialSuggestion(order, row, latest));
     }
     res.json({
       stage: reviewing ? 'final' : 'trial',
-      suggested: suggestVerdict({ targets, actuals }),
+      suggested: reviewing ? suggestVerdict({ targets, actuals }) : suggested,
       actuals,
       targets,
       defaultReviewDate: defaultReviewDate(normaliseDate(order.sample_approval_date)),
@@ -269,10 +278,7 @@ router.post('/order/:orderId/trial-verdict', pageAccessMiddleware('flow-sample-f
         trial_recovery_pct: latest ? num(latest.recovery_pct) : null,
         source_trial_id: latest ? latest.id : null,
       };
-      const suggested = suggestVerdict({
-        targets: targetsOf(row, false),
-        actuals: { failure: null, productivity: snapshot.trial_productivity_kgh, recovery: snapshot.trial_recovery_pct },
-      });
+      const { suggested } = trialSuggestion(order, row, latest);
       const ruled = remarkRule(verdict, suggested, body.remark);
       if (ruled.error) return bad(ruled.error);
 
@@ -291,14 +297,19 @@ router.post('/order/:orderId/trial-verdict', pageAccessMiddleware('flow-sample-f
         trial_verdict: verdict, trial_verdict_remark: ruled.remark, trial_verdict_by: by, trial_verdict_date: today,
         life_review_due_date: dueDate,
       };
+      // A redo drops any earlier life review: it either is owed afresh or was never needed.
+      Object.assign(columns, cleared(LIFE_REVIEW_COLUMNS));
       if (owed) {
-        Object.assign(columns, cleared(LIFE_REVIEW_COLUMNS), cleared(FINAL_COLUMNS));
+        Object.assign(columns, cleared(FINAL_COLUMNS));
       } else {
         Object.assign(columns, { final_verdict: verdict, final_verdict_remark: ruled.remark, final_verdict_by: by, final_verdict_date: today });
       }
       const enhancement = await updateColumns(client, orderId, columns);
 
       const entries = [{ field: 'Design enhancement: trial verdict', oldValue: row.trial_verdict || null, newValue: verdict, reason, stage: order.status }];
+      if (row.life_review_date != null) {
+        entries.push({ field: 'Design enhancement: life review', oldValue: shown(row.actual_failure_pct), newValue: null, reason, stage: order.status });
+      }
       if (!owed || row.final_verdict) {
         entries.push({ field: 'Design enhancement: final verdict', oldValue: row.final_verdict || null, newValue: owed ? null : verdict, reason, stage: order.status });
       }

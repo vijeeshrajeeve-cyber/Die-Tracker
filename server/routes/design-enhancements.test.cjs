@@ -10,6 +10,7 @@ let order;        // the die_orders row the next request finds; null = none
 let enhancement;  // the design_enhancements row; null = none
 let hasTrial;
 let trials = [];
+let persist = false; // true: an UPDATE design_enhancements is applied to `enhancement`
 let log = [];
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim().replace(/\s+/g, ' ');
@@ -18,11 +19,24 @@ installFakeDb(async (sql, params = []) => {
   if (/^SELECT id, status, design_enhancement, simulation_enabled, sample_status, sample_approval_date FROM die_orders WHERE id = \$1( FOR UPDATE)?$/.test(q)) {
     return { rows: order ? [order] : [] };
   }
-  if (/^SELECT \* FROM design_enhancements WHERE die_order_id/.test(q)) return { rows: enhancement ? [enhancement] : [] };
+  if (/^SELECT \* FROM design_enhancements WHERE die_order_id/.test(q)) return { rows: enhancement ? [{ ...enhancement }] : [] };
   if (/^SELECT \* FROM design_enhancements ORDER BY/.test(q)) return { rows: enhancement ? [enhancement] : [] };
   if (/^SELECT .* FROM sample_trials WHERE die_order_id = \$1 ORDER BY trial_no/.test(q)) return { rows: trials };
   if (/^SELECT 1 FROM sample_trials/.test(q)) return { rows: hasTrial ? [{ '?column?': 1 }] : [] };
   if (/^INSERT INTO design_enhancements/.test(q)) return { rows: [{ id: 1, die_order_id: params[0], current_issue: params[1] }] };
+  if (/^UPDATE design_enhancements/.test(q) && enhancement && persist && /final_verdict = /.test(q)) {
+    for (const m of q.matchAll(/(\w+) = \$(\d+)/g)) enhancement[m[1]] = params[Number(m[2]) - 1];
+  }
+  if (/^SELECT die_order_id FROM sample_trials WHERE id/.test(q)) {
+    const t = trials.find((x) => x.id === Number(params[0]));
+    return { rows: t ? [{ die_order_id: t.die_order_id }] : [] };
+  }
+  if (/^SELECT design_enhancement FROM die_orders WHERE id/.test(q)) return { rows: [{ design_enhancement: 1 }] };
+  if (/^UPDATE sample_trials/.test(q)) {
+    const t = trials.find((x) => x.id === Number(params[6]));
+    Object.assign(t, { productivity_kgh: params[4], recovery_pct: params[5] });
+    return { rows: [t], rowCount: 1 };
+  }
   if (/^UPDATE design_enhancements/.test(q)) return { rows: [{ id: 1, die_order_id: params[params.length - 1] }] };
   if (/^DELETE FROM design_enhancements/.test(q)) return { rows: [] };
   if (/^UPDATE die_orders SET/.test(q)) return { rows: [], rowCount: 1 };
@@ -42,6 +56,7 @@ const app = express();
 app.use(express.json());
 app.use((req, res, next) => { req.user = currentUser; next(); });
 app.use('/api/design-enhancements', router);
+app.use('/api/sample-trials', require('./sample-trials.cjs'));
 
 let base;
 let close;
@@ -51,6 +66,7 @@ test.beforeEach(() => {
   log = [];
   currentUser = EDITOR;
   hasTrial = false;
+  persist = false;
   trials = [];
   enhancement = null;
   order = { id: 7, status: 'AWAITING FOR DESIGN', design_enhancement: 0, simulation_enabled: 0,
@@ -354,6 +370,7 @@ test.describe('trial verdict', () => {
     enhancement = { ...enhancement, failure_assessment_required: true, target_failure_pct: '10', trial_verdict: 'Achieved',
       actual_failure_pct: '8', life_review_date: '2027-03-01', final_verdict: 'Achieved' };
     currentUser = ADMIN;
+    persist = true;
     const { status } = await trialVerdict(verdictBody({ reason: 'Re-judged', life_review_due_date: future() }));
     assert.equal(status, 200);
     const w = written();
@@ -369,12 +386,18 @@ test.describe('trial verdict', () => {
     enhancement = { ...enhancement, failure_assessment_required: true, target_failure_pct: '10', trial_verdict: 'Achieved',
       actual_failure_pct: '8', life_review_date: '2027-03-01', final_verdict: 'Achieved' };
     currentUser = ADMIN;
+    persist = true;
     const { status } = await trialVerdict({ verdict: 'Not achieved', remark: 'Rejected after all', reason: 'Sample rejected later' });
     assert.equal(status, 200);
     const w = written();
     assert.equal(w.final_verdict, 'Not achieved');
     assert.equal(w.final_verdict_remark, 'Rejected after all');
-    assert.ok(!('actual_failure_pct' in w));
+    for (const k of ['life_review_due_date', 'actual_failure_pct', 'life_review_remark', 'life_review_by', 'life_review_date']) {
+      assert.equal(w[k], null, k);
+    }
+    assert.ok(changes().some((c) => c.field === 'Design enhancement: life review' && c.old === '8' && c.new === null));
+    const after = await suggestion();
+    assert.equal(after.body.stage, 'trial');
   });
 
   test('is behind the Sample Followup page access', async () => {
@@ -386,20 +409,30 @@ test.describe('trial verdict', () => {
   });
 
   test('later edits to the source trial leave the snapshot alone', async () => {
+    persist = true;
     await trialVerdict(verdictBody());
-    const snapshot = written();
-    const { updateTrial } = require('../services/sampleTrials.cjs');
-    const trialQueries = [];
-    const client = { query: async (sql) => {
-      trialQueries.push(sql);
-      if (/^SELECT die_order_id FROM sample_trials/.test(sql)) return { rows: [{ die_order_id: 7 }] };
-      if (/^SELECT design_enhancement FROM die_orders/.test(sql)) return { rows: [{ design_enhancement: 1 }] };
-      return { rows: [{ id: 31 }], rowCount: 1 };
-    } };
-    const out = await updateTrial(client, 31, { trial_date: '2026-09-01', result: 'OK', productivity_kgh: 1, recovery_pct: 2 }, todayLocal());
-    assert.equal(out.ok, true);
-    assert.ok(!trialQueries.some((sql) => /design_enhancements/.test(sql)));
-    assert.equal(snapshot.trial_productivity_kgh, 950);
+    assert.equal(enhancement.trial_productivity_kgh, 950);
+    log = [];
+    const edited = await request(base, '/api/sample-trials/31', { method: 'PUT',
+      body: { trial_date: '2026-09-01', result: 'OK', productivity_kgh: 1, recovery_pct: 2 } });
+    assert.equal(edited.status, 200);
+    assert.equal(trials.find((t) => t.id === 31).productivity_kgh, 1);
+    assert.ok(queries('UPDATE sample_trials').length === 1);
+    assert.ok(!log.some(({ q }) => /design_enhancements/.test(q)));
+    assert.equal(enhancement.trial_productivity_kgh, 950);
+    assert.equal(enhancement.source_trial_id, 31);
+  });
+
+  test('a Rejected sample with no OK trial suggests Not achieved, so that verdict needs no remark', async () => {
+    order.sample_status = 'Rejected';
+    trials = [okTrial({ result: 'Not OK', productivity_kgh: null, recovery_pct: null })];
+    assert.equal((await suggestion()).body.suggested, 'Not achieved');
+    assert.equal((await trialVerdict({ verdict: 'Not achieved' })).status, 200);
+    assert.equal(written().final_verdict, 'Not achieved');
+    // an Approved sample with no OK trial still has no suggestion
+    order.sample_status = 'Approved';
+    enhancement = { die_order_id: 7, ...TARGETS };
+    assert.equal((await suggestion()).body.suggested, null);
   });
 });
 
