@@ -31,7 +31,7 @@ SELECT stage,days FROM (VALUES
  ('pending_order',1),('awaiting_design',3),('simulation',1),('design_approval',1),
  ('pending_pr',1),('oracle_entry',1),('design_to_ems',1),('manufacturing',NULL::integer),
  ('sample_submission',7),('sample_approval',3),('qd_approval',2),('qd_returned',2),
- ('foc_receipt',NULL::integer),('foc_trial',3)
+ ('foc_receipt',NULL::integer),('foc_trial',3),('enhancement_life_review',NULL::integer)
 ) AS defaults(stage,days)
 WHERE NOT EXISTS(SELECT 1 FROM work_queue_rules r WHERE r.plant IS NULL AND r.stage_key=defaults.stage);
 
@@ -166,13 +166,14 @@ BEGIN
  WHEN 'design_to_ems' THEN 'flow-design-ems' WHEN 'manufacturing' THEN 'flow-completed'
  WHEN 'sample_submission' THEN 'flow-sample-followup' WHEN 'sample_approval' THEN 'flow-sample-followup'
  WHEN 'qd_approval' THEN 'qd-tracker' WHEN 'qd_returned' THEN 'qd-tracker'
- WHEN 'foc_receipt' THEN 'qd-tracker' WHEN 'foc_trial' THEN 'qd-tracker' ELSE 'orders' END;
+ WHEN 'foc_receipt' THEN 'qd-tracker' WHEN 'foc_trial' THEN 'qd-tracker'
+ WHEN 'enhancement_life_review' THEN 'flow-sample-followup' ELSE 'orders' END;
  RETURN COALESCE(access ? page OR (page LIKE 'flow-%' AND access ? 'process-flow'),FALSE);
 END $$;
 
 CREATE OR REPLACE FUNCTION work_queue_project(kind TEXT, sid INTEGER) RETURNS JSONB
 LANGUAGE plpgsql STABLE AS $$
-DECLARE s JSONB; rev JSONB; foc JSONB; sim JSONB; st TEXT; label TEXT; anchor TEXT; eta TEXT; sig TEXT;
+DECLARE s JSONB; rev JSONB; foc JSONB; sim JSONB; enh JSONB; st TEXT; label TEXT; anchor TEXT; eta TEXT; sig TEXT;
  held BOOLEAN:=FALSE; reason TEXT; owner INTEGER; omode TEXT:='rule'; epoch INTEGER:=0; status TEXT;
 BEGIN
  IF kind='order' THEN SELECT to_jsonb(d) INTO s FROM die_orders d WHERE id=sid;
@@ -187,9 +188,15 @@ BEGIN
  IF kind IN ('order','sample') THEN
    IF (kind='sample' OR NULLIF(s->>'die_received_date','') IS NOT NULL OR upper(status)='DIE RECEIVED') THEN
      status:=COALESCE(NULLIF(CASE WHEN kind='order' THEN s->>'sample_status' ELSE s->>'status' END,''),'Pending');
-     IF status='Approved' THEN RETURN jsonb_build_object('terminal','completed'); END IF;
      held:=status='On hold' OR (kind='order' AND s->>'status'='HOLD');
-     IF status IN ('Pending','On hold') THEN st:='sample_submission'; label:='Sample Submission'; anchor:=s->>'die_received_date';
+     IF status='Approved' THEN
+       -- An approved sample is finished work, except an enhancement still owing
+       -- its die failure review: due on life_review_due_date, closed by the final verdict.
+       IF kind='order' THEN SELECT to_jsonb(e) INTO enh FROM design_enhancements e WHERE e.die_order_id=sid; END IF;
+       IF enh IS NULL OR NULLIF(enh->>'trial_verdict','') IS NULL OR NOT COALESCE((enh->>'failure_assessment_required')::boolean,FALSE)
+          OR NULLIF(enh->>'final_verdict','') IS NOT NULL THEN RETURN jsonb_build_object('terminal','completed'); END IF;
+       st:='enhancement_life_review'; label:='Enhancement Life Review'; eta:=enh->>'life_review_due_date';
+     ELSIF status IN ('Pending','On hold') THEN st:='sample_submission'; label:='Sample Submission'; anchor:=s->>'die_received_date';
      ELSIF status IN ('Sample Submitted','Rejected') THEN st:='sample_approval'; label:=CASE WHEN status='Rejected' THEN 'Sample Rework / Retrial' ELSE 'Sample Approval' END; anchor:=s->>'submission_date';
      ELSE st:='needs_setup'; label:='Unknown Sample Status'; reason:='Unknown sample status: '||status; END IF;
      sig:=st||':'||epoch;
@@ -248,8 +255,8 @@ BEGIN
      ELSE RETURN jsonb_build_object('terminal','completed'); END IF;
    ELSE st:='needs_setup'; label:='Unknown QD Approval State'; reason:='Unknown approval state: '||COALESCE(s->>'approval_state',''); sig:='qd:unknown'; END IF;
  END IF;
- IF st IN ('manufacturing','foc_receipt') THEN
-   IF work_queue_strict_date(eta) IS NULL THEN reason:=COALESCE(reason,'Missing or invalid promised ETA'); END IF;
+ IF st IN ('manufacturing','foc_receipt','enhancement_life_review') THEN
+   IF work_queue_strict_date(eta) IS NULL THEN reason:=COALESCE(reason,CASE WHEN st='enhancement_life_review' THEN 'Missing or invalid life review date' ELSE 'Missing or invalid promised ETA' END); END IF;
  ELSIF work_queue_strict_date(anchor) IS NULL THEN reason:=COALESCE(reason,'Missing or invalid stage entry date'); END IF;
  IF NULLIF(btrim(s->>'plant'),'') IS NULL THEN reason:=COALESCE(reason,'Missing source plant'); END IF;
  RETURN jsonb_build_object('stage_key',st,'stage_label',label,'entered_date',work_queue_strict_date(anchor),
@@ -303,7 +310,7 @@ BEGIN
  IF old.id IS NOT NULL THEN cal:=old.calendar_snapshot; policy:=old.policy_snapshot; END IF;
  reason:=p->>'setup_reason';
  IF policy IS NULL OR NOT COALESCE((policy->>'enabled')::boolean,FALSE) THEN reason:=COALESCE(reason,'No enabled stage rule'); END IF;
- basis:=CASE WHEN p->>'stage_key' IN ('manufacturing','foc_receipt') THEN 'eta' WHEN policy->>'day_mode'='calendar' THEN 'calendar_days' ELSE 'working_days' END;
+ basis:=CASE WHEN p->>'stage_key' IN ('manufacturing','foc_receipt','enhancement_life_review') THEN 'eta' WHEN policy->>'day_mode'='calendar' THEN 'calendar_days' ELSE 'working_days' END;
  IF basis='eta' THEN due:=work_queue_local_cutoff(work_queue_strict_date(p->>'eta'),COALESCE((cal->>'cutoff')::time,'17:00'::time),COALESCE(cal->>'timezone','Asia/Dubai'));
  ELSE due:=work_queue_due(work_queue_strict_date(p->>'entered_date'),(policy->>'days')::int,policy->>'day_mode',cal); END IF;
  IF due IS NULL THEN reason:=COALESCE(reason,'Invalid deadline calendar or local cutoff'); END IF;
@@ -413,6 +420,18 @@ DROP TRIGGER IF EXISTS work_queue_foc_sync ON qd_foc_rounds;
 CREATE CONSTRAINT TRIGGER work_queue_foc_sync AFTER INSERT OR UPDATE OR DELETE ON qd_foc_rounds DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION work_queue_child_changed();
 DROP TRIGGER IF EXISTS work_queue_simulation_round_sync ON simulation_rounds;
 CREATE CONSTRAINT TRIGGER work_queue_simulation_round_sync AFTER INSERT OR UPDATE OR DELETE ON simulation_rounds DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION work_queue_child_changed();
+CREATE OR REPLACE FUNCTION work_queue_enhancement_changed() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+ PERFORM work_queue_sync('order',CASE WHEN TG_OP='DELETE' THEN OLD.die_order_id ELSE NEW.die_order_id END);
+ RETURN NULL;
+END $$;
+-- The enhancement table is created by the application schema; skip if absent.
+DO $$ BEGIN
+ IF to_regclass('design_enhancements') IS NOT NULL THEN
+   DROP TRIGGER IF EXISTS work_queue_enhancement_sync ON design_enhancements;
+   CREATE CONSTRAINT TRIGGER work_queue_enhancement_sync AFTER INSERT OR UPDATE OR DELETE ON design_enhancements DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION work_queue_enhancement_changed();
+ END IF;
+END $$;
 DROP TRIGGER IF EXISTS work_queue_order_delete ON die_orders;
 CREATE TRIGGER work_queue_order_delete BEFORE DELETE ON die_orders FOR EACH ROW EXECUTE FUNCTION work_queue_source_deleted('order');
 DROP TRIGGER IF EXISTS work_queue_sample_delete ON sample_followups;
