@@ -26,71 +26,95 @@ function nullableNumber(raw, label) {
   return n;
 }
 
+// The six die counts are whole numbers; tonnage may carry decimals.
+function nullableCount(raw, label) {
+  const n = nullableNumber(raw, label);
+  if (n !== null && !Number.isInteger(n)) throw fail(400, `${label} must be a whole number`);
+  return n;
+}
+
+// Plant is validated in saveDieLife. See
+// docs/superpowers/specs/2026-11-15-die-life-by-plant-design.md ("Rules").
 function validateEntry(entry) {
   const supplier = String((entry && entry.supplier) || '').trim();
   if (!supplier) throw fail(400, 'A supplier is required');
 
-  const avgDieLifeMt = nullableNumber(entry.avgDieLifeMt, `${supplier}: die life`);
-  const diesInService = nullableNumber(entry.diesInService, `${supplier}: dies extruded`);
-  const diesFailed = nullableNumber(entry.diesFailed, `${supplier}: dies failed`);
-  // Recorded only. It has no denominator and feeds no percentage, so it needs
-  // no cross-check against the other counts.
-  const diesScrapped = nullableNumber(entry.diesScrapped, `${supplier}: dies scrapped`);
+  const tonnageMt = nullableNumber(entry.tonnageMt, `${supplier}: tonnage (MT)`);
+  const diesScrapped = nullableCount(entry.diesScrapped, `${supplier}: dies scrapped`);
+  const diesInService = nullableCount(entry.diesInService, `${supplier}: dies run`);
+  const diesFailed = nullableCount(entry.diesFailed, `${supplier}: dies unloaded`);
+  const newDiesReceived = nullableCount(entry.newDiesReceived, `${supplier}: new dies received`);
+  const newDieTrials = nullableCount(entry.newDieTrials, `${supplier}: new die trials`);
+  const backupDiesReceived = nullableCount(entry.backupDiesReceived, `${supplier}: backup dies received`);
+  const backupDieTrials = nullableCount(entry.backupDieTrials, `${supplier}: backup die trials`);
 
-  // A failure count with no denominator cannot become a percentage. Leaving
-  // both blank is the way to say "not recorded this month".
+  // A count with no denominator cannot become a ratio. Leaving both blank is
+  // the way to say "not recorded this month".
   if (diesFailed !== null && (diesInService === null || diesInService === 0)) {
-    throw fail(400, `${supplier}: dies failed needs a dies extruded count above zero — leave both blank if there is nothing to record`);
+    throw fail(400, `${supplier}: dies unloaded needs a dies run count above zero — leave both blank if there is nothing to record`);
   }
-  if (diesFailed !== null && diesInService !== null && diesFailed > diesInService) {
-    throw fail(400, `${supplier}: more dies failed (${diesFailed}) than were extruded (${diesInService})`);
+  if (diesFailed !== null && diesFailed > diesInService) {
+    throw fail(400, `${supplier}: more dies unloaded (${diesFailed}) than dies run (${diesInService})`);
+  }
+  if (newDieTrials !== null && (newDiesReceived === null || newDiesReceived === 0)) {
+    throw fail(400, `${supplier}: new die trials needs a new dies received count above zero`);
+  }
+  if (backupDieTrials !== null && (backupDiesReceived === null || backupDiesReceived === 0)) {
+    throw fail(400, `${supplier}: backup die trials needs a backup dies received count above zero`);
   }
 
-  return { supplier, avgDieLifeMt, diesInService, diesFailed, diesScrapped };
+  return {
+    supplier, tonnageMt, diesScrapped, diesInService, diesFailed,
+    newDiesReceived, newDieTrials, backupDiesReceived, backupDieTrials,
+  };
 }
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
-// Weighted by dies in service, so a month with 40 dies counts ten times a month
-// with 4. Failure pools the raw counts rather than averaging percentages, which
-// would give a quiet month equal say.
+const COUNT_FIELDS = [
+  'tonnageMt', 'diesScrapped', 'diesInService', 'diesFailed',
+  'newDiesReceived', 'newDieTrials', 'backupDiesReceived', 'backupDieTrials',
+];
+
+// Every figure comes from summed counts, never from averaging monthly or
+// per-plant ratios. A null input is "not recorded" and is never summed as 0.
 function aggregateDieLife(rows) {
-  let failed = 0;
-  let inService = 0;
-  let weightedSum = 0;
-  let weight = 0;
-  const unweighted = [];
+  const totals = {};
+  for (const f of COUNT_FIELDS) totals[f] = null;
+  const add = (key, v) => { if (v !== null) totals[key] = (totals[key] || 0) + v; };
+
+  let lifeT = 0, lifeS = 0, lifeRows = 0;
+  let run = 0, unloaded = 0;
+  let newR = 0, newT = 0, bkR = 0, bkT = 0;
 
   for (const r of rows || []) {
-    const svc = num(r.diesInService);
-    const bad = num(r.diesFailed);
-    const life = num(r.avgDieLifeMt);
+    const v = {};
+    for (const f of COUNT_FIELDS) { v[f] = num(r[f]); add(f, v[f]); }
 
-    if (svc !== null) {
-      inService += svc;
-      if (bad !== null) failed += bad;
+    if (v.tonnageMt !== null && v.diesScrapped !== null) {
+      lifeT += v.tonnageMt; lifeS += v.diesScrapped; lifeRows += 1;
     }
-    if (life !== null) {
-      unweighted.push(life);
-      if (svc !== null && svc > 0) {
-        weightedSum += life * svc;
-        weight += svc;
-      }
+    if (v.diesInService !== null) {
+      run += v.diesInService;
+      unloaded += v.diesFailed === null ? 0 : v.diesFailed;
     }
+    if (v.newDiesReceived !== null && v.newDieTrials !== null) { newR += v.newDiesReceived; newT += v.newDieTrials; }
+    if (v.backupDiesReceived !== null && v.backupDieTrials !== null) { bkR += v.backupDiesReceived; bkT += v.backupDieTrials; }
   }
 
-  // 0 dies failed out of 0 in service is unknown, not a flattering 0%. Same
-  // reasoning the QD Rate already applies to 0 QDs out of 0 dies received.
-  const dieFailure = inService > 0 ? (failed / inService) * 100 : null;
+  const noDiesScrapped = lifeRows > 0 && lifeS === 0;
+  const dieLife = lifeRows > 0 && lifeS > 0 ? lifeT / lifeS : null;
+  // 0 unloaded out of 0 run is unknown, not a flattering 0%.
+  const dieFailure = run > 0 ? (unloaded / run) * 100 : null;
+  const ratio = (t, d) => (d > 0 ? t / d : null);
 
-  // Validation permits a die life figure with no counts, so the weighted mean
-  // must not be the only path — with no weights it would divide by zero and
-  // throw away a number somebody typed.
-  let dieLife = null;
-  if (weight > 0) dieLife = weightedSum / weight;
-  else if (unweighted.length) dieLife = unweighted.reduce((a, b) => a + b, 0) / unweighted.length;
-
-  return { dieLife, dieFailure };
+  return {
+    dieLife, noDiesScrapped, dieFailure,
+    newTrialRatio: ratio(newT, newR),
+    backupTrialRatio: ratio(bkT, bkR),
+    trialRatio: ratio(newT + bkT, newR + bkR),
+    totals,
+  };
 }
 
 // Postgres returns NUMERIC as a string; null must survive as null.
@@ -138,23 +162,32 @@ async function saveDieLife(pool, { year, month, entries }, userId) {
              dies_scrapped   = EXCLUDED.dies_scrapped,
              updated_by      = EXCLUDED.updated_by,
              updated_at      = CURRENT_TIMESTAMP`,
-      [e.supplier, y, m, e.avgDieLifeMt, e.diesInService, e.diesFailed, e.diesScrapped, userId || null]);
+      [e.supplier, y, m, null, e.diesInService, e.diesFailed, e.diesScrapped, userId || null]);
   }
   return listDieLife(pool, { year: y, month: m });
 }
 
+// Legacy rows (no plant) are left out of every calculation.
 async function getDieLifeRows(pool, { supplier, year, months }) {
   const { rows } = await pool.query(`
-    SELECT month, avg_die_life_mt, dies_in_service, dies_failed
+    SELECT month, plant, tonnage_mt, dies_scrapped, dies_in_service, dies_failed,
+           new_dies_received, new_die_trials, backup_dies_received, backup_die_trials
       FROM supplier_die_life
      WHERE upper(btrim(supplier)) = upper(btrim($1))
+       AND plant IS NOT NULL
        AND year = $2 AND month = ANY($3)
      ORDER BY month`, [supplier, Number(year), months]);
   return rows.map((r) => ({
     month: Number(r.month),
-    avgDieLifeMt: num(r.avg_die_life_mt),
+    plant: r.plant,
+    tonnageMt: num(r.tonnage_mt),
+    diesScrapped: num(r.dies_scrapped),
     diesInService: num(r.dies_in_service),
     diesFailed: num(r.dies_failed),
+    newDiesReceived: num(r.new_dies_received),
+    newDieTrials: num(r.new_die_trials),
+    backupDiesReceived: num(r.backup_dies_received),
+    backupDieTrials: num(r.backup_die_trials),
   }));
 }
 
@@ -163,6 +196,6 @@ async function getDieLifeForPeriod(pool, { supplier, year, months }) {
 }
 
 module.exports = {
-  validateEntry, aggregateDieLife,
+  validateEntry, aggregateDieLife, num,
   listDieLife, saveDieLife, getDieLifeRows, getDieLifeForPeriod,
 };
