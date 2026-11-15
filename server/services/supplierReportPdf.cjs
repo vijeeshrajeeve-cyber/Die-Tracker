@@ -347,17 +347,18 @@ const countCell = (v) => (v == null ? '-' : String(Math.round(Number(v) * 100) /
 const lifeCell = (calc) => (calc.noDiesScrapped ? 'no dies scrapped' : (calc.dieLife == null ? '-' : calc.dieLife.toFixed(1)));
 const failureCell = (calc) => (calc.dieFailure == null ? '-' : `${calc.dieFailure.toFixed(1)}%`);
 
-function matrixCells(label, totals, calc) {
-  const t = totals || {};
-  return [
-    label,
-    countCell(t.tonnageMt),
-    countCell(t.diesScrapped),
-    lifeCell(calc),
-    countCell(t.diesInService),
-    countCell(t.diesFailed),
-    failureCell(calc),
-  ];
+// The count cells are the paired sums the figure beside them was calculated
+// from, so every row divides. When a per-field total differs (some plant typed
+// half a pair) the count is starred and the footnote explains.
+const PAIRED_FIELDS = ['tonnageMt', 'diesScrapped', 'diesInService', 'diesFailed'];
+const same = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(Number(a) - Number(b)) < 1e-9);
+const starred = (calc, f) => !same((calc.totals || {})[f], (calc.paired || {})[f]);
+
+function matrixCells(label, calc) {
+  const p = calc.paired || {};
+  const cell = (f) => (p[f] == null ? '-' : countCell(p[f]) + (starred(calc, f) ? '*' : ''));
+  return [label, cell('tonnageMt'), cell('diesScrapped'), lifeCell(calc),
+    cell('diesInService'), cell('diesFailed'), failureCell(calc)];
 }
 
 function drawMatrix(page, report, y, { bold, font }) {
@@ -385,22 +386,28 @@ function drawMatrix(page, report, y, { bold, font }) {
   y -= 15;
 
   for (const r of rows) {
-    tableRow(page, matrixCells(MONTH_NAMES[r.month - 1] || String(r.month), r.totals, r), cols,
+    tableRow(page, matrixCells(MONTH_NAMES[r.month - 1] || String(r.month), r), cols,
       { y, font, size: 9 });
     y -= 17;
   }
 
-  // Summed from the monthly counts exactly as the server aggregates, so this
-  // never disagrees with the score on page 1. A simple mean of the monthly
-  // ratios would.
-  const period = aggregateDieLife(rows.map((r) => r.totals || {}));
+  // The server's period aggregate, taken from the raw rows so it pairs per
+  // plant exactly as the score does. Re-adding the monthly totals here would
+  // re-pair at month level and could print a figure that disagrees with page 1.
+  const period = report.dieLifePeriod || aggregateDieLife([]);
   rule(page, y + 6, { thickness: 1.1 });
   y -= 6;
-  tableRow(page, matrixCells('Period', period.totals, period), cols, { y, font: bold, size: 9 });
+  tableRow(page, matrixCells('Period', period), cols, { y, font: bold, size: 9 });
+  const anyStar = [period, ...rows].some((c) => PAIRED_FIELDS.some((f) => c.paired && c.paired[f] != null && starred(c, f)));
 
   y -= 20;
   text(page, 'Figures entered monthly, all plants combined. Die life and failure % are calculated from the counts, never entered directly.',
     { x: MARGIN, y, size: 7.4, font, color: MUTED });
+  if (anyStar) {
+    y -= 11;
+    text(page, '* Some figures were entered without their matching count and are left out of the calculation.',
+      { x: MARGIN, y, size: 7.4, font, color: MUTED });
+  }
   return y - 26;
 }
 

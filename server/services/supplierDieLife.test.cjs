@@ -230,3 +230,23 @@ test('getDieLifeRows matches the supplier case-insensitively', async () => {
   await s.getDieLifeRows(pool, { supplier: ' phme ', year: 2026, months: [8] });
   assert.ok(/upper\(btrim\(supplier\)\) = upper\(btrim\(\$1\)\)/.test(pool.calls[0].sql));
 });
+
+test('aggregateDieLife returns the paired sums the ratios actually used', () => {
+  const N = { tonnageMt: null, diesScrapped: null, diesInService: null, diesFailed: null,
+    newDiesReceived: null, newDieTrials: null, backupDiesReceived: null, backupDieTrials: null };
+  const out = s.aggregateDieLife([
+    { ...N, tonnageMt: 500, newDiesReceived: 4 },
+    { ...N, tonnageMt: 300, diesScrapped: 5, diesInService: 10, newDiesReceived: 2, newDieTrials: 3 },
+  ]);
+  assert.equal(out.dieLife, 60);
+  assert.equal(out.totals.tonnageMt, 800);
+  assert.deepEqual(out.paired, {
+    tonnageMt: 300, diesScrapped: 5, diesInService: 10, diesFailed: 0,
+    newDiesReceived: 2, newDieTrials: 3, backupDiesReceived: null, backupDieTrials: null,
+  });
+});
+
+test('aggregateDieLife paired sums are null when no row qualified', () => {
+  const out = s.aggregateDieLife([]);
+  for (const v of Object.values(out.paired)) assert.equal(v, null);
+});

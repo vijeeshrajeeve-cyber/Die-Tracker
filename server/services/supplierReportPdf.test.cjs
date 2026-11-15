@@ -57,6 +57,10 @@ const baseReport = {
     dieRow(6, { ...NONE, tonnageMt: 600, diesScrapped: 10, diesInService: 10, diesFailed: 2 }),
     dieRow(7, { ...NONE, tonnageMt: 1400, diesScrapped: 20, diesInService: 20, diesFailed: 2 }),
   ],
+  dieLifePeriod: aggregateDieLife([
+    { ...NONE, tonnageMt: 600, diesScrapped: 10, diesInService: 10, diesFailed: 2 },
+    { ...NONE, tonnageMt: 1400, diesScrapped: 20, diesInService: 20, diesFailed: 2 },
+  ]),
 };
 
 test('generateSupplierReportPdf returns a non-empty PDF', async () => {
@@ -365,14 +369,16 @@ test('the die life table prints each month from its counts and the period from s
 });
 
 test('a month with tonnage and no dies scrapped says so and prints no die life', async () => {
-  const report = { ...baseReport, dieLifeRows: [dieRow(8, { ...NONE, tonnageMt: 500, diesScrapped: 0 })] };
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 0 };
+  const report = { ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) };
   const m = await matrixText(report);
   assert.match(m, /no dies scrapped/i);
   assert.ok(!/Infinity|NaN/.test(m));
 });
 
 test('an unrecorded figure prints as a dash, never 0', async () => {
-  const report = { ...baseReport, dieLifeRows: [dieRow(8, { ...NONE, tonnageMt: 500, diesScrapped: 5 })] };
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5 };
+  const report = { ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) };
   const m = await matrixText(report);
   const row = m.slice(m.indexOf('Aug'));
   assert.match(row, /500/);
@@ -382,7 +388,8 @@ test('an unrecorded figure prints as a dash, never 0', async () => {
 });
 
 test('a typed zero is printed as 0', async () => {
-  const report = { ...baseReport, dieLifeRows: [dieRow(8, { ...NONE, tonnageMt: 500, diesScrapped: 5, diesInService: 10, diesFailed: 0 })] };
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5, diesInService: 10, diesFailed: 0 };
+  const report = { ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) };
   const m = await matrixText(report);
   assert.match(m, /0\.0%/);
 });
@@ -399,4 +406,35 @@ test('a missing new or backup ratio reads "not recorded"', async () => {
   const pages = await textOf(await generateSupplierReportPdf(report, {}));
   assert.match(pages[0], /Backup dies: not recorded/);
   assert.match(pages[0], /New dies: 1\.67/);
+});
+
+test('the Period row prints the server period figure from paired counts, not a re-pairing of monthly totals', async () => {
+  // Plant A: 500 MT, scrapped blank. Plant B: 300 MT, 5 scrapped. Score: 60.0.
+  const rows = [{ ...NONE, tonnageMt: 500 }, { ...NONE, tonnageMt: 300, diesScrapped: 5 }];
+  const report = { ...baseReport,
+    dieLifeRows: [{ month: 8, ...aggregateDieLife(rows) }],
+    dieLifePeriod: aggregateDieLife(rows) };
+  const m = await matrixText(report);
+  assert.match(m, /Period\s+300\*\s+5\s+60\.0/);
+  assert.ok(!/160\.0/.test(m));
+});
+
+test('a month whose total differs from its paired sum is starred and footnoted', async () => {
+  const rows = [{ ...NONE, tonnageMt: 500 }, { ...NONE, tonnageMt: 300, diesScrapped: 5 }];
+  const report = { ...baseReport, dieLifeRows: [{ month: 8, ...aggregateDieLife(rows) }], dieLifePeriod: aggregateDieLife(rows) };
+  const m = await matrixText(report);
+  assert.match(m, /Aug\s+300\*\s+5\s+60\.0/);
+  assert.match(m, /\* Some figures were entered without their matching count and are left out of the calculation\./);
+});
+
+test('no footnote when every figure was paired', async () => {
+  const m = await matrixText(baseReport);
+  assert.ok(!/Some figures were entered/.test(m));
+});
+
+test('trial counts are the paired counts the ratio used', async () => {
+  const report = { ...baseReport, snapshot: { ...baseReport.snapshot, newTrialRatio: 5 / 3,
+    trialTotals: { newDiesReceived: 3, newDieTrials: 5, backupDiesReceived: null, backupDieTrials: null } } };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.match(pages[0], /New dies: 1\.67 \(5 trials on 3 dies\)/);
 });

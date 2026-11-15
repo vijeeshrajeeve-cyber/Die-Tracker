@@ -129,6 +129,20 @@ test('getSnapshot takes the trial ratios from the typed die life counts, not fro
   assert.deepEqual(out.trialTotals, { newDiesReceived: 4, newDieTrials: 5, backupDiesReceived: 2, backupDieTrials: 2 });
 });
 
+test('getSnapshot trialTotals are the paired counts: received typed without trials is left out', async () => {
+  const pool = makePool([
+    [/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '1' }]],
+    [/FROM supplier_die_life/, [
+      { month: 4, plant: 'GEX 01', new_dies_received: 3, new_die_trials: 5 },
+      { month: 4, plant: 'GEX 02', new_dies_received: 9 },
+    ]],
+  ]);
+  const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-04-30' });
+  assert.equal(out.newTrialRatio, 5 / 3);
+  assert.equal(out.trialTotals.newDiesReceived, 3);
+  assert.equal(out.trialTotals.newDieTrials, 5);
+});
+
 test('getSnapshot leaves the trial ratios null when no counts were typed', async () => {
   const pool = makePool([[/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '40' }]]]);
   const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-05-31' });

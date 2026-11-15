@@ -153,7 +153,7 @@ export default function SupplierReportTab({ theme, refreshKey = 0 }) {
           </div>
 
           <div style={{ marginTop: '1.5rem' }}>
-            <DieLifeMatrix rows={report.dieLifeRows} theme={theme} />
+            <DieLifeMatrix rows={report.dieLifeRows} period={report.dieLifePeriod} theme={theme} />
           </div>
 
           <h2 style={{ fontSize: '0.75rem', fontWeight: 700, color: theme.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '2rem 0 0.75rem' }}>

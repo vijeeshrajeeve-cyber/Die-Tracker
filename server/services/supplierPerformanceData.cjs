@@ -138,11 +138,13 @@ async function getSnapshot(pool, { supplier, from, to }) {
     newTrialRatio: die.newTrialRatio,
     backupTrialRatio: die.backupTrialRatio,
     // The counts behind the trial ratios, so a supplier can be shown them.
+    // The paired counts the ratios were calculated from, so "5 trials on 3
+    // dies" always divides to the ratio printed beside it.
     trialTotals: {
-      newDiesReceived: die.totals ? die.totals.newDiesReceived : null,
-      newDieTrials: die.totals ? die.totals.newDieTrials : null,
-      backupDiesReceived: die.totals ? die.totals.backupDiesReceived : null,
-      backupDieTrials: die.totals ? die.totals.backupDieTrials : null,
+      newDiesReceived: die.paired ? die.paired.newDiesReceived : null,
+      newDieTrials: die.paired ? die.paired.newDieTrials : null,
+      backupDiesReceived: die.paired ? die.paired.backupDiesReceived : null,
+      backupDieTrials: die.paired ? die.paired.backupDieTrials : null,
     },
     designRevisions: num(o.design_revisions),
     deliveryLeadTime: num(r.delivery_lead_time),

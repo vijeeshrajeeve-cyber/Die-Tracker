@@ -16,8 +16,9 @@ export function calcDieLife(rows) {
   const add = (key, v) => { if (v !== null) totals[key] = (totals[key] || 0) + v; };
 
   let lifeT = 0, lifeS = 0, lifeRows = 0;
-  let run = 0, unloaded = 0;
+  let run = 0, unloaded = 0, anyRun = false;
   let newR = 0, newT = 0, bkR = 0, bkT = 0;
+  let newRows = 0, bkRows = 0;
 
   for (const r of rows || []) {
     const v = {};
@@ -27,11 +28,11 @@ export function calcDieLife(rows) {
       lifeT += v.tonnageMt; lifeS += v.diesScrapped; lifeRows += 1;
     }
     if (v.diesInService !== null) {
-      run += v.diesInService;
+      run += v.diesInService; anyRun = true;
       unloaded += v.diesFailed === null ? 0 : v.diesFailed;
     }
-    if (v.newDiesReceived !== null && v.newDieTrials !== null) { newR += v.newDiesReceived; newT += v.newDieTrials; }
-    if (v.backupDiesReceived !== null && v.backupDieTrials !== null) { bkR += v.backupDiesReceived; bkT += v.backupDieTrials; }
+    if (v.newDiesReceived !== null && v.newDieTrials !== null) { newR += v.newDiesReceived; newT += v.newDieTrials; newRows += 1; }
+    if (v.backupDiesReceived !== null && v.backupDieTrials !== null) { bkR += v.backupDiesReceived; bkT += v.backupDieTrials; bkRows += 1; }
   }
 
   const noDiesScrapped = lifeRows > 0 && lifeS === 0;
@@ -45,6 +46,19 @@ export function calcDieLife(rows) {
     backupTrialRatio: ratio(bkT, bkR),
     trialRatio: ratio(newT + bkT, newR + bkR),
     totals,
+    // The sums the figures above were actually calculated from: only rows that
+    // had both halves of a pair. Printing these beside a figure means the
+    // counts always divide to it. Null when no row qualified.
+    paired: {
+      tonnageMt: lifeRows > 0 ? lifeT : null,
+      diesScrapped: lifeRows > 0 ? lifeS : null,
+      diesInService: anyRun ? run : null,
+      diesFailed: anyRun ? unloaded : null,
+      newDiesReceived: newRows > 0 ? newR : null,
+      newDieTrials: newRows > 0 ? newT : null,
+      backupDiesReceived: bkRows > 0 ? bkR : null,
+      backupDieTrials: bkRows > 0 ? bkT : null,
+    },
   };
 }
 
