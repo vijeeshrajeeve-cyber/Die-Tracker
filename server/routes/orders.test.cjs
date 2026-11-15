@@ -14,6 +14,8 @@ let log = [];
 // While a create test runs, the follow-on queries of POST / get an empty answer.
 let createDefaults = false;
 let storedEnhancement = 0;
+let storedSampleStatus = 'Sample Submitted';
+let measuredOk = false;
 installFakeDb(async (sql, params = []) => {
   const q = sql.trim();
   log.push({ q, params });
@@ -22,6 +24,10 @@ installFakeDb(async (sql, params = []) => {
     return { rows: storedEta === undefined ? [] : [{ eta: storedEta }] };
   }
   if (/^SELECT design_enhancement FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: [{ design_enhancement: storedEnhancement }] };
+  if (/^SELECT design_enhancement, sample_status FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) {
+    return { rows: [{ design_enhancement: storedEnhancement, sample_status: storedSampleStatus }] };
+  }
+  if (/^SELECT 1 FROM sample_trials/.test(q)) return { rows: measuredOk ? [{ '?column?': 1 }] : [] };
   if (/^INSERT INTO design_enhancements/.test(q)) return { rows: [{ id: 1 }] };
   if (/^UPDATE die_orders SET/.test(q)) return { rows: [], rowCount: storedEta === undefined ? 0 : 1 };
   if (/^INSERT INTO die_delivery_events/.test(q)) return { rows: [{ id: 1 }] };
@@ -48,7 +54,7 @@ let base;
 let close;
 test.before(async () => { ({ base, close } = await listen(app)); });
 test.after(() => close());
-test.beforeEach(() => { storedEnhancement = 0; createDefaults = false; log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
+test.beforeEach(() => { storedEnhancement = 0; storedSampleStatus = 'Sample Submitted'; measuredOk = false; createDefaults = false; log = []; storedEta = '2026-10-01'; currentUser = EDITOR; });
 
 const kinds = () => log.map(({ q }) => q.split(/\s+/).slice(0, 3).join(' '));
 const events = () => log.filter(({ q }) => q.startsWith('INSERT INTO die_delivery_events'));
@@ -223,4 +229,45 @@ test('an order created without an enhancement is unchanged', async () => {
   const { status } = await create({ 'DIE NO': 'X1', STATUS: 'AWAITING FOR DESIGN' });
   assert.equal(status, 201);
   assert.ok(!log.some(({ q }) => q.startsWith('INSERT INTO design_enhancements')));
+});
+
+const NEED_TRIAL = 'Record an OK trial with productivity and recovery before approving an enhancement die';
+const wroteOrder = () => log.some(({ q }) => q.startsWith('UPDATE die_orders'));
+
+test('PATCH refuses Approved on an enhancement die with no measured OK trial', async () => {
+  storedEnhancement = 1;
+  const { status, body } = await patch({ 'Sample Status': 'Approved' });
+  assert.equal(status, 400);
+  assert.equal(body.error, NEED_TRIAL);
+  assert.equal(wroteOrder(), false);
+  assert.ok(log.some(({ q }) => q === 'ROLLBACK'));
+});
+
+test('PATCH approves an enhancement die that has a measured OK trial', async () => {
+  storedEnhancement = 1;
+  measuredOk = true;
+  assert.equal((await patch({ 'Sample Status': 'Approved' })).status, 200);
+  assert.equal(wroteOrder(), true);
+});
+
+test('PUT refuses Approved on an enhancement die with no measured OK trial', async () => {
+  storedEnhancement = 1;
+  const { status, body } = await put({ 'DIE NO': 'X1', simulationEnabled: true, 'Sample Status': 'Approved' });
+  assert.equal(status, 400);
+  assert.equal(body.error, NEED_TRIAL);
+  assert.equal(wroteOrder(), false);
+  measuredOk = true;
+  assert.equal((await put({ 'DIE NO': 'X1', simulationEnabled: true, 'Sample Status': 'Approved' })).status, 200);
+});
+
+test('a routine order can be approved with no trial', async () => {
+  assert.equal((await patch({ 'Sample Status': 'Approved' })).status, 200);
+  assert.equal((await put({ 'DIE NO': 'X1', 'Sample Status': 'Approved' })).status, 200);
+});
+
+test('other statuses, and re-saving an already Approved enhancement die, are not blocked', async () => {
+  storedEnhancement = 1;
+  assert.equal((await patch({ 'Sample Status': 'Rejected' })).status, 200);
+  storedSampleStatus = 'Approved';
+  assert.equal((await patch({ 'Sample Status': 'Approved' })).status, 200);
 });

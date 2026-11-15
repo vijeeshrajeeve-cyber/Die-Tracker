@@ -95,4 +95,4 @@ function projectState(row, order) {
   return 'Open';
 }
 
-module.exports = { VERDICTS, validateBaseline, suggestVerdict, projectState, needsLifeReview };
+module.exports = { parseNumber, isBlank, VERDICTS, validateBaseline, suggestVerdict, projectState, needsLifeReview };

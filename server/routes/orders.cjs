@@ -21,6 +21,7 @@ const { sha256Of } = require('../services/toolingDrawings.cjs');
 const { adminMiddleware } = require('./auth.cjs');
 const { insertChangeLog } = require('../services/orderChangeLog.cjs');
 const { validateBaseline } = require('../services/designEnhancement.cjs');
+const { hasMeasuredOkTrial } = require('../services/sampleTrials.cjs');
 const { SIMULATION_STATUSES, markAccess } = require('../services/enhancementAccess.cjs');
 
 const router = express.Router();
@@ -124,6 +125,20 @@ async function guardSimulationOff(client, id, body, alwaysWrites) {
     if (rows.length) assertSimulationAllowed(rows[0].design_enhancement, false);
 }
 
+const APPROVAL_NEEDS_TRIAL = 'Record an OK trial with productivity and recovery before approving an enhancement die';
+const isApproved = (v) => String(v == null ? '' : v).trim().toLowerCase() === 'approved';
+
+// An enhancement die cannot be approved until a trial has measured it. Only a
+// move into Approved is checked, so re-saving an order that is already Approved
+// is never blocked. Reads under the row lock, inside the update's transaction.
+async function guardApproval(client, id, body) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'Sample Status') || !isApproved(body['Sample Status'])) return;
+    const { rows } = await client.query(
+        'SELECT design_enhancement, sample_status FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows.length || !rows[0].design_enhancement || isApproved(rows[0].sample_status)) return;
+    if (!(await hasMeasuredOkTrial(client, id))) throw new OrderEditError(APPROVAL_NEEDS_TRIAL, 'TRIAL_REQUIRED');
+}
+
 // Runs one order update in a transaction with its ETA event and change log.
 // Resolves to null on success, or to the HTTP answer to send instead, so each
 // route keeps its own success message.
@@ -137,6 +152,7 @@ async function updateWithEta(id, body, user, runUpdate, { fullReplace = false } 
             return { status: 404, json: { error: 'Order not found' } };
         }
         await guardSimulationOff(client, id, body, fullReplace);
+        await guardApproval(client, id, body);
         const result = await runUpdate(client);
         if (result.rowCount === 0) {
             await client.query('ROLLBACK');
