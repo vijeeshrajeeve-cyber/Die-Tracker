@@ -399,25 +399,19 @@ export const supplierPerformanceAPI = {
         return response.blob();
     },
 
-    getDieLife: async ({ year, month }) => {
-        const qs = new URLSearchParams({ year: String(year), month: String(month) });
+    // plant is a plant name or 'all'. Returns { rows, legacy }.
+    getDieLife: async ({ year, month, plant }) => {
+        const qs = new URLSearchParams({ year: String(year), month: String(month), plant: plant || '' });
         return apiRequest(`/supplier-performance/die-life?${qs}`);
     },
 
-    saveDieLife: async ({ year, month, entries }) => apiRequest('/supplier-performance/die-life', {
+    saveDieLife: async ({ year, month, plant, entries }) => apiRequest('/supplier-performance/die-life', {
         method: 'PUT',
-        body: JSON.stringify({ year, month, entries }),
+        body: JSON.stringify({ year, month, plant, entries }),
     }),
 
-    getTrialRatios: async ({ year, month }) => {
-        const qs = new URLSearchParams({ year: String(year), month: String(month) });
-        return apiRequest(`/supplier-performance/trial-ratio?${qs}`);
-    },
-
-    // value null removes the correction and returns to the calculated figure.
-    saveTrialRatioCorrection: async ({ supplier, year, month, value, reason }) => apiRequest('/supplier-performance/trial-ratio', {
-        method: 'PUT',
-        body: JSON.stringify({ supplier, year, month, value, reason }),
+    deleteLegacyDieLife: async (id) => apiRequest(`/supplier-performance/die-life/legacy/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
     }),
 
     getSettings: async (year) => {

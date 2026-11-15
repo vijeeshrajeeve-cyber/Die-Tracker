@@ -1,113 +1,172 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Save, Pencil } from 'lucide-react';
-import { supplierPerformanceAPI } from '../../api';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Save, Trash2 } from 'lucide-react';
+import { supplierPerformanceAPI, plantsAPI } from '../../api';
 import { MONTHS } from '../../utils/constants';
 import { dialogs } from '../../components/ui/DialogProvider';
 import { BRAND } from '../../utils/brand';
+import { COUNT_FIELDS, calcDieLife, formatDieLife, rowErrors } from '../../utils/dieLifeCalc';
 
-// Manual monthly die life entry. Nothing in this system records tonnage, so
-// these numbers per supplier are typed in once a month.
+// Manual monthly die life entry, per plant. Nothing in this system records
+// tonnage, so these counts per supplier and plant are typed in once a month.
 //
-// The failure percentage is shown but never typed: it is derived here exactly
-// as the server derives it, so the person entering counts can see the number
-// the supplier will be judged on while they can still correct the counts.
+// Die life, failure % and the three trial ratios are never typed: they are
+// calculated here (src/utils/dieLifeCalc.js, a mirror of the server module)
+// so the person entering counts sees the numbers the supplier will be judged
+// on while they can still correct the counts.
 //
-// Trial Ratio is the other exception: it is calculated from the orders and
-// only shown here. An admin can correct a month's figure, with a reason, when
-// the calculated one is known to be wrong. That saves on its own, straight
-// away -- it is not part of the grid's Save.
-const FIELDS = ['avgDieLifeMt', 'diesInService', 'diesFailed', 'diesScrapped'];
-const FIELD_NAMES = {
-  avgDieLifeMt: 'average die life',
-  diesInService: 'dies extruded',
-  diesFailed: 'dies failed',
+// "All plants" shows the summed counts read-only. Rows typed before figures
+// were split by plant are listed apart as "Plant not set" and never counted.
+const ALL = 'all';
+const FIELD_LABELS = {
+  tonnageMt: 'tonnage (MT)',
   diesScrapped: 'dies scrapped',
+  diesInService: 'dies run',
+  diesFailed: 'dies unloaded',
+  newDiesReceived: 'new dies received',
+  newDieTrials: 'new die trials',
+  backupDiesReceived: 'backup dies received',
+  backupDieTrials: 'backup die trials',
 };
-const HEADERS = ['Supplier', 'Avg Die Life (MT)', 'Dies Extruded', 'Dies Failed', 'Dies Scrapped', 'Failure %', 'Trial Ratio', 'Last updated'];
-const keyOf = (s) => String(s || '').trim().toUpperCase();
-const indexRatios = (list) => {
-  const next = {};
-  for (const r of list || []) next[r.supplierKey] = r;
-  return next;
+const GROUPS = [
+  { title: 'Die life', span: 3 },
+  { title: 'Failure', span: 3 },
+  { title: 'New dies', span: 3 },
+  { title: 'Backup dies', span: 3 },
+];
+const COLUMNS = [
+  { input: 'tonnageMt', head: 'Tonnage (MT)' },
+  { input: 'diesScrapped', head: 'Dies scrapped' },
+  { calc: 'life', head: 'Die life (MT)' },
+  { input: 'diesInService', head: 'Dies run' },
+  { input: 'diesFailed', head: 'Dies unloaded' },
+  { calc: 'failure', head: 'Failure %' },
+  { input: 'newDiesReceived', head: 'New dies received' },
+  { input: 'newDieTrials', head: 'New die trials' },
+  { calc: 'newRatio', head: 'New trial ratio' },
+  { input: 'backupDiesReceived', head: 'Backup dies received' },
+  { input: 'backupDieTrials', head: 'Backup die trials' },
+  { calc: 'backupRatio', head: 'Backup trial ratio' },
+];
+
+const blankCounts = () => Object.fromEntries(COUNT_FIELDS.map((f) => [f, null]));
+const countsOf = (r) => {
+  const out = blankCounts();
+  if (r) for (const f of COUNT_FIELDS) out[f] = r[f] == null ? null : Number(r[f]);
+  return out;
 };
+const sameCounts = (a, b) => {
+  const x = countsOf(a);
+  const y = countsOf(b);
+  return COUNT_FIELDS.every((f) => x[f] === y[f]);
+};
+const two = (v) => (v == null ? null : Number(v).toFixed(2));
+const withStamp = (r) => ({ ...countsOf(r), updatedBy: r.updatedBy, updatedAt: r.updatedAt });
 
 export default function DieLifeTab({ theme, isAdmin, onSaved }) {
   const thisYear = new Date().getFullYear();
+  const [plants, setPlants] = useState(null); // null = still loading
+  const [plant, setPlant] = useState('');
   const [year, setYear] = useState(thisYear);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [suppliers, setSuppliers] = useState([]);
   const [rows, setRows] = useState({});
   const [saved, setSaved] = useState({});
+  const [legacy, setLegacy] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [ratios, setRatios] = useState({});
-  // The correction being edited: { supplier, value, reason }, or null.
-  const [fixing, setFixing] = useState(null);
-  const [fixSaving, setFixSaving] = useState(false);
+  const requestId = useRef(0);
+
+  const readOnly = plant === ALL;
 
   useEffect(() => {
     let cancelled = false;
     supplierPerformanceAPI.getSuppliers()
       .then((list) => { if (!cancelled) setSuppliers(list || []); })
       .catch(() => { if (!cancelled) setError('Could not load the supplier list.'); });
+    plantsAPI.getAll()
+      .then((list) => {
+        if (cancelled) return;
+        const names = (list || []).map((p) => p.name).filter(Boolean);
+        setPlants(names);
+        setPlant((cur) => cur || names[0] || '');
+      })
+      .catch(() => { if (!cancelled) { setPlants([]); setError('Could not load the plant list.'); } });
     return () => { cancelled = true; };
   }, []);
 
   const load = useCallback(async () => {
+    if (!plant) return;
+    const mine = ++requestId.current;
     setLoading(true); setError('');
     try {
-      const data = await supplierPerformanceAPI.getDieLife({ year, month });
+      const data = await supplierPerformanceAPI.getDieLife({ year, month, plant });
+      if (mine !== requestId.current) return;
       const next = {};
-      for (const r of data || []) next[r.supplier] = r;
+      for (const r of (data && data.rows) || []) next[r.supplier] = withStamp(r);
       setRows(next);
       setSaved(next);
-      // Separate from the grid on purpose: a failure here must not hide the
-      // figures somebody came to type.
-      try {
-        setRatios(indexRatios(await supplierPerformanceAPI.getTrialRatios({ year, month })));
-      } catch { setRatios({}); }
+      setLegacy((data && data.legacy) || []);
     } catch (e) {
+      if (mine !== requestId.current) return;
       setError(e.message || 'Could not load die life data.');
     } finally {
-      setLoading(false);
+      if (mine === requestId.current) setLoading(false);
     }
-  }, [year, month]);
+  }, [plant, year, month]);
 
   useEffect(() => { load(); }, [load]);
 
-  // '' is how an empty box reaches the server, where it becomes NULL. A typed
-  // 0 stays 0. The two must never collapse into one another.
+  // '' is how an empty box is stored: null, "not recorded". A typed 0 stays 0.
   const edit = (supplier, field, raw) => {
-    setRows((prev) => ({ ...prev, [supplier]: { ...(prev[supplier] || { supplier }), [field]: raw === '' ? null : Number(raw) } }));
+    setRows((prev) => ({
+      ...prev,
+      [supplier]: { ...(prev[supplier] || {}), [field]: raw === '' ? null : Number(raw) },
+    }));
   };
 
-  const failureOf = (r) => {
-    if (!r) return null;
-    const svc = r.diesInService;
-    const bad = r.diesFailed;
-    if (svc == null || svc <= 0 || bad == null) return null;
-    return (bad / svc) * 100;
-  };
+  const changedSuppliers = useMemo(
+    () => suppliers.filter((s) => !sameCounts(rows[s], saved[s])),
+    [suppliers, rows, saved],
+  );
+  const dirty = !readOnly && changedSuppliers.length > 0;
+  const errorsBySupplier = useMemo(() => {
+    const out = {};
+    for (const s of suppliers) {
+      const e = rowErrors(countsOf(rows[s]));
+      if (Object.keys(e).length) out[s] = e;
+    }
+    return out;
+  }, [suppliers, rows]);
+  const hasErrors = Object.keys(errorsBySupplier).length > 0;
 
-  const dirty = useMemo(() => JSON.stringify(rows) !== JSON.stringify(saved), [rows, saved]);
+  // Switching plant, year or month reloads the grid, which would throw away
+  // typed figures. Ask first.
+  const guarded = (apply) => async (e) => {
+    const value = e.target.value;
+    if (dirty) {
+      const ok = await dialogs.confirm({
+        title: 'Discard unsaved figures',
+        message: 'You have figures that are not saved. Switching will discard them.',
+        confirmLabel: 'Discard',
+      });
+      if (!ok) return;
+    }
+    apply(value);
+  };
 
   const save = async () => {
+    if (hasErrors) return;
     setSaving(true);
     try {
-      // Only send rows with something in them. An untouched supplier should not
-      // get a row of nulls written against its name.
-      const entries = suppliers
-        .map((s) => rows[s])
-        .filter((r) => r && FIELDS.some((f) => r[f] != null))
-        .map((r) => ({
-          supplier: r.supplier, avgDieLifeMt: r.avgDieLifeMt, diesInService: r.diesInService,
-          diesFailed: r.diesFailed, diesScrapped: r.diesScrapped,
-        }));
-      const data = await supplierPerformanceAPI.saveDieLife({ year, month, entries });
+      // Only suppliers that changed. A supplier whose boxes were all cleared is
+      // sent with every count null, which the server reads as "remove the row".
+      const entries = changedSuppliers.map((s) => ({ supplier: s, ...countsOf(rows[s]) }));
+      const data = await supplierPerformanceAPI.saveDieLife({ year, month, plant, entries });
       const next = {};
-      for (const r of data || []) next[r.supplier] = r;
+      for (const r of (data && data.rows) || []) next[r.supplier] = withStamp(r);
       setRows(next); setSaved(next);
+      if (data && data.legacy) setLegacy(data.legacy);
       // Tells the Supplier Report tab its report is out of date. It stays
       // mounted while hidden, so it would otherwise keep the figures it
       // fetched on page load.
@@ -120,175 +179,187 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
     }
   };
 
-  // remove = go back to the calculated figure. Both need a reason.
-  const saveFix = async (remove) => {
-    if (!fixing) return;
-    const reason = fixing.reason.trim();
-    if (!reason) { dialogs.notify('Give a reason for the change.', 'error'); return; }
-    if (!remove && (fixing.value === '' || !Number.isFinite(Number(fixing.value)) || Number(fixing.value) < 0)) {
-      dialogs.notify('Enter the corrected trial ratio.', 'error');
-      return;
-    }
-    setFixSaving(true);
+  const removeLegacy = async (r) => {
+    const ok = await dialogs.confirm({
+      title: 'Delete figures with no plant',
+      message: `The ${MONTHS[month - 1]} ${year} figures typed for ${r.supplier} before plants existed will be permanently removed. This cannot be undone.`,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     try {
-      const list = await supplierPerformanceAPI.saveTrialRatioCorrection({
-        supplier: fixing.supplier, year, month, value: remove ? null : Number(fixing.value), reason,
-      });
-      setRatios(indexRatios(list));
-      setFixing(null);
-      // The trial ratio is scored, so the Supplier Report is now out of date.
-      if (onSaved) onSaved();
-      dialogs.notify(remove ? 'Correction removed.' : 'Trial ratio corrected.', 'success');
+      await supplierPerformanceAPI.deleteLegacyDieLife(r.id);
+      setLegacy((list) => list.filter((x) => x.id !== r.id));
+      dialogs.notify('Figures deleted.', 'success');
     } catch (e) {
-      dialogs.notify('Failed to save: ' + e.message, 'error');
-    } finally {
-      setFixSaving(false);
+      dialogs.notify('Failed to delete: ' + e.message, 'error');
     }
   };
 
   const years = Array.from({ length: 6 }, (_, i) => thisYear - 4 + i);
   const select = { padding: '8px 12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontSize: '0.85rem', cursor: 'pointer' };
   const label = { fontSize: 9.5, fontWeight: 600, color: theme.textDim, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 3 };
-  const cell = { padding: '8px 10px', fontSize: '0.8rem', color: theme.text };
-  const input = { width: 90, padding: '5px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 4, color: theme.text, fontSize: '0.78rem' };
-  const field = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 6, color: theme.text, fontSize: 13, fontFamily: 'inherit' };
-  const ghost = { padding: '8px 14px', background: 'transparent', border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontWeight: 600, fontSize: 13, cursor: 'pointer' };
-  const fixingRatio = fixing ? (ratios[keyOf(fixing.supplier)] || {}) : {};
-  const two = (v) => (v == null ? '—' : Number(v).toFixed(2));
+  const cell = { padding: '8px 8px', fontSize: '0.8rem', color: theme.text, verticalAlign: 'top' };
+  const input = { width: 72, padding: '5px 8px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 4, color: theme.text, fontSize: '0.78rem' };
+  const groupHead = { ...cell, textAlign: 'center', color: theme.textDim, fontWeight: 700, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderLeft: `1px solid ${theme.cardBorder}` };
+
+  const calcCell = (kind, res) => {
+    let text = null;
+    if (kind === 'life') text = formatDieLife(res);
+    else if (kind === 'failure') text = res.dieFailure == null ? null : `${res.dieFailure.toFixed(1)}%`;
+    else if (kind === 'newRatio') text = two(res.newTrialRatio);
+    else text = two(res.backupTrialRatio);
+    if (text == null) text = 'not recorded';
+    const dim = text === 'not recorded' || text === 'no dies scrapped';
+    return (
+      <span style={{ fontVariantNumeric: 'tabular-nums', color: dim ? theme.textDim : theme.text, fontSize: dim ? '0.72rem' : undefined, whiteSpace: 'nowrap' }}>
+        {text}
+      </span>
+    );
+  };
+
+  const noPlants = plants !== null && plants.length === 0;
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1.25rem' }}>
         <div>
+          <label style={label} htmlFor="dl-plant">Plant</label>
+          <select id="dl-plant" value={plant} disabled={!plants || noPlants} onChange={guarded(setPlant)} style={select}>
+            {(plants || []).map((p) => <option key={p} value={p}>{p}</option>)}
+            {plants && plants.length > 0 && <option value={ALL}>All plants</option>}
+          </select>
+        </div>
+        <div>
           <label style={label} htmlFor="dl-year">Year</label>
-          <select id="dl-year" value={year} onChange={(e) => setYear(Number(e.target.value))} style={select}>
+          <select id="dl-year" value={year} onChange={guarded((v) => setYear(Number(v)))} style={select}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
         <div>
           <label style={label} htmlFor="dl-month">Month</label>
-          <select id="dl-month" value={month} onChange={(e) => setMonth(Number(e.target.value))} style={select}>
+          <select id="dl-month" value={month} onChange={guarded((v) => setMonth(Number(v)))} style={select}>
             {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
         </div>
-        <button onClick={save} disabled={saving || !dirty}
-          style={{ marginLeft: 'auto', padding: '9px 16px', background: dirty ? BRAND.navy : theme.cardBorder, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: dirty && !saving ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7 }}>
-          <Save size={15} /> {saving ? 'Saving…' : 'Save'}
-        </button>
+        {!readOnly && (
+          <button onClick={save} disabled={saving || !dirty || hasErrors || !plant}
+            style={{ marginLeft: 'auto', padding: '9px 16px', background: dirty && !hasErrors ? BRAND.navy : theme.cardBorder, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: dirty && !hasErrors && !saving ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Save size={15} /> {saving ? 'Saving…' : 'Save'}
+          </button>
+        )}
       </div>
 
-      <p style={{ fontSize: 12, color: theme.textDim, marginTop: 0, marginBottom: '1rem', lineHeight: 1.6, maxWidth: 720 }}>
-        Leave a box empty where you have no figure. An empty box means <em>not recorded</em> and is
-        left out of the supplier&rsquo;s rating — it is not read as zero. Failure&nbsp;% is worked out
-        from the counts and cannot be typed. Trial Ratio is worked out from the orders placed in the
-        month; {isAdmin ? 'use Change to correct a figure that is wrong.' : 'an admin can correct a figure that is wrong.'}
-      </p>
+      {noPlants ? (
+        <div style={{ padding: 24, textAlign: 'center', color: theme.textDim, fontSize: '0.85rem' }}>
+          Add a plant in Settings to enter die life figures
+        </div>
+      ) : (
+        <>
+          <p style={{ fontSize: 12, color: theme.textDim, marginTop: 0, marginBottom: '1rem', lineHeight: 1.6, maxWidth: 720 }}>
+            {readOnly
+              ? 'Combined figures for all plants. Choose a plant to enter or change figures.'
+              : 'Leave a box empty where you have no figure. An empty box means not recorded and is left out of the supplier’s rating. It is not read as zero. Die life, failure % and the trial ratios are worked out from the counts and cannot be typed.'}
+          </p>
 
-      {error && <div style={{ padding: 16, borderRadius: 10, border: '1px solid #EF4444', color: '#EF4444', fontSize: '0.85rem', marginBottom: '1.25rem' }}>{error}</div>}
-      {loading && <div style={{ color: theme.textDim, fontSize: '0.85rem' }}>Loading…</div>}
+          {error && <div style={{ padding: 16, borderRadius: 10, border: '1px solid #EF4444', color: '#EF4444', fontSize: '0.85rem', marginBottom: '1.25rem' }}>{error}</div>}
+          {loading && <div style={{ color: theme.textDim, fontSize: '0.85rem' }}>Loading…</div>}
 
-      {!loading && (
-        <div style={{ background: theme.cardBg, borderRadius: 12, border: `1px solid ${theme.cardBorder}`, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                {HEADERS.map((h) => (
-                  <th key={h} scope="col" style={{ ...cell, textAlign: 'left', color: theme.textDim, whiteSpace: 'nowrap', fontWeight: 600 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {suppliers.map((s) => {
-                const r = rows[s] || {};
-                const pct = failureOf(r);
-                const tr = ratios[keyOf(s)] || {};
-                const corrected = tr.corrected != null;
-                const ratio = corrected ? tr.corrected : tr.calculated;
-                return (
-                  <tr key={s} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
-                    <td style={{ ...cell, whiteSpace: 'nowrap', fontWeight: 600 }}>{s}</td>
-                    {FIELDS.map((f) => (
-                      <td key={f} style={cell}>
-                        <input type="number" step="any" min="0" aria-label={`${s} ${FIELD_NAMES[f]}`}
-                          value={r[f] == null ? '' : r[f]}
-                          onChange={(e) => edit(s, f, e.target.value)} style={input} />
-                      </td>
-                    ))}
-                    <td style={{ ...cell, fontVariantNumeric: 'tabular-nums', color: pct == null ? theme.textDim : theme.text }}>
-                      {pct == null ? '—' : `${pct.toFixed(1)}%`}
-                    </td>
-                    <td style={cell}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-                        <span style={{ fontVariantNumeric: 'tabular-nums', color: ratio == null ? theme.textDim : theme.text }}>
-                          {two(ratio)}
-                        </span>
-                        {corrected && (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#D97706' }}>
-                            Corrected
-                          </span>
-                        )}
-                        {isAdmin && (
-                          <button type="button" aria-label={`Change trial ratio for ${s}`}
-                            onClick={() => setFixing({ supplier: s, value: ratio == null ? '' : String(Number(Number(ratio).toFixed(2))), reason: '' })}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'transparent', border: `1px solid ${theme.cardBorder}`, borderRadius: 4, color: theme.textDim, fontSize: 11, cursor: 'pointer' }}>
-                            <Pencil size={11} /> Change
-                          </button>
-                        )}
-                      </div>
-                      {corrected && (
-                        <div style={{ fontSize: 10.5, color: theme.textDim, marginTop: 3, maxWidth: 260, lineHeight: 1.4 }}>
-                          Calculated {two(tr.calculated)} · {tr.reason}
-                          {tr.correctedBy ? ` · ${tr.correctedBy}` : ''}
-                          {tr.correctedAt ? ` · ${new Date(tr.correctedAt).toLocaleDateString()}` : ''}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ ...cell, color: theme.textDim, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
-                      {r.updatedBy ? `${r.updatedBy} · ${new Date(r.updatedAt).toLocaleDateString()}` : '—'}
-                    </td>
+          {!loading && plant && (
+            <div style={{ background: theme.cardBg, borderRadius: 12, border: `1px solid ${theme.cardBorder}`, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th rowSpan={2} scope="col" style={{ ...cell, textAlign: 'left', color: theme.textDim, fontWeight: 600, verticalAlign: 'bottom' }}>Supplier</th>
+                    {GROUPS.map((g) => <th key={g.title} colSpan={g.span} scope="colgroup" style={groupHead}>{g.title}</th>)}
+                    {!readOnly && <th rowSpan={2} scope="col" style={{ ...cell, textAlign: 'left', color: theme.textDim, fontWeight: 600, whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>Last updated</th>}
                   </tr>
-                );
-              })}
-              {suppliers.length === 0 && (
-                <tr><td colSpan={HEADERS.length} style={{ padding: 24, textAlign: 'center', color: theme.textDim }}>No suppliers found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+                  <tr>
+                    {COLUMNS.map((c) => (
+                      <th key={c.head} scope="col" style={{ ...cell, textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.72rem', maxWidth: 84 }}>{c.head}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {suppliers.map((s) => {
+                    const counts = countsOf(rows[s]);
+                    const res = calcDieLife([counts]);
+                    const errs = errorsBySupplier[s] || {};
+                    const r = rows[s] || {};
+                    return (
+                      <tr key={s} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
+                        <td style={{ ...cell, whiteSpace: 'nowrap', fontWeight: 600 }}>{s}</td>
+                        {COLUMNS.map((c) => (
+                          <td key={c.input || c.calc} style={cell}>
+                            {c.calc ? calcCell(c.calc, res) : readOnly ? (
+                              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{counts[c.input] == null ? '' : counts[c.input]}</span>
+                            ) : (
+                              <>
+                                <input type="number" step={c.input === 'tonnageMt' ? 'any' : '1'} min="0"
+                                  aria-label={`${s} ${FIELD_LABELS[c.input]}`}
+                                  aria-invalid={errs[c.input] ? true : undefined}
+                                  value={counts[c.input] == null ? '' : counts[c.input]}
+                                  onChange={(e) => edit(s, c.input, e.target.value)}
+                                  style={{ ...input, ...(errs[c.input] ? { borderColor: '#EF4444' } : null) }} />
+                                {errs[c.input] && (
+                                  <div role="alert" style={{ color: '#EF4444', fontSize: 10.5, marginTop: 3, maxWidth: 110, lineHeight: 1.35 }}>{errs[c.input]}</div>
+                                )}
+                              </>
+                            )}
+                          </td>
+                        ))}
+                        {!readOnly && (
+                          <td style={{ ...cell, color: theme.textDim, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                            {r.updatedBy && r.updatedAt ? `${r.updatedBy} · ${new Date(r.updatedAt).toLocaleDateString()}` : '—'}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {suppliers.length === 0 && (
+                    <tr><td colSpan={COLUMNS.length + 2} style={{ padding: 24, textAlign: 'center', color: theme.textDim }}>No suppliers found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-      {fixing && (
-        <div onMouseDown={(e) => { if (e.target === e.currentTarget && !fixSaving) setFixing(null); }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="tr-fix-title"
-            onKeyDown={(e) => { if (e.key === 'Escape' && !fixSaving) setFixing(null); }}
-            style={{ width: '100%', maxWidth: 420, background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 12, padding: 20 }}>
-            <div id="tr-fix-title" style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>
-              Correct trial ratio — {fixing.supplier}
+          {!loading && legacy.length > 0 && (
+            <div style={{ marginTop: '1.5rem', background: theme.cardBg, borderRadius: 12, border: `1px solid ${theme.cardBorder}`, padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>Plant not set</div>
+              <div style={{ fontSize: 12, color: theme.textDim, margin: '2px 0 10px' }}>
+                Entered before figures were split by plant. Not used in any calculation.
+              </div>
+              <table style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {['Supplier', 'Avg die life (MT)', 'Dies run', 'Dies unloaded', 'Dies scrapped'].map((h) => (
+                      <th key={h} scope="col" style={{ ...cell, textAlign: 'left', color: theme.textDim, fontWeight: 600, fontSize: '0.72rem' }}>{h}</th>
+                    ))}
+                    {isAdmin && <th scope="col" style={cell}><span style={{ position: 'absolute', left: -9999 }}>Delete</span></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {legacy.map((r) => (
+                    <tr key={r.id} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
+                      <td style={{ ...cell, fontWeight: 600 }}>{r.supplier}</td>
+                      {[r.avgDieLifeMt, r.diesInService, r.diesFailed, r.diesScrapped].map((v, i) => (
+                        <td key={i} style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>{v == null ? '—' : v}</td>
+                      ))}
+                      {isAdmin && (
+                        <td style={cell}>
+                          <button type="button" onClick={() => removeLegacy(r)} aria-label={`Delete figures with no plant for ${r.supplier}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'transparent', border: `1px solid ${theme.cardBorder}`, borderRadius: 4, color: '#EF4444', fontSize: 11, cursor: 'pointer' }}>
+                            <Trash2 size={11} /> Delete
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div style={{ fontSize: 12, color: theme.textDim, margin: '4px 0 16px' }}>
-              {MONTHS[month - 1]} {year} · calculated from orders: {fixingRatio.calculated == null ? 'no figure' : two(fixingRatio.calculated)}
-            </div>
-            <label style={label} htmlFor="tr-fix-value">Corrected trial ratio</label>
-            <input id="tr-fix-value" type="number" step="any" min="0" autoFocus value={fixing.value}
-              onChange={(e) => setFixing((f) => ({ ...f, value: e.target.value }))} style={{ ...field, marginBottom: 12 }} />
-            <label style={label} htmlFor="tr-fix-reason">Reason for the change</label>
-            <textarea id="tr-fix-reason" rows={3} value={fixing.reason} maxLength={500}
-              onChange={(e) => setFixing((f) => ({ ...f, reason: e.target.value }))} style={{ ...field, resize: 'vertical' }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-              {fixingRatio.corrected != null && (
-                <button type="button" disabled={fixSaving} onClick={() => saveFix(true)} style={ghost}>
-                  Use calculated figure
-                </button>
-              )}
-              <button type="button" disabled={fixSaving} onClick={() => setFixing(null)} style={{ ...ghost, marginLeft: 'auto' }}>Cancel</button>
-              <button type="button" disabled={fixSaving} onClick={() => saveFix(false)}
-                style={{ padding: '8px 16px', background: BRAND.navy, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: fixSaving ? 'not-allowed' : 'pointer' }}>
-                {fixSaving ? 'Saving…' : 'Save correction'}
-              </button>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
