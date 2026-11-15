@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion, prefillDueDate,
+  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, validateAbandonForm, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion, prefillDueDate,
 } from './enhancementVerdict.js';
 
 const ROW = {
@@ -10,6 +10,7 @@ const ROW = {
   trial_verdict: null, final_verdict: null, life_review_date: null,
 };
 const approved = { STATUS: 'DIE RECEIVED', 'Sample Status': 'Approved' };
+const rejected = { STATUS: 'DIE RECEIVED', 'Sample Status': 'Rejected' };
 const TRIALS = [
   { trial_no: 1, result: 'Not OK', productivity_kgh: null, recovery_pct: null },
   { trial_no: 2, result: 'OK', productivity_kgh: '920', recovery_pct: '76' },
@@ -35,7 +36,9 @@ test('latestOkTrial is the highest OK trial number', () => {
 test('stage: waiting until the sample is decided, then trial, review, done', () => {
   assert.equal(panelStage(ROW, { STATUS: 'DIE RECEIVED', 'Sample Status': 'Sample Submitted' }), 'waiting');
   assert.equal(panelStage(ROW, approved), 'trial');
-  assert.equal(panelStage(ROW, { STATUS: 'DIE RECEIVED', 'Sample Status': 'Rejected' }), 'trial');
+  assert.equal(panelStage(ROW, rejected), 'rework');
+  assert.equal(panelStage({ ...ROW, trial_verdict: 'Not achieved', final_verdict: 'Not achieved' }, rejected), 'done');
+  assert.equal(panelStage(ROW, { STATUS: 'CANCELLED', 'Sample Status': 'Rejected' }), 'cancelled');
   assert.equal(panelStage({ ...ROW, trial_verdict: 'Achieved' }, approved), 'review');
   assert.equal(panelStage({ ...ROW, trial_verdict: 'Achieved', failure_assessment_required: false, final_verdict: 'Achieved' }, approved), 'done');
   assert.equal(panelStage(ROW, { STATUS: 'CANCELLED', 'Sample Status': 'Approved' }), 'cancelled');
@@ -133,7 +136,9 @@ test('trial suggestion uses the latest OK trial against the two targets', () => 
   assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: '850', recovery_pct: '76' }]), 'Partly achieved');
   assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: '850', recovery_pct: '70' }]), 'Not achieved');
   assert.equal(trialSuggestion(ROW, approved, []), null);
-  assert.equal(trialSuggestion(ROW, { STATUS: 'DIE RECEIVED', 'Sample Status': 'Rejected' }, [{ trial_no: 1, result: 'Not OK' }]), 'Not achieved');
+  // a Rejected sample keeps the project open: no suggestion, same as the server
+  assert.equal(trialSuggestion(ROW, rejected, [{ trial_no: 1, result: 'Not OK' }]), null);
+  assert.equal(trialSuggestion(ROW, rejected, TRIALS), null);
   // a blank number is skipped, not treated as 0
   assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: null, recovery_pct: '80' }]), 'Achieved');
 });
@@ -145,4 +150,14 @@ test('the review due date pre-fills the stored one, and the suggested default on
   assert.equal(prefillDueDate({ life_review_due_date: null }, suggestion), '2027-02-28');
   assert.equal(prefillDueDate(null, suggestion), '2027-02-28');
   assert.equal(prefillDueDate({}, null), '');
+});
+
+test('closing a rejected project as Not achieved needs a remark and sends abandon', () => {
+  let r = validateAbandonForm({ values: { remark: '   ' } });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.remark);
+  r = validateAbandonForm({ values: {} });
+  assert.ok(r.errors.remark);
+  r = validateAbandonForm({ values: { remark: '  Die scrapped  ' } });
+  assert.deepEqual(r, { ok: true, errors: {}, body: { verdict: 'Not achieved', remark: 'Die scrapped', abandon: true } });
 });

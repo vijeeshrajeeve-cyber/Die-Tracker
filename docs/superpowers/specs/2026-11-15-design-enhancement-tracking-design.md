@@ -111,8 +111,7 @@ Approach 2 was chosen by Claude; the user left the how open.
   targets met → Achieved; some → Partly achieved; none → Not achieved). The
   user confirms or overrides it and must add a remark when overriding.
 - **Which trial counts.** The trial verdict uses the numbers of the latest
-  trial with result OK. If the sample is rejected with no OK trial, the
-  suggestion is Not achieved.
+  trial with result OK.
 - **Life review date.** When the trial verdict is saved on a project that needs
   the failure assessment, the user sets a review due date, pre-filled to six
   months after the sample approval date. Due and overdue reviews appear in the
@@ -137,8 +136,17 @@ Approach 2 was chosen by Claude; the user left the how open.
   to Approved until at least one OK trial with productivity and recovery
   exists. The server rejects it with a clear message. Imports that would set
   Approved on such an order leave the status unchanged and report the row.
-- **Rejected samples.** If the sample is Rejected, the trial verdict is final
-  even when a failure assessment was required; there is no life review.
+- **Rejected samples.** (changed 2026-11-15: a Rejected sample no longer makes
+  the trial verdict final.) The trial verdict can be recorded only when the
+  sample is Approved. While the sample is Rejected the project stays Open
+  through rework and resubmission, the result panel shows the numbers and a
+  note, nothing is suggested, and there is no life review. A project whose die
+  will not be reworked can be closed explicitly as "Close project as Not
+  achieved", which needs a remark: it writes the trial and final verdict as
+  Not achieved with that remark, user and date, snapshots the latest OK trial
+  if any, and never creates a life review. If such a project's sample is later
+  Approved, an admin can redo the trial verdict (with a reason) and a life
+  review is owed again when the assessment was required.
 - **Verdict numbers are a snapshot.** Saving a verdict copies the trial numbers
   into the enhancement record. Later trial edits or new trials do not change a
   saved verdict; an admin can redo the verdict, which takes a fresh snapshot.
@@ -174,8 +182,8 @@ enhancement, and are required there when the result is OK.
 
 | State | Rule |
 |---|---|
-| Open | marked, no trial verdict yet |
-| Awaiting life review | trial verdict given, failure assessment required, sample not Rejected, no final verdict |
+| Open | marked, no trial verdict yet (including a Rejected sample being reworked) |
+| Awaiting life review | trial verdict given, failure assessment required, sample not Rejected, no final verdict (a project closed as Not achieved while Rejected is Completed) |
 | Completed | final verdict given |
 | Cancelled | the order is CANCELLED |
 
@@ -223,7 +231,9 @@ A design revision of the order does not reset the enhancement record.
 
 6. **Trial verdict.** A panel in the drawer and the Sample Followup detail
    shows current, target and actual for each number, the suggested verdict, and
-   a save action. It becomes available once the sample is Approved or Rejected.
+   a save action. It becomes available once the sample is Approved. While the sample is
+   Rejected it shows a rework note and the action "Close project as Not
+   achieved" (remark required) instead.
    If the failure assessment is required, saving asks for the review due date.
 
 7. **Life review.** When due, the project appears in the Work Queue. The user

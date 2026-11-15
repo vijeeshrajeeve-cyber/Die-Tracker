@@ -251,13 +251,15 @@ const targetsOf = (row, withFailure) => ({
   recovery: num(row.target_recovery_pct),
 });
 
-// Trial-stage suggestion. A Rejected sample with no OK trial has nothing to
-// measure but did not work, so it is suggested "Not achieved".
+// Trial-stage suggestion: the latest OK trial against the productivity and
+// recovery targets. A Rejected sample with no verdict saved is in rework and
+// is never suggested anything (see the suggestion route).
 function trialSuggestion(order, row, latest) {
   const actuals = { failure: null, productivity: latest ? num(latest.productivity_kgh) : null, recovery: latest ? num(latest.recovery_pct) : null };
-  if (!latest && order.sample_status === 'Rejected') return { suggested: 'Not achieved', actuals };
   return { suggested: suggestVerdict({ targets: targetsOf(row, false), actuals }), actuals };
 }
+
+const REJECTED_REFUSAL = 'A rejected sample keeps the project open; record the verdict after approval, or close the project as Not achieved with a remark';
 
 async function updateColumns(client, orderId, columns) {
   const names = Object.keys(columns);
@@ -294,6 +296,7 @@ router.get('/order/:orderId/suggestion', async (req, res) => {
     let targets;
     let actuals;
     let suggested = null;
+    const rework = !reviewing && !row.trial_verdict && order.sample_status === 'Rejected';
     if (reviewing) {
       targets = targetsOf(row, true);
       actuals = { failure: preview !== null ? preview : num(row.actual_failure_pct),
@@ -302,9 +305,10 @@ router.get('/order/:orderId/suggestion', async (req, res) => {
       const latest = latestOkTrial(await trialsForParent(pool, { column: 'die_order_id', id: orderId }));
       targets = targetsOf(row, false);
       ({ actuals, suggested } = trialSuggestion(order, row, latest));
+      if (rework) suggested = null;
     }
     res.json({
-      stage: reviewing ? 'final' : 'trial',
+      stage: reviewing ? 'final' : rework ? 'rework' : 'trial',
       suggested: reviewing ? suggestVerdict({ targets, actuals }) : suggested,
       actuals,
       targets,
@@ -335,9 +339,14 @@ router.post('/order/:orderId/trial-verdict', pageAccessMiddleware('flow-sample-f
       const row = found.rows[0];
       if (!row) return notFound('This order is not a Design enhancement');
       if (String(order.status || '').toUpperCase() === 'CANCELLED') return bad('A cancelled order cannot get a verdict');
-      if (order.sample_status !== 'Approved' && order.sample_status !== 'Rejected') {
-        return bad('The trial verdict can be saved once the sample is Approved or Rejected');
+      // A Rejected sample keeps the project open through rework; the only
+      // thing allowed is the explicit close as Not achieved, with a remark.
+      const rejected = order.sample_status === 'Rejected';
+      if (!rejected && order.sample_status !== 'Approved') {
+        return bad('The trial verdict can be saved once the sample is Approved');
       }
+      const closing = rejected && verdict === 'Not achieved' && body.abandon === true && remarkOf(body.remark) !== null;
+      if (rejected && !closing) return bad(REJECTED_REFUSAL);
       const access = verdictAccess(req.user, Boolean(row.trial_verdict), reason);
       if (!access.ok) return refusal(access);
 
@@ -348,7 +357,7 @@ router.post('/order/:orderId/trial-verdict', pageAccessMiddleware('flow-sample-f
         source_trial_id: latest ? latest.id : null,
       };
       const { suggested } = trialSuggestion(order, row, latest);
-      const ruled = remarkRule(verdict, suggested, body.remark);
+      const ruled = closing ? { remark: remarkOf(body.remark) } : remarkRule(verdict, suggested, body.remark);
       if (ruled.error) return bad(ruled.error);
 
       // Would a life review be owed once this verdict is saved?

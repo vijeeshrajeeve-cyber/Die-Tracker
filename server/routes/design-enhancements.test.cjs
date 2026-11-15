@@ -358,11 +358,11 @@ test.describe('trial verdict', () => {
       okTrial({ id: 32, trial_no: 3, result: 'Not OK', productivity_kgh: null, recovery_pct: null })];
   });
 
-  test('is refused until the sample is Approved or Rejected', async () => {
+  test('is refused until the sample is Approved', async () => {
     order.sample_status = 'Pending';
     const { status, body } = await trialVerdict(verdictBody());
     assert.equal(status, 400);
-    assert.match(body.error, /Approved or Rejected/);
+    assert.match(body.error, /once the sample is Approved/);
     assert.equal(written(), null);
   });
 
@@ -429,14 +429,87 @@ test.describe('trial verdict', () => {
     assert.deepEqual(changes().map((c) => c.field), ['Design enhancement: trial verdict']);
   });
 
-  test('a Rejected sample with the assessment required writes the final verdict immediately', async () => {
+  test('a Rejected sample keeps the project open: any verdict without the explicit close is refused', async () => {
     order.sample_status = 'Rejected';
     enhancement.failure_assessment_required = true;
     enhancement.target_failure_pct = '10';
-    const { status } = await trialVerdict(verdictBody());
+    const REFUSED = /A rejected sample keeps the project open; record the verdict after approval, or close the project as Not achieved with a remark/;
+    for (const body of [
+      verdictBody(),
+      verdictBody({ verdict: 'Not achieved', remark: 'Gave up' }),
+      verdictBody({ verdict: 'Achieved', remark: 'x', abandon: true }),
+      verdictBody({ verdict: 'Partly achieved', remark: 'x', abandon: true }),
+      { verdict: 'Not achieved', abandon: true },
+      { verdict: 'Not achieved', remark: '   ', abandon: true },
+      { verdict: 'Not achieved', remark: 'x', abandon: 'yes' },
+    ]) {
+      const r = await trialVerdict(body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.match(r.body.error, REFUSED);
+    }
+    assert.equal(written(), null);
+  });
+
+  test('closing a Rejected project as Not achieved writes both verdicts with the remark, snapshots the latest OK trial and owes no life review', async () => {
+    order.sample_status = 'Rejected';
+    enhancement.failure_assessment_required = true;
+    enhancement.target_failure_pct = '10';
+    const { status } = await trialVerdict({ verdict: 'Not achieved', remark: '  Die will not be reworked  ', abandon: true });
+    assert.equal(status, 200);
+    const w = written();
+    assert.equal(w.trial_verdict, 'Not achieved');
+    assert.equal(w.final_verdict, 'Not achieved');
+    assert.equal(w.trial_verdict_remark, 'Die will not be reworked');
+    assert.equal(w.final_verdict_remark, 'Die will not be reworked');
+    assert.equal(w.trial_verdict_by, 'planner');
+    assert.equal(w.final_verdict_by, 'planner');
+    assert.equal(w.trial_verdict_date, todayLocal());
+    assert.equal(w.final_verdict_date, todayLocal());
+    assert.equal(w.life_review_due_date, null);
+    assert.equal(w.trial_productivity_kgh, 950);
+    assert.equal(w.source_trial_id, 31);
+    assert.deepEqual(changes().map((c) => c.field), ['Design enhancement: trial verdict', 'Design enhancement: final verdict']);
+  });
+
+  test('closing a Rejected project with no OK trial leaves the snapshot null, never 0', async () => {
+    order.sample_status = 'Rejected';
+    trials = [okTrial({ result: 'Not OK', productivity_kgh: null, recovery_pct: null })];
+    assert.equal((await trialVerdict({ verdict: 'Not achieved', remark: 'Abandoned', abandon: true })).status, 200);
+    const w = written();
+    assert.equal(w.trial_productivity_kgh, null);
+    assert.equal(w.trial_recovery_pct, null);
+    assert.equal(w.source_trial_id, null);
+    assert.equal(w.final_verdict, 'Not achieved');
+  });
+
+  test('abandon has no effect on an Approved sample: the normal path applies', async () => {
+    const { status } = await trialVerdict({ verdict: 'Achieved', abandon: true });
     assert.equal(status, 200);
     assert.equal(written().final_verdict, 'Achieved');
-    assert.equal(written().life_review_due_date, null);
+  });
+
+  test('an abandoned project can be redone by an admin once the sample is Approved, and owes a life review again', async () => {
+    order.sample_status = 'Approved';
+    enhancement = { ...enhancement, failure_assessment_required: true, target_failure_pct: '10', trial_verdict: 'Not achieved',
+      trial_verdict_remark: 'Die will not be reworked', final_verdict: 'Not achieved', final_verdict_remark: 'Die will not be reworked' };
+    assert.equal((await trialVerdict(verdictBody({ reason: 'Reworked after all' }))).status, 403);
+    currentUser = ADMIN;
+    persist = true;
+    const bare = await trialVerdict(verdictBody({ life_review_due_date: future() }));
+    assert.equal(bare.status, 400);
+    assert.equal(bare.body.code, 'REASON_REQUIRED');
+    const noDate = await trialVerdict(verdictBody({ reason: 'Reworked after all' }));
+    assert.equal(noDate.status, 400);
+    assert.match(noDate.body.error, /life_review_due_date/);
+    const { status } = await trialVerdict(verdictBody({ reason: 'Reworked after all', life_review_due_date: future() }));
+    assert.equal(status, 200);
+    const w = written();
+    assert.equal(w.trial_verdict, 'Achieved');
+    assert.equal(w.life_review_due_date, future());
+    for (const k of ['final_verdict', 'final_verdict_remark', 'final_verdict_by', 'final_verdict_date']) assert.equal(w[k], null, k);
+    assert.ok(changes().some((c) => c.field === 'Design enhancement: final verdict' && c.old === 'Not achieved' && c.new === null));
+    const after = await suggestion();
+    assert.equal(after.body.stage, 'final');
   });
 
   test('repeating it: an editor is refused, an admin needs a reason, the reason is logged, the snapshot is fresh', async () => {
@@ -479,7 +552,7 @@ test.describe('trial verdict', () => {
       actual_failure_pct: '8', life_review_date: '2027-03-01', final_verdict: 'Achieved' };
     currentUser = ADMIN;
     persist = true;
-    const { status } = await trialVerdict({ verdict: 'Not achieved', remark: 'Rejected after all', reason: 'Sample rejected later' });
+    const { status } = await trialVerdict({ verdict: 'Not achieved', remark: 'Rejected after all', abandon: true, reason: 'Sample rejected later' });
     assert.equal(status, 200);
     const w = written();
     assert.equal(w.final_verdict, 'Not achieved');
@@ -515,16 +588,27 @@ test.describe('trial verdict', () => {
     assert.equal(enhancement.source_trial_id, 31);
   });
 
-  test('a Rejected sample with no OK trial suggests Not achieved, so that verdict needs no remark', async () => {
+  test('a Rejected sample with no verdict is in rework: no suggestion, even with no OK trial', async () => {
     order.sample_status = 'Rejected';
     trials = [okTrial({ result: 'Not OK', productivity_kgh: null, recovery_pct: null })];
-    assert.equal((await suggestion()).body.suggested, 'Not achieved');
-    assert.equal((await trialVerdict({ verdict: 'Not achieved' })).status, 200);
-    assert.equal(written().final_verdict, 'Not achieved');
-    // an Approved sample with no OK trial still has no suggestion
+    const none = await suggestion();
+    assert.equal(none.body.stage, 'rework');
+    assert.equal(none.body.suggested, null);
+    assert.deepEqual(none.body.actuals, { failure: null, productivity: null, recovery: null });
+    // an Approved sample with no OK trial still has no suggestion, in the trial stage
     order.sample_status = 'Approved';
-    enhancement = { die_order_id: 7, ...TARGETS };
-    assert.equal((await suggestion()).body.suggested, null);
+    const approved = await suggestion();
+    assert.equal(approved.body.stage, 'trial');
+    assert.equal(approved.body.suggested, null);
+  });
+
+  test('the rework stage shows the latest OK trial and the targets, suggesting nothing', async () => {
+    order.sample_status = 'Rejected';
+    const { body } = await suggestion();
+    assert.equal(body.stage, 'rework');
+    assert.equal(body.suggested, null);
+    assert.deepEqual(body.actuals, { failure: null, productivity: 950, recovery: 80 });
+    assert.deepEqual(body.targets, { failure: null, productivity: 900, recovery: 75 });
   });
 });
 
