@@ -113,27 +113,25 @@ test('getSnapshot returns null die life when nothing was entered', async () => {
   assert.equal(out.dieFailure, null, 'unrecorded is not a perfect 0%');
 });
 
-test('getSnapshot uses an admin correction to the trial ratio for its month', async () => {
+test('getSnapshot takes the trial ratios from the typed die life counts, not from the orders', async () => {
   const pool = makePool([
-    [/FROM supplier_trial_ratio_corrections/, [{ supplier_key: 'PHME', month: 5, corrected_value: '1', reason: 'recount' }]],
-    [/EXTRACT\(MONTH FROM ordered_date\)/, [
-      { supplier_key: 'PHME', month: 4, ratio: '1', dies: '10' },
-      { supplier_key: 'PHME', month: 5, ratio: '2', dies: '30' },
+    [/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '40', trial_ratio: '9' }]],
+    [/FROM supplier_die_life/, [
+      { month: 4, plant: 'GEX 01', new_dies_received: 2, new_die_trials: 3, backup_dies_received: 2, backup_die_trials: 2 },
+      { month: 4, plant: 'GEX 02', new_dies_received: 2, new_die_trials: 2 },
     ]],
-    [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '40', trial_ratio: '1.75' }]],
   ]);
-  const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-05-31' });
-  assert.equal(out.trialRatio, 1, 'May is corrected from 2.0 to 1.0, April stands');
+  const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-04-30' });
+  assert.equal(out.newTrialRatio, 5 / 4);
+  assert.equal(out.backupTrialRatio, 1);
+  assert.equal(out.trialRatio, 7 / 6, 'pooled (3+2+2) over (2+2+2)');
+  assert.ok(!pool.calls.some((c) => /no_of_trial|supplier_trial_ratio_corrections/.test(c.sql)));
 });
 
-test('getSnapshot leaves the calculated trial ratio alone when nothing is corrected', async () => {
-  const pool = makePool([
-    [/FROM supplier_trial_ratio_corrections/, []],
-    [/FROM die_orders[\s\S]*ordered_date BETWEEN/, [{ orders_placed: '40', trial_ratio: '1.75' }]],
-  ]);
+test('getSnapshot leaves the trial ratios null when no counts were typed', async () => {
+  const pool = makePool([[/FROM die_orders[sS]*ordered_date BETWEEN/, [{ orders_placed: '40' }]]]);
   const out = await d.getSnapshot(pool, { supplier: 'PHME', from: '2026-04-01', to: '2026-05-31' });
-  assert.equal(out.trialRatio, 1.75);
-  assert.ok(!pool.calls.some((c) => /EXTRACT\(MONTH FROM ordered_date\)/.test(c.sql)));
+  assert.equal(out.trialRatio, null); assert.equal(out.newTrialRatio, null); assert.equal(out.backupTrialRatio, null);
 });
 
 test('previousPeriodRange Monthly steps back one month', () => {

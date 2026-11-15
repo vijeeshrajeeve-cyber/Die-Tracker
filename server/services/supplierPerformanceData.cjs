@@ -5,7 +5,6 @@
 // place.
 
 const { getDieLifeForPeriod } = require('./supplierDieLife.cjs');
-const trial = require('./supplierTrialRatio.cjs');
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -97,7 +96,6 @@ async function getSnapshot(pool, { supplier, from, to }) {
     SELECT count(*)                                             AS orders_placed,
            avg(design_received_date - ordered_date)
              FILTER (WHERE design_received_date >= ordered_date) AS design_lead_time,
-           avg(NULLIF(no_of_trial, 0))                          AS trial_ratio,
            avg(design_revision_count)                           AS design_revisions
       FROM die_orders
      WHERE upper(btrim(supplier)) = upper(btrim($1))
@@ -127,16 +125,6 @@ async function getSnapshot(pool, { supplier, from, to }) {
 
   const o = ordered.rows[0] || {};
 
-  // An admin may have corrected the calculated trial ratio for some months.
-  // With no correction in the period the figure above stands untouched; with
-  // one, the period is rebuilt month by month so the corrected month replaces
-  // only its own share.
-  let trialRatio = num(o.trial_ratio);
-  const fixes = await trial.activeCorrections(pool, { supplier, year, months });
-  if (fixes.length) {
-    const monthly = await trial.calculatedByMonth(pool, { supplier, year, months });
-    trialRatio = trial.combineTrialRatio(monthly, fixes);
-  }
   const r = received.rows[0] || {};
   const diesReceived = num(r.dies_received) || 0;
   const qdCount = num(qd.rows[0] && qd.rows[0].qd_count) || 0;
@@ -146,7 +134,9 @@ async function getSnapshot(pool, { supplier, from, to }) {
     dieFailure: die.dieFailure,
     ordersPlaced: num(o.orders_placed) || 0,
     designLeadTime: num(o.design_lead_time),
-    trialRatio,
+    trialRatio: die.trialRatio,
+    newTrialRatio: die.newTrialRatio,
+    backupTrialRatio: die.backupTrialRatio,
     designRevisions: num(o.design_revisions),
     deliveryLeadTime: num(r.delivery_lead_time),
     // 0 QDs out of 0 dies is unknown, not a perfect 0%.
