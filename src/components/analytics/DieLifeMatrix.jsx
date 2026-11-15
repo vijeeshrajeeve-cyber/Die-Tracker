@@ -1,31 +1,32 @@
 import React from 'react';
 import { MONTHS } from '../../utils/constants';
+import { pairedCell } from '../../utils/dieLifeCalc';
 
 // The month-by-month figures behind the die life and die failure scores.
 //
 // The counts are shown beside the percentage on purpose: a supplier who
 // disputes a failure rate can be shown the two numbers it came from.
-export default function DieLifeMatrix({ rows, theme }) {
+export default function DieLifeMatrix({ rows, period, periodLabel, theme }) {
   const data = rows || [];
   const cell = { padding: '7px 10px', fontSize: '0.78rem', color: theme.text, fontVariantNumeric: 'tabular-nums' };
   const head = { ...cell, color: theme.textDim, fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' };
   const fmt = (v, d = 0) => (v == null ? '—' : Number(v).toFixed(d));
 
-  // Weighted exactly as the server aggregates, so the total row agrees with the
-  // score. A simple mean here would quietly contradict the rating above it.
-  let failed = 0, inService = 0, weighted = 0, weight = 0;
-  for (const r of data) {
-    if (r.diesInService != null) {
-      inService += r.diesInService;
-      if (r.diesFailed != null) failed += r.diesFailed;
-      if (r.avgDieLifeMt != null && r.diesInService > 0) {
-        weighted += r.avgDieLifeMt * r.diesInService;
-        weight += r.diesInService;
-      }
-    }
-  }
-  const totalLife = weight > 0 ? weighted / weight : null;
-  const totalRate = inService > 0 ? (failed / inService) * 100 : null;
+  // The count cells are the paired sums the figure beside them was calculated
+  // from, so every row divides. A star marks a count where some plant typed
+  // half a pair; the footnote explains.
+  const count = (c, f) => {
+    const { value, star } = pairedCell(f, c.paired, c.totals);
+    return `${value == null ? '—' : Math.round(Number(value) * 100) / 100}${star ? '*' : ''}`;
+  };
+  const life = (c) => (c.noDiesScrapped ? 'no dies scrapped' : fmt(c.dieLife, 1));
+  const failure = (c) => (c.dieFailure == null ? '—' : `${c.dieFailure.toFixed(1)}%`);
+  const right = { ...cell, textAlign: 'right' };
+  const FIELDS = ['tonnageMt', 'diesScrapped', 'diesInService', 'diesFailed'];
+  // The server's period aggregate (from the raw rows), never a re-sum of the
+  // monthly totals, so its pairing matches the monthly rows.
+  const total = period || {};
+  const anyStar = [total, ...data].some((c) => FIELDS.some((f) => pairedCell(f, c.paired, c.totals).star));
 
   return (
     <div className="dt-span-all" style={{ padding: 16, borderRadius: 10, border: `1px solid ${theme.cardBorder}`, background: theme.cardBg }}>
@@ -40,35 +41,42 @@ export default function DieLifeMatrix({ rows, theme }) {
             <thead>
               <tr>
                 <th scope="col" style={{ ...head, textAlign: 'left' }}>Month</th>
-                <th scope="col" style={head}>Avg Die Life (MT)</th>
-                <th scope="col" style={head}>Dies Extruded</th>
-                <th scope="col" style={head}>Dies Failed</th>
+                <th scope="col" style={head}>Tonnage (MT)</th>
+                <th scope="col" style={head}>Dies scrapped</th>
+                <th scope="col" style={head}>Die life (MT)</th>
+                <th scope="col" style={head}>Dies run</th>
+                <th scope="col" style={head}>Dies unloaded</th>
                 <th scope="col" style={head}>Failure %</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((r) => {
-                const pct = (r.diesInService != null && r.diesInService > 0 && r.diesFailed != null)
-                  ? (r.diesFailed / r.diesInService) * 100 : null;
-                return (
+              {data.map((r) => (
                   <tr key={r.month} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
                     <td style={{ ...cell, fontWeight: 600 }}>{MONTHS[r.month - 1]}</td>
-                    <td style={{ ...cell, textAlign: 'right' }}>{fmt(r.avgDieLifeMt, 1)}</td>
-                    <td style={{ ...cell, textAlign: 'right' }}>{fmt(r.diesInService)}</td>
-                    <td style={{ ...cell, textAlign: 'right' }}>{fmt(r.diesFailed)}</td>
-                    <td style={{ ...cell, textAlign: 'right' }}>{pct == null ? '—' : `${pct.toFixed(1)}%`}</td>
+                    <td style={right}>{count(r, 'tonnageMt')}</td>
+                    <td style={right}>{count(r, 'diesScrapped')}</td>
+                    <td style={right}>{life(r)}</td>
+                    <td style={right}>{count(r, 'diesInService')}</td>
+                    <td style={right}>{count(r, 'diesFailed')}</td>
+                    <td style={right}>{failure(r)}</td>
                   </tr>
-                );
-              })}
+              ))}
               <tr style={{ borderTop: `2px solid ${theme.cardBorder}`, fontWeight: 700 }}>
-                <td style={cell}>Period</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{fmt(totalLife, 1)}</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{inService || '—'}</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{inService ? failed : '—'}</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{totalRate == null ? '—' : `${totalRate.toFixed(1)}%`}</td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>{periodLabel || 'Total'}</td>
+                <td style={right}>{count(total, 'tonnageMt')}</td>
+                <td style={right}>{count(total, 'diesScrapped')}</td>
+                <td style={right}>{life(total)}</td>
+                <td style={right}>{count(total, 'diesInService')}</td>
+                <td style={right}>{count(total, 'diesFailed')}</td>
+                <td style={right}>{failure(total)}</td>
               </tr>
             </tbody>
           </table>
+          {anyStar && (
+            <p style={{ fontSize: 11, color: theme.textDim, margin: '8px 0 0' }}>
+              * Some figures were entered without their matching count and are left out of the calculation.
+            </p>
+          )}
         </div>
       )}
     </div>

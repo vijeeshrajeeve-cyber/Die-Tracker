@@ -2,6 +2,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateSupplierReportPdf } = require('./supplierReportPdf.cjs');
+const { aggregateDieLife } = require('./supplierDieLife.cjs');
+
+// A month row in the shape getDieLifeRows returns: one month's counts, all
+// plants combined, with the calculated figures beside them.
+const dieRow = (month, counts) => ({ month, ...aggregateDieLife([counts]) });
+const NONE = {
+  tonnageMt: null, diesScrapped: null, diesInService: null, diesFailed: null,
+  newDiesReceived: null, newDieTrials: null, backupDiesReceived: null, backupDieTrials: null,
+};
 
 // Reads back every text run pdf-lib wrote, so a test can assert what the
 // document actually says. Same helper qdPdf.test.cjs uses.
@@ -20,6 +29,7 @@ const metrics = [
   { key: 'ordersPlaced', label: 'Orders Placed', unit: '', scored: false, decimals: 0 },
   { key: 'dieLife', label: 'Avg Die Life', unit: 'MT', scored: true, lowerBetter: false, ten: 77, zero: 20, target: 77, weight: 0.25, decimals: 1 },
   { key: 'dieFailure', label: 'Die Failure Rate', unit: '%', scored: true, lowerBetter: true, ten: 19, zero: 40, target: 19, weight: 0.20, decimals: 1 },
+  { key: 'trialRatio', label: 'Trial Ratio', unit: '', scored: true, lowerBetter: true, ten: 1.2, zero: 3, target: 1.5, weight: 0.1, decimals: 2 },
   { key: 'deliveryLeadTime', label: 'Avg Delivery Lead Time', unit: 'days', scored: true, lowerBetter: true, ten: 30, zero: 55, target: 30, weight: 0.20, decimals: 0 },
 ];
 
@@ -27,12 +37,16 @@ const baseReport = {
   supplier: 'PDTMC',
   period: { from: '2026-08-01', to: '2026-08-31', frequency: 'Monthly', year: 2026, month: 'Aug' },
   metrics,
-  snapshot: { ordersPlaced: 12, dieLife: 64.4, dieFailure: 12.5, deliveryLeadTime: 27 },
+  snapshot: {
+    ordersPlaced: 12, dieLife: 64.4, dieFailure: 12.5, deliveryLeadTime: 27,
+    trialRatio: 7 / 5, newTrialRatio: 5 / 3, backupTrialRatio: 1,
+    trialTotals: { newDiesReceived: 3, newDieTrials: 5, backupDiesReceived: 2, backupDieTrials: 2 },
+  },
   scores: { dieLife: 7.8, dieFailure: 10, deliveryLeadTime: 10 },
   trend: [
-    { month: 'Jun', dieLife: 60, dieFailure: 15, deliveryLeadTime: 30, ordersPlaced: 4 },
-    { month: 'Jul', dieLife: 70, dieFailure: 10, deliveryLeadTime: 28, ordersPlaced: 5 },
-    { month: 'Aug', dieLife: 64.4, dieFailure: 12.5, deliveryLeadTime: 27, ordersPlaced: 3 },
+    { month: 'Jun', trialRatio: 1.4, dieLife: 60, dieFailure: 15, deliveryLeadTime: 30, ordersPlaced: 4 },
+    { month: 'Jul', trialRatio: 1.3, dieLife: 70, dieFailure: 10, deliveryLeadTime: 28, ordersPlaced: 5 },
+    { month: 'Aug', trialRatio: 1.2, dieLife: 64.4, dieFailure: 12.5, deliveryLeadTime: 27, ordersPlaced: 3 },
   ],
   rating: { score: 8.9, contributing: 3, band: { label: 'Exceptional', color: '#16A34A', bg: '#F0FDF4' } },
   previous: {
@@ -40,9 +54,13 @@ const baseReport = {
     snapshot: { ordersPlaced: 9, dieLife: 58.2, dieFailure: 17.0, deliveryLeadTime: 31 },
   },
   dieLifeRows: [
-    { month: 6, avgDieLifeMt: 60, diesInService: 10, diesFailed: 2 },
-    { month: 7, avgDieLifeMt: 70, diesInService: 20, diesFailed: 2 },
+    dieRow(6, { ...NONE, tonnageMt: 600, diesScrapped: 10, diesInService: 10, diesFailed: 2 }),
+    dieRow(7, { ...NONE, tonnageMt: 1400, diesScrapped: 20, diesInService: 20, diesFailed: 2 }),
   ],
+  dieLifePeriod: aggregateDieLife([
+    { ...NONE, tonnageMt: 600, diesScrapped: 10, diesInService: 10, diesFailed: 2 },
+    { ...NONE, tonnageMt: 1400, diesScrapped: 20, diesInService: 20, diesFailed: 2 },
+  ]),
 };
 
 test('generateSupplierReportPdf returns a non-empty PDF', async () => {
@@ -88,23 +106,23 @@ test('the document survives a supplier with no rating at all', async () => {
 
 test('the matrix page lists each month with its counts', async () => {
   const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
-  const matrix = pages.find((p) => /Dies Extruded/.test(p));
+  const matrix = pages.find((p) => /Dies unloaded/.test(p));
   assert.ok(matrix, 'no matrix section found');
   assert.match(matrix, /Jun/);
   assert.match(matrix, /Jul/);
 });
 
-test('the matrix total is weighted, agreeing with the score on page 1', async () => {
-  // 10 dies at 60 MT and 20 at 70 MT weights to 66.7, not the simple mean 65.
+test('the matrix total comes from summed counts, agreeing with the score', async () => {
+  // 2000 MT over 30 scrapped is 66.7, not the mean of 60 and 70 (65).
   const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
-  const matrix = pages.find((p) => /Dies Extruded/.test(p));
+  const matrix = pages.find((p) => /Dies unloaded/.test(p));
   assert.match(matrix, /66\.7/);
 });
 
 test('no matrix section when nothing was ever entered', async () => {
   const report = { ...baseReport, dieLifeRows: [] };
   const pages = await textOf(await generateSupplierReportPdf(report, {}));
-  assert.ok(!pages.some((p) => /Dies Extruded/.test(p)), 'an empty table is worse than no table');
+  assert.ok(!pages.some((p) => /Dies unloaded/.test(p)), 'an empty table is worse than no table');
 });
 
 test('a metric with no trend data produces no chart', async () => {
@@ -241,7 +259,7 @@ test('an unscored metric gets no movement claim', async () => {
 test('the trend page comes before the die life detail', async () => {
   const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
   const trendPage = pages.findIndex((p) => /MONTHLY TREND/.test(p));
-  const matrixPage = pages.findIndex((p) => /Dies Extruded/.test(p));
+  const matrixPage = pages.findIndex((p) => /Dies unloaded/.test(p));
   assert.ok(trendPage > 0, 'trend page missing');
   assert.ok(matrixPage > 0, 'matrix page missing');
   assert.equal(trendPage, 1, 'trends should be page 2');
@@ -326,4 +344,121 @@ test('a metric recorded in no month at all is still dropped', async () => {
   const { trendable } = require('./supplierReportPdf.cjs');
   const report = { metrics, trend: [{ month: 'Jan', dieLife: null }, { month: 'Feb', dieLife: null }] };
   assert.ok(!trendable(report).some((c) => c.metric.key === 'dieLife'));
+});
+
+const matrixText = async (report) => {
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  return pages.find((p) => /Dies unloaded/.test(p));
+};
+
+test('the die life table uses the new labels and drops the old ones', async () => {
+  const m = await matrixText(baseReport);
+  for (const l of ['Tonnage (MT)', 'Dies scrapped', 'Die life (MT)', 'Dies run', 'Dies unloaded', 'Failure %']) {
+    assert.ok(m.includes(l), `missing ${l}`);
+  }
+  assert.ok(!/Dies Extruded|Dies Failed|Avg Die Life \(MT\)/.test(m));
+});
+
+test('the die life table prints each month from its counts and the period from summed counts', async () => {
+  const m = await matrixText(baseReport);
+  assert.match(m, /600/); assert.match(m, /1400/);
+  assert.match(m, /60\.0/); assert.match(m, /70\.0/);
+  assert.match(m, /20\.0%/); assert.match(m, /10\.0%/);
+  assert.match(m, /66\.7/);       // 2000 / 30
+  assert.match(m, /13\.3%/);      // 4 / 30
+});
+
+test('a month with tonnage and no dies scrapped says so and prints no die life', async () => {
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 0 };
+  const report = { ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) };
+  const m = await matrixText(report);
+  assert.match(m, /no dies scrapped/i);
+  assert.ok(!/Infinity|NaN/.test(m));
+});
+
+test('an unrecorded figure prints as a dash, never 0', async () => {
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5 };
+  const report = { ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) };
+  const m = await matrixText(report);
+  const row = m.slice(m.indexOf('Aug'));
+  assert.match(row, /500/);
+  assert.match(row, /100\.0/);
+  assert.match(row, /-/);
+  assert.ok(!/0\.0%/.test(row), 'no failure rate from no counts');
+});
+
+test('a typed zero is printed as 0', async () => {
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5, diesInService: 10, diesFailed: 0 };
+  const report = { ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) };
+  const m = await matrixText(report);
+  assert.match(m, /0\.0%/);
+});
+
+test('the trial ratio card shows the new and backup ratios with their counts', async () => {
+  const pages = await textOf(await generateSupplierReportPdf(baseReport, {}));
+  assert.match(pages[0], /New dies: 1\.67 \(5 trials on 3 dies\)/);
+  assert.match(pages[0], /Backup dies: 1\.00 \(2 trials on 2 dies\)/);
+});
+
+test('a missing new or backup ratio reads "not recorded"', async () => {
+  const report = { ...baseReport, snapshot: { ...baseReport.snapshot, backupTrialRatio: null,
+    trialTotals: { newDiesReceived: 3, newDieTrials: 5, backupDiesReceived: null, backupDieTrials: null } } };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.match(pages[0], /Backup dies: not recorded/);
+  assert.match(pages[0], /New dies: 1\.67/);
+});
+
+test('the Period row prints the server period figure from paired counts, not a re-pairing of monthly totals', async () => {
+  // Plant A: 500 MT, scrapped blank. Plant B: 300 MT, 5 scrapped. Score: 60.0.
+  const rows = [{ ...NONE, tonnageMt: 500 }, { ...NONE, tonnageMt: 300, diesScrapped: 5 }];
+  const report = { ...baseReport,
+    dieLifeRows: [{ month: 8, ...aggregateDieLife(rows) }],
+    dieLifePeriod: aggregateDieLife(rows) };
+  const m = await matrixText(report);
+  assert.match(m, /Aug total\s+300\*\s+5\s+60\.0/);
+  assert.ok(!/160\.0/.test(m));
+});
+
+test('a month whose total differs from its paired sum is starred and footnoted', async () => {
+  const rows = [{ ...NONE, tonnageMt: 500 }, { ...NONE, tonnageMt: 300, diesScrapped: 5 }];
+  const report = { ...baseReport, dieLifeRows: [{ month: 8, ...aggregateDieLife(rows) }], dieLifePeriod: aggregateDieLife(rows) };
+  const m = await matrixText(report);
+  assert.match(m, /Aug\s+300\*\s+5\s+60\.0/);
+  assert.match(m, /\* Some figures were entered without their matching count and are left out of the calculation\./);
+});
+
+test('no footnote when every figure was paired', async () => {
+  const m = await matrixText(baseReport);
+  assert.ok(!/Some figures were entered/.test(m));
+});
+
+test('trial counts are the paired counts the ratio used', async () => {
+  const report = { ...baseReport, snapshot: { ...baseReport.snapshot, newTrialRatio: 5 / 3,
+    trialTotals: { newDiesReceived: 3, newDieTrials: 5, backupDiesReceived: null, backupDieTrials: null } } };
+  const pages = await textOf(await generateSupplierReportPdf(report, {}));
+  assert.match(pages[0], /New dies: 1\.67 \(5 trials on 3 dies\)/);
+});
+
+test('the total row is labelled with its months, not "Period"', async () => {
+  const m = await matrixText(baseReport);
+  assert.match(m, /Jun-Aug\s+2000/);
+  assert.ok(!/Period/.test(m));
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5 };
+  const one = await matrixText({ ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) });
+  assert.match(one, /Aug total/);
+});
+
+test('dies unloaded left blank prints a dash with no star and no footnote', async () => {
+  const c8 = { ...NONE, tonnageMt: 500, diesScrapped: 5, diesInService: 10 };
+  const m = await matrixText({ ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) });
+  assert.match(m, /Aug\s+500\s+5\s+100\.0\s+10\s+-\s+0\.0%/);
+  assert.ok(!/0\*/.test(m));
+  assert.ok(!/Some figures were entered/.test(m));
+});
+
+test('a count typed but never paired prints a dash with a star and is footnoted', async () => {
+  const c8 = { ...NONE, tonnageMt: 500 };
+  const m = await matrixText({ ...baseReport, dieLifeRows: [dieRow(8, c8)], dieLifePeriod: aggregateDieLife([c8]) });
+  assert.match(m, /Aug\s+-\*\s+-\s+-/);
+  assert.match(m, /\* Some figures were entered without their matching count/);
 });

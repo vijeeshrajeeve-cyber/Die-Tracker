@@ -3,200 +3,277 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const s = require('./supplierDieLife.cjs');
 
-// ---------- validateEntry ----------
+// ---------- validateEntry / aggregateDieLife ----------
 
-test('validateEntry normalises blanks to null, not zero', () => {
-  const out = s.validateEntry({ supplier: ' PDTMC ', avgDieLifeMt: '', diesInService: null, diesFailed: undefined });
-  assert.equal(out.supplier, 'PDTMC');
-  assert.equal(out.avgDieLifeMt, null);
-  assert.equal(out.diesInService, null);
-  assert.equal(out.diesFailed, null);
+const { aggregateDieLife, validateEntry } = s;
+const row = (o) => ({ tonnageMt: null, diesScrapped: null, diesInService: null, diesFailed: null,
+  newDiesReceived: null, newDieTrials: null, backupDiesReceived: null, backupDieTrials: null, ...o });
+
+test('die life is total tonnage over total dies scrapped', () => {
+  const a = aggregateDieLife([row({ tonnageMt: 420, diesScrapped: 6 }), row({ tonnageMt: 150, diesScrapped: 0 })]);
+  assert.equal(a.dieLife, 95); assert.equal(a.noDiesScrapped, false);
 });
-
-test('validateEntry keeps a typed zero as zero', () => {
-  const out = s.validateEntry({ supplier: 'PHME', diesInService: 12, diesFailed: 0 });
-  assert.equal(out.diesFailed, 0, 'a typed 0 means zero failures and must survive');
+test('tonnage with no die scrapped has no die life', () => {
+  const a = aggregateDieLife([row({ tonnageMt: 150, diesScrapped: 0 })]);
+  assert.equal(a.dieLife, null); assert.equal(a.noDiesScrapped, true);
 });
-
-test('validateEntry rejects more failures than dies in service', () => {
-  assert.throws(
-    () => s.validateEntry({ supplier: 'PHME', diesInService: 5, diesFailed: 9 }),
-    (e) => e.status === 400 && /more dies failed/i.test(e.message)
-  );
+test('a row missing tonnage or scrapped is left out of die life', () => {
+  const a = aggregateDieLife([row({ tonnageMt: 420, diesScrapped: 6 }), row({ diesScrapped: 4 }), row({ tonnageMt: 99 })]);
+  assert.equal(a.dieLife, 70);
 });
-
-test('validateEntry rejects negative numbers', () => {
-  assert.throws(
-    () => s.validateEntry({ supplier: 'PHME', avgDieLifeMt: -3 }),
-    (e) => e.status === 400 && /negative/i.test(e.message)
-  );
+test('failure pools counts; blank unloaded counts as none', () => {
+  const a = aggregateDieLife([row({ diesInService: 40, diesFailed: 5 }), row({ diesInService: 10 })]);
+  assert.equal(a.dieFailure, 10);
+  assert.equal(aggregateDieLife([row({})]).dieFailure, null);
 });
-
-test('validateEntry rejects a failure count with no denominator', () => {
-  assert.throws(
-    () => s.validateEntry({ supplier: 'PHME', diesFailed: 2 }),
-    (e) => e.status === 400 && /dies extruded/i.test(e.message)
-  );
-  assert.throws(
-    () => s.validateEntry({ supplier: 'PHME', diesInService: 0, diesFailed: 0 }),
-    (e) => e.status === 400
-  );
+test('trial ratios pool each pair on its own', () => {
+  const a = aggregateDieLife([row({ newDiesReceived: 3, newDieTrials: 5 }), row({ backupDiesReceived: 2, backupDieTrials: 2, newDiesReceived: 4 })]);
+  assert.equal(a.newTrialRatio, 5 / 3); assert.equal(a.backupTrialRatio, 1); assert.equal(a.trialRatio, 7 / 5);
+  assert.equal(aggregateDieLife([row({ newDiesReceived: 0, newDieTrials: 0 })]).trialRatio, null);
 });
-
-test('validateEntry allows die life alone — it scores on its own', () => {
-  const out = s.validateEntry({ supplier: 'ALMAX', avgDieLifeMt: 64 });
-  assert.equal(out.avgDieLifeMt, 64);
-  assert.equal(out.diesInService, null);
+test('totals sum each count and stay null when nothing was recorded', () => {
+  const a = aggregateDieLife([row({ tonnageMt: 100, diesScrapped: 2 }), row({ tonnageMt: 50 })]);
+  assert.equal(a.totals.tonnageMt, 150); assert.equal(a.totals.diesScrapped, 2);
+  assert.equal(a.totals.diesInService, null);
+  assert.deepEqual(Object.keys(a.totals).length, 8);
 });
-
-test('validateEntry requires a supplier', () => {
-  assert.throws(() => s.validateEntry({ supplier: '  ' }), (e) => e.status === 400);
+test('an empty period has no values', () => {
+  const a = aggregateDieLife([]);
+  assert.equal(a.dieLife, null); assert.equal(a.dieFailure, null); assert.equal(a.trialRatio, null);
+  assert.equal(a.noDiesScrapped, false);
 });
-
-test('validateEntry keeps dies scrapped, and a blank stays not recorded', () => {
-  assert.equal(s.validateEntry({ supplier: 'PHME', diesScrapped: 4 }).diesScrapped, 4);
-  assert.equal(s.validateEntry({ supplier: 'PHME', diesScrapped: 0 }).diesScrapped, 0);
-  assert.equal(s.validateEntry({ supplier: 'PHME', diesScrapped: '' }).diesScrapped, null);
-  assert.throws(() => s.validateEntry({ supplier: 'PHME', diesScrapped: -1 }), (e) => e.status === 400);
+test('validation', () => {
+  assert.throws(() => validateEntry({ supplier: 'WEFA', diesFailed: 2 }), (e) => e.status === 400 && /dies run/i.test(e.message));
+  assert.throws(() => validateEntry({ supplier: 'WEFA', diesInService: 3, diesFailed: 4 }), (e) => e.status === 400 && /dies unloaded/i.test(e.message));
+  assert.throws(() => validateEntry({ supplier: 'WEFA', newDieTrials: 2 }));
+  assert.throws(() => validateEntry({ supplier: 'WEFA', backupDiesReceived: 0, backupDieTrials: 1 }));
+  assert.throws(() => validateEntry({ supplier: 'WEFA', diesScrapped: 1.5 }));
+  assert.throws(() => validateEntry({ supplier: 'WEFA', tonnageMt: -1 }), (e) => e.status === 400 && /negative/i.test(e.message));
+  assert.throws(() => validateEntry({ supplier: '  ' }), (e) => e.status === 400);
+  const ok = validateEntry({ supplier: ' WEFA ', tonnageMt: '420.5', diesScrapped: 6, newDiesReceived: 3, newDieTrials: 2 });
+  assert.equal(ok.supplier, 'WEFA'); assert.equal(ok.tonnageMt, 420.5); assert.equal(ok.newDieTrials, 2); assert.equal(ok.diesFailed, null);
 });
-
-// ---------- aggregateDieLife ----------
-
-test('aggregateDieLife weights die life by dies in service', () => {
-  // 40 dies at 80 MT and 4 dies at 20 MT. A simple mean would say 50 MT;
-  // the busy month must dominate.
-  const out = s.aggregateDieLife([
-    { avgDieLifeMt: 80, diesInService: 40, diesFailed: 4 },
-    { avgDieLifeMt: 20, diesInService: 4, diesFailed: 0 },
-  ]);
-  assert.equal(Math.round(out.dieLife * 100) / 100, 74.55);
-});
-
-test('aggregateDieLife pools failure counts rather than averaging percentages', () => {
-  const out = s.aggregateDieLife([
-    { avgDieLifeMt: 80, diesInService: 40, diesFailed: 4 },
-    { avgDieLifeMt: 20, diesInService: 4, diesFailed: 0 },
-  ]);
-  assert.equal(Math.round(out.dieFailure * 100) / 100, 9.09); // 4/44
-});
-
-test('aggregateDieLife returns null failure when no dies were in service', () => {
-  const out = s.aggregateDieLife([{ avgDieLifeMt: 55, diesInService: null, diesFailed: null }]);
-  assert.equal(out.dieFailure, null, '0 of 0 is unknown, not a perfect 0%');
-});
-
-test('aggregateDieLife falls back to a simple mean when no month has counts', () => {
-  // Otherwise a weighted mean with no weights divides by zero and silently
-  // discards a figure somebody typed.
-  const out = s.aggregateDieLife([
-    { avgDieLifeMt: 60, diesInService: null, diesFailed: null },
-    { avgDieLifeMt: 80, diesInService: null, diesFailed: null },
-  ]);
-  assert.equal(out.dieLife, 70);
-});
-
-test('aggregateDieLife ignores unweighted months when others carry weight', () => {
-  const out = s.aggregateDieLife([
-    { avgDieLifeMt: 80, diesInService: 10, diesFailed: 1 },
-    { avgDieLifeMt: 20, diesInService: null, diesFailed: null },
-  ]);
-  assert.equal(out.dieLife, 80);
-});
-
-test('aggregateDieLife returns nulls for an empty period', () => {
-  assert.deepEqual(s.aggregateDieLife([]), { dieLife: null, dieFailure: null });
-});
-
-test('aggregateDieLife treats zero failures as a real zero', () => {
-  const out = s.aggregateDieLife([{ avgDieLifeMt: 90, diesInService: 20, diesFailed: 0 }]);
-  assert.equal(out.dieFailure, 0);
+test('validateEntry keeps a typed zero and turns blanks into null', () => {
+  const out = validateEntry({ supplier: 'PHME', diesInService: 12, diesFailed: 0, diesScrapped: '' });
+  assert.equal(out.diesFailed, 0); assert.equal(out.diesScrapped, null);
 });
 
 // ---------- persistence ----------
 
 // Every service test in this repo mocks the pool rather than touching a
-// database. Replies are returned in call order.
-const makePool = (replies = []) => {
+// database. Replies are chosen by pattern, in the order given; connect() hands
+// back a client that logs to the same call list.
+const makePool = (rules = []) => {
   const calls = [];
-  let i = 0;
-  return { calls, query: async (sql, params) => { calls.push({ sql, params }); return replies[i++] || { rows: [] }; } };
+  const query = async (sql, params) => {
+    calls.push({ sql, params });
+    for (const [pattern, rows] of rules) if (pattern.test(sql)) return { rows, rowCount: rows.length };
+    return { rows: [], rowCount: 0 };
+  };
+  return { calls, query, connect: async () => ({ query, release() { calls.push({ sql: 'RELEASE' }); } }) };
 };
+const PLANTS = [/FROM plants/, [{ id: 1 }]];
+const writes = (pool) => pool.calls.filter((c) => /INSERT INTO supplier_die_life|DELETE FROM supplier_die_life/.test(c.sql));
 
-const listDieLifeOf = (pool) => s.listDieLife(pool, { year: 2026, month: 8 });
+const dbRow = (o) => ({ supplier: 'PHME', plant: 'GEX 01', tonnage_mt: null, dies_scrapped: null, dies_in_service: null,
+  dies_failed: null, new_dies_received: null, new_die_trials: null, backup_dies_received: null, backup_die_trials: null, ...o });
 
-test('listDieLife maps snake_case columns to the API shape', async () => {
-  const pool = makePool([{ rows: [{
-    supplier: 'PDTMC', avg_die_life_mt: '72.5', dies_in_service: 40, dies_failed: 6, dies_scrapped: 3,
-    updated_by_name: 'admin', updated_at: '2026-08-05T10:00:00Z',
-  }] }]);
-  const rows = await listDieLifeOf(pool);
-  assert.deepEqual(rows[0], {
-    supplier: 'PDTMC', avgDieLifeMt: 72.5, diesInService: 40, diesFailed: 6, diesScrapped: 3,
-    updatedBy: 'admin', updatedAt: '2026-08-05T10:00:00Z',
-  });
+test('listDieLife for one plant maps columns and carries the calculated figures', async () => {
+  const pool = makePool([[/plant = \$3/, [dbRow({ tonnage_mt: '420', dies_scrapped: 6, dies_in_service: 40, dies_failed: 4,
+    updated_by_name: 'admin', updated_at: '2026-08-05T10:00:00Z' })]]]);
+  const { rows, legacy } = await s.listDieLife(pool, { year: 2026, month: 8, plant: 'GEX 01' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].supplier, 'PHME'); assert.equal(rows[0].tonnageMt, 420); assert.equal(rows[0].diesInService, 40);
+  assert.equal(rows[0].newDiesReceived, null, 'a null column stays null');
+  assert.equal(rows[0].updatedBy, 'admin');
+  assert.equal(rows[0].calculated.dieLife, 70); assert.equal(rows[0].calculated.dieFailure, 10);
+  assert.deepEqual(legacy, []);
+  assert.deepEqual(pool.calls.find((c) => /plant = \$3/.test(c.sql)).params, [2026, 8, 'GEX 01']);
 });
 
-test('listDieLife keeps a null column null rather than turning it into 0', async () => {
-  const pool = makePool([{ rows: [{
-    supplier: 'ALMAX', avg_die_life_mt: null, dies_in_service: null, dies_failed: null,
-    updated_by_name: null, updated_at: null,
-  }] }]);
-  const rows = await listDieLifeOf(pool);
-  assert.equal(rows[0].avgDieLifeMt, null);
-  assert.equal(rows[0].diesInService, null);
+test('listDieLife with plant "all" sums two plants per supplier', async () => {
+  const pool = makePool([[/plant IS NOT NULL/, [
+    dbRow({ plant: 'GEX 01', tonnage_mt: '300', dies_scrapped: 3, dies_in_service: 10, dies_failed: 1, new_dies_received: 2, new_die_trials: 3 }),
+    dbRow({ plant: 'GEX 02', tonnage_mt: '300', dies_scrapped: 1, dies_in_service: 30, dies_failed: 5, new_dies_received: 2, new_die_trials: 2 }),
+    dbRow({ supplier: 'ALMAX', plant: 'GEX 01', dies_in_service: 4, dies_failed: 0 }),
+  ]]]);
+  const { rows } = await s.listDieLife(pool, { year: 2026, month: 8, plant: 'all' });
+  assert.equal(rows.length, 2);
+  const p = rows.find((r) => r.supplier === 'PHME');
+  assert.equal(p.tonnageMt, 600); assert.equal(p.diesScrapped, 4); assert.equal(p.diesInService, 40);
+  assert.equal(p.calculated.dieLife, 150);
+  assert.equal(p.calculated.dieFailure, 15, 'pooled 6/40, not the mean of 10% and 16.7%');
+  assert.equal(p.calculated.newTrialRatio, 5 / 4);
+  assert.equal(rows.find((r) => r.supplier === 'ALMAX').tonnageMt, null);
+});
+
+test('listDieLife returns legacy rows separately and keeps them out of the sums', async () => {
+  const pool = makePool([
+    [/plant IS NULL/, [{ id: 9, supplier: 'OLD', avg_die_life_mt: '72.5', dies_in_service: 40, dies_failed: 6, dies_scrapped: 3 }]],
+    [/plant IS NOT NULL/, [dbRow({ tonnage_mt: '100', dies_scrapped: 1 })]],
+  ]);
+  const { rows, legacy } = await s.listDieLife(pool, { year: 2026, month: 8, plant: 'all' });
+  assert.deepEqual(legacy, [{ id: 9, supplier: 'OLD', avgDieLifeMt: 72.5, diesInService: 40, diesFailed: 6, diesScrapped: 3 }]);
+  assert.deepEqual(rows.map((r) => r.supplier), ['PHME']);
+  assert.equal(rows[0].tonnageMt, 100);
+});
+
+const save = (pool, over = {}) => s.saveDieLife(pool, { year: 2026, month: 8, plant: 'GEX 01', entries: [
+  { supplier: 'PHME', tonnageMt: 420, diesScrapped: 6, diesInService: 10, diesFailed: 1 },
+], ...over }, 3);
+
+test('saveDieLife refuses a blank plant, "all" and an unlisted plant with no write', async () => {
+  for (const plant of ['', '  ', undefined, 'all', 'NOWHERE']) {
+    const pool = makePool(plant === 'NOWHERE' ? [[/FROM plants/, []]] : [PLANTS]);
+    await assert.rejects(() => save(pool, { plant }), (e) => e.status === 400 && e.message === 'Choose a plant to save figures for');
+    assert.equal(writes(pool).length, 0);
+    assert.ok(!pool.calls.some((c) => c.sql === 'BEGIN'));
+  }
 });
 
 test('saveDieLife validates every entry before writing anything', async () => {
-  const pool = makePool([]);
-  await assert.rejects(
-    () => s.saveDieLife(pool, { year: 2026, month: 8, entries: [
-      { supplier: 'PHME', avgDieLifeMt: 80, diesInService: 10, diesFailed: 1 },
-      { supplier: 'ALMAX', diesInService: 4, diesFailed: 9 },
-    ] }, 3),
-    (e) => e.status === 400
-  );
-  assert.equal(pool.calls.length, 0, 'a bad row must not leave a good row half-written');
+  const pool = makePool([PLANTS]);
+  await assert.rejects(() => save(pool, { entries: [
+    { supplier: 'PHME', diesInService: 10, diesFailed: 1 },
+    { supplier: 'ALMAX', diesInService: 4, diesFailed: 9 },
+  ] }), (e) => e.status === 400);
+  assert.equal(writes(pool).length, 0, 'a bad row must not leave a good row half-written');
 });
 
-test('saveDieLife upserts on supplier, year and month', async () => {
-  const pool = makePool([{ rows: [] }, { rows: [] }]);
-  await s.saveDieLife(pool, { year: 2026, month: 8, entries: [
-    { supplier: 'PHME', avgDieLifeMt: 80, diesInService: 10, diesFailed: 1 },
-  ] }, 3);
-  const ins = pool.calls.find(c => /INSERT INTO supplier_die_life/.test(c.sql));
-  assert.ok(/ON CONFLICT/.test(ins.sql), 'saving the same month twice must update, not duplicate');
-  assert.deepEqual(ins.params, ['PHME', 2026, 8, 80, 10, 1, null, 3]);
+test('saveDieLife names the plant as well as the supplier in a validation error', async () => {
+  const pool = makePool([PLANTS]);
+  await assert.rejects(() => save(pool, { entries: [
+    { supplier: 'WEFA', diesInService: 3, diesFailed: 4 },
+  ] }), (e) => e.status === 400 && e.message === 'GEX 01 - WEFA: more dies unloaded (4) than dies run (3)');
 });
 
-test('saveDieLife records who saved it', async () => {
-  const pool = makePool([{ rows: [] }, { rows: [] }]);
-  await s.saveDieLife(pool, { year: 2026, month: 8, entries: [
-    { supplier: 'PHME', avgDieLifeMt: 80, diesInService: 10, diesFailed: 1 },
-  ] }, 7);
-  const ins = pool.calls.find(c => /INSERT INTO supplier_die_life/.test(c.sql));
-  assert.equal(ins.params[7], 7);
+test('saveDieLife upserts on the plant-month unique index inside a transaction', async () => {
+  const pool = makePool([PLANTS]);
+  await save(pool);
+  const ins = pool.calls.find((c) => /INSERT INTO supplier_die_life/.test(c.sql));
+  assert.ok(/ON CONFLICT \(upper\(btrim\(supplier\)\), plant, year, month\) WHERE plant IS NOT NULL DO UPDATE/.test(ins.sql));
+  assert.deepEqual(ins.params, ['PHME', 'GEX 01', 2026, 8, 420, 6, 10, 1, null, null, null, null, 3]);
+  const order = pool.calls.map((c) => c.sql.trim().split(/\s+/)[0]);
+  assert.ok(order.indexOf('BEGIN') < order.indexOf('INSERT') && order.indexOf('INSERT') < order.indexOf('COMMIT'));
+  assert.ok(pool.calls.some((c) => c.sql === 'RELEASE'));
+});
+
+test('saveDieLife stores the supplier trimmed and records who saved it', async () => {
+  const pool = makePool([PLANTS]);
+  await save(pool, { entries: [{ supplier: '  PHME ', diesInService: 3 }] });
+  const ins = pool.calls.find((c) => /INSERT INTO supplier_die_life/.test(c.sql));
+  assert.equal(ins.params[0], 'PHME'); assert.equal(ins.params.at(-1), 3);
+});
+
+test('saveDieLife deletes the row when every count is blank, and writes nothing otherwise', async () => {
+  const pool = makePool([PLANTS]);
+  await save(pool, { entries: [{ supplier: 'PHME' }, { supplier: 'ALMAX', tonnageMt: '' }] });
+  assert.ok(!pool.calls.some((c) => /INSERT INTO supplier_die_life/.test(c.sql)));
+  const dels = pool.calls.filter((c) => /DELETE FROM supplier_die_life/.test(c.sql));
+  assert.equal(dels.length, 2);
+  assert.ok(/plant = \$2/.test(dels[0].sql));
+  assert.deepEqual(dels[0].params, ['PHME', 'GEX 01', 2026, 8]);
+});
+
+test('saveDieLife rolls back and releases when a write fails', async () => {
+  const pool = makePool([PLANTS]);
+  const inner = pool.connect;
+  pool.connect = async () => {
+    const c = await inner();
+    const q = c.query;
+    c.query = async (sql, params) => { if (/INSERT INTO supplier_die_life/.test(sql)) throw new Error('boom'); return q(sql, params); };
+    return c;
+  };
+  await assert.rejects(() => save(pool), /boom/);
+  assert.ok(pool.calls.some((c) => c.sql === 'ROLLBACK'));
+  assert.ok(pool.calls.some((c) => c.sql === 'RELEASE'));
+  assert.ok(!pool.calls.some((c) => c.sql === 'COMMIT'));
+});
+
+test('deleteLegacyRow only removes a row with no plant', async () => {
+  const pool = makePool([[/DELETE FROM supplier_die_life/, [{ id: 9 }]]]);
+  assert.equal(await s.deleteLegacyRow(pool, 9), true);
+  assert.ok(/plant IS NULL/.test(pool.calls[0].sql));
+  assert.equal(await s.deleteLegacyRow(makePool(), 10), false);
+});
+
+test('getDieLifeRows returns one aggregated entry per month across plants', async () => {
+  const pool = makePool([[/FROM supplier_die_life/, [
+    { month: 7, plant: 'GEX 01', tonnage_mt: '300', dies_scrapped: 3, dies_in_service: 10, dies_failed: 1 },
+    { month: 7, plant: 'GEX 02', tonnage_mt: '300', dies_scrapped: 1, dies_in_service: 30, dies_failed: 5 },
+    { month: 8, plant: 'GEX 01', dies_in_service: 4, dies_failed: 0 },
+  ]]]);
+  const out = await s.getDieLifeRows(pool, { supplier: 'PHME', year: 2026, months: [7, 8] });
+  assert.deepEqual(out.map((r) => r.month), [7, 8]);
+  assert.equal(out[0].dieLife, 150); assert.equal(out[0].dieFailure, 15); assert.equal(out[0].totals.diesInService, 40);
+  assert.equal(out[1].dieLife, null);
 });
 
 test('getDieLifeForPeriod aggregates the rows it reads', async () => {
-  const pool = makePool([{ rows: [
-    { month: 7, avg_die_life_mt: '80', dies_in_service: 40, dies_failed: 4 },
-    { month: 8, avg_die_life_mt: '20', dies_in_service: 4, dies_failed: 0 },
-  ] }]);
+  const pool = makePool([[/FROM supplier_die_life/, [
+    { month: 7, tonnage_mt: '420', dies_scrapped: 6, dies_in_service: 40, dies_failed: 4 },
+    { month: 8, tonnage_mt: null, dies_scrapped: null, dies_in_service: 4, dies_failed: 0 },
+  ]]]);
   const out = await s.getDieLifeForPeriod(pool, { supplier: 'PHME', year: 2026, months: [7, 8] });
-  assert.equal(Math.round(out.dieLife * 100) / 100, 74.55);
+  assert.equal(out.dieLife, 70);
   assert.equal(Math.round(out.dieFailure * 100) / 100, 9.09);
 });
 
 test('getDieLifeForPeriod returns nulls when the supplier has no rows', async () => {
-  const pool = makePool([{ rows: [] }]);
-  assert.deepEqual(
-    await s.getDieLifeForPeriod(pool, { supplier: 'NEWCO', year: 2026, months: [8] }),
-    { dieLife: null, dieFailure: null }
-  );
+  const pool = makePool();
+  const out = await s.getDieLifeForPeriod(pool, { supplier: 'NEWCO', year: 2026, months: [8] });
+  assert.equal(out.dieLife, null);
+  assert.equal(out.dieFailure, null);
+});
+
+test('getDieLifeRows leaves legacy rows (no plant) out', async () => {
+  const pool = makePool();
+  await s.getDieLifeRows(pool, { supplier: 'PHME', year: 2026, months: [8] });
+  assert.ok(/plant IS NOT NULL/.test(pool.calls[0].sql));
 });
 
 test('getDieLifeRows matches the supplier case-insensitively', async () => {
-  const pool = makePool([{ rows: [] }]);
+  const pool = makePool();
   await s.getDieLifeRows(pool, { supplier: ' phme ', year: 2026, months: [8] });
   assert.ok(/upper\(btrim\(supplier\)\) = upper\(btrim\(\$1\)\)/.test(pool.calls[0].sql));
+});
+
+test('aggregateDieLife returns the paired sums the ratios actually used', () => {
+  const N = { tonnageMt: null, diesScrapped: null, diesInService: null, diesFailed: null,
+    newDiesReceived: null, newDieTrials: null, backupDiesReceived: null, backupDieTrials: null };
+  const out = s.aggregateDieLife([
+    { ...N, tonnageMt: 500, newDiesReceived: 4 },
+    { ...N, tonnageMt: 300, diesScrapped: 5, diesInService: 10, newDiesReceived: 2, newDieTrials: 3 },
+  ]);
+  assert.equal(out.dieLife, 60);
+  assert.equal(out.totals.tonnageMt, 800);
+  assert.deepEqual(out.paired, {
+    tonnageMt: 300, diesScrapped: 5, diesInService: 10, diesFailed: 0,
+    newDiesReceived: 2, newDieTrials: 3, backupDiesReceived: null, backupDieTrials: null,
+  });
+});
+
+test('aggregateDieLife paired sums are null when no row qualified', () => {
+  const out = s.aggregateDieLife([]);
+  for (const v of Object.values(out.paired)) assert.equal(v, null);
+});
+
+test('the migration drops only the unique constraint on exactly supplier, year, month', () => {
+  const fs = require('fs');
+  const path = require('path');
+  for (const file of ['server/db.cjs', 'init.sql']) {
+    const text = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
+    const start = text.indexOf("conrelid = 'supplier_die_life'::regclass");
+    assert.ok(start > 0, `${file}: loop found`);
+    const loop = text.slice(start, text.indexOf('END $$', start));
+    assert.match(loop, /conkey/, `${file}: matches on the constraint's columns`);
+    for (const col of ['supplier', 'year', 'month']) assert.match(loop, new RegExp(`'${col}'`), `${file}: names ${col}`);
+  }
+});
+
+test('periodLabel names the span from the first month with a row to the report month', () => {
+  assert.equal(s.periodLabel([{ month: 1 }, { month: 5 }, { month: 11 }], 11), 'Jan-Nov');
+  assert.equal(s.periodLabel([{ month: 3 }, { month: 6 }], 8), 'Mar-Aug');
+  assert.equal(s.periodLabel([{ month: 11 }], 11), 'Nov total');
+  assert.equal(s.periodLabel([], 11), 'Total');
 });

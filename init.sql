@@ -674,13 +674,54 @@ CREATE TABLE IF NOT EXISTS supplier_die_life (
     dies_in_service   INTEGER,
     dies_failed       INTEGER,
     dies_scrapped     INTEGER,
+    plant             TEXT,
+    tonnage_mt        NUMERIC,
+    new_dies_received INTEGER,
+    new_die_trials    INTEGER,
+    backup_dies_received INTEGER,
+    backup_die_trials INTEGER,
     updated_by        INTEGER REFERENCES users(id),
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (supplier, year, month)
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_supplier_die_life_lookup
     ON supplier_die_life (upper(btrim(supplier)), year, month);
+ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS plant TEXT;
+ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS tonnage_mt NUMERIC;
+ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS new_dies_received INTEGER;
+ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS new_die_trials INTEGER;
+ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS backup_dies_received INTEGER;
+ALTER TABLE supplier_die_life ADD COLUMN IF NOT EXISTS backup_die_trials INTEGER;
+-- One row per supplier, plant, year and month. The old inline
+-- UNIQUE (supplier, year, month) is dropped by looking its name up, matched on
+-- exactly those three columns so a unique constraint added later is never dropped. Rows with
+-- no plant are legacy and unconstrained. Collisions that differ only in
+-- supplier case keep the latest updated_at so the index can never fail boot.
+DO $$
+DECLARE c TEXT;
+BEGIN
+  FOR c IN
+    SELECT conname FROM pg_constraint
+     WHERE conrelid = 'supplier_die_life'::regclass AND contype = 'u'
+       AND (SELECT array_agg(a.attname::text ORDER BY a.attname)
+              FROM pg_attribute a
+             WHERE a.attrelid = conrelid AND a.attnum = ANY(conkey))
+           = ARRAY['month', 'supplier', 'year']
+  LOOP
+    EXECUTE format('ALTER TABLE supplier_die_life DROP CONSTRAINT %I', c);
+  END LOOP;
+END $$;
+DELETE FROM supplier_die_life a
+ USING supplier_die_life b
+ WHERE a.plant IS NOT NULL AND b.plant IS NOT NULL
+   AND upper(btrim(a.supplier)) = upper(btrim(b.supplier))
+   AND a.plant = b.plant AND a.year = b.year AND a.month = b.month
+   AND a.id <> b.id
+   AND (COALESCE(a.updated_at, '-infinity'::timestamp), a.id)
+     < (COALESCE(b.updated_at, '-infinity'::timestamp), b.id);
+CREATE UNIQUE INDEX IF NOT EXISTS supplier_die_life_plant_month_uq
+  ON supplier_die_life (upper(btrim(supplier)), plant, year, month)
+  WHERE plant IS NOT NULL;
 
 -- Admin corrections to the calculated trial ratio, one row per change. The
 -- latest row for a supplier and month wins; a NULL corrected_value means the

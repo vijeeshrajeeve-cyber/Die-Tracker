@@ -7,6 +7,23 @@ import MetricCard from '../../components/analytics/MetricCard';
 import TrendCard from '../../components/analytics/TrendCard';
 import DieLifeMatrix from '../../components/analytics/DieLifeMatrix';
 
+// "New dies: 1.67 (5 trials on 3 dies)". A ratio that was not calculated reads
+// "not recorded", never 0.
+function trialLine(label, ratio, trials, dies) {
+  if (ratio == null) return `${label}: not recorded`;
+  const counts = trials != null && dies != null ? ` (${trials} trials on ${dies} dies)` : '';
+  return `${label}: ${Number(ratio).toFixed(2)}${counts}`;
+}
+
+function trialLines(snapshot) {
+  const s = snapshot || {};
+  const t = s.trialTotals || {};
+  return [
+    trialLine('New dies', s.newTrialRatio, t.newDieTrials, t.newDiesReceived),
+    trialLine('Backup dies', s.backupTrialRatio, t.backupDieTrials, t.backupDiesReceived),
+  ];
+}
+
 const FREQUENCIES = ['Monthly', 'Quarterly', 'YTD'];
 
 export default function SupplierReportTab({ theme, refreshKey = 0 }) {
@@ -123,13 +140,20 @@ export default function SupplierReportTab({ theme, refreshKey = 0 }) {
 
           <div className="dt-analytics-grid" style={{ marginTop: '1.5rem' }}>
             {report.metrics.map((m) => (
-              <MetricCard key={m.key} metric={m} value={report.snapshot[m.key]}
-                score={report.scores[m.key]} trend={trendFor(m.key)} theme={theme} />
+              <div key={m.key}>
+                <MetricCard metric={m} value={report.snapshot[m.key]}
+                  score={report.scores[m.key]} trend={trendFor(m.key)} theme={theme} />
+                {m.key === 'trialRatio' && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: theme.textDim, lineHeight: 1.5 }}>
+                    {trialLines(report.snapshot).map((line) => <div key={line}>{line}</div>)}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
 
           <div style={{ marginTop: '1.5rem' }}>
-            <DieLifeMatrix rows={report.dieLifeRows} theme={theme} />
+            <DieLifeMatrix rows={report.dieLifeRows} period={report.dieLifePeriod} periodLabel={report.dieLifePeriodLabel} theme={theme} />
           </div>
 
           <h2 style={{ fontSize: '0.75rem', fontWeight: 700, color: theme.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '2rem 0 0.75rem' }}>

@@ -53,6 +53,13 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
             return res.status(404).json({ error: 'Plant not found' });
         }
 
+        // Deleting the plant would leave its die life figures under a name
+        // nothing lists, and out of every plant picker.
+        const used = await pool.query('SELECT 1 FROM supplier_die_life WHERE plant = $1 LIMIT 1', [existing.rows[0].name]);
+        if (used.rows.length > 0) {
+            return res.status(409).json({ error: 'This plant has die life figures and cannot be deleted' });
+        }
+
         await pool.query('DELETE FROM plants WHERE id = $1', [id]);
         res.json({ message: 'Plant deleted successfully' });
     } catch (error) {
