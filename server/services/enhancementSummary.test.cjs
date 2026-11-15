@@ -86,6 +86,18 @@ test('open and awaiting life review are counted at the end of the period', () =>
   assert.equal(later.open[0].state, 'Awaiting life review');
 });
 
+test('a trial verdict given after the period ends does not make a project awaiting its life review in it', () => {
+  const r = row({ die_order_id: 2, trial_verdict: 'Achieved', trial_verdict_date: '2026-09-01', failure_assessment_required: true });
+  const s = summarise([r], { from: '2026-01-01', to: '2026-06-30' });
+  assert.equal(s.totals.open, 1);
+  assert.equal(s.totals.awaitingLifeReview, 0);
+  assert.equal(s.open[0].state, 'Open');
+  const after = summarise([r], YEAR);
+  assert.equal(after.totals.awaitingLifeReview, 1);
+  const before = summarise([{ ...r, trial_verdict_date: '2026-05-01T08:00:00' }], { from: '2026-01-01', to: '2026-06-30' });
+  assert.equal(before.totals.awaitingLifeReview, 1);
+});
+
 test('a project created after the period ends is not open in it', () => {
   const s = summarise([row({ created_at: '2026-08-01T08:00:00' })], { from: '2026-01-01', to: '2026-06-30' });
   assert.equal(s.totals.open, 0);

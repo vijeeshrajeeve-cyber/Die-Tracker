@@ -3,7 +3,7 @@ import { usePalette } from '../../utils/palette';
 import { designEnhancementsAPI, getUser } from '../../api';
 import { VERDICTS, parseNumber, isBlank } from '../../utils/designEnhancement';
 import {
-  panelStage, resultRows, showNumber, validateVerdictForm, reviewOwedAfter, formNeedsReason, latestOkTrial, trialSuggestion,
+  panelStage, resultRows, showNumber, validateVerdictForm, reviewOwedAfter, formNeedsReason, latestOkTrial, trialSuggestion, prefillDueDate,
 } from '../../utils/enhancementVerdict';
 import { todayLocal } from '../../utils/today.js';
 
@@ -41,9 +41,9 @@ function VerdictForm({ form, order, row, suggestion, theme, onSaved, onCancel, o
     setValues((cur) => ({
       ...cur,
       verdict: touched.verdict ? cur.verdict : (suggested || cur.verdict),
-      dueDate: touched.dueDate ? cur.dueDate : (suggestion?.defaultReviewDate || cur.dueDate),
+      dueDate: touched.dueDate ? cur.dueDate : (prefillDueDate(row, suggestion) || cur.dueDate),
     }));
-  }, [suggested, suggestion?.defaultReviewDate, touched.verdict, touched.dueDate]);
+  }, [suggested, suggestion, row, touched.verdict, touched.dueDate]);
 
   // The life-review suggestion depends on the failure % typed, so tell the
   // panel to ask the server again once the box holds a valid one.

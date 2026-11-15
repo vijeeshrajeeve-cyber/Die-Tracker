@@ -180,3 +180,10 @@ export function validateVerdictForm({ form, row, order, values, suggested, today
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, errors: {}, body };
 }
+
+// The date the review-due box starts on: the stored one when a redo opens on a
+// project that already has one, else the suggestion's default (approval + 6 months).
+export function prefillDueDate(row, suggestion) {
+  const stored = row && row.life_review_due_date ? String(row.life_review_due_date).slice(0, 10) : '';
+  return stored || (suggestion && suggestion.defaultReviewDate) || '';
+}

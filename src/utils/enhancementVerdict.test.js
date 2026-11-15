@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion,
+  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion, prefillDueDate,
 } from './enhancementVerdict.js';
 
 const ROW = {
@@ -136,4 +136,13 @@ test('trial suggestion uses the latest OK trial against the two targets', () => 
   assert.equal(trialSuggestion(ROW, { STATUS: 'DIE RECEIVED', 'Sample Status': 'Rejected' }, [{ trial_no: 1, result: 'Not OK' }]), 'Not achieved');
   // a blank number is skipped, not treated as 0
   assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: null, recovery_pct: '80' }]), 'Achieved');
+});
+
+test('the review due date pre-fills the stored one, and the suggested default only when none is stored', () => {
+  const suggestion = { defaultReviewDate: '2027-02-28' };
+  assert.equal(prefillDueDate({ life_review_due_date: '2027-05-10T00:00:00.000Z' }, suggestion), '2027-05-10');
+  assert.equal(prefillDueDate({ life_review_due_date: '2027-05-10' }, suggestion), '2027-05-10');
+  assert.equal(prefillDueDate({ life_review_due_date: null }, suggestion), '2027-02-28');
+  assert.equal(prefillDueDate(null, suggestion), '2027-02-28');
+  assert.equal(prefillDueDate({}, null), '');
 });

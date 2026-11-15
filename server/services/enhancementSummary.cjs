@@ -109,7 +109,10 @@ function summarise(rows, { from, to }) {
     }
     // As it stood at `to`: a verdict given after `to` had not happened yet.
     if (created && created <= to && !(r.final_verdict && finished && finished <= to)) {
-      const asOf = projectState({ ...r, final_verdict: null }, r);
+      // A trial verdict dated after `to` had not been given yet either.
+      const verdictDay = dayOf(r.trial_verdict_date);
+      const verdictGiven = !(r.trial_verdict && verdictDay && verdictDay > to);
+      const asOf = projectState({ ...r, final_verdict: null, trial_verdict: verdictGiven ? r.trial_verdict : null }, r);
       open.push(projectRow(r, asOf));
       if (asOf === 'Awaiting life review') awaiting += 1;
     }

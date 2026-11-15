@@ -37,7 +37,7 @@ import EnhancementBlock from './components/orders/EnhancementBlock';
 import EnhancementResultPanel from './components/orders/EnhancementResultPanel';
 import { canRecordVerdict } from './utils/enhancementVerdict';
 import { EnhancementTag } from './components/DieAttentionLabels';
-import { isEnhancement, validateBaselineForm, emptyBaselineForm, canMarkEnhancement, markNeedsReason } from './utils/designEnhancement';
+import { isEnhancement, validateBaselineForm, emptyBaselineForm, canMarkEnhancement, markNeedsReason, markSwitchesSimulationOn, simulationToggleLocked } from './utils/designEnhancement';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
 import { stopReason, remarkFallback } from './utils/stopReason';
@@ -636,7 +636,9 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
                   reason={enhReason} onReasonChange={setEnhReason} reasonRequired={enhNeedsReason} reasonError={enhReasonError}
                 />
                 <p style={{ margin: '12px 0 0', fontSize: '0.78rem', color: textMuted }}>
-                  Simulation is switched on for this order and stays on while the flag is set.
+                  {markSwitchesSimulationOn({ STATUS: form.STATUS, 'Design Approved Date': form['Design Approved Date'] })
+                    ? 'Simulation is switched on for this order and stays on while the flag is set.'
+                    : 'Simulation is not changed because this order is already past the simulation stage.'}
                 </p>
               </div>
             )}
@@ -1679,7 +1681,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   {Field({ label: 'Status', field: 'STATUS', type: 'select', options: statusOptions })}
                 </div>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  {Toggle({ label: 'Simulation required', field: 'simulationEnabled', checked: isSimulationEnabled(editedOrder.simulationEnabled), accent: c.primary, disabled: isEnhancement(order), note: isEnhancement(order) ? 'Required on a Design enhancement order' : undefined })}
+                  {Toggle({ label: 'Simulation required', field: 'simulationEnabled', checked: isSimulationEnabled(editedOrder.simulationEnabled), accent: c.primary, disabled: simulationToggleLocked(order), note: simulationToggleLocked(order) ? 'Required on a Design enhancement order' : undefined })}
                   {Toggle({ label: 'Special follow-up', field: 'specialFollowUp', checked: !!(editedOrder.specialFollowUp === true || editedOrder.specialFollowUp === 1), accent: '#F59E0B' })}
                   <label style={{
                     display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 8px 0 14px', borderRadius: '10px', fontSize: '0.875rem', color: c.text,
