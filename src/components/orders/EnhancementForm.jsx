@@ -8,11 +8,12 @@ import { usePalette } from '../../utils/palette';
  * strings), `onChange` receives the whole next value, and `errors` is the
  * per-field map validateBaselineForm returns. The failure target only shows
  * once the assessment box is ticked. Pass `reasonRequired` after the die is
- * received, when an admin must say why.
+ * received, when an admin must say why. `assessmentLocked` freezes the
+ * assessment box once a trial verdict exists.
  */
 export default function EnhancementForm({
   value, onChange, errors = {}, activeDies = [], theme = {},
-  reason = '', onReasonChange, reasonRequired = false, reasonError = '', disabled = false,
+  reason = '', onReasonChange, reasonRequired = false, reasonError = '', disabled = false, assessmentLocked = false,
 }) {
   const p = usePalette(theme);
   const uid = useId();
@@ -81,11 +82,12 @@ export default function EnhancementForm({
 
       <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.875rem', cursor: disabled ? 'default' : 'pointer' }}>
         <input
-          type="checkbox" disabled={disabled} checked={assessment}
+          type="checkbox" disabled={disabled || assessmentLocked} checked={assessment}
           onChange={(e) => set('failure_assessment_required', e.target.checked)}
           style={{ width: '18px', height: '18px', accentColor: p.primary }}
         />
         Die failure % assessment required
+        {assessmentLocked && <span style={{ color: p.dim, fontSize: '0.75rem' }}>(fixed once the trial verdict is saved)</span>}
       </label>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr 1fr', gap: '8px 10px', alignItems: 'center' }}>

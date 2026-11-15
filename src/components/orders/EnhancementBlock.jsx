@@ -5,7 +5,7 @@ import { usePalette } from '../../utils/palette';
 import { designEnhancementsAPI } from '../../api';
 import {
   isEnhancement, formFromRow, validateBaselineForm, canMarkEnhancement, canEditBaseline,
-  canRemoveEnhancement, markNeedsReason,
+  canRemoveEnhancement, markNeedsReason, markSwitchesSimulationOn,
 } from '../../utils/designEnhancement';
 import EnhancementForm from './EnhancementForm';
 
@@ -40,7 +40,7 @@ const button = (p, primary, disabled) => ({
 });
 
 // Mark the order (no enhancement yet) or edit its baseline.
-function BaselineDialog({ order, enhancement, activeDies, theme, onClose, onSaved }) {
+function BaselineDialog({ order, enhancement, activeDies, facts, theme, onClose, onSaved }) {
   const p = usePalette(theme);
   const [form, setForm] = useState(() => formFromRow(enhancement));
   const [errors, setErrors] = useState({});
@@ -48,7 +48,7 @@ function BaselineDialog({ order, enhancement, activeDies, theme, onClose, onSave
   const [reasonError, setReasonError] = useState('');
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState('');
-  const reasonRequired = markNeedsReason(order);
+  const reasonRequired = markNeedsReason(order, facts);
 
   const save = async () => {
     const checked = validateBaselineForm(form);
@@ -77,10 +77,13 @@ function BaselineDialog({ order, enhancement, activeDies, theme, onClose, onSave
         </>
       )}>
       <EnhancementForm value={form} onChange={setForm} errors={errors} theme={theme} disabled={saving} activeDies={activeDies}
-        reason={reason} onReasonChange={setReason} reasonRequired={reasonRequired} reasonError={reasonError} />
+        reason={reason} onReasonChange={setReason} reasonRequired={reasonRequired} reasonError={reasonError}
+        assessmentLocked={!!enhancement?.trial_verdict} />
       {!enhancement && (
         <p style={{ margin: '12px 0 0', fontSize: '0.78rem', color: p.dim }}>
-          Saving switches Simulation on for this order and keeps it on while the flag is set.
+          {markSwitchesSimulationOn(order)
+            ? 'Saving switches Simulation on for this order and keeps it on while the flag is set.'
+            : 'Simulation is not changed because this order is already past the simulation stage.'}
         </p>
       )}
       {failure && <p role="alert" style={{ margin: '12px 0 0', fontSize: '0.82rem', color: p.danger }}>{failure}</p>}
@@ -119,7 +122,7 @@ function RemoveDialog({ order, theme, onClose, onRemoved }) {
         </>
       )}>
       <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: p.muted }}>
-        The baseline and targets are deleted; the change log keeps a copy. Simulation stays as it is.
+        The record is deleted; the change log keeps a copy of the issue, the baseline, the targets and any trial numbers and verdicts. Simulation stays as it is.
       </p>
       <label htmlFor={fieldId} style={{ display: 'block', marginBottom: '4px', fontSize: '0.72rem', fontWeight: 600, color: p.muted }}>
         Reason for removing it <span style={{ color: p.danger }}>*</span>
@@ -160,8 +163,9 @@ export default function EnhancementBlock({ order, enhancement, user, theme, onCh
     return () => { cancelled = true; };
   }, [order.id]);
 
-  const canMark = canMarkEnhancement(order, user);
-  const canEdit = canEditBaseline(order, user);
+  const facts = { trialCount, trialVerdict: enhancement?.trial_verdict };
+  const canMark = canMarkEnhancement(order, user, facts);
+  const canEdit = canEditBaseline(order, user, facts);
   // While the count is unknown, hold the action back; the server decides anyway.
   const canRemove = (!needsTrialCount || trialCount !== null) && canRemoveEnhancement(order, user, trialCount ?? 0);
 
@@ -233,8 +237,8 @@ export default function EnhancementBlock({ order, enhancement, user, theme, onCh
         </div>
       )}
 
-      {dialog === 'mark' && <BaselineDialog order={order} enhancement={null} activeDies={activeDies} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
-      {dialog === 'edit' && <BaselineDialog order={order} enhancement={enhancement} activeDies={activeDies} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
+      {dialog === 'mark' && <BaselineDialog order={order} enhancement={null} activeDies={activeDies} facts={facts} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
+      {dialog === 'edit' && <BaselineDialog order={order} enhancement={enhancement} activeDies={activeDies} facts={facts} theme={theme} onClose={() => setDialog(null)} onSaved={finish} />}
       {dialog === 'remove' && <RemoveDialog order={order} theme={theme} onClose={() => setDialog(null)} onRemoved={finish} />}
     </section>
   );

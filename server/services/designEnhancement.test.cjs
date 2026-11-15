@@ -33,13 +33,13 @@ test('bad numbers are rejected, never stored as 0', () => {
   for (const bad of ['abc', '12,5', -1, '']) {
     assert.equal(validateBaseline({ ...base, baseline_failure_pct: bad }).ok, false);
   }
-  // percentages above 100 are rejected; kg/h has no upper bound
+  // percentages above 100 are rejected; kg/h is capped at 100000
   const pct = validateBaseline({ ...base, baseline_recovery_pct: 100.5 });
   assert.equal(pct.ok, false);
   assert.match(pct.error, /baseline_recovery_pct/);
   assert.equal(validateBaseline({ ...base, target_recovery_pct: 101 }).ok, false);
   assert.equal(validateBaseline({ ...base, baseline_recovery_pct: 100 }).ok, true);
-  assert.equal(validateBaseline({ ...base, baseline_productivity_kgh: 250000 }).ok, true);
+  assert.equal(validateBaseline({ ...base, baseline_productivity_kgh: 250000 }).ok, false);
   assert.equal(validateBaseline({ ...base, baseline_productivity_kgh: '1250.5' }).ok, true);
 });
 

@@ -8,9 +8,14 @@ const VERDICTS = ['Achieved', 'Partly achieved', 'Not achieved'];
 // Plain number or plain decimal string with a dot. Anything else is invalid.
 function parseNumber(raw) {
   if (typeof raw === 'number') return Number.isFinite(raw) && raw >= 0 ? raw : NaN;
-  if (typeof raw === 'string' && /^\d+(\.\d+)?$/.test(raw.trim())) return Number(raw.trim());
+  if (typeof raw === 'string' && /^\d+(\.\d+)?$/.test(raw.trim())) {
+    const n = Number(raw.trim());
+    return Number.isFinite(n) ? n : NaN; // a very long digit string becomes Infinity
+  }
   return NaN;
 }
+
+const MAX_KGH = 100000;
 
 function isBlank(raw) {
   return raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '');
@@ -48,6 +53,7 @@ function validateBaseline(input) {
     const n = parseNumber(raw);
     if (Number.isNaN(n)) return { ok: false, error: `${key} must be a number of 0 or more` };
     if (pct && n > 100) return { ok: false, error: `${key} cannot be more than 100` };
+    if (!pct && n > MAX_KGH) return { ok: false, error: `${key} cannot be more than ${MAX_KGH}` };
     value[key] = n;
   }
   value.failure_assessment_required = required;

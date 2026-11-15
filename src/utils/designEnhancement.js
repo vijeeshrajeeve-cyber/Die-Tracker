@@ -13,9 +13,14 @@ export const isEnhancement = (order) => order?.designEnhancement === true || ord
 // Plain number or plain decimal string with a dot. Anything else is invalid.
 export function parseNumber(raw) {
   if (typeof raw === 'number') return Number.isFinite(raw) && raw >= 0 ? raw : NaN;
-  if (typeof raw === 'string' && /^\d+(\.\d+)?$/.test(raw.trim())) return Number(raw.trim());
+  if (typeof raw === 'string' && /^\d+(\.\d+)?$/.test(raw.trim())) {
+    const n = Number(raw.trim());
+    return Number.isFinite(n) ? n : NaN; // a very long digit string becomes Infinity
+  }
   return NaN;
 }
+
+const MAX_KGH = 100000;
 
 export const isBlank = (raw) => raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '');
 
@@ -72,6 +77,7 @@ export function validateBaselineForm(form) {
     const n = parseNumber(raw);
     if (Number.isNaN(n)) errors[key] = 'Enter a number of 0 or more';
     else if (pct && n > 100) errors[key] = 'Cannot be more than 100';
+    else if (!pct && n > MAX_KGH) errors[key] = `Cannot be more than ${MAX_KGH}`;
     else value[key] = n;
   }
   value.failure_assessment_required = required;
@@ -119,17 +125,42 @@ export function projectState(row, order) {
 const isAdmin = (user) => !!user && user.role === 'admin';
 const statusOf = (order) => String(order?.STATUS ?? order?.status ?? '').toUpperCase();
 
-// Mark an order or edit its baseline: editors before DIE RECEIVED, admins after.
-export function canMarkEnhancement(order, user) {
+const receivedDateOf = (order) => order?.['Die Received Date'] ?? order?.die_received_date;
+
+// The baseline is locked (admin only, with a reason) once the die is received
+// or trialled. `facts` is what the caller knows: { trialCount, trialVerdict };
+// where it does not know, the server judges and its refusal is shown.
+export function isBaselineLocked(order, facts) {
+  const f = facts || {};
+  return statusOf(order) === 'DIE RECEIVED' || String(receivedDateOf(order) ?? '').trim() !== ''
+    || Number(f.trialCount) > 0 || Boolean(f.trialVerdict);
+}
+
+// Mark an order or edit its baseline: editors until it locks, admins after.
+export function canMarkEnhancement(order, user, facts) {
   if (!canEditOrderDetails(user)) return false;
-  const status = statusOf(order);
-  if (status === 'CANCELLED') return false;
-  return status !== 'DIE RECEIVED' || isAdmin(user);
+  if (statusOf(order) === 'CANCELLED') return false;
+  return !isBaselineLocked(order, facts) || isAdmin(user);
 }
 export const canEditBaseline = canMarkEnhancement;
 
-// The admin path asks for a reason; true when this order is past receipt.
-export const markNeedsReason = (order) => statusOf(order) === 'DIE RECEIVED';
+// The admin path asks for a reason; true when the baseline is locked.
+export const markNeedsReason = (order, facts) => isBaselineLocked(order, facts);
+
+// Marking switches Simulation on in these statuses, and on HOLD before design approval.
+const SIMULATION_STATUSES = ['PENDING FOR ORDERING', 'AWAITING FOR DESIGN', 'UNDER SIMULATION'];
+export function markSwitchesSimulationOn(order) {
+  const status = statusOf(order);
+  if (SIMULATION_STATUSES.includes(status)) return true;
+  return status === 'HOLD' && String(order?.['Design Approved Date'] ?? order?.design_approved_date ?? '').trim() === '';
+}
+
+// The drawer's Simulation switch: an enhancement order cannot turn it off, but
+// when it is already off the user must be able to turn it on.
+export function simulationToggleLocked(order) {
+  const on = order?.simulationEnabled === true || order?.simulationEnabled === 1;
+  return isEnhancement(order) && on;
+}
 
 // Remove the flag: editors while the order has no trial, admins after.
 export function canRemoveEnhancement(order, user, trialCount) {

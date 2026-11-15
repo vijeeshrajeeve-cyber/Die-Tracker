@@ -22,7 +22,7 @@ const { adminMiddleware } = require('./auth.cjs');
 const { insertChangeLog } = require('../services/orderChangeLog.cjs');
 const { validateBaseline } = require('../services/designEnhancement.cjs');
 const { hasMeasuredOkTrial } = require('../services/sampleTrials.cjs');
-const { SIMULATION_STATUSES, markAccess } = require('../services/enhancementAccess.cjs');
+const { marksSimulationOn, markAccess } = require('../services/enhancementAccess.cjs');
 
 const router = express.Router();
 
@@ -370,7 +370,7 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             return res.status(400).json({ error: APPROVAL_NEEDS_TRIAL, code: 'TRIAL_REQUIRED' });
         }
         const switchSimulationOn = !!enhancement
-            && SIMULATION_STATUSES.includes(String(sanitizeString(order['STATUS']) || '').toUpperCase());
+            && marksSimulationOn(sanitizeString(order['STATUS']), order['Design Approved Date']);
 
         let orderId;
         const client = await pool.connect();

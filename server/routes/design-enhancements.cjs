@@ -5,7 +5,7 @@ const {
   VERDICTS, validateBaseline, suggestVerdict, needsLifeReview, latestOkTrial, defaultReviewDate, isIsoDate, parseNumber, isBlank,
 } = require('../services/designEnhancement.cjs');
 const { insertChangeLog } = require('../services/orderChangeLog.cjs');
-const { SIMULATION_STATUSES, markAccess, removeAccess, verdictAccess } = require('../services/enhancementAccess.cjs');
+const { marksSimulationOn, markAccess, removeAccess, verdictAccess } = require('../services/enhancementAccess.cjs');
 const { trialsForParent, normaliseDate } = require('../services/sampleTrials.cjs');
 const { todayLocal } = require('../services/dates.cjs');
 const { pageAccessMiddleware } = require('./auth.cjs');
@@ -39,7 +39,7 @@ async function withTransaction(work) {
 
 const lockOrder = async (client, orderId, lock = true) => {
   const { rows } = await client.query(
-    `SELECT id, status, design_enhancement, simulation_enabled, sample_status, sample_approval_date FROM die_orders WHERE id = $1${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT id, status, design_enhancement, simulation_enabled, sample_status, sample_approval_date, die_received_date, design_approved_date FROM die_orders WHERE id = $1${lock ? ' FOR UPDATE' : ''}`,
     [orderId]);
   return rows[0] || null;
 };
@@ -68,11 +68,16 @@ router.put('/order/:orderId', async (req, res) => {
     const out = await withTransaction(async (client) => {
       const order = await lockOrder(client, orderId);
       if (!order) return { refused: { status: 404, json: { error: 'Order not found' } } };
-      const access = markAccess(req.user, order.status, reason);
-      if (!access.ok) return refusal(access);
-
       const found = await client.query('SELECT * FROM design_enhancements WHERE die_order_id = $1', [orderId]);
       const before = found.rows[0];
+      const trial = await client.query('SELECT 1 FROM sample_trials WHERE die_order_id = $1 LIMIT 1', [orderId]);
+      const access = markAccess(req.user, order.status, reason, {
+        receivedDate: order.die_received_date, hasTrial: trial.rows.length > 0, trialVerdict: before && before.trial_verdict,
+      });
+      if (!access.ok) return refusal(access);
+      if (before && before.trial_verdict && Boolean(before.failure_assessment_required) !== Boolean(checked.value.failure_assessment_required)) {
+        return refusal({ status: 400, error: 'The die failure assessment choice cannot be changed after the trial verdict; redo the trial verdict instead', code: 'ASSESSMENT_LOCKED' });
+      }
       const value = checked.value;
       const entries = [];
       let enhancement;
@@ -94,7 +99,7 @@ router.put('/order/:orderId', async (req, res) => {
            VALUES ($1, ${BASELINE_KEYS.map((_, i) => `$${i + 2}`).join(', ')}, $${BASELINE_KEYS.length + 2}) RETURNING *`,
           [orderId, ...BASELINE_KEYS.map((k) => value[k]), req.user.username || null]);
         enhancement = inserted.rows[0];
-        const switchOn = SIMULATION_STATUSES.includes(String(order.status || '').toUpperCase());
+        const switchOn = marksSimulationOn(order.status, order.design_approved_date);
         await client.query(
           `UPDATE die_orders SET design_enhancement = 1${switchOn ? ', simulation_enabled = 1' : ''}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
           [orderId]);
@@ -114,7 +119,31 @@ router.put('/order/:orderId', async (req, res) => {
   }
 });
 
-// Remove the flag and the enhancement record; the change log keeps the baseline.
+// The whole record, as one readable line, for the removal log row. A blank
+// value reads "not recorded", never 0. Verdict parts appear only when present.
+function removedRecord(row) {
+  const n = (v, unit) => (v === null || v === undefined || v === '' ? 'not recorded' : `${Number(v)} ${unit}`);
+  const parts = [
+    `Yes (issue: ${row.current_issue})`,
+    `baseline productivity ${n(row.baseline_productivity_kgh, 'kg/h')}`,
+    `baseline recovery ${n(row.baseline_recovery_pct, '%')}`,
+    `baseline failure ${n(row.baseline_failure_pct, '%')}`,
+    `target productivity ${n(row.target_productivity_kgh, 'kg/h')}`,
+    `target recovery ${n(row.target_recovery_pct, '%')}`,
+    `target failure ${n(row.target_failure_pct, '%')}`,
+    `failure assessment required: ${row.failure_assessment_required ? 'Yes' : 'No'}`,
+  ];
+  if (row.reference_dies) parts.push(`dies referred: ${row.reference_dies}`);
+  if (row.trial_verdict) {
+    parts.push(`trial productivity ${n(row.trial_productivity_kgh, 'kg/h')}`, `trial recovery ${n(row.trial_recovery_pct, '%')}`,
+      `trial verdict ${row.trial_verdict}`);
+  }
+  if (row.life_review_date != null || row.actual_failure_pct != null) parts.push(`actual failure ${n(row.actual_failure_pct, '%')}`);
+  if (row.final_verdict) parts.push(`final verdict ${row.final_verdict}`);
+  return parts.join('; ');
+}
+
+// Remove the flag and the enhancement record; the change log keeps the whole record.
 router.delete('/order/:orderId', async (req, res) => {
   const orderId = Number(req.params.orderId);
   if (!Number.isInteger(orderId) || orderId < 1) return res.status(400).json({ error: 'Invalid order id' });
@@ -134,10 +163,9 @@ router.delete('/order/:orderId', async (req, res) => {
 
       await client.query('DELETE FROM design_enhancements WHERE die_order_id = $1', [orderId]);
       await client.query('UPDATE die_orders SET design_enhancement = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [orderId]);
-      const old = found.rows[0];
       await insertChangeLog(client, orderId, [{
         field: 'Design enhancement',
-        oldValue: `Yes (issue: ${old.current_issue})`,
+        oldValue: removedRecord(found.rows[0]),
         newValue: 'No',
         reason,
         stage: order.status,

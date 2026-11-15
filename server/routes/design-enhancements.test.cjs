@@ -19,7 +19,7 @@ installFakeDb(async (sql, params = []) => {
   const q = sql.trim().replace(/\s+/g, ' ');
   log.push({ q, params });
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(q)) return { rows: [] };
-  if (/^SELECT id, status, design_enhancement, simulation_enabled, sample_status, sample_approval_date FROM die_orders WHERE id = \$1( FOR UPDATE)?$/.test(q)) {
+  if (/^SELECT id, status, design_enhancement, simulation_enabled, sample_status, sample_approval_date, die_received_date, design_approved_date FROM die_orders WHERE id = \$1( FOR UPDATE)?$/.test(q)) {
     return { rows: order ? [order] : [] };
   }
   if (/^SELECT \* FROM design_enhancements WHERE die_order_id/.test(q)) return { rows: enhancement ? [{ ...enhancement }] : [] };
@@ -82,7 +82,7 @@ test.beforeEach(() => {
   trials = [];
   enhancement = null;
   order = { id: 7, status: 'AWAITING FOR DESIGN', design_enhancement: 0, simulation_enabled: 0,
-    sample_status: 'Approved', sample_approval_date: '2026-08-31' };
+    sample_status: 'Approved', sample_approval_date: '2026-08-31', die_received_date: null, design_approved_date: null };
 });
 
 const BASELINE = {
@@ -252,6 +252,86 @@ test('a design revision leaves design_enhancement and the enhancement row untouc
   await createRevision(client, { orderId: 7, targetStatus: 'AWAITING FOR DESIGN', notes: 'rework', user: EDITOR });
   assert.ok(seen.length > 0);
   assert.ok(!seen.some((sql) => /design_enhancement/i.test(sql)));
+});
+
+// ---- final review fixes ------------------------------------------------------
+test.describe('baseline lock', () => {
+  test.beforeEach(() => {
+    order.design_enhancement = 1;
+    enhancement = { die_order_id: 7, ...BASELINE };
+  });
+
+  test('a HOLD order with a received date is locked: 403 for an editor, a reason for an admin', async () => {
+    order.status = 'HOLD';
+    order.die_received_date = '2026-09-01';
+    assert.equal((await put(BASELINE)).status, 403);
+    currentUser = ADMIN;
+    assert.equal((await put({ ...BASELINE, target_recovery_pct: 80 })).status, 400);
+    assert.equal((await put({ ...BASELINE, target_recovery_pct: 80, reason: 'Re-agreed' })).status, 200);
+  });
+
+  test('an order with a trial row is locked for an editor', async () => {
+    hasTrial = true;
+    assert.equal((await put(BASELINE)).status, 403);
+    currentUser = ADMIN;
+    assert.equal((await put(BASELINE)).status, 400);
+  });
+
+  test('an order with a trial verdict is locked for an editor', async () => {
+    enhancement.trial_verdict = 'Achieved';
+    assert.equal((await put(BASELINE)).status, 403);
+  });
+
+  test('marking a not-yet-marked order with a received date needs an admin and a reason', async () => {
+    order.design_enhancement = 0;
+    enhancement = null;
+    order.status = 'DONE';
+    order.die_received_date = '2026-09-01';
+    assert.equal((await put(BASELINE)).status, 403);
+    currentUser = ADMIN;
+    assert.equal((await put(BASELINE)).status, 400);
+    assert.equal((await put({ ...BASELINE, reason: 'Found late' })).status, 200);
+  });
+});
+
+test('removing the flag keeps the full record in the change log, blanks as "not recorded"', async () => {
+  order.design_enhancement = 1;
+  enhancement = { die_order_id: 7, ...BASELINE, target_failure_pct: null, failure_assessment_required: false,
+    trial_productivity_kgh: '950', trial_recovery_pct: null, trial_verdict: 'Achieved', actual_failure_pct: '8', life_review_date: '2027-03-01', final_verdict: 'Partly achieved' };
+  const { status } = await del({ reason: 'Marked the wrong die' });
+  assert.equal(status, 200);
+  const old = changes().map((c) => c.old).join('\n');
+  for (const part of ['Die breaks early at the bearing', 'baseline productivity 800 kg/h', 'baseline recovery 70 %', 'baseline failure 12 %',
+    'target productivity 900 kg/h', 'target recovery 75 %', 'target failure not recorded', 'failure assessment required: No',
+    'trial productivity 950 kg/h', 'trial recovery not recorded', 'trial verdict Achieved', 'actual failure 8 %', 'final verdict Partly achieved']) {
+    assert.ok(old.includes(part), `missing: ${part}\n${old}`);
+  }
+  assert.equal(changes().at(-1).new, 'No');
+});
+
+test('the failure assessment choice cannot change after the trial verdict', async () => {
+  order.design_enhancement = 1;
+  enhancement = { die_order_id: 7, ...BASELINE, failure_assessment_required: false, target_failure_pct: null, trial_verdict: 'Achieved' };
+  currentUser = ADMIN;
+  const r = await put({ ...BASELINE, failure_assessment_required: true, target_failure_pct: 10, reason: 'x' });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /cannot be changed after the trial verdict/);
+  assert.equal(queries('UPDATE design_enhancements').length, 0);
+  assert.equal((await put({ ...BASELINE, reason: 'x' })).status, 200);
+});
+
+test.describe('simulation on marking', () => {
+  test('a HOLD order with no design-approved date gets Simulation switched on', async () => {
+    order.status = 'HOLD';
+    assert.equal((await put(BASELINE)).status, 200);
+    assert.match(orderUpdate().q, /simulation_enabled = 1/);
+  });
+  test('a HOLD order with a design-approved date keeps its simulation setting', async () => {
+    order.status = 'HOLD';
+    order.design_approved_date = '2026-08-01';
+    assert.equal((await put(BASELINE)).status, 200);
+    assert.doesNotMatch(orderUpdate().q, /simulation_enabled/);
+  });
 });
 
 // ---- verdicts and the life review -------------------------------------------
