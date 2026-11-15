@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { Client } = require('pg');
 const { initializeWorkQueue } = require('./workQueueSchema.cjs');
+const { ensureDesignEnhancementSchema } = require('./designEnhancementSchema.cjs');
 const { syncSource, projectSource, reconcileAll } = require('./workQueueSync.cjs');
 const { STAGES } = require('./workQueueStages.cjs');
 const { initializeWorkQueueExtraSchema } = require('./workQueueExtraSchema.cjs');
@@ -56,6 +57,7 @@ test('PostgreSQL queue synchronization and deadline invariants', {
   }
   const current = (kind, id) => one("SELECT * FROM work_queue_items WHERE source_kind=$1 AND source_id=$2 AND state IN ('active','paused')", [kind, id]);
   try {
+    await ensureDesignEnhancementSchema(db); // the projection reads this table
     await t.test('initialization is repeatable and does not backfill', async () => {
       const first = await initializeWorkQueue(db);
       assert.equal(first.backfilled, false);
