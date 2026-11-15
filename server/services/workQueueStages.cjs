@@ -16,6 +16,8 @@ const STAGES = Object.freeze([
   { key: 'qd_returned', label: 'QD Returned', days: 2, page: 'qd-tracker' },
   { key: 'foc_receipt', label: 'FOC Receipt', days: null, page: 'qd-tracker' },
   { key: 'foc_trial', label: 'FOC Trial Follow-up', days: 3, page: 'qd-tracker' },
+  // Date-driven like manufacturing: due on design_enhancements.life_review_due_date.
+  { key: 'enhancement_life_review', label: 'Enhancement Life Review', days: null, page: 'flow-sample-followup' },
 ]);
 const STAGE_BY_KEY = Object.freeze(Object.fromEntries(STAGES.map(stage => [stage.key, stage])));
 

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // stub before the module is imported.
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-const { toolingsAPI, profileShapesAPI, newDieOrderFormsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI } = await import('./api.js');
+const { toolingsAPI, profileShapesAPI, newDieOrderFormsAPI, frozenDesignsAPI, existingDataAPI, backupRequestsAPI, qualityDiscrepanciesAPI, searchAPI, ordersAPI, usersAPI, authAPI, designEnhancementsAPI } = await import('./api.js');
 
 const respondWith = (body, status = 200) => {
   globalThis.fetch = async () => new Response(body, {
@@ -573,4 +573,21 @@ test('profileShapesAPI.reviewQueue and image hit the right paths with the Bearer
     globalThis.fetch = realFetch;
     globalThis.localStorage = realStorage;
   }
+});
+
+test('design enhancement save PUTs the baseline with the reason, remove DELETEs with a reason body', async () => {
+  const seen = [];
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url, method: init.method, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  await designEnhancementsAPI.save(12, { current_issue: 'x', baseline_failure_pct: 19 }, 'after receipt');
+  await designEnhancementsAPI.save(12, { current_issue: 'x' });
+  await designEnhancementsAPI.remove(12, 'marked by mistake');
+  assert.match(seen[0].url, /\/design-enhancements\/order\/12$/);
+  assert.equal(seen[0].method, 'PUT');
+  assert.deepEqual(seen[0].body, { current_issue: 'x', baseline_failure_pct: 19, reason: 'after receipt' });
+  assert.deepEqual(seen[1].body, { current_issue: 'x' });
+  assert.equal(seen[2].method, 'DELETE');
+  assert.deepEqual(seen[2].body, { reason: 'marked by mistake' });
 });

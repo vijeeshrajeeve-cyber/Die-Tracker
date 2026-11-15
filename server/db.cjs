@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 // Safe to require here: dailySummaryData takes its db as an argument and never
 // requires this module back, so there is no cycle.
 const { STAGES, stageDateOf } = require('./services/dailySummaryData.cjs');
+const { DESIGN_ENHANCEMENT_SCHEMA_SQL } = require('./services/designEnhancementSchema.cjs');
 
 // Return PostgreSQL DATE columns as raw 'YYYY-MM-DD' strings instead of JS Date
 // objects. The default parser converts to a Date in the server's local zone,
@@ -1541,6 +1542,15 @@ const initializeDatabase = async () => {
       ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_skipped_date DATE;
       ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_skipped_reason TEXT;
       ALTER TABLE die_orders ADD COLUMN IF NOT EXISTS simulation_skipped_by TEXT;
+
+      -- Design enhancement tracking: a flag on the order, measured results on
+      -- trials, and one record per marked order holding the baseline, targets
+      -- and verdicts. source_trial_id is a snapshot pointer, deliberately not
+      -- a foreign key: the verdict keeps its numbers if the trial is edited.
+      ALTER TABLE sample_trials ADD COLUMN IF NOT EXISTS productivity_kgh NUMERIC;
+      ALTER TABLE sample_trials ADD COLUMN IF NOT EXISTS recovery_pct NUMERIC;
+
+      ${DESIGN_ENHANCEMENT_SCHEMA_SQL}
 
       CREATE TABLE IF NOT EXISTS simulation_rounds (
         id                     SERIAL PRIMARY KEY,

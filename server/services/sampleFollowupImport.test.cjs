@@ -430,3 +430,20 @@ test('buildImportPlan flags a blank die number and a repeated one', () => {
   assert.equal(plan.warnings.some((w) => w.includes('blank die number')), true);
   assert.equal(plan.warnings.some((w) => w.includes('later row wins')), true);
 });
+
+test('an enhancement die without a measured OK trial is not set to Approved, and is listed', () => {
+  const rows = [sheetRow({ 'Die': '027048-2502' })];
+  const base = { rows, orders: [order({ id: 10, die_no: '027048-2502', design_enhancement: 1 })] };
+  const plain = imp.buildImportPlan({ rows, orders: [order({ id: 10, die_no: '027048-2502' })] });
+  assert.equal(plain.updates[0].updates.sample_status, 'Approved');
+  assert.equal(plain.approvalSkipped.length, 0);
+
+  const plan = imp.buildImportPlan({ ...base, measuredOkOrders: new Set() });
+  assert.equal(plan.updates[0].updates.sample_status, undefined);
+  assert.ok(plan.updates[0].updates.sample_approval_date, 'the dates are still saved');
+  assert.deepEqual(plan.approvalSkipped.map((e) => e.die), ['027048-2502']);
+
+  const ok = imp.buildImportPlan({ ...base, measuredOkOrders: new Set([10]) });
+  assert.equal(ok.updates[0].updates.sample_status, 'Approved');
+  assert.equal(ok.approvalSkipped.length, 0);
+});

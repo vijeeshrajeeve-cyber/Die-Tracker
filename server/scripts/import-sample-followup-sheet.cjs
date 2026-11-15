@@ -16,7 +16,7 @@ const ORDER_QUERY = `
          die_received_date::text    AS die_received_date,
          submission_date::text      AS submission_date,
          sample_approval_date::text AS sample_approval_date,
-         no_of_trial, corrector, sample_status
+         no_of_trial, corrector, sample_status, design_enhancement
     FROM die_orders
 `;
 
@@ -94,6 +94,10 @@ function renderReport(plan, { file, dryRun, missingColumns, ledger, skippedCheck
   for (const e of plan.standalone) out.push(`  row ${e.sheetRow}  ${e.die}`);
 
   out.push('');
+  out.push(`== 11. Enhancement dies without a measured OK trial — status NOT set to Approved (${plan.approvalSkipped.length}) ==`);
+  for (const e of plan.approvalSkipped) out.push(`  row ${e.sheetRow}  ${e.die}  (order ${e.orderId})`);
+
+  out.push('');
   out.push(`Totals: ${plan.updates.length} to update, ${plan.noop.length} unchanged, `
          + `${plan.notFound.length} not found, ${plan.ambiguous.length} ambiguous, `
          + `${plan.conflicts.length} differ, ${plan.warnings.length} warnings, `
@@ -122,6 +126,13 @@ async function loadChecks() {
     hasLedger,
     correctors: correctors
       ? (await pool.query('SELECT name, plant, is_active FROM correctors')).rows
+      : undefined,
+    measuredOkOrders: trials
+      ? new Set((await pool.query(
+        `SELECT DISTINCT die_order_id FROM sample_trials
+          WHERE die_order_id IS NOT NULL AND result = 'OK'
+            AND productivity_kgh IS NOT NULL AND recovery_pct IS NOT NULL`,
+      )).rows.map((r) => r.die_order_id))
       : undefined,
     loggedTrials: trials
       ? new Map((await pool.query(
@@ -194,8 +205,8 @@ async function main() {
   }
 
   const orders = (await pool.query(ORDER_QUERY)).rows;
-  const { skippedChecks, hasLedger, correctors, loggedTrials, standaloneProfiles } = await loadChecks();
-  const plan = imp.buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles });
+  const { skippedChecks, hasLedger, correctors, loggedTrials, standaloneProfiles, measuredOkOrders } = await loadChecks();
+  const plan = imp.buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles, measuredOkOrders });
   const today = localToday();
   const ledger = hasLedger ? imp.ledgerRows(plan, today) : [];
 

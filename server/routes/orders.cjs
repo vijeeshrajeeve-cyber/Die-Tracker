@@ -12,13 +12,17 @@ const { createRevision, clearSkipSql } = require('../services/orderRevisions.cjs
 const { planEtaChange, insertEtaEvent, DeliveryRuleError } = require('../services/deliveryFollowup.cjs');
 const {
     EDITABLE_FIELDS, OrderEditError, planChanges, needsReason, changeNeedsReason,
-    displayValue, validateReason, canEditOrderDetails, fromRow, columnValue,
+    displayValue, validateReason, canEditOrderDetails, fromRow, columnValue, assertSimulationAllowed,
 } = require('../services/orderDetailEdits.cjs');
 const orderFiles = require('../services/orderFiles.cjs');
 const { recordOrderToolingLinks } = require('../services/dieToolingLinks.cjs');
 const orderProfileShape = require('../services/orderProfileShape.cjs');
 const { sha256Of } = require('../services/toolingDrawings.cjs');
 const { adminMiddleware } = require('./auth.cjs');
+const { insertChangeLog } = require('../services/orderChangeLog.cjs');
+const { validateBaseline } = require('../services/designEnhancement.cjs');
+const { hasMeasuredOkTrial } = require('../services/sampleTrials.cjs');
+const { marksSimulationOn, markAccess } = require('../services/enhancementAccess.cjs');
 
 const router = express.Router();
 
@@ -111,34 +115,34 @@ async function lockEtaPlan(client, id, body) {
     return { plan: planEtaChange(rows[0].eta, body['ETA'], body['ETA Change']) };
 }
 
-// The client-written change entries both update routes accept.
-async function insertChangeLog(db, id, entries, user) {
-    for (const entry of Array.isArray(entries) ? entries : []) {
-        if (!entry || !entry.field) continue;
-        const changedAt = entry.date ? new Date(entry.date) : new Date();
-        await db.query(
-            `INSERT INTO order_changes
-              (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-            [
-                id,
-                user?.id || null,
-                user?.username || entry.changedBy || null,
-                isNaN(changedAt) ? new Date() : changedAt,
-                String(entry.field),
-                entry.oldValue != null ? String(entry.oldValue) : null,
-                entry.newValue != null ? String(entry.newValue) : null,
-                entry.reason || null,
-                entry.stage || null,
-            ]
-        );
-    }
+// Refuses to switch simulation off on a Design enhancement order. Reads the
+// flag under the row lock, inside the update's transaction.
+// A full replace (PUT) writes the column from the body, so a missing field counts as off.
+async function guardSimulationOff(client, id, body, alwaysWrites) {
+    const writes = alwaysWrites || Object.prototype.hasOwnProperty.call(body, 'simulationEnabled');
+    if (!writes || body['simulationEnabled']) return;
+    const { rows } = await client.query('SELECT design_enhancement FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+    if (rows.length) assertSimulationAllowed(rows[0].design_enhancement, false);
+}
+
+const APPROVAL_NEEDS_TRIAL = 'Record an OK trial with productivity and recovery before approving an enhancement die';
+const isApproved = (v) => String(v == null ? '' : v).trim().toLowerCase() === 'approved';
+
+// An enhancement die cannot be approved until a trial has measured it. Only a
+// move into Approved is checked, so re-saving an order that is already Approved
+// is never blocked. Reads under the row lock, inside the update's transaction.
+async function guardApproval(client, id, body) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'Sample Status') || !isApproved(body['Sample Status'])) return;
+    const { rows } = await client.query(
+        'SELECT design_enhancement, sample_status FROM die_orders WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows.length || !rows[0].design_enhancement || isApproved(rows[0].sample_status)) return;
+    if (!(await hasMeasuredOkTrial(client, id))) throw new OrderEditError(APPROVAL_NEEDS_TRIAL, 'TRIAL_REQUIRED');
 }
 
 // Runs one order update in a transaction with its ETA event and change log.
 // Resolves to null on success, or to the HTTP answer to send instead, so each
 // route keeps its own success message.
-async function updateWithEta(id, body, user, runUpdate) {
+async function updateWithEta(id, body, user, runUpdate, { fullReplace = false } = {}) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -147,6 +151,8 @@ async function updateWithEta(id, body, user, runUpdate) {
             await client.query('ROLLBACK');
             return { status: 404, json: { error: 'Order not found' } };
         }
+        await guardSimulationOff(client, id, body, fullReplace);
+        await guardApproval(client, id, body);
         const result = await runUpdate(client);
         if (result.rowCount === 0) {
             await client.query('ROLLBACK');
@@ -158,7 +164,9 @@ async function updateWithEta(id, body, user, runUpdate) {
         return null;
     } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
-        if (error instanceof DeliveryRuleError) return { status: 400, json: { error: error.message, code: error.code } };
+        if (error instanceof DeliveryRuleError || error instanceof OrderEditError) {
+            return { status: 400, json: { error: error.message, code: error.code } };
+        }
         throw error;
     } finally {
         client.release();
@@ -347,7 +355,28 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
     try {
         const order = req.body;
 
-        const result = await pool.query(`
+        // A new order can start life as a Design enhancement. Check the
+        // baseline and the caller's right to mark before anything is written.
+        let enhancement = null;
+        if (order.enhancement !== undefined && order.enhancement !== null) {
+            const checked = validateBaseline(order.enhancement);
+            if (!checked.ok) return res.status(400).json({ error: checked.error });
+            const access = markAccess(req.user, sanitizeString(order['STATUS']), order.enhancement.reason);
+            if (!access.ok) return res.status(access.status).json({ error: access.error, code: access.code });
+            enhancement = checked.value;
+        }
+        // No trial can exist for a new order, so it cannot start out Approved.
+        if (enhancement && isApproved(order['Sample Status'])) {
+            return res.status(400).json({ error: APPROVAL_NEEDS_TRIAL, code: 'TRIAL_REQUIRED' });
+        }
+        const switchSimulationOn = !!enhancement
+            && marksSimulationOn(sanitizeString(order['STATUS']), order['Design Approved Date']);
+
+        let orderId;
+        const client = await pool.connect();
+        try {
+        await client.query('BEGIN');
+        const result = await client.query(`
             INSERT INTO die_orders (
                 plant, order_no, die_no, type, die_size, die_requested_date,
                 ordered_date, shipment_type, mandrels_per_cavity, total_mandrels,
@@ -359,8 +388,8 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
                 urgency, special_follow_up, design_to_ems_date,
                 frozen_design_id, frozen_design_action,
                 frozen_design_override_reason, frozen_design_override_note,
-                created_by, die_type
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44)
+                created_by, die_type, design_enhancement
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45)
             RETURNING id
         `, [
             sanitizeString(order['Plant']),
@@ -375,7 +404,7 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             Math.round(order['Total Mandrels'] || 0),
             sanitizeDate(order['Design Received Date']),
             sanitizeDate(order['3D Model Received Date']),
-            order['simulationEnabled'] ? 1 : 0,
+            (order['simulationEnabled'] || switchSimulationOn) ? 1 : 0,
             sanitizeDate(order['Design Approved Date']),
             Math.round(order['Delay'] || 0),
             sanitizeString(order['PR Entry']),
@@ -406,8 +435,31 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             sanitizeString(order['frozenDesignOverrideReason']),
             sanitizeString(order['frozenDesignOverrideNote']),
             req.user.id,
-            sanitizeString(order['Die Type']) || null
+            sanitizeString(order['Die Type']) || null,
+            enhancement ? 1 : 0
         ]);
+        orderId = result.rows[0].id;
+        if (enhancement) {
+            const keys = Object.keys(enhancement);
+            await client.query(
+                `INSERT INTO design_enhancements (die_order_id, ${keys.join(', ')}, created_by)
+                 VALUES ($1, ${keys.map((_, i) => `$${i + 2}`).join(', ')}, $${keys.length + 2})`,
+                [orderId, ...keys.map((k) => enhancement[k]), req.user.username || null]
+            );
+            const why = order.enhancement.reason;
+            await insertChangeLog(client, orderId, [{
+                field: 'Design enhancement', oldValue: 'No', newValue: 'Yes',
+                reason: typeof why === 'string' && why.trim() ? why.trim() : null,
+                stage: sanitizeString(order['STATUS']),
+            }], req.user);
+        }
+        await client.query('COMMIT');
+        } catch (insertError) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw insertError;
+        } finally {
+            client.release();
+        }
 
         // The form's insert/bolster numbers are a side record: never fail the order over them.
         try {
@@ -424,7 +476,7 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
         await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);
 
         res.status(201).json({
-            id: result.rows[0].id,
+            id: orderId,
             message: 'Order created successfully'
         });
     } catch (error) {
@@ -545,6 +597,8 @@ router.patch('/:id/details', requireOrderEditor, orderIdValidation, handleValida
             await client.query('ROLLBACK');
             return res.json({ order: presentSaved(stored), logged: 0 });
         }
+        const simulation = changes.find((c) => c.field === 'simulationEnabled');
+        if (simulation) assertSimulationAllowed(stored.design_enhancement, simulation.after);
         if (needsReason(changes) && !reason) {
             throw new OrderEditError('Give a reason for changing existing values', 'REASON_REQUIRED',
                 changes.filter(changeNeedsReason).map((c) => c.field));
@@ -868,7 +922,7 @@ router.put('/:id', requireOrderEditor, orderIdValidation, orderValidation, handl
             sanitizeString(order['frozenDesignOverrideReason']),
             sanitizeString(order['frozenDesignOverrideNote']),
             id,
-        ]));
+        ]), { fullReplace: true });
         if (refused) return res.status(refused.status).json(refused.json);
 
         await autoUpdateBackupRequests(order['DIE NO'], order['Ordered date']);

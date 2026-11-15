@@ -4,6 +4,7 @@ import { Search, Package, AlertTriangle, X, Layers, Building2, ArrowUpDown, Corn
 import useDialog from '../../hooks/useDialog';
 import StatusPill from '../ui/StatusPill';
 import ProfileThumb from '../orders/ProfileThumb';
+import { EnhancementTag } from '../DieAttentionLabels';
 import { searchAPI } from '../../api';
 import {
   shouldSearch, buildOptions, moveIndex, isAbort, isSearchShortcut, highlightParts,
@@ -274,6 +275,7 @@ export default function SearchPalette({ open, onClose, theme, userId, onOpenOrde
                     {kind === 'order' ? (
                       <>
                         <span style={title}><Highlight text={item['DIE NO'] || '—'} query={q} /></span>
+                        {item.designEnhancement && <span style={{ flexShrink: 0 }}><EnhancementTag dense /></span>}
                         <span style={{ ...muted, flexShrink: 0 }}><Highlight text={item['Order No'] || 'No order no'} query={q} /></span>
                         {detail('order', <Highlight text={item.Supplier || '—'} query={q} />)}
                         {item.STATUS && <StatusPill status={item.STATUS} theme={theme} />}

@@ -22,6 +22,21 @@ test('skip trial is allowed for Tooling and Backup only', () => {
   assert.equal(skipTrialAllowed(''), false);
 });
 
+test('skip trial is never allowed on a Design enhancement die', () => {
+  assert.equal(skipTrialAllowed('T', { designEnhancement: true }), false);
+  assert.equal(skipTrialAllowed('B', { designEnhancement: 1 }), false);
+  assert.equal(skipTrialAllowed('T', { designEnhancement: false }), true);
+  assert.equal(skipTrialAllowed('T', undefined), true);
+});
+
+test('buildReceivancePatch ignores skipTrial for an enhancement order', () => {
+  const { patch, logEntry } = buildReceivancePatch({ order: { ...order, designEnhancement: true }, form, skipTrial: true });
+  assert.equal(patch['Sample Status'], 'Pending');
+  assert.equal(patch['No of Trial'], undefined);
+  assert.equal(patch['Sample Approval Date'], undefined);
+  assert.equal(logEntry.reason, 'Corrector: Ravi');
+});
+
 test('skip trial defaults on for Tooling and off for everything else', () => {
   assert.equal(skipTrialDefault('T'), true);
   assert.equal(skipTrialDefault('B'), false);

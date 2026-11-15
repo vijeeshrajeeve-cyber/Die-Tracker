@@ -82,6 +82,11 @@ export default function OrdersPage({
             <option value="yes">Flagged</option>
             <option value="no">Not flagged</option>
           </select>
+          <select aria-label="Filter by Design enhancement" style={filterSelect} value={filters.enhancement || 'all'} onChange={(e) => setFilters({ ...filters, enhancement: e.target.value })} title="Filter by Design enhancement">
+            <option value="all">All (Design enhancement)</option>
+            <option value="yes">Enhancement only</option>
+            <option value="no">Not an enhancement</option>
+          </select>
         </div>
         <div style={{ ...filterRow, marginTop: '1rem', alignItems: 'flex-end' }}>
           <div style={dateFieldLabel}>
@@ -128,7 +133,7 @@ export default function OrdersPage({
             >
               <Download size={14} /> Export to Excel
             </button>
-            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', urgency: 'all', specialFollowUp: 'all', dateFrom: '', dateTo: '' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
+            <button onClick={() => { setFilters({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', urgency: 'all', specialFollowUp: 'all', enhancement: 'all', dateFrom: '', dateTo: '' }); setSearchTerm(''); }} style={{ fontSize: '0.875rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer' }}>Clear filters</button>
           </div>
         </div>
       </div>

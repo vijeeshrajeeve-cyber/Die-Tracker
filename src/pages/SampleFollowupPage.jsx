@@ -4,6 +4,7 @@ import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import { exportToExcel } from '../utils/exportExcel';
 import { todayLocal } from '../utils/today';
+import { EnhancementTag, isEnhancementOrder } from '../components/DieAttentionLabels';
 import SampleFollowupForm from '../components/sample/SampleFollowupForm';
 import SampleFollowupDetail from '../components/sample/SampleFollowupDetail';
 import { trialCountFor } from '../utils/trials';
@@ -94,6 +95,8 @@ export default function SampleFollowupPage({
   fetchSampleFollowups,
   sampleTrials,
   fetchSampleTrials,
+  enhancements = {},
+  onEnhancementChanged,
 }) {
   const [stage, setStage] = useState('Pending');
   const [sort, setSort] = useState('overdue');
@@ -478,6 +481,7 @@ export default function SampleFollowupPage({
                     <span className={`sf-row-stripe sf-stripe-${stripe}`} aria-hidden="true" />
                     <span className="sf-row-main">
                       <span className="sf-row-die">{row.die || row.profile || 'Untitled die'}</span>
+                      {isEnhancementOrder(row._order) && <span><EnhancementTag dense /></span>}
                       <span className="sf-row-meta">{[row.profile, row.press, row.customer].filter(Boolean).join(' · ') || 'No details yet'}</span>
                     </span>
                     <span className="sf-row-side">
@@ -522,7 +526,8 @@ export default function SampleFollowupPage({
             sample={selected} trials={trialsOf(selected)} parent={trialParentOf(selected)} today={today}
             theme={theme} user={user} correctors={correctors} correctorsError={correctorsError}
             onEdit={editSample} onDelete={handleDeleteSampleFollowup} onSaveDate={saveSfFields} onSaveField={saveSfField}
-            onTrialsChanged={fetchSampleTrials} setToast={setToast} />
+            onTrialsChanged={fetchSampleTrials} setToast={setToast}
+            enhancement={enhancements[selected._order?.id] || null} onEnhancementChanged={onEnhancementChanged} />
         ) : (
           <section className="sf-card sf-pane sf-empty">
             <p>Pick a die from the list to see its timeline and trials.</p>

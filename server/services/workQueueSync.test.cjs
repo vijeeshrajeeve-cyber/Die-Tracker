@@ -4,14 +4,18 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { Client } = require('pg');
 const { initializeWorkQueue } = require('./workQueueSchema.cjs');
+const { ensureDesignEnhancementSchema } = require('./designEnhancementSchema.cjs');
 const { syncSource, projectSource, reconcileAll } = require('./workQueueSync.cjs');
 const { STAGES } = require('./workQueueStages.cjs');
 const { initializeWorkQueueExtraSchema } = require('./workQueueExtraSchema.cjs');
 
 test('work queue stable stage vocabulary includes all configured adapters', () => {
-  assert.equal(STAGES.length, 14);
-  assert.equal(new Set(STAGES.map(s => s.key)).size, 14);
-  assert.deepEqual(STAGES.filter(s => s.days === null).map(s => s.key), ['manufacturing', 'foc_receipt']);
+  assert.equal(STAGES.length, 15);
+  assert.equal(new Set(STAGES.map(s => s.key)).size, 15);
+  assert.deepEqual(STAGES.filter(s => s.days === null).map(s => s.key), ['manufacturing', 'foc_receipt', 'enhancement_life_review']);
+  const review = STAGES.find(s => s.key === 'enhancement_life_review');
+  assert.equal(review.label, 'Enhancement Life Review');
+  assert.equal(review.page, 'flow-sample-followup');
 });
 
 test('source helper rejects invalid identity before querying', async () => {
@@ -53,6 +57,7 @@ test('PostgreSQL queue synchronization and deadline invariants', {
   }
   const current = (kind, id) => one("SELECT * FROM work_queue_items WHERE source_kind=$1 AND source_id=$2 AND state IN ('active','paused')", [kind, id]);
   try {
+    await ensureDesignEnhancementSchema(db); // the projection reads this table
     await t.test('initialization is repeatable and does not backfill', async () => {
       const first = await initializeWorkQueue(db);
       assert.equal(first.backfilled, false);
@@ -171,6 +176,58 @@ test('PostgreSQL queue synchronization and deadline invariants', {
       assert.equal(last.baseline_due_at.toISOString(), first.due_at.toISOString());
       assert.equal(last.due_at.toISOString(), '2026-09-24T13:00:00.000Z');
       assert.equal(last.id, first.id);
+    });
+    await t.test('an enhancement awaiting its life review is due on the review date and closes with the final verdict', async () => {
+      const received = { status: 'DIE RECEIVED', die_received_date: '2026-09-18', sample_status: 'Approved' };
+      const enhance = (id, fields = {}) => {
+        const data = { die_order_id: id, failure_assessment_required: true, trial_verdict: 'Achieved', life_review_due_date: '2027-03-22', ...fields };
+        const columns = Object.keys(data);
+        return one(`INSERT INTO design_enhancements(${columns.join(',')}) VALUES(${columns.map((_, i) => `$${i + 1}`).join(',')}) RETURNING id`, Object.values(data));
+      };
+      const id = await order(received);
+      assert.equal(await current('order', id), undefined);
+      // No trial verdict yet: nothing is owed.
+      await enhance(id, { trial_verdict: null, life_review_due_date: null });
+      assert.equal(await current('order', id), undefined);
+      // Saving the trial verdict raises the review.
+      await db.query("UPDATE design_enhancements SET trial_verdict='Achieved',life_review_due_date='2027-03-22' WHERE die_order_id=$1", [id]);
+      const item = await current('order', id);
+      assert.equal(item.stage_key, 'enhancement_life_review');
+      assert.equal(item.stage_label, 'Enhancement Life Review');
+      assert.equal(item.source_kind, 'order'); assert.equal(item.order_id, id);
+      assert.equal(item.deadline_basis, 'eta'); assert.equal(item.setup_reason, null);
+      assert.equal(item.due_at.toISOString(), '2027-03-22T13:00:00.000Z');
+      // Moving the review date revises the deadline on the same item and keeps the baseline.
+      await db.query("UPDATE design_enhancements SET life_review_due_date='2027-04-05' WHERE die_order_id=$1", [id]);
+      const moved = await current('order', id);
+      assert.equal(moved.id, item.id);
+      assert.equal(moved.due_at.toISOString(), '2027-04-05T13:00:00.000Z');
+      assert.equal(moved.baseline_due_at.toISOString(), item.due_at.toISOString());
+      // The final verdict closes it.
+      await db.query("UPDATE design_enhancements SET final_verdict='Achieved' WHERE die_order_id=$1", [id]);
+      assert.equal(await current('order', id), undefined);
+      assert.equal((await one('SELECT state FROM work_queue_items WHERE id=$1', [item.id])).state, 'completed');
+
+      // A project that did not ask for a failure assessment owes no review.
+      const none = await order(received);
+      await enhance(none, { failure_assessment_required: false });
+      assert.equal(await current('order', none), undefined);
+      // A rejected sample owes none (the sample rework item stands instead).
+      const rejected = await order({ ...received, sample_status: 'Rejected' });
+      await enhance(rejected);
+      assert.equal((await current('order', rejected)).stage_key, 'sample_approval');
+      // A cancelled order owes none, and cancelling closes an open review.
+      const cancelled = await order(received);
+      await enhance(cancelled);
+      assert.equal((await current('order', cancelled)).stage_key, 'enhancement_life_review');
+      await db.query("UPDATE die_orders SET status='CANCELLED' WHERE id=$1", [cancelled]);
+      assert.equal(await current('order', cancelled), undefined);
+      // A missing review date is setup work, not a made-up deadline.
+      const undated = await order(received);
+      await enhance(undated, { life_review_due_date: null });
+      const setup = await current('order', undated);
+      assert.equal(setup.stage_key, 'enhancement_life_review'); assert.equal(setup.due_at, null);
+      assert.match(setup.setup_reason, /review date/);
     });
     await t.test('sample approval state is authoritative, rejected samples stay actionable, explicit resubmission renews occurrence', async () => {
       const id = await sample({ status: 'Sample Submitted', submission_date: '2026-09-19' });

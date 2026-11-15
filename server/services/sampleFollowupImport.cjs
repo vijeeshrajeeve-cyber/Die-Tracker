@@ -255,7 +255,7 @@ function planRowUpdate({ row, order, loggedTrials = 0 }) {
   return { updates, warnings, conflicts, trialsIgnored };
 }
 
-function buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles }) {
+function buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles, measuredOkOrders }) {
   const byDie = new Map();
   for (const o of orders || []) {
     const key = normalizeDieNo(o.die_no);
@@ -267,6 +267,7 @@ function buildImportPlan({ rows, orders, correctors, loggedTrials, standalonePro
   const plan = {
     updates: [], noop: [], notFound: [], ambiguous: [], warnings: [],
     conflicts: [], notReceived: [], trialsIgnored: [], standalone: [], unknownCorrectors: [],
+    approvalSkipped: [],
   };
   const seen = new Map();
   const unknownNames = new Map();
@@ -304,6 +305,14 @@ function buildImportPlan({ rows, orders, correctors, loggedTrials, standalonePro
       row, order, loggedTrials: loggedTrials ? loggedTrials.get(order.id) || 0 : 0,
     });
     warnings.forEach((w) => plan.warnings.push(`row ${sheetRow} (${dieRaw}): ${w}`));
+
+    // An enhancement die cannot be approved without a measured OK trial, so the
+    // status stays where it is (the dates are still saved) and the die is listed.
+    if (updates.sample_status === 'Approved' && order.design_enhancement
+        && !(measuredOkOrders && measuredOkOrders.has(order.id))) {
+      delete updates.sample_status;
+      plan.approvalSkipped.push({ sheetRow, die: dieRaw, orderId: order.id });
+    }
 
     const entry = { sheetRow, die: dieRaw, orderId: order.id, before: order, updates };
     if (Object.keys(updates).length === 0) plan.noop.push(entry);

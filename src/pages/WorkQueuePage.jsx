@@ -12,7 +12,7 @@ import { BRAND } from '../utils/brand';
 import '../styles/work-queue.css';
 
 // search comes from the top-bar box, which filters whichever page is open.
-export default function WorkQueuePage({ theme = {}, user, onOpenSource, search = '' }) {
+export default function WorkQueuePage({ theme = {}, user, onOpenSource, search = '', enhancementOrderIds }) {
   const [scope, setScope] = useState('mine');
   const [bucket, setBucket] = useState('all');
   const [plant, setPlant] = useState('');
@@ -58,7 +58,7 @@ export default function WorkQueuePage({ theme = {}, user, onOpenSource, search =
           </div>
         </div>
         {error && <div className="wq-message wq-message-error" role="alert">{data ? 'The last refresh failed. These results may be out of date. ' : ''}{error.message}<button type="button" className="wq-text-button" onClick={refresh}>Try again</button></div>}
-        <div aria-busy={loading}>{!error || data ? <WorkQueueTable items={data?.items || []} loading={loading} onSelect={setSelected} scope={scope} /> : <div className="wq-empty"><p>The queue could not be loaded.</p></div>}</div>
+        <div aria-busy={loading}>{!error || data ? <WorkQueueTable items={data?.items || []} loading={loading} onSelect={setSelected} scope={scope} enhancementOrderIds={enhancementOrderIds} /> : <div className="wq-empty"><p>The queue could not be loaded.</p></div>}</div>
         <footer className="wq-table-footer"><span>{loading ? 'Updating…' : `${start}–${end} of ${data?.total || 0} items`}{data?.asOf && !loading && <small> · Refreshed {new Date(data.asOf).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>}</span>
           <div className="wq-actions"><button type="button" className="wq-button wq-button-small" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)} aria-label="Previous page"><ChevronLeft size={16} /></button><span>Page {data?.page || page} of {Math.max(1, data?.pages || 1)}</span><button type="button" className="wq-button wq-button-small" disabled={loading || page >= (data?.pages || 1)} onClick={() => setPage(value => value + 1)} aria-label="Next page"><ChevronRight size={16} /></button></div>
         </footer>

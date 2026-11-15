@@ -10,16 +10,19 @@
 // change-log reason — zero logged trials plus Approved is what a skipped die
 // looks like, and the audit entry says why.
 
+import { isEnhancement } from './designEnhancement.js';
+
 const TYPE_LABELS = { T: 'Tooling', B: 'Backup', N: 'New' };
 
-export const skipTrialAllowed = (type) => type === 'T' || type === 'B';
+// A Design enhancement die must be measured, so it can never skip its trials.
+export const skipTrialAllowed = (type, order) => (type === 'T' || type === 'B') && !isEnhancement(order);
 
 export const skipTrialDefault = (type) => type === 'T';
 
 export const buildReceivancePatch = ({ order, form, skipTrial }) => {
   const date = form.die_received_date;
   const corrector = (form.corrector || '').trim();
-  const skipping = !!skipTrial && skipTrialAllowed(order.TYPE);
+  const skipping = !!skipTrial && skipTrialAllowed(order.TYPE, order);
   const reason = skipping
     ? `Corrector: ${corrector} · Trial skipped (${TYPE_LABELS[order.TYPE]})`
     : `Corrector: ${corrector}`;

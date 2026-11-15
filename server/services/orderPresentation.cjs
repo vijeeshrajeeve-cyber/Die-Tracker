@@ -19,6 +19,7 @@ function presentOrder(order) { return {
             'Simulation Skipped Reason': order.simulation_skipped_reason ?? null,
             'Simulation Skipped By': order.simulation_skipped_by ?? null,
             'simulationEnabled': !!order.simulation_enabled,
+            'designEnhancement': !!order.design_enhancement,
             'Design Approved Date': order.design_approved_date,
             'Delay': order.delay,
             'PR Entry': order.pr_entry,

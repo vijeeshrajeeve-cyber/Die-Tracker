@@ -10,7 +10,7 @@ const loadXLSX = () => (xlsxPromise ||= import('xlsx'));
 
 import SearchPalette from './components/search/SearchPalette';
 import { isSearchShortcut } from './utils/searchPalette';
-import { authAPI, ordersAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, searchAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
+import { authAPI, ordersAPI, designEnhancementsAPI, usersAPI, suppliersAPI, plantsAPI, backupRequestsAPI, apiKeysAPI, emailAPI, sampleFollowupsAPI, sampleTrialsAPI, plantBudgetsAPI, profilesAPI, pressesAPI, correctorsAPI, searchAPI, extractProfileFromDie, getUser, logout as apiLogout, isLoggedIn as checkLoggedIn } from './api';
 import Sidebar from './components/layout/Sidebar';
 import LoginPage from './pages/LoginPage';
 import { workQueueAPI } from './workQueueAPI';
@@ -32,6 +32,12 @@ import usePIImport from './hooks/usePIImport';
 import FlowPage from './pages/FlowPage';
 import OrderEditReviewDialog from './components/orders/OrderEditReviewDialog';
 import ProfileThumb from './components/orders/ProfileThumb';
+import EnhancementForm from './components/orders/EnhancementForm';
+import EnhancementBlock from './components/orders/EnhancementBlock';
+import EnhancementResultPanel from './components/orders/EnhancementResultPanel';
+import { canRecordVerdict } from './utils/enhancementVerdict';
+import { EnhancementTag } from './components/DieAttentionLabels';
+import { isEnhancement, validateBaselineForm, emptyBaselineForm, canMarkEnhancement, markNeedsReason, markSwitchesSimulationOn, simulationToggleLocked } from './utils/designEnhancement';
 import { ORDER_FILE_SLOTS, orderFileProblem, planFileChanges, bySlot } from './utils/orderFiles';
 import { planChanges, pickEditable, canEditOrderDetails } from './utils/orderDetailEdits';
 import { stopReason, remarkFallback } from './utils/stopReason';
@@ -380,6 +386,28 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
   const [submitting, setSubmitting] = React.useState(false);
   const dialogRef = useDialog({ open: true, onClose, closeOnEscape: !submitting });
   const [presses, setPresses] = React.useState([]);
+  // Design enhancement: the switch, its form text and its errors. Sent as `enhancement` only when on.
+  const [enhOn, setEnhOn] = React.useState(false);
+  const [enhForm, setEnhForm] = React.useState(emptyBaselineForm);
+  const [enhErrors, setEnhErrors] = React.useState({});
+  const [enhReason, setEnhReason] = React.useState('');
+  const [enhReasonError, setEnhReasonError] = React.useState('');
+  const enhAllowed = canMarkEnhancement({ STATUS: form.STATUS }, getUser());
+  const enhActive = enhOn && enhAllowed;
+  const enhNeedsReason = markNeedsReason({ STATUS: form.STATUS });
+  // Active dies of the typed die's profile, listed beside "Existing dies referred".
+  const [enhActiveDies, setEnhActiveDies] = React.useState([]);
+  const enhDieNo = String(form['DIE NO'] || '').trim();
+  React.useEffect(() => {
+    if (!enhActive || !enhDieNo) { setEnhActiveDies([]); return undefined; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      designEnhancementsAPI.activeDies(enhDieNo)
+        .then((res) => { if (!cancelled) setEnhActiveDies(res.activeDies || []); })
+        .catch(() => { if (!cancelled) setEnhActiveDies([]); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [enhActive, enhDieNo]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -420,15 +448,28 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
     if (!form.Plant) e.Plant = 'Required';
     if (!form['Die Requested Date']) e['Die Requested Date'] = 'Required';
     setErrors(e);
-    return Object.keys(e).length === 0;
+    let enhancement = null;
+    if (enhActive) {
+      const checked = validateBaselineForm(enhForm);
+      setEnhErrors(checked.errors);
+      const noReason = enhNeedsReason && !enhReason.trim();
+      setEnhReasonError(noReason ? 'Give a reason for this change' : '');
+      if (String(form['Sample Status'] || '').trim().toLowerCase() === 'approved') e.enhancement = 'An enhancement die needs a measured trial before it can be Approved';
+      else if (!checked.ok || noReason) e.enhancement = 'Complete the Design enhancement details';
+      else enhancement = { ...checked.value, ...(enhNeedsReason ? { reason: enhReason.trim() } : {}) };
+      setErrors({ ...e });
+    }
+    return Object.keys(e).length === 0 ? { enhancement } : null;
   };
 
   const handleSubmit = async () => {
-    if (!validate()) return;
+    const checked = validate();
+    if (!checked) return;
     setSubmitting(true);
     try {
       await onAdd({
         ...form,
+        ...(checked.enhancement ? { enhancement: checked.enhancement } : {}),
         month: getMonthFromDate(form['Die Requested Date']),
         Cavity: Number(form.Cavity) || 0,
         'Mandrels per Cavity': Number(form['Mandrels per Cavity']) || 0,
@@ -573,6 +614,35 @@ const AddOrderModal = ({ onClose, onAdd, plants = [], suppliers = [], correctors
               />
               Special follow-up
             </label>
+          </div>
+
+          <div style={sectionStyle}>
+            <p style={sectionTitle}>Design enhancement</p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: enhAllowed ? 'pointer' : 'not-allowed', color: textColor, fontSize: '0.875rem', fontWeight: 500, opacity: enhAllowed ? 1 : 0.65 }}
+              title={enhAllowed ? undefined : 'This status cannot be a Design enhancement'}>
+              <input
+                type="checkbox" role="switch"
+                checked={enhActive}
+                disabled={!enhAllowed}
+                onChange={(e) => setEnhOn(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: BRAND.navy, cursor: 'inherit' }}
+              />
+              Design enhancement
+            </label>
+            {enhActive && (
+              <div style={{ marginTop: '14px' }}>
+                <EnhancementForm
+                  value={enhForm} onChange={setEnhForm} errors={enhErrors} theme={theme} activeDies={enhActiveDies}
+                  reason={enhReason} onReasonChange={setEnhReason} reasonRequired={enhNeedsReason} reasonError={enhReasonError}
+                />
+                <p style={{ margin: '12px 0 0', fontSize: '0.78rem', color: textMuted }}>
+                  {markSwitchesSimulationOn({ STATUS: form.STATUS, 'Design Approved Date': form['Design Approved Date'] })
+                    ? 'Simulation is switched on for this order and stays on while the flag is set.'
+                    : 'Simulation is not changed because this order is already past the simulation stage.'}
+                </p>
+              </div>
+            )}
+            {errors.enhancement && <span role="alert" style={{ fontSize: '0.72rem', color: '#EF4444', marginTop: '8px', display: 'block' }}>{errors.enhancement}</span>}
           </div>
 
           <div style={sectionStyle}>
@@ -908,7 +978,7 @@ const PasswordChangeModal = ({ onClose, onSuccess, isForced = false }) => {
 };
 
 // Order Detail Modal with Editing
-const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], canEdit = true, showViewOnly = false, onViewRevisions }) => {
+const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], plants = [], correctors = [], canEdit = true, showViewOnly = false, onViewRevisions, enhancement = null, enhancementTrials = [], onEnhancementChanged }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedOrder, setEditedOrder] = useState({ ...order });
   const [isSaving, setIsSaving] = useState(false);
@@ -962,7 +1032,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     setIsEditing(false);
     setReview(null);
     setStaged({});
-  }, [order.id]);
+  }, [order.id, order.designEnhancement, order.simulationEnabled]);
 
   // A Cancelled or On Hold order shows why, from the STATUS change-log entry
   // that stopped it. undefined while loading, null when none is recorded.
@@ -1285,15 +1355,16 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
     );
   };
 
-  const Toggle = ({ label, field, checked, accent }) => (
+  const Toggle = ({ label, field, checked, accent, disabled, note }) => (
     <label key={field} style={{
-      display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 14px', borderRadius: '10px', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 14px', borderRadius: '10px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.75 : 1,
       border: `1px solid ${changed.has(field) ? c.primary : c.border}`, background: changed.has(field) ? c.primarySoft : 'transparent',
       color: c.text, fontSize: '0.875rem',
     }}>
-      <input type="checkbox" checked={checked} onChange={(e) => handleFieldChange(field, e.target.checked)}
-        style={{ width: '18px', height: '18px', accentColor: accent, cursor: 'pointer' }} />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => handleFieldChange(field, e.target.checked)}
+        style={{ width: '18px', height: '18px', accentColor: accent, cursor: 'inherit' }} />
       {label}
+      {note && <span style={{ color: c.dim, fontSize: '0.78rem' }}>{note}</span>}
     </label>
   );
 
@@ -1409,6 +1480,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                     <span style={urgency === 'TOP_URGENT' ? pill(c.dangerBg, c.danger) : pill(c.warnBg, c.warn)}>{formatUrgencyForDisplay(urgency)}</span>
                   )}
                   {flagged && <span style={pill(c.inset, c.muted)}>Special follow-up</span>}
+                  {isEnhancement(currentOrder) && <EnhancementTag />}
                 </div>
               )}
               <h2 id="order-detail-title" style={{ margin: 0, fontFamily: mono, fontSize: isEditing ? '1.25rem' : '1.6rem', fontWeight: 600, letterSpacing: '-0.01em', color: c.text, overflowWrap: 'anywhere' }}>{currentOrder['DIE NO']}</h2>
@@ -1550,6 +1622,16 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                     </div>
                   </dl>
                 </div>
+                {(isEnhancement(order) || canMarkEnhancement(order, getUser())) && (
+                  <div style={{ ...panel, gridColumn: '1 / -1' }}>
+                    <EnhancementBlock order={order} enhancement={enhancement} user={getUser()} theme={theme} onChanged={onEnhancementChanged} />
+                  </div>
+                )}
+                {isEnhancement(order) && enhancement && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <EnhancementResultPanel order={order} enhancement={enhancement} trials={enhancementTrials} canRecord={canRecordVerdict(getUser())} theme={theme} onSaved={onEnhancementChanged} />
+                  </div>
+                )}
               </section>
 
               <section data-section="files" style={{ display: 'flex', flexDirection: 'column', gap: '12px', scrollMarginTop: '8px' }}>
@@ -1599,7 +1681,7 @@ const OrderDetailModal = ({ order, onClose, onUpdate, theme, suppliers = [], pla
                   {Field({ label: 'Status', field: 'STATUS', type: 'select', options: statusOptions })}
                 </div>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  {Toggle({ label: 'Simulation required', field: 'simulationEnabled', checked: isSimulationEnabled(editedOrder.simulationEnabled), accent: c.primary })}
+                  {Toggle({ label: 'Simulation required', field: 'simulationEnabled', checked: isSimulationEnabled(editedOrder.simulationEnabled), accent: c.primary, disabled: simulationToggleLocked(order), note: simulationToggleLocked(order) ? 'Required on a Design enhancement order' : undefined })}
                   {Toggle({ label: 'Special follow-up', field: 'specialFollowUp', checked: !!(editedOrder.specialFollowUp === true || editedOrder.specialFollowUp === 1), accent: '#F59E0B' })}
                   <label style={{
                     display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 8px 0 14px', borderRadius: '10px', fontSize: '0.875rem', color: c.text,
@@ -1708,7 +1790,7 @@ export default function DieOrderingSystem() {
   const [data, setData] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', urgency: 'all', specialFollowUp: 'all', dateFrom: '', dateTo: '' });
+  const [filters, setFilters] = useState({ plant: 'all', status: 'all', supplier: 'all', type: 'all', month: 'all', year: 'all', customer: 'all', urgency: 'all', specialFollowUp: 'all', enhancement: 'all', dateFrom: '', dateTo: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'Die Requested Date', direction: 'desc' });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -1887,11 +1969,21 @@ export default function DieOrderingSystem() {
     document.body.removeChild(textarea);
   };
 
+  // Design enhancement baselines, keyed by die_order_id.
+  const [enhancements, setEnhancements] = useState({});
+  // Orders flagged as a Design enhancement, for rows that carry an order id rather than the order (Work Queue).
+  const enhancementOrderIds = useMemo(() => new Set(data.filter(isEnhancement).map((o) => o.id)), [data]);
+
   // Fetch orders from API
   const fetchOrders = useCallback(async () => {
     try {
       const response = await ordersAPI.getAll();
       setData(response.orders || []);
+      // The Design enhancement baselines load beside the orders and are looked up by order id.
+      designEnhancementsAPI.list()
+        .then((res) => setEnhancements(Object.fromEntries((res.enhancements || []).map((row) => [row.die_order_id, row]))))
+        .catch((error) => console.error('Failed to fetch design enhancements:', error));
+      return response.orders || [];
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       // If unauthorized, log out
@@ -2688,7 +2780,9 @@ export default function DieOrderingSystem() {
       const isFlagged = order.specialFollowUp === true || order.specialFollowUp === 1;
       const specialFollowUpMatch = filters.specialFollowUp === 'all'
         || (filters.specialFollowUp === 'yes' ? isFlagged : !isFlagged);
-      return matchesSearch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year) && customerMatch && urgencyMatch && specialFollowUpMatch && dateFromMatch && dateToMatch;
+      const enhancementMatch = !filters.enhancement || filters.enhancement === 'all'
+        || (filters.enhancement === 'yes' ? isEnhancement(order) : !isEnhancement(order));
+      return matchesSearch && enhancementMatch && (filters.plant === 'all' || order.Plant === filters.plant) && statusMatch && (filters.supplier === 'all' || order.Supplier === filters.supplier) && (filters.type === 'all' || order.TYPE === filters.type) && (filters.month === 'all' || order.month === filters.month) && (filters.year === 'all' || orderYear === filters.year) && customerMatch && urgencyMatch && specialFollowUpMatch && dateFromMatch && dateToMatch;
     }).sort((a, b) => {
       const aVal = a[sortConfig.key] || '', bVal = b[sortConfig.key] || '';
       return (aVal > bVal ? 1 : -1) * (sortConfig.direction === 'asc' ? 1 : -1);
@@ -2872,7 +2966,12 @@ export default function DieOrderingSystem() {
     const root = document.documentElement;
     root.style.setProperty('--focus-ring', theme.focusRing);
     root.style.setProperty('--focus-ring-contrast', theme.focusRingContrast);
-  }, [theme.focusRing, theme.focusRingContrast]);
+    // The Enhancement tag's colours (DieAttentionLabels), one set per theme.
+    const dark = theme.isDark !== false;
+    root.style.setProperty('--tag-enhancement-fg', dark ? '#7DB8E8' : '#1A5C94');
+    root.style.setProperty('--tag-enhancement-bg', dark ? 'rgba(31,111,176,0.22)' : 'rgba(31,111,176,0.10)');
+    root.style.setProperty('--tag-enhancement-border', dark ? 'rgba(125,184,232,0.4)' : 'rgba(31,111,176,0.35)');
+  }, [theme.focusRing, theme.focusRingContrast, theme.isDark]);
 
   // Inline styles - Strict Shadcn UI
   const styles = {
@@ -3332,7 +3431,7 @@ export default function DieOrderingSystem() {
           )}
 
           {activeTab === 'work-queue' && hasPageAccess('work-queue') && (
-            <WorkQueuePage theme={theme} user={user} onOpenSource={openQueueSource} search={searchTerm} />
+            <WorkQueuePage theme={theme} user={user} onOpenSource={openQueueSource} search={searchTerm} enhancementOrderIds={enhancementOrderIds} />
           )}
 
           {activeTab === 'orders' && hasPageAccess('orders') && (
@@ -3416,6 +3515,8 @@ export default function DieOrderingSystem() {
               fetchSampleFollowups={fetchSampleFollowups}
               sampleTrials={sampleTrials}
               fetchSampleTrials={fetchSampleTrials}
+              enhancements={enhancements}
+              onEnhancementChanged={fetchOrders}
             />
           )}
 
@@ -3468,7 +3569,7 @@ export default function DieOrderingSystem() {
 
           {activeTab === 'analytics' && hasPageAccess('analytics') && (
             <Suspense fallback={<ChunkFallback theme={theme} />}>
-              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} user={user} />
+              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} user={user} onOpenOrder={async (id) => openSearchOrder(await searchAPI.order(id))} />
             </Suspense>
           )}
           {/* Settings Tab (Admin Only) */}
@@ -3523,7 +3624,7 @@ export default function DieOrderingSystem() {
             allRows={data} filteredRows={filteredData} filters={filters} searchTerm={searchTerm}
             dateOf={requestedDateOf} dieReceivedDateMap={dieReceivedDateMap} />
         )}
-        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
+        {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} theme={theme} suppliers={suppliers} plants={plants} correctors={correctors} canEdit={activeTab === 'orders' && canEditOrderDetails(user)} showViewOnly={activeTab === 'orders' && !canEditOrderDetails(user)} onViewRevisions={(o) => setRevisionHistoryOrder(o)} enhancement={enhancements[selectedOrder.id] || null} enhancementTrials={sampleTrials.filter((t) => t.die_order_id === selectedOrder.id)} onEnhancementChanged={async () => { const fresh = await fetchOrders(); const again = (fresh || []).find((o) => o.id === selectedOrder.id); if (again) setSelectedOrder(again); }} onUpdate={(updated) => { setData(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o)); setSelectedOrder(null); fetchBackupRequests(); }} />}
         {showSearch && !forcePasswordChange && (
           <SearchPalette open onClose={() => setShowSearch(false)} theme={theme} userId={user?.id}
             onOpenOrder={openSearchOrder} onOpenQd={openSearchQd}

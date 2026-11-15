@@ -5,8 +5,9 @@ import { dialogs } from '../ui/DialogProvider';
 import { TRIAL_RESULTS, TRIAL_FAIL_REASONS } from '../../utils/constants';
 import { formatDate } from '../../utils/helpers';
 import { todayLocal } from '../../utils/today.js';
+import { showNumber, validateTrialNumbers } from '../../utils/enhancementVerdict';
 
-const EMPTY = { trial_date: '', result: 'OK', fail_reason: '', comments: '' };
+const EMPTY = { trial_date: '', result: 'OK', fail_reason: '', comments: '', productivity_kgh: '', recovery_pct: '' };
 
 const resultStyle = {
   'OK': { color: '#16A34A', bg: 'rgba(22,163,74,0.15)' },
@@ -16,7 +17,9 @@ const resultStyle = {
 // Trials save the moment they are added, not when the record's Save button is
 // pressed — they are their own records with their own endpoint. The subtitle
 // says so, because two save models in one modal is otherwise a surprise.
-export default function TrialsSection({ parent, trials, theme, user, onChanged, setToast, pane = false, legacyCount = 0 }) {
+// `enhanced`: the die is a Design enhancement, so an OK trial also records
+// productivity and recovery; `enhancement` is its stored row (current/target).
+export default function TrialsSection({ parent, trials, theme, user, onChanged, setToast, pane = false, legacyCount = 0, enhanced = false, enhancement = null }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -44,6 +47,12 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
     if (form.result === 'Not OK' && !form.fail_reason) {
       return notify('Select a reason for the failed trial', 'error');
     }
+    let numbers = {};
+    if (enhanced) {
+      const checked = validateTrialNumbers({ productivity: form.productivity_kgh, recovery: form.recovery_pct, required: form.result === 'OK', result: form.result });
+      if (!checked.ok) return notify(Object.values(checked.errors)[0], 'error');
+      numbers = checked.value;
+    }
     setBusy(true);
     try {
       await sampleTrialsAPI.create({
@@ -52,6 +61,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
         result: form.result,
         fail_reason: form.result === 'Not OK' ? form.fail_reason : null,
         comments: form.comments,
+        ...numbers,
       });
       reset();
       await onChanged();
@@ -114,6 +124,26 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
             </select>
           </div>
         )}
+        {enhanced && form.result === 'OK' && (
+          <>
+            <div>
+              <label style={label} htmlFor="trial-productivity">Productivity (kg/h){form.result === 'OK' && ' *'}</label>
+              <input
+                id="trial-productivity" type="text" inputMode="decimal" autoComplete="off" style={input}
+                value={form.productivity_kgh} placeholder="not recorded"
+                onChange={(e) => setForm({ ...form, productivity_kgh: e.target.value })}
+              />
+            </div>
+            <div>
+              <label style={label} htmlFor="trial-recovery">Recovery (%){form.result === 'OK' && ' *'}</label>
+              <input
+                id="trial-recovery" type="text" inputMode="decimal" autoComplete="off" style={input}
+                value={form.recovery_pct} placeholder="not recorded"
+                onChange={(e) => setForm({ ...form, recovery_pct: e.target.value })}
+              />
+            </div>
+          </>
+        )}
         <div style={{ gridColumn: 'span 2' }}>
           <label style={label} htmlFor="trial-comments">Comments</label>
           <textarea
@@ -145,6 +175,15 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
   const cell = { padding: '8px 10px', fontSize: '0.82rem', color: theme.text, borderTop: `1px solid ${theme.border || '#334155'}` };
   const head = { padding: '8px 10px', fontSize: '0.7rem', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'left' };
 
+  // Above the list: where the die started and where it has to get to.
+  const goals = enhanced && (
+    <p className={pane ? 'sf-dim' : undefined} style={pane ? { margin: '0 0 0.5rem' } : { fontSize: '0.78rem', color: theme.textMuted, margin: '0 0 0.6rem' }}>
+      Productivity: current {showNumber(enhancement?.baseline_productivity_kgh, 'kg/h')}, target {showNumber(enhancement?.target_productivity_kgh, 'kg/h')}
+      {' · '}
+      Recovery: current {showNumber(enhancement?.baseline_recovery_pct, '%')}, target {showNumber(enhancement?.target_recovery_pct, '%')}
+    </p>
+  );
+
   const openAdd = () => { setForm({ ...EMPTY, trial_date: todayLocal() }); setAdding(true); };
 
   // The Sample Followup detail pane: the log is always a table, so an empty
@@ -162,10 +201,13 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
           )}
         </div>
         {!parent ? <p className="sf-dim">Save the record first to log trials.</p> : <>
+          {goals}
           <div className="sf-trials-table">
             <table>
               <thead><tr>
-                <th scope="col" className="sf-trial-no">#</th><th scope="col">Date</th><th scope="col">Result</th><th scope="col">Reason</th><th scope="col">Comments</th>
+                <th scope="col" className="sf-trial-no">#</th><th scope="col">Date</th><th scope="col">Result</th><th scope="col">Reason</th>
+                {enhanced && <><th scope="col">Productivity (kg/h)</th><th scope="col">Recovery (%)</th></>}
+                <th scope="col">Comments</th>
                 {user?.role === 'admin' && trials.length > 0 && <th scope="col" className="sf-trial-no"><span className="sf-visually-hidden">Delete</span></th>}
               </tr></thead>
               <tbody>
@@ -174,7 +216,9 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
                     <td className="sf-mono">—</td>
                     <td>{legacyCount > 0 ? `${legacyCount} legacy ${legacyCount === 1 ? 'trial' : 'trials'}, no details` : 'No trials logged yet'}</td>
                     <td><span className="sf-pill sf-pill-neutral">—</span></td>
-                    <td>—</td><td className="sf-muted">—</td>
+                    <td>—</td>
+                    {enhanced && <><td>—</td><td>—</td></>}
+                    <td className="sf-muted">—</td>
                   </tr>
                 ) : trials.map(t => (
                   <tr key={t.id}>
@@ -182,6 +226,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
                     <td className="sf-nowrap">{formatDate(t.trial_date)}</td>
                     <td><span className={`sf-pill ${t.result === 'OK' ? 'sf-pill-ok' : 'sf-pill-bad'}`}>{t.result}</span></td>
                     <td>{t.fail_reason || '—'}</td>
+                    {enhanced && <><td className="sf-nowrap">{showNumber(t.productivity_kgh)}</td><td className="sf-nowrap">{showNumber(t.recovery_pct)}</td></>}
                     <td className="sf-muted">{t.comments || '—'}</td>
                     {user?.role === 'admin' && (
                       <td><button type="button" className="sf-icon-button sf-danger" onClick={() => remove(t)} aria-label={`Delete trial ${t.trial_no}`}><Trash2 size={13} /></button></td>
@@ -226,6 +271,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
             <p style={{ fontSize: '0.85rem', color: theme.textMuted, margin: 0 }}>No trials logged yet.</p>
           )}
 
+          {goals}
           {trials.length > 0 && (
             <div style={{ overflowX: 'auto', border: `1px solid ${theme.border || '#334155'}`, borderRadius: '8px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -235,6 +281,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
                     <th style={head}>Date</th>
                     <th style={head}>Result</th>
                     <th style={head}>Reason</th>
+                    {enhanced && <><th style={head}>Productivity (kg/h)</th><th style={head}>Recovery (%)</th></>}
                     <th style={head}>Comments</th>
                     <th style={{ ...head, width: '40px' }} />
                   </tr>
@@ -252,6 +299,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
                           </span>
                         </td>
                         <td style={cell}>{t.fail_reason || '—'}</td>
+                        {enhanced && <><td style={{ ...cell, whiteSpace: 'nowrap' }}>{showNumber(t.productivity_kgh)}</td><td style={{ ...cell, whiteSpace: 'nowrap' }}>{showNumber(t.recovery_pct)}</td></>}
                         <td style={{ ...cell, color: theme.textMuted }}>{t.comments || '—'}</td>
                         <td style={{ ...cell, textAlign: 'center' }}>
                           {user?.role === 'admin' && (

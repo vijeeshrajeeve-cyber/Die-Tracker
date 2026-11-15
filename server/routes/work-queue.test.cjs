@@ -6,6 +6,7 @@ const { Pool,types }=require('pg');
 const express=require('express');
 const { createWorkQueueRouter }=require('./work-queue.cjs');
 const { initializeWorkQueue }=require('../services/workQueueSchema.cjs');
+const { ensureDesignEnhancementSchema }=require('../services/designEnhancementSchema.cjs');
 const { initializeWorkQueueExtraSchema }=require('../services/workQueueExtraSchema.cjs');
 types.setTypeParser(1082,value=>value);
 
@@ -16,7 +17,7 @@ test('work queue HTTP authorization, pagination and audited actions', {skip:!pro
   const users=[];
   const one=async(sql,params=[]) => (await pool.query(sql,params)).rows[0];
   const db=await pool.connect();
-  await initializeWorkQueue(db); await initializeWorkQueueExtraSchema(db); db.release();
+  await ensureDesignEnhancementSchema(db); await initializeWorkQueue(db); await initializeWorkQueueExtraSchema(db); db.release();
   await pool.query('INSERT INTO plants(name) VALUES($1)',[plant]);
   for(const [name,role,pages] of [['admin','admin',null],['owner','user',['work-queue','orders']],['reader','user',['work-queue','orders']],['blocked','user',['work-queue']],['noqueue','user',['orders']]]) {
     users.push(await one('INSERT INTO users(username,password_hash,role,page_access) VALUES($1,$2,$3,$4) RETURNING id,username,role,page_access',[`${name}-${randomUUID()}`,'test-only',role,pages&&JSON.stringify(pages)]));

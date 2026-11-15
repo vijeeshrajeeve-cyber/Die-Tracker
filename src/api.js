@@ -1349,6 +1349,39 @@ export const searchAPI = {
     order: (id) => apiRequest(`/search/order/${encodeURIComponent(id)}`),
 };
 
+// Design enhancement projects: the baseline and targets recorded when an order is marked.
+export const designEnhancementsAPI = {
+    // { enhancements } - snake_case rows keyed by die_order_id.
+    list: () => apiRequest('/design-enhancements'),
+    // Create or update. `baseline` is the validated form value; `reason` is needed once the die is received.
+    save: (orderId, baseline, reason) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...baseline, ...(reason ? { reason } : {}) }),
+    }),
+    // A reason is always required to remove the flag.
+    remove: (orderId, reason) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ reason }),
+    }),
+    // { activeDies: string[], trialCount: number } for one order.
+    context: (orderId) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}/context`),
+    // Active dies of a profile, for an order that has no id yet.
+    activeDies: (dieNo) => apiRequest(`/design-enhancements/active-dies?dieNo=${encodeURIComponent(dieNo)}`),
+    // { stage, suggested, actuals, targets, defaultReviewDate }; `actualFailurePct` previews a final verdict.
+    suggestion: (orderId, actualFailurePct) => apiRequest(
+        `/design-enhancements/order/${encodeURIComponent(orderId)}/suggestion${actualFailurePct === undefined || actualFailurePct === null ? '' : `?actual_failure_pct=${encodeURIComponent(actualFailurePct)}`}`),
+    // body: { verdict, remark, life_review_due_date, reason }
+    saveTrialVerdict: (orderId, body) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}/trial-verdict`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }),
+    // body: { actual_failure_pct, remark, verdict, reason }
+    saveLifeReview: (orderId, body) => apiRequest(`/design-enhancements/order/${encodeURIComponent(orderId)}/life-review`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }),
+};
+
 // Plant Budgets API
 export const plantBudgetsAPI = {
     getAll: async () => {
@@ -1384,4 +1417,28 @@ export const signaturesAPI = {
     },
 
     remove: async () => apiRequest('/signatures/me', { method: 'DELETE' }),
+};
+
+// Analytics -> Enhancements. from/to are 'YYYY-MM-DD'; omit both for the current year.
+export const enhancementSummaryAPI = {
+    get: (from, to) => apiRequest(`/enhancement-summary${from && to ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : ''}`),
+
+    // Returns a Blob. The server rebuilds the report from the dates, so what
+    // downloads is what the database says.
+    exportPdf: async (from, to) => {
+        const response = await fetch(`${API_BASE_URL}/enhancement-summary/pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getToken()}`,
+            },
+            body: JSON.stringify({ from, to }),
+        });
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
 };
