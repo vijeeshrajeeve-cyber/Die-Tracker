@@ -82,3 +82,17 @@ export function rowErrors(row) {
   }
   return errors;
 }
+
+export const supplierKey = (s) => String(s || '').trim().toUpperCase();
+
+// Rows are kept under supplierKey(name): the server compares suppliers
+// trimmed and case-insensitively and may return a differently cased name.
+
+// Which figures feed the calculated cells. All plants is read-only and the
+// server works its figures out per plant row before summing; summing first and
+// calculating afterwards gives a different answer when a pair is one-sided
+// across plants. A single plant is calculated live from the typed counts.
+export function calculatedFor({ readOnly, row, counts }) {
+  if (readOnly && row && row.calculated) return row.calculated;
+  return calcDieLife([counts]);
+}

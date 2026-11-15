@@ -4,7 +4,7 @@ import { supplierPerformanceAPI, plantsAPI } from '../../api';
 import { MONTHS } from '../../utils/constants';
 import { dialogs } from '../../components/ui/DialogProvider';
 import { BRAND } from '../../utils/brand';
-import { COUNT_FIELDS, calcDieLife, formatDieLife, rowErrors } from '../../utils/dieLifeCalc';
+import { COUNT_FIELDS, calculatedFor, supplierKey, formatDieLife, rowErrors } from '../../utils/dieLifeCalc';
 
 // Manual monthly die life entry, per plant. Nothing in this system records
 // tonnage, so these counts per supplier and plant are typed in once a month.
@@ -60,7 +60,14 @@ const sameCounts = (a, b) => {
   return COUNT_FIELDS.every((f) => x[f] === y[f]);
 };
 const two = (v) => (v == null ? null : Number(v).toFixed(2));
-const withStamp = (r) => ({ ...countsOf(r), updatedBy: r.updatedBy, updatedAt: r.updatedAt });
+// `calculated` is the server's own result for the row. It is what All plants
+// shows, because it is worked out per plant before the counts are summed.
+const withStamp = (r) => ({ ...countsOf(r), calculated: r.calculated, updatedBy: r.updatedBy, updatedAt: r.updatedAt });
+const indexRows = (list) => {
+  const next = {};
+  for (const r of list || []) next[supplierKey(r.supplier)] = withStamp(r);
+  return next;
+};
 
 export default function DieLifeTab({ theme, isAdmin, onSaved }) {
   const thisYear = new Date().getFullYear();
@@ -75,6 +82,8 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [plantsFailed, setPlantsFailed] = useState(false);
   const requestId = useRef(0);
 
   const readOnly = plant === ALL;
@@ -91,25 +100,27 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
         setPlants(names);
         setPlant((cur) => cur || names[0] || '');
       })
-      .catch(() => { if (!cancelled) { setPlants([]); setError('Could not load the plant list.'); } });
+      .catch(() => { if (!cancelled) { setPlants([]); setPlantsFailed(true); setError('Could not load the plant list.'); } });
     return () => { cancelled = true; };
   }, []);
 
   const load = useCallback(async () => {
     if (!plant) return;
     const mine = ++requestId.current;
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setLoadFailed(false);
+    // Nothing from the previous selection may stay on screen or be saved
+    // against the new one, whether or not this load succeeds.
+    setRows({}); setSaved({}); setLegacy([]);
     try {
       const data = await supplierPerformanceAPI.getDieLife({ year, month, plant });
       if (mine !== requestId.current) return;
-      const next = {};
-      for (const r of (data && data.rows) || []) next[r.supplier] = withStamp(r);
+      const next = indexRows(data && data.rows);
       setRows(next);
       setSaved(next);
       setLegacy((data && data.legacy) || []);
     } catch (e) {
       if (mine !== requestId.current) return;
-      setError(e.message || 'Could not load die life data.');
+      setError(e.message || 'Could not load die life data.'); setLoadFailed(true);
     } finally {
       if (mine === requestId.current) setLoading(false);
     }
@@ -119,21 +130,22 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
 
   // '' is how an empty box is stored: null, "not recorded". A typed 0 stays 0.
   const edit = (supplier, field, raw) => {
+    const key = supplierKey(supplier);
     setRows((prev) => ({
       ...prev,
-      [supplier]: { ...(prev[supplier] || {}), [field]: raw === '' ? null : Number(raw) },
+      [key]: { ...(prev[key] || {}), [field]: raw === '' ? null : Number(raw) },
     }));
   };
 
   const changedSuppliers = useMemo(
-    () => suppliers.filter((s) => !sameCounts(rows[s], saved[s])),
+    () => suppliers.filter((s) => !sameCounts(rows[supplierKey(s)], saved[supplierKey(s)])),
     [suppliers, rows, saved],
   );
   const dirty = !readOnly && changedSuppliers.length > 0;
   const errorsBySupplier = useMemo(() => {
     const out = {};
     for (const s of suppliers) {
-      const e = rowErrors(countsOf(rows[s]));
+      const e = rowErrors(countsOf(rows[supplierKey(s)]));
       if (Object.keys(e).length) out[s] = e;
     }
     return out;
@@ -157,16 +169,20 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
 
   const save = async () => {
     if (hasErrors) return;
+    // A save outlives a plant switch only if the response is ignored for the
+    // grid: the figures belong to the plant that was saved, not the one shown.
+    const mine = ++requestId.current;
     setSaving(true);
     try {
       // Only suppliers that changed. A supplier whose boxes were all cleared is
       // sent with every count null, which the server reads as "remove the row".
-      const entries = changedSuppliers.map((s) => ({ supplier: s, ...countsOf(rows[s]) }));
+      const entries = changedSuppliers.map((s) => ({ supplier: s, ...countsOf(rows[supplierKey(s)]) }));
       const data = await supplierPerformanceAPI.saveDieLife({ year, month, plant, entries });
-      const next = {};
-      for (const r of (data && data.rows) || []) next[r.supplier] = withStamp(r);
-      setRows(next); setSaved(next);
-      if (data && data.legacy) setLegacy(data.legacy);
+      if (mine === requestId.current) {
+        const next = indexRows(data && data.rows);
+        setRows(next); setSaved(next);
+        if (data && data.legacy) setLegacy(data.legacy);
+      }
       // Tells the Supplier Report tab its report is out of date. It stays
       // mounted while hidden, so it would otherwise keep the figures it
       // fetched on page load.
@@ -217,27 +233,27 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
     );
   };
 
-  const noPlants = plants !== null && plants.length === 0;
+  const noPlants = plants !== null && plants.length === 0 && !plantsFailed;
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1.25rem' }}>
         <div>
           <label style={label} htmlFor="dl-plant">Plant</label>
-          <select id="dl-plant" value={plant} disabled={!plants || noPlants} onChange={guarded(setPlant)} style={select}>
+          <select id="dl-plant" value={plant} disabled={!plants || noPlants || saving} onChange={guarded(setPlant)} style={select}>
             {(plants || []).map((p) => <option key={p} value={p}>{p}</option>)}
             {plants && plants.length > 0 && <option value={ALL}>All plants</option>}
           </select>
         </div>
         <div>
           <label style={label} htmlFor="dl-year">Year</label>
-          <select id="dl-year" value={year} onChange={guarded((v) => setYear(Number(v)))} style={select}>
+          <select id="dl-year" disabled={saving} value={year} onChange={guarded((v) => setYear(Number(v)))} style={select}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
         <div>
           <label style={label} htmlFor="dl-month">Month</label>
-          <select id="dl-month" value={month} onChange={guarded((v) => setMonth(Number(v)))} style={select}>
+          <select id="dl-month" disabled={saving} value={month} onChange={guarded((v) => setMonth(Number(v)))} style={select}>
             {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
         </div>
@@ -264,7 +280,7 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
           {error && <div style={{ padding: 16, borderRadius: 10, border: '1px solid #EF4444', color: '#EF4444', fontSize: '0.85rem', marginBottom: '1.25rem' }}>{error}</div>}
           {loading && <div style={{ color: theme.textDim, fontSize: '0.85rem' }}>Loading…</div>}
 
-          {!loading && plant && (
+          {!loading && !loadFailed && plant && (
             <div style={{ background: theme.cardBg, borderRadius: 12, border: `1px solid ${theme.cardBorder}`, overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -281,10 +297,11 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
                 </thead>
                 <tbody>
                   {suppliers.map((s) => {
-                    const counts = countsOf(rows[s]);
-                    const res = calcDieLife([counts]);
+                    const row = rows[supplierKey(s)];
+                    const counts = countsOf(row);
+                    const res = calculatedFor({ readOnly, row, counts });
                     const errs = errorsBySupplier[s] || {};
-                    const r = rows[s] || {};
+                    const r = row || {};
                     return (
                       <tr key={s} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
                         <td style={{ ...cell, whiteSpace: 'nowrap', fontWeight: 600 }}>{s}</td>
@@ -323,7 +340,7 @@ export default function DieLifeTab({ theme, isAdmin, onSaved }) {
             </div>
           )}
 
-          {!loading && legacy.length > 0 && (
+          {!loading && !loadFailed && legacy.length > 0 && (
             <div style={{ marginTop: '1.5rem', background: theme.cardBg, borderRadius: 12, border: `1px solid ${theme.cardBorder}`, padding: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>Plant not set</div>
               <div style={{ fontSize: 12, color: theme.textDim, margin: '2px 0 10px' }}>

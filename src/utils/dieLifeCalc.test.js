@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { calcDieLife, formatDieLife, rowErrors } from './dieLifeCalc.js';
+import { calcDieLife, formatDieLife, rowErrors, calculatedFor, supplierKey } from './dieLifeCalc.js';
 
 const require = createRequire(import.meta.url);
 const server = require('../../server/services/supplierDieLife.cjs');
@@ -58,4 +58,21 @@ test('rowErrors agrees with the server validator', () => {
     assert.deepEqual(rowErrors(r), {});
     assert.doesNotThrow(() => server.validateEntry({ supplier: 'X', ...r }));
   }
+});
+
+test('calculatedFor: All plants uses the server figures, one plant calculates live', () => {
+  const pair = [row({ tonnageMt: 100 }), row({ diesScrapped: 4 })];
+  const summed = { ...B, tonnageMt: 100, diesScrapped: 4 };
+  const fromServer = server.aggregateDieLife(pair);
+  assert.equal(fromServer.dieLife, null);
+  // summing first would invent a number
+  assert.equal(calcDieLife([summed]).dieLife, 25);
+  assert.deepEqual(calculatedFor({ readOnly: true, row: { ...summed, calculated: fromServer }, counts: summed }), fromServer);
+  assert.equal(calculatedFor({ readOnly: false, row: { ...summed, calculated: fromServer }, counts: summed }).dieLife, 25);
+  assert.equal(calculatedFor({ readOnly: true, row: undefined, counts: B }).dieLife, null);
+});
+
+test('supplierKey ignores case and surrounding spaces', () => {
+  assert.equal(supplierKey(' wefa '), supplierKey('WEFA'));
+  assert.equal(supplierKey(null), '');
 });
