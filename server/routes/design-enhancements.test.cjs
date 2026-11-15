@@ -482,6 +482,31 @@ test.describe('trial verdict', () => {
     assert.equal(w.final_verdict, 'Not achieved');
   });
 
+  test('a project awaiting life review whose sample is later Rejected: admin closes it with a reason, a non-admin is refused', async () => {
+    order.sample_status = 'Rejected';
+    enhancement = { ...enhancement, failure_assessment_required: true, target_failure_pct: '10', trial_verdict: 'Achieved',
+      trial_productivity_kgh: '950', trial_recovery_pct: '80', life_review_due_date: future() };
+    const body = { verdict: 'Not achieved', remark: 'Die will not be reworked', abandon: true };
+    assert.equal((await trialVerdict({ ...body, reason: 'Sample rejected after the verdict' })).status, 403);
+    assert.equal(written(), null);
+    currentUser = ADMIN;
+    const bare = await trialVerdict(body);
+    assert.equal(bare.status, 400);
+    assert.equal(bare.body.code, 'REASON_REQUIRED');
+    assert.equal(written(), null);
+    const { status } = await trialVerdict({ ...body, reason: 'Sample rejected after the verdict' });
+    assert.equal(status, 200);
+    const w = written();
+    assert.equal(w.trial_verdict, 'Not achieved');
+    assert.equal(w.final_verdict, 'Not achieved');
+    assert.equal(w.final_verdict_remark, 'Die will not be reworked');
+    assert.equal(w.life_review_due_date, null);
+    const entry = changes().find((c) => c.field === 'Design enhancement: trial verdict');
+    assert.equal(entry.reason, 'Sample rejected after the verdict');
+    assert.equal(entry.old, 'Achieved');
+    assert.equal(entry.new, 'Not achieved');
+  });
+
   test('abandon has no effect on an Approved sample: the normal path applies', async () => {
     const { status } = await trialVerdict({ verdict: 'Achieved', abandon: true });
     assert.equal(status, 200);
@@ -600,6 +625,14 @@ test.describe('trial verdict', () => {
     const approved = await suggestion();
     assert.equal(approved.body.stage, 'trial');
     assert.equal(approved.body.suggested, null);
+  });
+
+  test('a Rejected sample with a trial verdict but no final verdict is still in rework', async () => {
+    order.sample_status = 'Rejected';
+    enhancement = { ...enhancement, failure_assessment_required: true, target_failure_pct: '10', trial_verdict: 'Achieved' };
+    const { body } = await suggestion();
+    assert.equal(body.stage, 'rework');
+    assert.equal(body.suggested, null);
   });
 
   test('the rework stage shows the latest OK trial and the targets, suggesting nothing', async () => {

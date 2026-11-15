@@ -252,10 +252,11 @@ const targetsOf = (row, withFailure) => ({
 });
 
 // Trial-stage suggestion: the latest OK trial against the productivity and
-// recovery targets. A Rejected sample with no verdict saved is in rework and
-// is never suggested anything (see the suggestion route).
+// recovery targets. A Rejected sample is in rework and is never suggested
+// anything, same as the client copy.
 function trialSuggestion(order, row, latest) {
   const actuals = { failure: null, productivity: latest ? num(latest.productivity_kgh) : null, recovery: latest ? num(latest.recovery_pct) : null };
+  if (order.sample_status === 'Rejected') return { suggested: null, actuals };
   return { suggested: suggestVerdict({ targets: targetsOf(row, false), actuals }), actuals };
 }
 
@@ -296,7 +297,7 @@ router.get('/order/:orderId/suggestion', async (req, res) => {
     let targets;
     let actuals;
     let suggested = null;
-    const rework = !reviewing && !row.trial_verdict && order.sample_status === 'Rejected';
+    const rework = !reviewing && !row.final_verdict && order.sample_status === 'Rejected';
     if (reviewing) {
       targets = targetsOf(row, true);
       actuals = { failure: preview !== null ? preview : num(row.actual_failure_pct),
@@ -305,7 +306,6 @@ router.get('/order/:orderId/suggestion', async (req, res) => {
       const latest = latestOkTrial(await trialsForParent(pool, { column: 'die_order_id', id: orderId }));
       targets = targetsOf(row, false);
       ({ actuals, suggested } = trialSuggestion(order, row, latest));
-      if (rework) suggested = null;
     }
     res.json({
       stage: reviewing ? 'final' : rework ? 'rework' : 'trial',

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, validateAbandonForm, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion, prefillDueDate,
+  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, validateAbandonForm, closeRejectedAccess, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion, prefillDueDate,
 } from './enhancementVerdict.js';
 
 const ROW = {
@@ -39,6 +39,8 @@ test('stage: waiting until the sample is decided, then trial, review, done', () 
   assert.equal(panelStage(ROW, rejected), 'rework');
   assert.equal(panelStage({ ...ROW, trial_verdict: 'Not achieved', final_verdict: 'Not achieved' }, rejected), 'done');
   assert.equal(panelStage(ROW, { STATUS: 'CANCELLED', 'Sample Status': 'Rejected' }), 'cancelled');
+  // awaiting life review, then the sample is Rejected: the project is open again
+  assert.equal(panelStage({ ...ROW, trial_verdict: 'Achieved' }, rejected), 'rework');
   assert.equal(panelStage({ ...ROW, trial_verdict: 'Achieved' }, approved), 'review');
   assert.equal(panelStage({ ...ROW, trial_verdict: 'Achieved', failure_assessment_required: false, final_verdict: 'Achieved' }, approved), 'done');
   assert.equal(panelStage(ROW, { STATUS: 'CANCELLED', 'Sample Status': 'Approved' }), 'cancelled');
@@ -160,4 +162,18 @@ test('closing a rejected project as Not achieved needs a remark and sends abando
   assert.ok(r.errors.remark);
   r = validateAbandonForm({ values: { remark: '  Die scrapped  ' } });
   assert.deepEqual(r, { ok: true, errors: {}, body: { verdict: 'Not achieved', remark: 'Die scrapped', abandon: true } });
+});
+
+test('who may close a Rejected project: anyone who can record, but only an admin once a trial verdict exists, and then with a reason', () => {
+  const user = { role: 'user', pageAccess: null };
+  const admin = { role: 'admin' };
+  const none = { role: 'user', pageAccess: ['orders'] };
+  assert.deepEqual(closeRejectedAccess(user, ROW), { allowed: true, needsReason: false });
+  assert.deepEqual(closeRejectedAccess(none, ROW), { allowed: false, needsReason: false });
+  assert.deepEqual(closeRejectedAccess(user, { ...ROW, trial_verdict: 'Achieved' }), { allowed: false, needsReason: true });
+  assert.deepEqual(closeRejectedAccess(admin, { ...ROW, trial_verdict: 'Achieved' }), { allowed: true, needsReason: true });
+  const r = validateAbandonForm({ row: { ...ROW, trial_verdict: 'Achieved' }, values: { remark: 'Scrapped' } });
+  assert.ok(r.errors.reason);
+  assert.deepEqual(validateAbandonForm({ row: { ...ROW, trial_verdict: 'Achieved' }, values: { remark: 'Scrapped', reason: ' Rejected later ' } }).body,
+    { verdict: 'Not achieved', remark: 'Scrapped', abandon: true, reason: 'Rejected later' });
 });

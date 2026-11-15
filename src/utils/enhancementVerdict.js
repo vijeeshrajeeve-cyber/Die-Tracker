@@ -75,10 +75,10 @@ export function panelStage(row, order) {
   const r = row || {};
   if (String(order?.STATUS || '').toUpperCase() === 'CANCELLED') return 'cancelled';
   if (r.final_verdict) return 'done';
+  // A Rejected sample reopens the project, even one already awaiting its life review.
+  if (order?.['Sample Status'] === 'Rejected') return 'rework';
   if (r.trial_verdict) return needsLifeReview(r, snakeOf(order)) ? 'review' : 'done';
-  const sample = order?.['Sample Status'];
-  if (sample === 'Rejected') return 'rework';
-  return sample === 'Approved' ? 'trial' : 'waiting';
+  return order?.['Sample Status'] === 'Approved' ? 'trial' : 'waiting';
 }
 
 /**
@@ -184,10 +184,27 @@ export function validateVerdictForm({ form, row, order, values, suggested, today
  * a remark is required. Returns { ok, errors, body }; the body is what the
  * server's trial-verdict endpoint accepts while the sample is Rejected.
  */
-export function validateAbandonForm({ values }) {
+export function validateAbandonForm({ row, values }) {
   const remark = typeof values?.remark === 'string' ? values.remark.trim() : '';
-  if (!remark) return { ok: false, errors: { remark: 'Say why the project is being closed' } };
-  return { ok: true, errors: {}, body: { verdict: 'Not achieved', remark, abandon: true } };
+  const reason = typeof values?.reason === 'string' ? values.reason.trim() : '';
+  const errors = {};
+  if (!remark) errors.remark = 'Say why the project is being closed';
+  if (row?.trial_verdict && !reason) errors.reason = 'Give a reason for this change';
+  if (Object.keys(errors).length) return { ok: false, errors };
+  const body = { verdict: 'Not achieved', remark, abandon: true };
+  if (reason) body.reason = reason;
+  return { ok: true, errors: {}, body };
+}
+
+/**
+ * Who may close a Rejected project as Not achieved. Anyone who can record a
+ * verdict, until a trial verdict exists; after that it overwrites a saved
+ * verdict, which is admin-only and needs a reason (the server's redo rule).
+ */
+export function closeRejectedAccess(user, row) {
+  const saved = Boolean(row?.trial_verdict);
+  const allowed = canRecordVerdict(user) && (!saved || user?.role === 'admin');
+  return { allowed, needsReason: saved };
 }
 
 // The date the review-due box starts on: the stored one when a redo opens on a
