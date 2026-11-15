@@ -3,7 +3,7 @@ import { usePalette } from '../../utils/palette';
 import { designEnhancementsAPI, getUser } from '../../api';
 import { VERDICTS, parseNumber, isBlank } from '../../utils/designEnhancement';
 import {
-  panelStage, resultRows, showNumber, validateVerdictForm, reviewOwedAfter, formNeedsReason, latestOkTrial,
+  panelStage, resultRows, showNumber, validateVerdictForm, reviewOwedAfter, formNeedsReason, latestOkTrial, trialSuggestion,
 } from '../../utils/enhancementVerdict';
 import { todayLocal } from '../../utils/today.js';
 
@@ -53,6 +53,13 @@ function VerdictForm({ form, order, row, suggestion, theme, onSaved, onCancel, o
     const timer = setTimeout(() => onPreview(!isBlank(values.failure) && !Number.isNaN(n) && n <= 100 ? String(n) : undefined), 300);
     return () => clearTimeout(timer);
   }, [form, values.failure, onPreview]);
+
+  // The life-review suggestion is for one failure % at a time. Until the
+  // suggestion on screen is for the one typed, saving would check the remark
+  // rule against a stale suggestion, so Save waits.
+  const typed = parseNumber(values.failure);
+  const typedKey = !isBlank(values.failure) && !Number.isNaN(typed) && typed <= 100 ? String(typed) : undefined;
+  const pending = form === 'review' && (!suggestion || suggestion.previewFor !== typedKey);
 
   const needsReason = formNeedsReason(form, row);
   const overriding = VERDICTS.includes(values.verdict) && values.verdict !== suggested;
@@ -129,8 +136,8 @@ function VerdictForm({ form, order, row, suggestion, theme, onSaved, onCancel, o
           <button type="button" onClick={onCancel} disabled={saving}
             style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: 'transparent', color: p.muted, border: `1px solid ${p.border}`, cursor: 'pointer' }}>Cancel</button>
         )}
-        <button type="button" onClick={save} disabled={saving}
-          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: p.primary, color: p.primaryText, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+        <button type="button" onClick={save} disabled={saving || pending}
+          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: p.primary, color: p.primaryText, border: 'none', cursor: saving || pending ? 'not-allowed' : 'pointer', opacity: saving || pending ? 0.6 : 1 }}>
           {saving ? 'Saving…' : form === 'review' ? 'Save life review' : 'Save trial verdict'}
         </button>
       </div>
@@ -150,25 +157,35 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
   const p = usePalette(theme);
   const isAdmin = getUser()?.role === 'admin';
   const [change, setChange] = useState(null); // an admin redoing a saved verdict: 'trial' | 'review'
-  const [fetched, setSuggestion] = useState(null);
-  const suggestion = form ? fetched : null;
+  const [fetched, setFetched] = useState(null); // { ...server suggestion, previewFor }
   const [previewFailure, setPreviewFailure] = useState(undefined);
 
   const stage = enhancement ? panelStage(enhancement, order) : null;
   const form = change || (stage === 'trial' ? 'trial' : stage === 'review' ? 'review' : null);
   const editable = Boolean(form) && canRecord && (!change || isAdmin);
+  // Without Sample Followup access the trials are not loaded, so there is no Actual to show.
+  const trialsHidden = !canRecord && !enhancement?.trial_verdict;
 
   // The latest OK trial moves the suggestion, so it is part of the key.
   const latest = latestOkTrial(trials);
   const trialKey = latest ? `${latest.id}:${latest.productivity_kgh}:${latest.recovery_pct}` : '';
+  const asked = form === 'review' ? previewFailure : undefined;
   useEffect(() => {
     if (!form || !order?.id) return undefined;
     let cancelled = false;
-    designEnhancementsAPI.suggestion(order.id, form === 'review' ? previewFailure : undefined)
-      .then((res) => { if (!cancelled) setSuggestion(res); })
-      .catch(() => { if (!cancelled) setSuggestion(null); });
+    designEnhancementsAPI.suggestion(order.id, asked)
+      .then((res) => { if (!cancelled) setFetched({ ...res, previewFor: asked }); })
+      .catch(() => { if (!cancelled) setFetched({ suggested: null, previewFor: asked }); });
     return () => { cancelled = true; };
-  }, [form, order?.id, trialKey, enhancement?.updated_at, previewFailure]);
+  }, [form, order?.id, trialKey, enhancement?.updated_at, asked]);
+
+  // Changing a saved trial verdict while a life review is owed: the server's
+  // suggestion is then the final-stage one, so the trial one is worked out here.
+  const suggestion = useMemo(() => {
+    if (!form || !fetched) return null;
+    if (form === 'trial' && fetched.stage === 'final') return { ...fetched, suggested: trialSuggestion(enhancement, order, trials) };
+    return fetched;
+  }, [form, fetched, enhancement, order, trials]);
 
   const rows = useMemo(() => resultRows(enhancement, trials), [enhancement, trials]);
   if (!enhancement) return null;
@@ -207,12 +224,15 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
               <th scope="row" style={{ ...cell, fontWeight: 500, textAlign: 'left' }}>{r.name}</th>
               <td style={cell}>{showNumber(r.current, r.unit)}</td>
               <td style={{ ...cell, color: r.target === undefined ? p.dim : p.text }}>{r.target === undefined ? 'assessment not required' : showNumber(r.target, r.unit)}</td>
-              <td style={cell}>{r.key === 'failure' && r.target === undefined ? '' : showNumber(r.actual, r.unit)}</td>
+              <td style={cell}>{r.key === 'failure' && r.target === undefined ? '' : trialsHidden && r.key !== 'failure' ? '—' : showNumber(r.actual, r.unit)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
+      {trialsHidden && (
+        <p style={{ margin: 0, fontSize: '0.78rem', color: p.dim }}>Trial numbers are visible to users with Sample Followup access</p>
+      )}
       {stage === 'waiting' && (
         <p style={{ margin: 0, fontSize: '0.8rem', color: p.dim }}>The verdict can be recorded once the sample is Approved or Rejected</p>
       )}
@@ -241,6 +261,14 @@ export default function EnhancementResultPanel({ order, enhancement, trials = []
       )}
       {(stage === 'trial' || stage === 'review') && !canRecord && (
         <p style={{ margin: 0, fontSize: '0.78rem', color: p.dim }}>You need Sample Followup access to record the verdict.</p>
+      )}
+      {stage === 'review' && canRecord && isAdmin && !change && (
+        <div>
+          <button type="button" onClick={() => setChange('trial')}
+            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, background: 'transparent', color: p.muted, border: `1px solid ${p.border}`, cursor: 'pointer' }}>
+            Change trial verdict
+          </button>
+        </div>
       )}
       {stage === 'done' && canRecord && isAdmin && !change && (
         <div>

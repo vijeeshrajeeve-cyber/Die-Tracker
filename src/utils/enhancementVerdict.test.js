@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers,
+  hasPageAccess, canRecordVerdict, latestOkTrial, panelStage, resultRows, formNeedsReason, validateVerdictForm, reviewOwedAfter, showNumber, validateTrialNumbers, trialSuggestion,
 } from './enhancementVerdict.js';
 
 const ROW = {
@@ -121,4 +121,19 @@ test('trial numbers are required on an OK trial only, recovery capped at 100', (
   assert.ok(r.errors.productivity_kgh);
   r = validateTrialNumbers({ productivity: '920.5', recovery: '76', required: true });
   assert.deepEqual(r.value, { productivity_kgh: 920.5, recovery_pct: 76 });
+});
+
+test('a Not OK trial sends no numbers even if some were typed', () => {
+  const r = validateTrialNumbers({ productivity: '900', recovery: 'abc', required: false, result: 'Not OK' });
+  assert.deepEqual(r, { ok: true, errors: {}, value: { productivity_kgh: null, recovery_pct: null } });
+});
+
+test('trial suggestion uses the latest OK trial against the two targets', () => {
+  assert.equal(trialSuggestion(ROW, approved, TRIALS), 'Achieved'); // 930 >= 900, 77 >= 75
+  assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: '850', recovery_pct: '76' }]), 'Partly achieved');
+  assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: '850', recovery_pct: '70' }]), 'Not achieved');
+  assert.equal(trialSuggestion(ROW, approved, []), null);
+  assert.equal(trialSuggestion(ROW, { STATUS: 'DIE RECEIVED', 'Sample Status': 'Rejected' }, [{ trial_no: 1, result: 'Not OK' }]), 'Not achieved');
+  // a blank number is skipped, not treated as 0
+  assert.equal(trialSuggestion(ROW, approved, [{ trial_no: 1, result: 'OK', productivity_kgh: null, recovery_pct: '80' }]), 'Achieved');
 });

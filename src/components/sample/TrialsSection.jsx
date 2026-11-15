@@ -49,7 +49,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
     }
     let numbers = {};
     if (enhanced) {
-      const checked = validateTrialNumbers({ productivity: form.productivity_kgh, recovery: form.recovery_pct, required: form.result === 'OK' });
+      const checked = validateTrialNumbers({ productivity: form.productivity_kgh, recovery: form.recovery_pct, required: form.result === 'OK', result: form.result });
       if (!checked.ok) return notify(Object.values(checked.errors)[0], 'error');
       numbers = checked.value;
     }
@@ -124,7 +124,7 @@ export default function TrialsSection({ parent, trials, theme, user, onChanged, 
             </select>
           </div>
         )}
-        {enhanced && (
+        {enhanced && form.result === 'OK' && (
           <>
             <div>
               <label style={label} htmlFor="trial-productivity">Productivity (kg/h){form.result === 'OK' && ' *'}</label>

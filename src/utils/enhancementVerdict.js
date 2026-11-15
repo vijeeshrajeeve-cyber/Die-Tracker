@@ -1,5 +1,5 @@
 import {
-  VERDICTS, isBlank, parseNumber, needsLifeReview,
+  VERDICTS, isBlank, parseNumber, needsLifeReview, suggestVerdict,
 } from './designEnhancement.js';
 
 /**
@@ -33,7 +33,9 @@ export function showNumber(v, unit) {
 
 // A trial's productivity and recovery as the entry form sends them. `required` is
 // true for an OK trial on an enhancement die. Returns { ok, errors, value }.
-export function validateTrialNumbers({ productivity, recovery, required }) {
+export function validateTrialNumbers({ productivity, recovery, required, result }) {
+  // A failed trial measures nothing: whatever was typed before switching to Not OK is dropped.
+  if (result === 'Not OK') return { ok: true, errors: {}, value: { productivity_kgh: null, recovery_pct: null } };
   const errors = {};
   const value = { productivity_kgh: null, recovery_pct: null };
   for (const [key, raw, label, pct] of [
@@ -110,6 +112,20 @@ export function resultRows(row, trials) {
       actual: num(r.actual_failure_pct),
     },
   ];
+}
+
+// The trial-stage suggestion, worked out here for when the server's suggestion
+// is the final-stage one (a life review is owed). Same rule as the server's
+// trialSuggestion: the latest OK trial against the productivity and recovery
+// targets; a Rejected sample with no OK trial is "Not achieved".
+export function trialSuggestion(row, order, trials) {
+  const r = row || {};
+  const latest = latestOkTrial(trials);
+  if (!latest) return order?.['Sample Status'] === 'Rejected' ? 'Not achieved' : null;
+  return suggestVerdict({
+    targets: { productivity: num(r.target_productivity_kgh), recovery: num(r.target_recovery_pct) },
+    actuals: { productivity: num(latest.productivity_kgh), recovery: num(latest.recovery_pct) },
+  });
 }
 
 // Does saving this form overwrite a saved one? Then a reason is needed (admin only).
