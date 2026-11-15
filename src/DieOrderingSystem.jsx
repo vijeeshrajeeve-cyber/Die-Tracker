@@ -3567,7 +3567,7 @@ export default function DieOrderingSystem() {
 
           {activeTab === 'analytics' && hasPageAccess('analytics') && (
             <Suspense fallback={<ChunkFallback theme={theme} />}>
-              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} user={user} />
+              <AnalyticsPage data={data} suppliers={suppliers} theme={theme} user={user} onOpenOrder={async (id) => openSearchOrder(await searchAPI.order(id))} />
             </Suspense>
           )}
           {/* Settings Tab (Admin Only) */}

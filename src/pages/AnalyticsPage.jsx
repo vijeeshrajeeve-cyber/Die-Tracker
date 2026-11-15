@@ -3,15 +3,17 @@ import OverviewTab from './analytics/OverviewTab';
 import SupplierReportTab from './analytics/SupplierReportTab';
 import DieLifeTab from './analytics/DieLifeTab';
 import SimulationSummaryTab from './analytics/SimulationSummaryTab';
+import EnhancementsTab from './analytics/EnhancementsTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'supplier', label: 'Supplier Report' },
   { id: 'dielife', label: 'Die Life Data' },
   { id: 'simulation', label: 'Simulation' },
+  { id: 'enhancements', label: 'Enhancements' },
 ];
 
-export default function AnalyticsPage({ data, suppliers, theme, user }) {
+export default function AnalyticsPage({ data, suppliers, theme, user, onOpenOrder }) {
   const [tab, setTab] = useState('overview');
   // Bumped when die life figures are saved. The panels below stay mounted, so
   // without this the Supplier Report keeps showing the report it fetched on
@@ -58,6 +60,9 @@ export default function AnalyticsPage({ data, suppliers, theme, user }) {
       </div>
       <div style={{ display: tab === 'simulation' ? 'block' : 'none' }}>
         <SimulationSummaryTab theme={theme} active={tab === 'simulation'} />
+      </div>
+      <div style={{ display: tab === 'enhancements' ? 'block' : 'none' }}>
+        <EnhancementsTab theme={theme} active={tab === 'enhancements'} onOpenOrder={onOpenOrder} />
       </div>
     </div>
   );

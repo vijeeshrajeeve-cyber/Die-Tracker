@@ -1418,3 +1418,8 @@ export const signaturesAPI = {
 
     remove: async () => apiRequest('/signatures/me', { method: 'DELETE' }),
 };
+
+// Analytics -> Enhancements. from/to are 'YYYY-MM-DD'; omit both for the current year.
+export const enhancementSummaryAPI = {
+    get: (from, to) => apiRequest(`/enhancement-summary${from && to ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : ''}`),
+};

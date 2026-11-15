@@ -29,6 +29,7 @@ const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
 const sampleTrialsRouter = require('./routes/sample-trials.cjs');
 const simulationRouter = require('./routes/simulation.cjs');
 const simulationSummaryRouter = require('./routes/simulation-summary.cjs');
+const enhancementSummaryRouter = require('./routes/enhancement-summary.cjs');
 const plantBudgetsRouter = require('./routes/plant-budgets.cjs');
 const existingDataRouter = require('./routes/existing-data.cjs');
 const autoBackupsRouter = require('./routes/auto-backups.cjs');
@@ -139,6 +140,7 @@ app.use('/api/sample-trials', authMiddleware, pageAccessMiddleware('flow-sample-
 app.use('/api/simulation', authMiddleware, pageAccessMiddleware('flow-simulation'), simulationRouter);
 // Shown on Analytics, and the Simulation page's own users may want their figures.
 app.use('/api/simulation-summary', authMiddleware, pageAccessMiddleware(['analytics', 'flow-simulation']), simulationSummaryRouter);
+app.use('/api/enhancement-summary', authMiddleware, pageAccessMiddleware('analytics'), enhancementSummaryRouter);
 // The follow-up belongs to the In Manufacturing page, so it shares its key.
 app.use('/api/delivery-followups', authMiddleware, pageAccessMiddleware('flow-completed'), deliveryFollowupsRouter);
 app.use('/api/plant-budgets', plantBudgetsRouter);
