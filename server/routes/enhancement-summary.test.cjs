@@ -9,6 +9,7 @@ const router = require('./enhancement-summary.cjs');
 
 async function withServer(fn) {
   const app = express();
+  app.use(express.json());
   app.use('/api/enhancement-summary', router);
   const server = await listen(app);
   try { await fn(server.base); } finally { await server.close(); }
@@ -35,5 +36,28 @@ test('rejects bad or reversed dates', async () => {
     assert.equal((await request(base, '/api/enhancement-summary?from=nope&to=2026-05-31')).status, 400);
     assert.equal((await request(base, '/api/enhancement-summary?from=2026-06-01&to=2026-05-31')).status, 400);
     assert.equal((await request(base, '/api/enhancement-summary?from=2000-01-01&to=2026-05-31')).status, 400);
+  });
+});
+
+const post = (base, body) => fetch(`${base}/api/enhancement-summary/pdf`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+});
+
+test('POST /pdf answers a PDF named for the period', async () => {
+  await withServer(async (base) => {
+    const r = await post(base, { from: '2026-03-01', to: '2026-05-31' });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'application/pdf');
+    assert.equal(r.headers.get('content-disposition'), 'attachment; filename="Enhancement-Report-2026-03-01-to-2026-05-31.pdf"');
+    const bytes = Buffer.from(await r.arrayBuffer());
+    assert.equal(bytes.subarray(0, 4).toString(), '%PDF');
+  });
+});
+
+test('POST /pdf rejects bad or reversed dates like the summary does', async () => {
+  await withServer(async (base) => {
+    assert.equal((await post(base, { from: 'nope', to: '2026-05-31' })).status, 400);
+    assert.equal((await post(base, { from: '2026-06-01', to: '2026-05-31' })).status, 400);
+    assert.equal((await post(base, { from: '2000-01-01', to: '2026-05-31' })).status, 400);
   });
 });

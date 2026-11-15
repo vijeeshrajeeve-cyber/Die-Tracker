@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, FileText, FileSpreadsheet } from 'lucide-react';
 import { enhancementSummaryAPI } from '../../api';
 import MetricCard from '../../components/analytics/MetricCard';
+import { exportToExcel } from '../../utils/exportExcel';
+import { downloadBlob } from '../../utils/downloadBlob';
+import { buildEnhancementSheets, enhancementReportFilename } from '../../utils/enhancementReport';
 
 // Design enhancement projects: how many were started and finished, how often
 // the target was reached, and how the real numbers moved against the baseline.
@@ -79,6 +82,10 @@ export default function EnhancementsTab({ theme, active, onOpenOrder }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loadedPeriod, setLoadedPeriod] = useState(null); // the dates `summary` was built for
+  const [exporting, setExporting] = useState('');          // '' | 'pdf' | 'excel'
+  const [exportError, setExportError] = useState('');
+  const requestId = useRef(0);
 
   // From / to override the year; either one left blank falls back to the year's edge.
   const effFrom = from || `${year}-01-01`;
@@ -87,13 +94,19 @@ export default function EnhancementsTab({ theme, active, onOpenOrder }) {
 
   const load = useCallback(async () => {
     if (badRange) return;
+    // A slower earlier response must not overwrite a newer one (year switched quickly).
+    const mine = ++requestId.current;
     setLoading(true); setError('');
     try {
-      setSummary(await enhancementSummaryAPI.get(effFrom, effTo));
+      const data = await enhancementSummaryAPI.get(effFrom, effTo);
+      if (mine !== requestId.current) return;
+      setSummary(data);
+      setLoadedPeriod({ from: effFrom, to: effTo });
     } catch (e) {
+      if (mine !== requestId.current) return;
       setError(e.message || 'Could not load the enhancement summary.');
     } finally {
-      setLoading(false);
+      if (mine === requestId.current) setLoading(false);
     }
   }, [effFrom, effTo, badRange]);
 
@@ -104,6 +117,25 @@ export default function EnhancementsTab({ theme, active, onOpenOrder }) {
   const field = { padding: '7px 10px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 8, color: theme.text, fontSize: '0.8rem' };
   const th = { padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: theme.textMuted, background: theme.tableBg, borderBottom: `1px solid ${theme.cardBorder}`, whiteSpace: 'nowrap' };
   const td = { padding: '0.6rem 0.75rem', borderBottom: `1px solid ${theme.cardBorder}`, fontSize: '0.85rem', color: theme.text, verticalAlign: 'top' };
+
+  // The report is exactly what is on screen: the loaded summary, for its own dates.
+  const reportReady = Boolean(summary && loadedPeriod && loadedPeriod.from === effFrom && loadedPeriod.to === effTo) && !loading;
+  const downloadPdf = async () => {
+    setExporting('pdf'); setExportError('');
+    try {
+      downloadBlob(await enhancementSummaryAPI.exportPdf(effFrom, effTo), enhancementReportFilename(effFrom, effTo, 'pdf'));
+    } catch (e) {
+      setExportError(e.message || 'Could not create the PDF.');
+    } finally { setExporting(''); }
+  };
+  const downloadExcel = async () => {
+    setExporting('excel'); setExportError('');
+    try {
+      await exportToExcel({ sheets: buildEnhancementSheets(summary), filename: enhancementReportFilename(effFrom, effTo, 'xlsx') });
+    } catch (e) {
+      setExportError(e.message || 'Could not create the Excel file.');
+    } finally { setExporting(''); }
+  };
 
   const years = Array.from({ length: 6 }, (_, i) => thisYear - i);
 
@@ -197,6 +229,24 @@ export default function EnhancementsTab({ theme, active, onOpenOrder }) {
         </ResponsiveContainer>
       </div>
 
+      <div className="no-print" style={{ ...card, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0, color: theme.text }}>Enhancement report</h3>
+          <p style={{ fontSize: '0.75rem', color: theme.textDim, margin: '4px 0 0' }}>
+            The summary, the monthly chart and the three project lists for {fmtDate(effFrom)} to {fmtDate(effTo)}. Change the dates above to change the period.
+          </p>
+          {exportError && <div role="alert" style={{ fontSize: '0.8rem', color: '#DC2626', marginTop: 6 }}>{exportError}</div>}
+        </div>
+        <button onClick={downloadPdf} disabled={!reportReady || Boolean(exporting)}
+          style={{ ...field, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: reportReady && !exporting ? 'pointer' : 'default' }}>
+          <FileText size={14} /> {exporting === 'pdf' ? 'Creating PDF…' : 'PDF'}
+        </button>
+        <button onClick={downloadExcel} disabled={!reportReady || Boolean(exporting)}
+          style={{ ...field, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: reportReady && !exporting ? 'pointer' : 'default' }}>
+          <FileSpreadsheet size={14} /> {exporting === 'excel' ? 'Creating Excel…' : 'Excel'}
+        </button>
+      </div>
+
       <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.25rem', color: theme.text }}>Average change on completed projects</h3>
       <p style={{ fontSize: '0.75rem', color: theme.textDim, margin: '0 0 0.75rem' }}>Actual against baseline, over the completed projects that have both numbers.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -224,6 +274,7 @@ export default function EnhancementsTab({ theme, active, onOpenOrder }) {
               <thead>
                 <tr>
                   <th scope="col" style={th}>Die no</th>
+                  <th scope="col" style={th}>Profile</th>
                   <th scope="col" style={th}>Supplier</th>
                   <th scope="col" style={th}>Current issue</th>
                   <th scope="col" style={th}>Productivity (kg/h)</th>
@@ -244,6 +295,7 @@ export default function EnhancementsTab({ theme, active, onOpenOrder }) {
                           ? <button onClick={(e) => { e.stopPropagation(); openOrder(); }} style={{ background: 'none', border: 'none', padding: 0, color: '#3B82F6', fontWeight: 600, cursor: 'pointer', fontSize: 'inherit' }}>{p.die_no}</button>
                           : p.die_no}
                       </th>
+                      <td style={td}>{p.profile || '—'}</td>
                       <td style={td}>{p.supplier || '—'}</td>
                       <td style={{ ...td, maxWidth: 260 }}>{p.current_issue || '—'}</td>
                       <td style={td}><Triple theme={theme} figures={p.productivity} /></td>

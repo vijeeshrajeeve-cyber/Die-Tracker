@@ -1422,4 +1422,23 @@ export const signaturesAPI = {
 // Analytics -> Enhancements. from/to are 'YYYY-MM-DD'; omit both for the current year.
 export const enhancementSummaryAPI = {
     get: (from, to) => apiRequest(`/enhancement-summary${from && to ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : ''}`),
+
+    // Returns a Blob. The server rebuilds the report from the dates, so what
+    // downloads is what the database says.
+    exportPdf: async (from, to) => {
+        const response = await fetch(`${API_BASE_URL}/enhancement-summary/pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getToken()}`,
+            },
+            body: JSON.stringify({ from, to }),
+        });
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
 };

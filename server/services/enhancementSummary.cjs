@@ -48,10 +48,14 @@ const trio = (r, key, trialKey) => ({
   actual: num(r[trialKey]),
 });
 
+// The profile is the part of the die number before its first dash (29663-253 -> 29663).
+const profileOf = (dieNo) => (dieNo == null ? null : String(dieNo).trim().split('-')[0] || null);
+
 function projectRow(r, state) {
   return {
     die_order_id: r.die_order_id,
     die_no: r.die_no,
+    profile: profileOf(r.die_no),
     supplier: r.supplier,
     current_issue: r.current_issue,
     productivity: trio(r, 'productivity_kgh', 'trial_productivity_kgh'),

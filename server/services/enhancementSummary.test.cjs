@@ -94,7 +94,7 @@ test('a project created after the period ends is not open in it', () => {
 test('project rows carry the order, the three numbers and the state', () => {
   const s = summarise([done({ trial_productivity_kgh: '130', trial_recovery_pct: '80', actual_failure_pct: '5', target_failure_pct: '8' })], YEAR);
   assert.deepEqual(s.completed[0], {
-    die_order_id: 1, die_no: 'D-1', supplier: 'Alpha', current_issue: 'Weld lines',
+    die_order_id: 1, die_no: 'D-1', profile: 'D', supplier: 'Alpha', current_issue: 'Weld lines',
     productivity: { baseline: 100, target: 120, actual: 130 },
     recovery: { baseline: 70, target: 75, actual: 80 },
     failure: { baseline: 10, target: 8, actual: 5 },
@@ -114,4 +114,15 @@ test('loadEnhancementSummary queries the joined rows and summarises them', async
   const s = await loadEnhancementSummary(client, YEAR);
   assert.equal(s.totals.completed, 1);
   assert.match(calls[0], /design_enhancements/);
+});
+
+test('each project row carries the profile: the die number before its first dash', () => {
+  const s = summarise([
+    row({ die_order_id: 1, die_no: '29663-253' }),
+    row({ die_order_id: 2, die_no: 'D-1' }),
+    row({ die_order_id: 3, die_no: '  090001-801 ' }),
+    row({ die_order_id: 4, die_no: 'NODASH' }),
+    row({ die_order_id: 5, die_no: null }),
+  ], YEAR);
+  assert.deepEqual(s.started.map((p) => p.profile), ['29663', 'D', '090001', 'NODASH', null]);
 });
