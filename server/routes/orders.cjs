@@ -365,6 +365,10 @@ router.post('/', orderValidation, handleValidationErrors, async (req, res) => {
             if (!access.ok) return res.status(access.status).json({ error: access.error, code: access.code });
             enhancement = checked.value;
         }
+        // No trial can exist for a new order, so it cannot start out Approved.
+        if (enhancement && isApproved(order['Sample Status'])) {
+            return res.status(400).json({ error: APPROVAL_NEEDS_TRIAL, code: 'TRIAL_REQUIRED' });
+        }
         const switchSimulationOn = !!enhancement
             && SIMULATION_STATUSES.includes(String(sanitizeString(order['STATUS']) || '').toUpperCase());
 

@@ -271,3 +271,16 @@ test('other statuses, and re-saving an already Approved enhancement die, are not
   storedSampleStatus = 'Approved';
   assert.equal((await patch({ 'Sample Status': 'Approved' })).status, 200);
 });
+
+test('POST refuses to create an enhancement order that is already Approved', async () => {
+  const { status, body } = await create({ 'DIE NO': 'X1', STATUS: 'AWAITING FOR DESIGN', 'Sample Status': 'Approved', enhancement: ENHANCEMENT });
+  assert.equal(status, 400);
+  assert.equal(body.error, NEED_TRIAL);
+  assert.equal(body.code, 'TRIAL_REQUIRED');
+  assert.ok(!log.some(({ q }) => q.startsWith('INSERT INTO die_orders')));
+});
+
+test('POST still creates a routine order that is Approved', async () => {
+  createDefaults = true;
+  assert.equal((await create({ 'DIE NO': 'X1', STATUS: 'AWAITING FOR DESIGN', 'Sample Status': 'Approved' })).status, 201);
+});
