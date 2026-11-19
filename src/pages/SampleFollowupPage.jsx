@@ -9,6 +9,9 @@ import SampleFollowupForm from '../components/sample/SampleFollowupForm';
 import SampleFollowupDetail from '../components/sample/SampleFollowupDetail';
 import TrialPlanTab from '../components/sample/TrialPlanTab';
 import TrialPlanSummary from '../components/sample/TrialPlanSummary';
+import { TRIAL_PLANTS, plantKey } from '../utils/trialPlanView';
+
+const PLAN_PLANT_KEY = 'trialPlan.plant';
 import { trialCountFor } from '../utils/trials';
 import {
   STAGES, SUBMISSION_TARGET_DAYS, enrichSample, plantOf, scopeSampleFollowups, sortSampleFollowups,
@@ -104,6 +107,21 @@ export default function SampleFollowupPage({
   const [view, setView] = useState('worklist');
   // null: the plan the server says to open on (tomorrow).
   const [planDate, setPlanDate] = useState(null);
+  // Each plant plans its own day. The last plant picked is remembered on this
+  // device; otherwise the worklist's plant filter, otherwise the first plant.
+  const [planPlant, setPlanPlantState] = useState(() => {
+    let saved = null;
+    try { saved = window.localStorage.getItem(PLAN_PLANT_KEY); } catch { /* storage blocked */ }
+    if (TRIAL_PLANTS.includes(saved)) return saved;
+    const fromFilter = plantKey(sfPlantFilter);
+    return TRIAL_PLANTS.includes(fromFilter) ? fromFilter : TRIAL_PLANTS[0];
+  });
+  const setPlanPlant = (next) => {
+    setPlanPlantState(next);
+    try { window.localStorage.setItem(PLAN_PLANT_KEY, next); } catch { /* storage blocked */ }
+  };
+  // '' is both plants added together.
+  const [summaryPlant, setSummaryPlant] = useState('');
   const [stage, setStage] = useState('Pending');
   const [sort, setSort] = useState('overdue');
   const [selectedId, setSelectedId] = useState(null);
@@ -398,12 +416,14 @@ export default function SampleFollowupPage({
         {activeView === 'plan' ? (
           <TrialPlanTab
             date={planDate} setDate={setPlanDate} today={today} viewSwitch={viewSwitch}
-            samples={enriched} sampleTrials={sampleTrials} plantFilter={sfPlantFilter}
+            plant={planPlant} setPlant={setPlanPlant}
+            samples={enriched} sampleTrials={sampleTrials}
             correctors={correctors} correctorsError={correctorsError}
             setToast={setToast} onTrialsChanged={fetchSampleTrials} />
         ) : (
           <TrialPlanSummary today={today} viewSwitch={viewSwitch}
-            onOpenDay={(day) => { setPlanDate(day); setView('plan'); }} />
+            plant={summaryPlant} setPlant={setSummaryPlant}
+            onOpenDay={(day, dayPlant) => { setPlanDate(day); if (dayPlant) setPlanPlant(dayPlant); setView('plan'); }} />
         )}
       </section>
     );

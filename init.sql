@@ -290,11 +290,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_order_no
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_sf_no
     ON sample_trials(sample_followup_id, trial_no) WHERE sample_followup_id IS NOT NULL;
 
--- The daily trial plan. One row per calendar day; the sheet it replaces was
--- one sheet per day for every press, so the day is the key, not the plant.
+-- The daily trial plan. One row per calendar day per plant: each plant
+-- plans its own presses and publishes its own schedule.
 CREATE TABLE IF NOT EXISTS trial_plans (
     id            SERIAL PRIMARY KEY,
-    plan_date     DATE NOT NULL UNIQUE,
+    plan_date     DATE NOT NULL,
+    plant         TEXT NOT NULL DEFAULT 'GEX 1',
     status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
     revision      INTEGER NOT NULL DEFAULT 0,
     published_at  TIMESTAMP,
@@ -341,6 +342,7 @@ CREATE TABLE IF NOT EXISTS trial_plan_entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_trial_plan_entries_plan ON trial_plan_entries(plan_id, position);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_plans_day_plant ON trial_plans(plan_date, plant);
 
 -- Seed suppliers
 INSERT INTO suppliers (name, region) VALUES
@@ -442,7 +444,9 @@ Please provide PDF drawings for the selected backup die request(s).
 
 Best regards,
 Die Ordering Team',
-     'pdf_drawing_request')
+     'pdf_drawing_request'),
+    ('Trial Plan - GEX 1', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan'),
+    ('Trial Plan - GEX 2', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan')
 ON CONFLICT (name) DO NOTHING;
 
 -- Uploaded existing die master data by plant

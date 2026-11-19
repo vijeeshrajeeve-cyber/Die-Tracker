@@ -293,6 +293,9 @@
 .tp-add-head h3 { font-size: .85rem; font-weight: 700; }
 .tp-search { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--sf-border-strong); border-radius: 8px; background: var(--sf-surface); color: var(--sf-muted); }
 .tp-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--sf-text); outline: none; font-size: .85rem; }
+/* The box is the field: show focus on it, not as a second ring around the bare input. */
+.tp-search input:focus-visible, .sf-search input:focus-visible { outline: none !important; box-shadow: none !important; }
+.tp-search:focus-within, .sf-search:focus-within { border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-ring-contrast); }
 .tp-search-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .tp-search-results button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; padding: 8px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; }
 .tp-search-results button:hover { background: var(--sf-hover); }

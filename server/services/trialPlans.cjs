@@ -32,6 +32,11 @@ const ENTRY_TYPES = ['Trial', 'Supervised'];
 const OUTCOMES = ['OK', 'Not OK', 'Not run'];
 const PLAN_STATUSES = ['draft', 'published'];
 
+// Each plant plans its own presses and publishes its own schedule. Stored in
+// the die-order spelling; the die list and press table write 'GEX 01', which
+// plantName() reads as the same plant.
+const PLANTS = ['GEX 1', 'GEX 2'];
+
 // Why a die that is not waiting for trial is on the plan anyway. Required for
 // such a die so the reason prints on the plan instead of living in memory.
 const OUT_OF_QUEUE_REASONS = [
@@ -50,6 +55,16 @@ const RESULT_GRACE_DAYS = 1;
 const CORRECTOR_LOAD_FLAG = 4;
 
 const trim = (v) => (v === null || v === undefined ? '' : String(v).trim());
+
+// 'GEX 01', 'gex1' and 'GEX 1' are one plant. Anything that is not a known
+// plant is null, so a typo cannot open a third plan for the day.
+function plantName(value) {
+  const digits = trim(value).match(/(\d+)/);
+  if (!digits) return null;
+  const name = `GEX ${Number(digits[1])}`;
+  return PLANTS.includes(name) ? name : null;
+}
+const NO_PLANT = `Choose a plant: ${PLANTS.join(' or ')}`;
 
 // Calendar arithmetic on 'YYYY-MM-DD' strings, anchored at UTC on both sides so
 // the Dubai offset can never move the answer by a day.
@@ -254,7 +269,7 @@ function findChecks(entries = []) {
 // Queries
 // ---------------------------------------------------------------------------
 
-const PLAN_COLS = 'id, plan_date, status, revision, published_at, published_by, created_by, created_at, updated_at';
+const PLAN_COLS = 'id, plan_date, plant, status, revision, published_at, published_by, created_by, created_at, updated_at';
 
 const ENTRY_COLS = [
   'id', 'plan_id', 'position', 'entry_type', 'urgent', 'die_order_id', 'sample_followup_id',
@@ -268,8 +283,11 @@ const ENTRY_SELECT_E = ENTRY_COLS.map(c => `e.${c}`).join(', ');
 const refuse = (status, error) => ({ ok: false, status, error });
 const PAST_PLAN = 'A past plan cannot be changed';
 
-async function findPlan(client, date) {
-  const { rows } = await client.query(`SELECT ${PLAN_COLS} FROM trial_plans WHERE plan_date = $1`, [date]);
+async function findPlan(client, date, plant) {
+  const { rows } = await client.query(
+    `SELECT ${PLAN_COLS} FROM trial_plans WHERE plan_date = $1 AND plant = $2`,
+    [date, plant]
+  );
   return rows[0] || null;
 }
 
@@ -283,11 +301,15 @@ async function entriesOf(client, planId) {
 
 // Everything the page needs for one day. A day nobody has planned yet is not an
 // error: it comes back with no plan and no entries, ready to be built.
-async function planView(client, date, today, { isAdmin = false } = {}) {
-  const plan = await findPlan(client, date);
-  const entries = plan ? await entriesOf(client, plan.id) : [];
+async function planView(client, date, plantInput, today, { isAdmin = false } = {}) {
+  const plant = plantName(plantInput);
+  if (!plant) return refuse(400, NO_PLANT);
+  const plan = await findPlan(client, date, plant);
+  const entries = plan ? await withCustomers(client, await entriesOf(client, plan.id)) : [];
   return {
+    ok: true,
     date,
+    plant,
     plan,
     entries,
     summary: summarise(entries),
@@ -299,23 +321,26 @@ async function planView(client, date, today, { isAdmin = false } = {}) {
 // The first die added to a day creates that day's draft. The no-op update is
 // what makes RETURNING hand back the existing row when two people add the first
 // die at the same moment.
-async function ensurePlan(client, date, userId) {
+async function ensurePlan(client, date, plant, userId) {
   const { rows } = await client.query(
-    `INSERT INTO trial_plans (plan_date, created_by) VALUES ($1, $2)
-     ON CONFLICT (plan_date) DO UPDATE SET plan_date = EXCLUDED.plan_date
+    `INSERT INTO trial_plans (plan_date, plant, created_by) VALUES ($1, $2, $3)
+     ON CONFLICT (plan_date, plant) DO UPDATE SET plan_date = EXCLUDED.plan_date
      RETURNING ${PLAN_COLS}`,
-    [date, userId]
+    [date, plant, userId]
   );
   return rows[0];
 }
 
-async function addEntry(client, date, input, userId, today) {
+async function addEntry(client, date, plantInput, input, userId, today) {
+  const plant = plantName(plantInput);
+  if (!plant) return refuse(400, NO_PLANT);
   if (!planState(date, today).planEditable) return refuse(409, PAST_PLAN);
   const check = validateEntry(input);
   if (!check.ok) return refuse(400, check.error);
   const v = check.value;
+  if (!v.customer) v.customer = await customerFor(client, v.die_no);
 
-  const plan = await ensurePlan(client, date, userId);
+  const plan = await ensurePlan(client, date, plant, userId);
   const last = await client.query(
     'SELECT COALESCE(MAX(position), 0) AS position FROM trial_plan_entries WHERE plan_id = $1',
     [plan.id]
@@ -389,9 +414,11 @@ async function removeEntry(client, id, today) {
 
 // Publishing again after a change is allowed and bumps the revision, so the
 // copy that went out can be told apart from the one that replaced it.
-async function publishPlan(client, date, userId, today) {
+async function publishPlan(client, date, plantInput, userId, today) {
+  const plant = plantName(plantInput);
+  if (!plant) return refuse(400, NO_PLANT);
   if (!planState(date, today).planEditable) return refuse(409, PAST_PLAN);
-  const plan = await findPlan(client, date);
+  const plan = await findPlan(client, date, plant);
   const entries = plan ? await entriesOf(client, plan.id) : [];
   if (!entries.length) return refuse(400, 'Add at least one die before publishing the plan');
 
@@ -484,46 +511,92 @@ async function lastAlloy(client, dieNo) {
   return rows[0]?.alloy || null;
 }
 
+// Most die orders carry no customer name, so a blank customer is looked up the
+// way the rest of the app knows it: the die list for that exact die, then any
+// die of the same profile, then the profile master.
+async function customerFor(client, dieNo) {
+  const die = trim(dieNo);
+  if (!die) return null;
+  const { rows } = await client.query(
+    `WITH d AS (SELECT translate($1, '_', '-') AS die, split_part(translate($1, '_', '-'), '-', 1) AS profile)
+     SELECT customer FROM (
+       SELECT x.customer, 1 AS rank, x.id
+         FROM existing_die_details x, d
+        WHERE x.die_no IN (d.die, translate(d.die, '-', '_')) AND COALESCE(trim(x.customer), '') <> ''
+       UNION ALL
+       SELECT x.customer, 2, x.id
+         FROM existing_die_details x, d
+        WHERE x.profile_number = d.profile AND COALESCE(trim(x.customer), '') <> ''
+       UNION ALL
+       SELECT p.customer_name, 3, p.id
+         FROM profiles p, d
+        WHERE p.profile_number = d.profile AND COALESCE(trim(p.customer_name), '') <> ''
+     ) found
+     ORDER BY rank, id DESC
+     LIMIT 1`,
+    [die]
+  );
+  return rows[0] ? trim(rows[0].customer) : null;
+}
+
+// Entries saved before their customer could be found still show it.
+async function withCustomers(client, entries) {
+  const found = new Map();
+  for (const entry of entries) {
+    if (trim(entry.customer)) continue;
+    const key = trim(entry.die_no);
+    if (!found.has(key)) found.set(key, await customerFor(client, key));
+    entry.customer = found.get(key);
+  }
+  return entries;
+}
+
 // The longest range a summary will cover. A quarter is the widest view the page
 // offers; this is headroom, not a feature.
 const MAX_SUMMARY_DAYS = 100;
 
 // Totals for a range, plus one line per day that had a plan. The caller picks
 // the range, so what counts as "a week" is decided in one place: the page.
-async function rangeSummary(client, from, to) {
+async function rangeSummary(client, from, to, plantInput = null) {
+  // No plant means both plants added together.
+  const plant = trim(plantInput) ? plantName(plantInput) : null;
+  if (trim(plantInput) && !plant) return refuse(400, NO_PLANT);
   if (!isPlanDate(from) || !isPlanDate(to)) return refuse(400, 'from and to must be dates (YYYY-MM-DD)');
   if (from > to) return refuse(400, 'from cannot be after to');
   if (addDays(from, MAX_SUMMARY_DAYS) < to) return refuse(400, `A summary covers at most ${MAX_SUMMARY_DAYS} days`);
 
   const { rows } = await client.query(
-    `SELECT ${ENTRY_SELECT_E}, p.plan_date
+    `SELECT ${ENTRY_SELECT_E}, p.plan_date, p.plant AS plan_plant
        FROM trial_plan_entries e JOIN trial_plans p ON p.id = e.plan_id
-      WHERE p.plan_date BETWEEN $1 AND $2
-      ORDER BY p.plan_date ASC, e.position ASC, e.id ASC`,
-    [from, to]
+      WHERE p.plan_date BETWEEN $1 AND $2 AND ($3::text IS NULL OR p.plant = $3)
+      ORDER BY p.plan_date ASC, p.plant ASC, e.position ASC, e.id ASC`,
+    [from, to, plant]
   );
 
+  // One line per plan: a day and a plant.
   const days = new Map();
   for (const row of rows) {
-    if (!days.has(row.plan_date)) days.set(row.plan_date, []);
-    days.get(row.plan_date).push(row);
+    const key = `${row.plan_date}|${row.plan_plant}`;
+    if (!days.has(key)) days.set(key, { date: row.plan_date, plant: row.plan_plant, entries: [] });
+    days.get(key).entries.push(row);
   }
   return {
     ok: true,
     from,
     to,
+    plant,
     summary: summarise(rows),
-    byDay: [...days.entries()].map(([date, entries]) => {
+    byDay: [...days.values()].map(({ date, plant: dayPlant, entries }) => {
       const { trials, supervised } = summarise(entries);
-      return { date, ...trials, supervised: supervised.planned };
+      return { date, plant: dayPlant, ...trials, supervised: supervised.planned };
     }),
   };
 }
 
 module.exports = {
-  ENTRY_TYPES, OUTCOMES, PLAN_STATUSES, OUT_OF_QUEUE_REASONS, FAIL_REASONS,
+  ENTRY_TYPES, OUTCOMES, PLAN_STATUSES, PLANTS, OUT_OF_QUEUE_REASONS, FAIL_REASONS,
   RESULT_GRACE_DAYS, CORRECTOR_LOAD_FLAG, MAX_SUMMARY_DAYS,
-  addDays, isPlanDate, defaultPlanDate, planState,
+  addDays, isPlanDate, plantName, defaultPlanDate, planState,
   validateEntry, validateOutcome, summarise, findChecks,
-  planView, lastAlloy, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
+  planView, lastAlloy, customerFor, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
 };

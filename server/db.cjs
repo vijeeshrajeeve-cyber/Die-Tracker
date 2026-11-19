@@ -1349,11 +1349,12 @@ const initializeDatabase = async () => {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_sf_no
         ON sample_trials(sample_followup_id, trial_no) WHERE sample_followup_id IS NOT NULL;
 
-      -- The daily trial plan. One row per calendar day; the sheet it replaces was
-      -- one sheet per day for every press, so the day is the key, not the plant.
+      -- The daily trial plan. One row per calendar day per plant: each plant
+      -- plans its own presses and publishes its own schedule.
       CREATE TABLE IF NOT EXISTS trial_plans (
           id            SERIAL PRIMARY KEY,
-          plan_date     DATE NOT NULL UNIQUE,
+          plan_date     DATE NOT NULL,
+          plant         TEXT NOT NULL DEFAULT 'GEX 1',
           status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
           revision      INTEGER NOT NULL DEFAULT 0,
           published_at  TIMESTAMP,
@@ -1400,6 +1401,30 @@ const initializeDatabase = async () => {
       );
 
       CREATE INDEX IF NOT EXISTS idx_trial_plan_entries_plan ON trial_plan_entries(plan_id, position);
+
+      -- Plans were first one per day for every plant. A plan made then takes the
+      -- plant most of its dies came from ('GEX 01' and 'GEX 1' are the same plant).
+      ALTER TABLE trial_plans ADD COLUMN IF NOT EXISTS plant TEXT;
+      UPDATE trial_plans p SET plant = COALESCE((
+          SELECT 'GEX ' || (substring(e.plant FROM '[0-9]+'))::int
+            FROM trial_plan_entries e
+           WHERE e.plan_id = p.id AND e.plant ~ '[0-9]'
+           GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT 1
+        ), 'GEX 1')
+       WHERE p.plant IS NULL;
+      ALTER TABLE trial_plans ALTER COLUMN plant SET DEFAULT 'GEX 1';
+      ALTER TABLE trial_plans ALTER COLUMN plant SET NOT NULL;
+      ALTER TABLE trial_plans DROP CONSTRAINT IF EXISTS trial_plans_plan_date_key;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_plans_day_plant ON trial_plans(plan_date, plant);
+    `);
+
+    // The published trial schedule goes to each plant's own list, kept where
+    // every other email's recipients are kept.
+    await client.query(`
+      INSERT INTO email_templates (name, subject_template, body_template, category) VALUES
+      ('Trial Plan - GEX 1', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan'),
+      ('Trial Plan - GEX 2', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan')
+      ON CONFLICT (name) DO NOTHING
     `);
 
     // One-time: fill the daily-summary ledger with everything that happened

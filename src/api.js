@@ -896,13 +896,18 @@ export const sampleTrialsAPI = {
 };
 
 // The daily trial plan. Dates are 'YYYY-MM-DD' local days.
+// Every plan belongs to one plant: each plant plans and publishes its own day.
+const planPath = (date, plant, tail = '') =>
+    `/trial-plans/${encodeURIComponent(date)}${tail}?${new URLSearchParams({ plant })}`;
+
 export const trialPlansAPI = {
     meta: async () => apiRequest('/trial-plans/meta'),
-    // { date, plan, entries, summary, checks, state: { planEditable, resultsOpen, locked } }
-    get: async (date) => apiRequest(`/trial-plans/${encodeURIComponent(date)}`),
-    summary: async (from, to) => apiRequest(`/trial-plans/summary?${new URLSearchParams({ from, to })}`),
+    // { date, plant, plan, entries, summary, checks, state: { planEditable, resultsOpen, locked } }
+    get: async (date, plant) => apiRequest(planPath(date, plant)),
+    // plant: '' for both plants added together
+    summary: async (from, to, plant = '') => apiRequest(`/trial-plans/summary?${new URLSearchParams({ from, to, ...(plant ? { plant } : {}) })}`),
     lastAlloy: async (dieNo) => apiRequest(`/trial-plans/last-alloy/${encodeURIComponent(dieNo)}`),
-    addEntry: async (date, entry) => apiRequest(`/trial-plans/${encodeURIComponent(date)}/entries`, {
+    addEntry: async (date, plant, entry) => apiRequest(planPath(date, plant, '/entries'), {
         method: 'POST',
         body: JSON.stringify(entry),
     }),
@@ -911,7 +916,21 @@ export const trialPlansAPI = {
         body: JSON.stringify(entry),
     }),
     removeEntry: async (id) => apiRequest(`/trial-plans/entries/${id}`, { method: 'DELETE' }),
-    publish: async (date) => apiRequest(`/trial-plans/${encodeURIComponent(date)}/publish`, { method: 'POST' }),
+    // { plan, entries, email: { status: 'sent' | 'skipped' | 'failed', message } }
+    publish: async (date, plant) => apiRequest(planPath(date, plant, '/publish'), { method: 'POST' }),
+    // The printable schedule of a published plan, as a Blob.
+    pdf: async (date, plant) => {
+        const token = getToken();
+        const response = await fetch(`${API_BASE_URL}${planPath(date, plant, '/pdf')}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
     // { outcome, fail_reason?, comments?, productivity_kgh?, recovery_pct? }
     recordOutcome: async (id, result) => apiRequest(`/trial-plans/entries/${id}/outcome`, {
         method: 'PUT',

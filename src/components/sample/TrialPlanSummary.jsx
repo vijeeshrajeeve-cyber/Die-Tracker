@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
 import { trialPlansAPI } from '../../api';
 import {
-  formatPlanDate, periodRange, previousPeriod, nextPeriod, periodLabel, showPct, delta, plural,
+  formatPlanDate, periodRange, previousPeriod, nextPeriod, periodLabel, showPct, delta, plural, TRIAL_PLANTS,
 } from '../../utils/trialPlanView';
 
 function Kpi({ label, value, note, change, tone }) {
@@ -16,14 +16,15 @@ function Kpi({ label, value, note, change, tone }) {
   );
 }
 
-// Week (Monday to Saturday) or month totals, against the period before.
-export default function TrialPlanSummary({ today, viewSwitch, onOpenDay }) {
+// Week (Monday to Saturday) or month totals, against the period before. One
+// plant, or both added together (plant '').
+export default function TrialPlanSummary({ today, viewSwitch, onOpenDay, plant = '', setPlant }) {
   const [kind, setKind] = useState('week');
   const [range, setRange] = useState(() => periodRange('week', today));
   // Kept with the range it answers, so a stale answer is never shown for a new range.
   const [result, setResult] = useState({ key: null });
   const request = useRef(0);
-  const key = `${range.from}:${range.to}`;
+  const key = `${range.from}:${range.to}:${plant}`;
 
   const switchKind = (next) => {
     setKind(next);
@@ -32,17 +33,17 @@ export default function TrialPlanSummary({ today, viewSwitch, onOpenDay }) {
 
   useEffect(() => {
     const mine = ++request.current;
-    const asked = `${range.from}:${range.to}`;
+    const asked = `${range.from}:${range.to}:${plant}`;
     const before = previousPeriod(kind, range.from);
     Promise.all([
-      trialPlansAPI.summary(range.from, range.to),
-      trialPlansAPI.summary(before.from, before.to).catch(() => null),
+      trialPlansAPI.summary(range.from, range.to, plant),
+      trialPlansAPI.summary(before.from, before.to, plant).catch(() => null),
     ]).then(([current, prior]) => {
       if (mine === request.current) setResult({ key: asked, data: current, previous: prior });
     }).catch(err => {
       if (mine === request.current) setResult({ key: asked, error: err.message || 'Could not load the summary' });
     });
-  }, [kind, range]);
+  }, [kind, range, plant]);
 
   const fresh = result.key === key;
   const data = fresh ? result.data : null;
@@ -52,6 +53,8 @@ export default function TrialPlanSummary({ today, viewSwitch, onOpenDay }) {
   const t = data?.summary.trials;
   const p = previous?.summary.trials;
   const word = kind === 'week' ? 'week' : 'month';
+  const where = plant || 'All plants';
+  const allPlants = !plant;
 
   return (
     <>
@@ -60,13 +63,19 @@ export default function TrialPlanSummary({ today, viewSwitch, onOpenDay }) {
           <div className="sf-icon-tile" aria-hidden="true"><BarChart3 size={24} /></div>
           <div>
             <h1>Sample Followup</h1>
-            <p>Trial summary · {periodLabel(kind, range)}{kind === 'week' ? ' · Monday to Saturday' : ''}</p>
+            <p>Trial summary · {where} · {periodLabel(kind, range)}{kind === 'week' ? ' · Monday to Saturday' : ''}</p>
           </div>
         </div>
       </header>
 
       <div className="tp-toolbar">
         {viewSwitch}
+        <div className="sf-segmented" role="group" aria-label="Plant">
+          <button type="button" aria-pressed={allPlants} onClick={() => setPlant('')}>All plants</button>
+          {TRIAL_PLANTS.map(p => (
+            <button key={p} type="button" aria-pressed={plant === p} onClick={() => setPlant(p)}>{p}</button>
+          ))}
+        </div>
         <div className="sf-segmented" role="group" aria-label="Period">
           <button type="button" aria-pressed={kind === 'week'} onClick={() => switchKind('week')}>Week</button>
           <button type="button" aria-pressed={kind === 'month'} onClick={() => switchKind('month')}>Month</button>
@@ -85,7 +94,7 @@ export default function TrialPlanSummary({ today, viewSwitch, onOpenDay }) {
       {data && (
         <>
           <section className="sf-card tp-summary-strip" aria-label="Totals">
-            <h2 className="sf-card-label">Trials this {word}{previous ? ` · compared with the ${word} before` : ''}</h2>
+            <h2 className="sf-card-label">Trials this {word} · {where}{previous ? ` · compared with the ${word} before` : ''}</h2>
             <div className="tp-stats">
               <Kpi label="Planned" value={t.planned} tone="accent" change={delta(t.planned, p?.planned)} />
               <Kpi label="Done" value={t.done} note={`of ${t.planned} run`} tone="blue" change={delta(t.done, p?.done)} />
@@ -100,15 +109,16 @@ export default function TrialPlanSummary({ today, viewSwitch, onOpenDay }) {
 
           <div className="tp-summary-grid">
             <section className="sf-card tp-plan" aria-labelledby="tp-byday-title">
-              <header className="sf-list-head"><h2 id="tp-byday-title">By day</h2><span>{plural(data.byDay.length, 'planned day')}</span></header>
+              <header className="sf-list-head"><h2 id="tp-byday-title">By day</h2><span>{plural(data.byDay.length, allPlants ? 'plan' : 'planned day')}</span></header>
               {data.byDay.length ? (
                 <div className="tp-table-scroll">
                   <table className="tp-table tp-num-table">
-                    <thead><tr><th>Day</th><th>Planned</th><th>Done</th><th>OK</th><th>Not OK</th><th>Not run</th><th>Run</th><th>Fail</th><th>Supervised</th></tr></thead>
+                    <thead><tr><th>Day</th>{allPlants && <th>Plant</th>}<th>Planned</th><th>Done</th><th>OK</th><th>Not OK</th><th>Not run</th><th>Run</th><th>Fail</th><th>Supervised</th></tr></thead>
                     <tbody>
                       {data.byDay.map(d => (
-                        <tr key={d.date}>
-                          <td><button type="button" className="sf-text-button" onClick={() => onOpenDay(d.date)}>{formatPlanDate(d.date)}</button></td>
+                        <tr key={`${d.date}|${d.plant}`}>
+                          <td><button type="button" className="sf-text-button" onClick={() => onOpenDay(d.date, d.plant)}>{formatPlanDate(d.date)}</button></td>
+                          {allPlants && <td>{d.plant}</td>}
                           <td>{d.planned}</td><td>{d.done}</td><td>{d.ok}</td><td>{d.notOk}</td><td>{d.notRun}</td>
                           <td>{showPct(d.runRatio)}</td><td>{showPct(d.failRatio)}</td><td>{d.supervised}</td>
                         </tr>

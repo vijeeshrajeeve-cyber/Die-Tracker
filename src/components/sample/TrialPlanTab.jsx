@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CalendarCheck, ChevronLeft, ChevronRight, Download, Lock, Plus, Search, Send, Trash2, X,
+  CalendarCheck, ChevronLeft, ChevronRight, Download, FileText, Lock, Plus, Search, Send, Trash2, X,
 } from 'lucide-react';
 import { trialPlansAPI, toolingsAPI } from '../../api';
 import { dialogs } from '../ui/DialogProvider';
@@ -11,7 +11,7 @@ import { validateTrialNumbers } from '../../utils/enhancementVerdict';
 import {
   addDays, formatPlanDate, formatShortDate, relativeDayLabel, dieKey, availableToPlan, searchSamples,
   isWaitingForTrial, needsOutOfQueueReason, entryFromSample, editableFields, groupByPress, pressNote,
-  toolingClashNotes, checkSentence, resultOf, showPct, plural, planExportRows,
+  toolingClashNotes, checkSentence, resultOf, showPct, plural, planExportRows, TRIAL_PLANTS,
 } from '../../utils/trialPlanView';
 
 // Shown until /meta answers, and if it never does.
@@ -20,6 +20,7 @@ const FALLBACK_META = {
   failReasons: [],
   outOfQueueReasons: ['Re-trial after correction', 'Customer feedback', 'Design enhancement', 'Other'],
   resultGraceDays: 1,
+  plants: TRIAL_PLANTS,
 };
 
 const toast = (setToast, message, type = 'success') => {
@@ -37,10 +38,15 @@ async function prefillFor(die, plant) {
   return { toolings: [...new Set(toolings.filter(Boolean))], alloy };
 }
 
-function DateBar({ date, today, defaultDate, onChange, viewSwitch }) {
+function DateBar({ date, today, defaultDate, onChange, viewSwitch, plants, plant, onPlant }) {
   return (
     <div className="tp-toolbar">
       {viewSwitch}
+      <div className="sf-segmented" role="group" aria-label="Plant">
+        {plants.map(p => (
+          <button key={p} type="button" aria-pressed={plant === p} onClick={() => onPlant(p)}>{p}</button>
+        ))}
+      </div>
       <div className="tp-datebar">
         <button type="button" className="tp-day-step" aria-label="Previous day" onClick={() => onChange(addDays(date, -1))}><ChevronLeft size={16} /></button>
         <label className="tp-date-input">
@@ -431,14 +437,14 @@ function ResultsList({ entries, selectedId, canRecord, onPick }) {
 }
 
 export default function TrialPlanTab({
-  date, setDate, today, viewSwitch, samples, sampleTrials, plantFilter,
+  date, setDate, plant, setPlant, today, viewSwitch, samples, sampleTrials,
   correctors, correctorsError, setToast, onTrialsChanged,
 }) {
   const [meta, setMeta] = useState(FALLBACK_META);
   const [defaultDate, setDefaultDate] = useState(addDays(today, 1));
-  // Each answer is kept with the day it is for, so a slow answer for the day
-  // before is never shown under the day now picked.
-  const [loaded, setLoaded] = useState({ date: null });
+  // Each answer is kept with the day and plant it is for, so a slow answer for
+  // another day or plant is never shown under the one now picked.
+  const [loaded, setLoaded] = useState({ key: null });
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState(null); // 'plan' | 'results', when both are possible
   const [adding, setAdding] = useState(null); // 'Trial' | 'Supervised'
@@ -447,6 +453,7 @@ export default function TrialPlanTab({
   const request = useRef(0);
 
   const planDate = date || defaultDate;
+  const planKey = `${planDate}|${plant}`;
 
   useEffect(() => {
     trialPlansAPI.meta().then(m => {
@@ -458,24 +465,25 @@ export default function TrialPlanTab({
   const load = useCallback(async () => {
     const mine = ++request.current;
     try {
-      const next = await trialPlansAPI.get(planDate);
-      if (mine === request.current) setLoaded({ date: planDate, view: next });
+      const next = await trialPlansAPI.get(planDate, plant);
+      if (mine === request.current) setLoaded({ key: `${planDate}|${plant}`, view: next });
     } catch (error) {
-      if (mine === request.current) setLoaded({ date: planDate, error: error.message || 'Could not load the plan' });
+      if (mine === request.current) setLoaded({ key: `${planDate}|${plant}`, error: error.message || 'Could not load the plan' });
     }
-  }, [planDate]);
+  }, [planDate, plant]);
 
   useEffect(() => { load(); }, [load]);
 
-  const view = loaded.date === planDate ? loaded.view || null : null;
-  const loadError = loaded.date === planDate ? loaded.error || '' : '';
+  const view = loaded.key === planKey ? loaded.view || null : null;
+  const loadError = loaded.key === planKey ? loaded.error || '' : '';
 
-  const changeDate = (next) => {
+  const reset = () => {
     setPicked(null);
     setAdding(null);
     setMode(null);
-    setDate(next);
   };
+  const changeDate = (next) => { reset(); setDate(next); };
+  const changePlant = (next) => { reset(); setPlant(next); };
 
   const entries = useMemo(() => view?.entries || [], [view]);
   const plan = view?.plan || null;
@@ -522,7 +530,7 @@ export default function TrialPlanTab({
 
   const addFromSample = async (sample, { entryType = 'Trial', urgent = false, reason = null } = {}) => run(async () => {
     const prefill = await prefillFor(sample.die, sample.plant);
-    return trialPlansAPI.addEntry(planDate, entryFromSample(sample, { ...prefill, entryType, urgent, reason }));
+    return trialPlansAPI.addEntry(planDate, plant, entryFromSample(sample, { ...prefill, entryType, urgent, reason }));
   }, `${sample.die} added to the plan`);
 
   const addOther = async ({ sample, freeDie, entryType, urgent, reason }) => {
@@ -532,9 +540,9 @@ export default function TrialPlanTab({
       return;
     }
     const out = await run(async () => {
-      const prefill = await prefillFor(freeDie, null);
-      return trialPlansAPI.addEntry(planDate, {
-        die_no: freeDie, entry_type: entryType, urgent, out_of_queue_reason: reason || null,
+      const prefill = await prefillFor(freeDie, plant);
+      return trialPlansAPI.addEntry(planDate, plant, {
+        die_no: freeDie, plant, entry_type: entryType, urgent, out_of_queue_reason: reason || null,
         tooling: prefill.toolings.join(', ').slice(0, 120) || null, alloy: prefill.alloy,
       });
     }, `${freeDie} added to the plan`);
@@ -561,13 +569,36 @@ export default function TrialPlanTab({
     const ok = await dialogs.confirm({
       title: again ? 'Publish the plan again' : 'Publish the plan',
       message: [
-        `${plural(entries.length, 'die')} for ${formatPlanDate(planDate)}.`,
+        `${plural(entries.length, 'die')} for ${plant} on ${formatPlanDate(planDate)}.`,
         checks.length ? `${plural(checks.length, 'check')} still open: ${checks.map(checkSentence).join(' ')}` : '',
         again ? 'This replaces the copy published earlier.' : 'Once published, results can be recorded on the day.',
+        `The PDF schedule downloads now and is emailed to the ${plant} trial plan list.`,
       ].filter(Boolean).join(' '),
       confirmLabel: again ? 'Publish again' : 'Publish',
     });
-    if (ok) run(() => trialPlansAPI.publish(planDate), out => `Plan published${out?.plan?.revision > 1 ? ` (revision ${out.plan.revision})` : ''}`);
+    if (!ok) return;
+    const out = await run(() => trialPlansAPI.publish(planDate, plant));
+    if (!out) return;
+    // The plan is published either way; the email outcome rides along with it.
+    const done = `${plant} plan published${out.plan?.revision > 1 ? ` (revision ${out.plan.revision})` : ''}.`;
+    toast(setToast, [done, out.email?.message].filter(Boolean).join(' '), out.email?.status === 'sent' ? 'success' : 'warning');
+    downloadPdf();
+  };
+
+  const downloadPdf = async () => {
+    try {
+      const blob = await trialPlansAPI.pdf(planDate, plant);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Trial-schedule-${plant.replace(/\s+/g, '-')}-${planDate}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (error) {
+      toast(setToast, `Could not download the PDF: ${error.message}`, 'error');
+    }
   };
 
   const pickEntry = (entry, outcome = null) => {
@@ -595,7 +626,7 @@ export default function TrialPlanTab({
   };
 
   const exportPlan = () => exportToExcel({
-    filename: `trial_plan_${planDate}`,
+    filename: `trial_plan_${plant.replace(/\s+/g, '_')}_${planDate}`,
     sheetName: 'Trial plan',
     rows: planExportRows(entries),
     columns: [
@@ -613,15 +644,15 @@ export default function TrialPlanTab({
     ],
   }).catch(error => toast(setToast, `Export failed: ${error.message}`, 'error'));
 
-  const queue = availableToPlan(samples, entries, { plant: plantFilter });
+  const queue = availableToPlan(samples, entries, { plant });
   const summary = view?.summary;
   const checks = view?.checks || [];
   const recordingEntry = picked ? entries.find(e => e.id === picked) : null;
   const awaiting = summary ? summary.trials.awaiting + summary.supervised.awaiting : 0;
 
-  const subtitle = !view ? `Trial plan for ${formatPlanDate(planDate)}`
+  const subtitle = !view ? `${plant} trial plan for ${formatPlanDate(planDate)}`
     : [
-      `Trial plan for ${planDate === defaultDate ? 'tomorrow, ' : ''}${formatPlanDate(planDate)}`,
+      `${plant} trial plan for ${planDate === defaultDate ? 'tomorrow, ' : ''}${formatPlanDate(planDate)}`,
       !plan ? 'nothing planned yet' : published ? `published${plan.revision > 1 ? ` · revision ${plan.revision}` : ''}` : 'draft, not published yet',
       canRecord && awaiting ? `${plural(awaiting, 'result')} still to record` : null,
       state.locked ? 'closed' : null,
@@ -640,6 +671,9 @@ export default function TrialPlanTab({
         <div className="sf-header-actions">
           {plan && <span className={`tp-status-chip${published ? ' is-published' : ''}`}>{published ? 'Published' : 'Draft'}</span>}
           <button type="button" className="sf-button sf-button-header" disabled={!entries.length} onClick={exportPlan}><Download size={16} />Export Excel</button>
+          {published && entries.length > 0 && (
+            <button type="button" className="sf-button sf-button-header" onClick={downloadPdf}><FileText size={16} />PDF schedule</button>
+          )}
           {canEditPlan && (
             <button type="button" className="sf-button sf-button-header sf-button-primary" disabled={busy || !entries.length} onClick={publish}>
               <Send size={16} />{published ? 'Publish again' : 'Publish plan'}
@@ -648,7 +682,8 @@ export default function TrialPlanTab({
         </div>
       </header>
 
-      <DateBar date={planDate} today={today} defaultDate={defaultDate} onChange={changeDate} viewSwitch={viewSwitch} />
+      <DateBar date={planDate} today={today} defaultDate={defaultDate} onChange={changeDate} viewSwitch={viewSwitch}
+        plants={meta.plants} plant={plant} onPlant={changePlant} />
 
       {loadError && <div className="sf-card tp-banner tp-banner-error" role="alert">{loadError} <button type="button" className="sf-text-button" onClick={load}>Try again</button></div>}
       {!view && !loadError && <div className="sf-card tp-banner">Loading the plan…</div>}
@@ -658,7 +693,7 @@ export default function TrialPlanTab({
           {state.locked && (
             <div className="tp-banner tp-banner-lock">
               <Lock size={18} aria-hidden="true" />
-              <p><strong>Past plan, view only.</strong> <span>The plan and its results are locked and cannot be changed. You can export it.</span></p>
+              <p><strong>Past plan, view only.</strong> <span>The plan and its results are locked and cannot be changed. You can export it or download the PDF schedule.</span></p>
             </div>
           )}
           {!state.locked && !canEditPlan && plan && !published && (
@@ -717,7 +752,7 @@ export default function TrialPlanTab({
                 <section className="sf-card tp-queue" aria-labelledby="tp-queue-title">
                   <header className="sf-list-head">
                     <h2 id="tp-queue-title">Available to plan</h2>
-                    <span>{plantFilter === 'All' ? 'from Sample Followup' : `${plantFilter} only`}</span>
+                    <span>{plant} dies from Sample Followup</span>
                   </header>
                   {adding && (
                     <AddDiePanel samples={samples} entries={entries} meta={meta} defaultType={adding} busy={busy}
@@ -737,7 +772,7 @@ export default function TrialPlanTab({
                       <button type="button" className="sf-button sf-button-sm sf-button-tint" disabled={busy} onClick={() => addFromSample(s)}>Add</button>
                     </div>
                   ))}
-                  {!queue.length && <p className="tp-empty-note">No dies are waiting for trial{plantFilter !== 'All' ? ` at ${plantFilter}` : ''}.</p>}
+                  {!queue.length && <p className="tp-empty-note">No {plant} dies are waiting for trial.</p>}
                   <div className="tp-queue-foot">
                     <button type="button" className="tp-dashed" onClick={() => setAdding('Trial')}>+ Add another die (re-trial, approved, or not in Sample Followup)</button>
                     <button type="button" className="tp-dashed" onClick={() => setAdding('Supervised')}>+ Add any die as a supervised run for this day</button>
@@ -752,7 +787,7 @@ export default function TrialPlanTab({
                   {entries.length ? (
                     <PlanTable entries={entries} checks={checks} meta={meta} correctors={correctors} correctorsError={correctorsError}
                       busy={busy} onSave={saveEntry} onRemove={removeEntry} />
-                  ) : <p className="tp-empty-note">Add dies from the list to start the plan for {formatPlanDate(planDate)}.</p>}
+                  ) : <p className="tp-empty-note">Add dies from the list to start the {plant} plan for {formatPlanDate(planDate)}.</p>}
                 </section>
               </div>
             </>
@@ -760,7 +795,7 @@ export default function TrialPlanTab({
             <>
               <TrialSummaryStrip summary={summary} />
               {!entries.length ? (
-                <div className="sf-card sf-empty"><p>Nothing was planned for {formatPlanDate(planDate)}.</p></div>
+                <div className="sf-card sf-empty"><p>Nothing was planned at {plant} for {formatPlanDate(planDate)}.</p></div>
               ) : state.locked || !canRecord ? (
                 <section className="sf-card tp-plan" aria-labelledby="tp-past-title">
                   <header className="sf-list-head">

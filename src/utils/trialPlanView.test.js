@@ -130,3 +130,13 @@ test('the export lists every entry under its press with its result', () => {
   ]);
   assert.deepEqual(rows.map(r => [r.press, r.die_no, r.result, r.urgent]), [['Press 2', 'a', '', ''], ['Press 6', 'b', 'Not OK · Shape', 'Yes']]);
 });
+
+test('the queue for a plant takes either spelling of that plant and nothing else', async () => {
+  const { availableToPlan, plantKey } = await import('./trialPlanView.js');
+  assert.equal(plantKey('GEX 01'), 'GEX 1');
+  assert.equal(plantKey('gex2'), 'GEX 2');
+  const waiting = (die, plant) => ({ id: die, die, plant, stage: 'Pending', die_received_date: '2026-11-10', days: 3 });
+  const samples = [waiting('1-1', 'GEX 1'), waiting('2-1', 'GEX 01'), waiting('3-1', 'GEX 2')];
+  assert.deepEqual(availableToPlan(samples, [], { plant: 'GEX 1' }).map(s => s.die), ['1-1', '2-1']);
+  assert.deepEqual(availableToPlan(samples, [], { plant: 'GEX 2' }).map(s => s.die), ['3-1']);
+});

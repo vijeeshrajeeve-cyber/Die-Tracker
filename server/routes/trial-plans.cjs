@@ -1,6 +1,7 @@
 const express = require('express');
 const { pool } = require('../db.cjs');
 const svc = require('../services/trialPlans.cjs');
+const publishing = require('../services/trialPlanPublish.cjs');
 const { todayLocal } = require('../services/dates.cjs');
 
 const router = express.Router();
@@ -57,14 +58,15 @@ router.get('/meta', (req, res) => {
         failReasons: svc.FAIL_REASONS,
         outOfQueueReasons: svc.OUT_OF_QUEUE_REASONS,
         resultGraceDays: svc.RESULT_GRACE_DAYS,
+        plants: svc.PLANTS,
     });
 });
 
 router.get('/summary', async (req, res) => {
     try {
-        const out = await svc.rangeSummary(pool, req.query.from, req.query.to);
+        const out = await svc.rangeSummary(pool, req.query.from, req.query.to, req.query.plant);
         if (!out.ok) return res.status(out.status).json({ error: out.error });
-        res.json({ from: out.from, to: out.to, summary: out.summary, byDay: out.byDay });
+        res.json({ from: out.from, to: out.to, plant: out.plant, summary: out.summary, byDay: out.byDay });
     } catch (error) {
         fail(res, 'Trial plan summary')(error);
     }
@@ -108,17 +110,38 @@ router.put('/entries/:id/outcome', withId, async (req, res) => {
     }
 });
 
+// Each plant has its own plan for the day, named by ?plant=.
 router.get('/:date', withDate, async (req, res) => {
     try {
-        res.json(await svc.planView(pool, req.params.date, today(), { isAdmin: isAdmin(req) }));
+        const out = await svc.planView(pool, req.params.date, req.query.plant, today(), { isAdmin: isAdmin(req) });
+        if (!out.ok) return res.status(out.status).json({ error: out.error });
+        const { ok: _ok, ...view } = out;
+        res.json(view);
     } catch (error) {
         fail(res, 'Get trial plan')(error);
     }
 });
 
+// The printable schedule, for any plan that has been published.
+router.get('/:date/pdf', withDate, async (req, res) => {
+    try {
+        const view = await svc.planView(pool, req.params.date, req.query.plant, today());
+        if (!view.ok) return res.status(view.status).json({ error: view.error });
+        if (!view.plan || view.plan.status !== 'published' || !view.entries.length) {
+            return res.status(404).json({ error: 'This plan has not been published yet' });
+        }
+        const bytes = await publishing.renderPlanPdf(pool, view);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${publishing.fileName(view)}"`);
+        res.send(Buffer.from(bytes));
+    } catch (error) {
+        fail(res, 'Trial plan PDF')(error);
+    }
+});
+
 router.post('/:date/entries', withDate, async (req, res) => {
     try {
-        const out = await inTransaction(client => svc.addEntry(client, req.params.date, req.body, req.user.id, today()));
+        const out = await inTransaction(client => svc.addEntry(client, req.params.date, req.query.plant, req.body, req.user.id, today()));
         if (!out.ok) return res.status(out.status).json({ error: out.error });
         res.status(201).json({ entry: out.row, message: 'Added to the plan' });
     } catch (error) {
@@ -128,9 +151,20 @@ router.post('/:date/entries', withDate, async (req, res) => {
 
 router.post('/:date/publish', withDate, async (req, res) => {
     try {
-        const out = await inTransaction(client => svc.publishPlan(client, req.params.date, req.user.id, today()));
+        const out = await inTransaction(client => svc.publishPlan(client, req.params.date, req.query.plant, req.user.id, today()));
         if (!out.ok) return res.status(out.status).json({ error: out.error });
-        res.json({ plan: out.plan, entries: out.entries, message: 'Plan published' });
+
+        // After the commit: the plan is published whatever the mail server says.
+        let email;
+        try {
+            const view = await svc.planView(pool, req.params.date, req.query.plant, today());
+            const bytes = await publishing.renderPlanPdf(pool, view);
+            email = await publishing.emailPlan(pool, view, bytes, { sentBy: req.user.id });
+        } catch (error) {
+            console.error('Trial plan publish email error:', error);
+            email = { status: 'failed', message: 'The plan is published but the schedule could not be emailed' };
+        }
+        res.json({ plan: out.plan, entries: out.entries, email, message: 'Plan published' });
     } catch (error) {
         fail(res, 'Publish trial plan')(error);
     }

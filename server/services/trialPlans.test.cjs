@@ -220,29 +220,31 @@ const USER = { id: 5, role: 'user' };
 
 test('adding to a past day is refused before anything is written', async () => {
   const client = fakeClient([]);
-  const out = await plans.addEntry(client, '2026-11-17', { die_no: '1' }, 5, TODAY);
+  const out = await plans.addEntry(client, '2026-11-17', 'GEX 1', { die_no: '1' }, 5, TODAY);
   assert.equal(out.status, 409);
   assert.equal(client.log.length, 0);
 });
 
 test('the first die added to a day creates the draft and takes position 1', async () => {
   const client = fakeClient([
+    [/^WITH d AS/, { rows: [] }],
     [/^INSERT INTO trial_plans/, { rows: [{ id: 7, plan_date: TOMORROW, status: 'draft' }] }],
     [/^SELECT COALESCE\(MAX\(position\)/, { rows: [{ position: 0 }] }],
     [/^INSERT INTO trial_plan_entries/, (params) => ({ rows: [{ id: 31, position: params[1], die_no: params[6] }] })],
   ]);
-  const out = await plans.addEntry(client, TOMORROW, { die_no: '32140-401', press: 'Press 4' }, 5, TODAY);
+  const out = await plans.addEntry(client, TOMORROW, 'GEX 1', { die_no: '32140-401', press: 'Press 4' }, 5, TODAY);
   assert.equal(out.ok, true);
   assert.deepEqual(out.row, { id: 31, position: 1, die_no: '32140-401' });
 });
 
 test('the same die twice on one day is a 409 that names the die', async () => {
   const client = fakeClient([
+    [/^WITH d AS/, { rows: [] }],
     [/^INSERT INTO trial_plans/, { rows: [{ id: 7 }] }],
     [/^SELECT COALESCE\(MAX\(position\)/, { rows: [{ position: 3 }] }],
     [/^INSERT INTO trial_plan_entries/, () => { throw Object.assign(new Error('dup'), { code: '23505' }); }],
   ]);
-  const out = await plans.addEntry(client, TOMORROW, { die_no: '32140-401' }, 5, TODAY);
+  const out = await plans.addEntry(client, TOMORROW, 'GEX 1', { die_no: '32140-401' }, 5, TODAY);
   assert.equal(out.status, 409);
   assert.match(out.error, /32140-401/);
 });
@@ -256,7 +258,7 @@ test('an entry with a result cannot be removed from the plan', async () => {
 
 test('an empty plan cannot be published', async () => {
   const client = fakeClient([[/^SELECT id, plan_date/, { rows: [] }]]);
-  const out = await plans.publishPlan(client, TOMORROW, 5, TODAY);
+  const out = await plans.publishPlan(client, TOMORROW, 'GEX 1', 5, TODAY);
   assert.equal(out.status, 400);
   assert.ok(!client.has('UPDATE'));
 });
@@ -362,4 +364,43 @@ test('the last alloy is the newest planned one, matching either die spelling', a
   assert.deepEqual(client.log[0].params, ['32140_401']);
   assert.match(client.log[0].q, /ORDER BY p\.plan_date DESC/);
   assert.equal(await plans.lastAlloy(fakeClient([]), '  '), null);
+});
+
+test('a blank customer is filled from the die list when the die is added', async () => {
+  const client = fakeClient([
+    [/^WITH d AS/, { rows: [{ customer: ' Gulf Extrusions ' }] }],
+    [/^INSERT INTO trial_plans/, { rows: [{ id: 7 }] }],
+    [/^SELECT COALESCE\(MAX\(position\)/, { rows: [{ position: 0 }] }],
+    [/^INSERT INTO trial_plan_entries/, (params) => ({ rows: [{ id: 31, customer: params[9] }] })],
+  ]);
+  const out = await plans.addEntry(client, TOMORROW, 'GEX 1', { die_no: '12158_504' }, 5, TODAY);
+  assert.equal(out.row.customer, 'Gulf Extrusions');
+  assert.deepEqual(client.log[0].params, ['12158_504']);
+  assert.match(client.log[0].q, /existing_die_details.*profile_number = d\.profile.*FROM profiles/);
+});
+
+test('a customer typed on the entry is kept, with no lookup', async () => {
+  const client = fakeClient([
+    [/^INSERT INTO trial_plans/, { rows: [{ id: 7 }] }],
+    [/^SELECT COALESCE\(MAX\(position\)/, { rows: [{ position: 0 }] }],
+    [/^INSERT INTO trial_plan_entries/, (params) => ({ rows: [{ id: 31, customer: params[9] }] })],
+  ]);
+  const out = await plans.addEntry(client, TOMORROW, 'GEX 1', { die_no: '12158-504', customer: 'Customer A' }, 5, TODAY);
+  assert.equal(out.row.customer, 'Customer A');
+  assert.ok(!client.has('WITH d AS'));
+});
+
+test('a plan shows the customer for entries saved without one, looking each die up once', async () => {
+  const client = fakeClient([
+    [/^SELECT .* FROM trial_plans WHERE plan_date/, { rows: [{ id: 7, plan_date: TOMORROW, status: 'draft' }] }],
+    [/FROM trial_plan_entries WHERE plan_id/, { rows: [
+      dbEntry({ id: 1, die_no: '12158-504', customer: null }),
+      dbEntry({ id: 2, die_no: '12158-504', customer: '' }),
+      dbEntry({ id: 3, die_no: '05428-501', customer: 'Kept' }),
+    ] }],
+    [/^WITH d AS/, { rows: [{ customer: 'Gulf Extrusions' }] }],
+  ]);
+  const view = await plans.planView(client, TOMORROW, 'GEX 1', TODAY);
+  assert.deepEqual(view.entries.map(e => e.customer), ['Gulf Extrusions', 'Gulf Extrusions', 'Kept']);
+  assert.equal(client.log.filter(({ q }) => q.startsWith('WITH d AS')).length, 1);
 });

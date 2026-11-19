@@ -82,11 +82,21 @@ export const isWaitingForTrial = (sample) => Boolean(sample) && sample.stage ===
 
 // The "Available to plan" list: waiting dies not already on this day's plan,
 // longest wait first.
+// Each plant plans its own day. The server's list (meta.plants) is the record;
+// this is what the page shows before meta has loaded.
+export const TRIAL_PLANTS = ['GEX 1', 'GEX 2'];
+
+// 'GEX 01', 'gex1' and 'GEX 1' are one plant, as on the server.
+export const plantKey = (value) => {
+  const digits = String(value ?? '').match(/(\d+)/);
+  return digits ? `GEX ${Number(digits[1])}` : String(value ?? '').trim();
+};
+
 export const availableToPlan = (samples, entries, { plant = 'All' } = {}) => {
   const planned = new Set((entries || []).map(e => dieKey(e.die_no)));
   return (samples || [])
     .filter(s => isWaitingForTrial(s) && s.die && !planned.has(dieKey(s.die)))
-    .filter(s => plant === 'All' || (s.plant || '').trim() === plant)
+    .filter(s => plant === 'All' || plantKey(s.plant) === plantKey(plant))
     .sort((a, b) => (b.days ?? -1) - (a.days ?? -1) || numericCompare(String(a.die), String(b.die)));
 };
 
