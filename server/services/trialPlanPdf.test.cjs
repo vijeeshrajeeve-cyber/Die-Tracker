@@ -173,3 +173,21 @@ test('names in the email body are escaped', () => {
   const body = publishing.emailBody(view([entry({ customer: '<b>Acme</b>' })]), 'Hi');
   assert.match(body, /&lt;b&gt;Acme/);
 });
+
+test('a carried-over die says where it came from and why in Remarks', async () => {
+  const { carryNote } = require('./trialPlanPdf.cjs');
+  assert.equal(carryNote({ carried_from_date: '2026-11-20', carry_reason: 'Alloy shortage' }), 'Carry over from 20th Nov because of Alloy shortage');
+  assert.equal(carryNote({ carried_from_date: '2026-11-21', carry_reason: null }), 'Carry over from 21st Nov');
+  assert.equal(carryNote({ carried_from_date: '2026-11-12' }), 'Carry over from 12th Nov');
+  assert.equal(carryNote({}), '');
+  const [page] = await textOf(await generateTrialPlanPdf(view([
+    entry({ urgent: true, carried_from_date: '2026-11-20', carry_reason: 'Alloy shortage' }),
+  ])));
+  assert.match(page, /URGENT Carry over from 20th Nov because of Alloy shortage/);
+});
+
+test('the Issued time is the true publish instant passed in, not the raw column', async () => {
+  const issued = new Date(2026, 10, 19, 21, 51);
+  const [page] = await textOf(await generateTrialPlanPdf(view([entry()], { status: 'published', revision: 1, published_at: new Date(2026, 10, 19, 17, 51) }), { issuedAt: issued }));
+  assert.match(page, /Issued 19 Nov 2026, 21:51/);
+});

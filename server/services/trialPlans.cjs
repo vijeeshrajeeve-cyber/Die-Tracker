@@ -46,6 +46,17 @@ const OUT_OF_QUEUE_REASONS = [
   'Other',
 ];
 
+// Why a planned die did not run. Required on every Not run, so the summary can
+// say why trials were missed; Other needs the comment to say what happened.
+// Stored verbatim.
+const NOT_RUN_REASONS = [
+  'Alloy shortage',
+  'Press breakdown',
+  'Die not ready',
+  'Production priority / no time',
+  'Other',
+];
+
 // A supervisor may still be entering yesterday's results the next morning.
 // After this many days past the plan date only an admin can.
 const RESULT_GRACE_DAYS = 1;
@@ -79,6 +90,25 @@ function addDays(isoDay, days) {
 function isPlanDate(value) {
   const s = trim(value);
   return ISO_DATE.test(s) && addDays(s, 0) === s;
+}
+
+// The working week is Monday to Saturday: the day after a Saturday is Monday.
+const isSunday = (isoDay) => {
+  const [y, m, d] = isoDay.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
+};
+function nextWorkingDay(isoDay) {
+  const next = addDays(isoDay, 1);
+  return isSunday(next) ? addDays(next, 1) : next;
+}
+
+// Where a die that did not run is carried to: the next working day after its
+// plan, or -- when the result is entered so late that day has passed -- the
+// first working day from today, which is still open for planning.
+function carryTarget(planDate, today) {
+  const target = nextWorkingDay(planDate);
+  if (target >= today) return target;
+  return isSunday(today) ? addDays(today, 1) : today;
 }
 
 // The plan is built the day before it runs, so the page opens on tomorrow.
@@ -153,6 +183,18 @@ function validateOutcome(input = {}, entryType = 'Trial') {
   }
   const comments = trim(input.comments).slice(0, 2000) || null;
 
+  let not_run_reason = null;
+  if (outcome === 'Not run') {
+    not_run_reason = trim(input.not_run_reason);
+    if (!not_run_reason) return { ok: false, error: 'Choose why the die did not run' };
+    if (!NOT_RUN_REASONS.includes(not_run_reason)) {
+      return { ok: false, error: `Not run reason must be one of: ${NOT_RUN_REASONS.join(', ')}` };
+    }
+    if (not_run_reason === 'Other' && !comments) {
+      return { ok: false, error: 'Describe why the die did not run' };
+    }
+  }
+
   let fail_reason = null;
   if (outcome === 'Not OK') {
     if (entryType === 'Trial') {
@@ -165,7 +207,7 @@ function validateOutcome(input = {}, entryType = 'Trial') {
       return { ok: false, error: 'Describe what went wrong on the supervised run' };
     }
   }
-  return { ok: true, value: { outcome, fail_reason, comments } };
+  return { ok: true, value: { outcome, fail_reason, not_run_reason, comments } };
 }
 
 // A whole-number percentage, or null when there is nothing to divide by. Null
@@ -192,6 +234,7 @@ function summarise(entries = []) {
   const supervised = emptyCounts();
   const byPress = new Map();
   const failReasons = new Map();
+  const notRunReasons = new Map();
   let urgent = 0;
   let outOfQueue = 0;
 
@@ -208,6 +251,9 @@ function summarise(entries = []) {
       if (entry.out_of_queue_reason) outOfQueue += 1;
       if (entry.outcome === 'Not OK' && entry.fail_reason) {
         failReasons.set(entry.fail_reason, (failReasons.get(entry.fail_reason) || 0) + 1);
+      }
+      if (entry.outcome === 'Not run' && entry.not_run_reason) {
+        notRunReasons.set(entry.not_run_reason, (notRunReasons.get(entry.not_run_reason) || 0) + 1);
       }
     } else {
       count(supervised, entry.outcome);
@@ -227,6 +273,9 @@ function summarise(entries = []) {
     failReasons: FAIL_REASONS
       .filter(reason => failReasons.has(reason))
       .map(reason => ({ reason, count: failReasons.get(reason) })),
+    notRunReasons: NOT_RUN_REASONS
+      .filter(reason => notRunReasons.has(reason))
+      .map(reason => ({ reason, count: notRunReasons.get(reason) })),
   };
 }
 
@@ -274,7 +323,8 @@ const PLAN_COLS = 'id, plan_date, plant, status, revision, published_at, publish
 const ENTRY_COLS = [
   'id', 'plan_id', 'position', 'entry_type', 'urgent', 'die_order_id', 'sample_followup_id',
   'die_no', 'plant', 'press', 'customer', 'alloy', 'tooling', 'corrector', 'out_of_queue_reason',
-  'outcome', 'fail_reason', 'comments', 'sample_trial_id', 'result_by', 'result_at',
+  'outcome', 'fail_reason', 'not_run_reason', 'comments', 'sample_trial_id', 'result_by', 'result_at',
+  'carried_from_entry_id', 'carried_from_date', 'carry_reason', 'carry_added',
   'created_by', 'created_at', 'updated_at',
 ];
 const ENTRY_SELECT = ENTRY_COLS.join(', ');
@@ -306,11 +356,18 @@ async function planView(client, date, plantInput, today, { isAdmin = false } = {
   if (!plant) return refuse(400, NO_PLANT);
   const plan = await findPlan(client, date, plant);
   const entries = plan ? await withCustomers(client, await entriesOf(client, plan.id)) : [];
+  // Carry-overs that arrived after the plan went out: the copy people hold is
+  // out of date until someone publishes again.
+  const publishedAt = plan?.status === 'published' && plan.published_at ? new Date(plan.published_at) : null;
+  const carriedAfterPublish = publishedAt
+    ? entries.filter(e => e.carried_from_entry_id && new Date(e.updated_at) > publishedAt).length
+    : 0;
   return {
     ok: true,
     date,
     plant,
     plan,
+    carriedAfterPublish,
     entries,
     summary: summarise(entries),
     checks: findChecks(entries),
@@ -369,7 +426,7 @@ async function addEntry(client, date, plantInput, input, userId, today) {
 // whether the plan can still be touched.
 async function findEntry(client, id, { lock = false } = {}) {
   const { rows } = await client.query(
-    `SELECT ${ENTRY_SELECT_E}, p.plan_date, p.status AS plan_status
+    `SELECT ${ENTRY_SELECT_E}, p.plan_date, p.plant AS plan_plant, p.status AS plan_status
        FROM trial_plan_entries e JOIN trial_plans p ON p.id = e.plan_id
       WHERE e.id = $1${lock ? ' FOR UPDATE OF e' : ''}`,
     [id]
@@ -448,7 +505,7 @@ async function recordOutcome(client, id, input, user, today) {
 
   const check = validateOutcome(input, entry.entry_type);
   if (!check.ok) return refuse(400, check.error);
-  const { outcome, fail_reason, comments } = check.value;
+  const { outcome, fail_reason, not_run_reason, comments } = check.value;
 
   // The trial log is written only for a trial on a die this app has a record
   // of, and only when the trial actually ran. Not run is a fact about the plan,
@@ -485,13 +542,95 @@ async function recordOutcome(client, id, input, user, today) {
 
   const { rows } = await client.query(
     `UPDATE trial_plan_entries
-        SET outcome = $1, fail_reason = $2, comments = $3, sample_trial_id = $4,
-            result_by = $5, result_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $6
+        SET outcome = $1, fail_reason = $2, not_run_reason = $3, comments = $4, sample_trial_id = $5,
+            result_by = $6, result_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7
       RETURNING ${ENTRY_SELECT}`,
-    [outcome, fail_reason, comments, sampleTrialId, user.id, id]
+    [outcome, fail_reason, not_run_reason, comments, sampleTrialId, user.id, id]
   );
-  return { ok: true, row: rows[0] };
+
+  // A die that did not run goes onto the next working day's plan, urgent. A
+  // corrected result takes it back off, unless that line has a result of its own.
+  let carry = null;
+  if (outcome === 'Not run') {
+    const reason = not_run_reason === 'Other' ? comments : not_run_reason;
+    carry = await carryOver(client, { ...entry, plant_of_plan: entry.plan_plant }, reason, user.id, today);
+  } else if (entry.outcome === 'Not run') {
+    carry = await undoCarry(client, entry.id);
+  }
+  return { ok: true, row: rows[0], carry };
+}
+
+const CARRY_COPY = ['entry_type', 'die_order_id', 'sample_followup_id', 'die_no', 'plant', 'press',
+  'customer', 'alloy', 'tooling', 'corrector'];
+
+// Puts a die that did not run onto the next working day's plan for the same
+// plant, marked urgent and tagged with the day and reason it came from. If the
+// die is already on that plan, that line is tagged instead of adding a second.
+async function carryOver(client, entry, reason, userId, today) {
+  const target = carryTarget(entry.plan_date, today);
+  const plan = await ensurePlan(client, target, entry.plant_of_plan, userId);
+  const { rows: found } = await client.query(
+    `SELECT id, outcome FROM trial_plan_entries
+      WHERE plan_id = $1 AND translate(die_no, '_', '-') = translate($2, '_', '-')`,
+    [plan.id, entry.die_no]
+  );
+  const base = { date: target, plant: entry.plant_of_plan, revision: plan.revision, published: plan.status === 'published' };
+
+  if (found[0]) {
+    if (found[0].outcome) return { ...base, status: 'already-ran', entryId: found[0].id };
+    await client.query(
+      `UPDATE trial_plan_entries
+          SET urgent = true, carried_from_entry_id = $1, carried_from_date = $2, carry_reason = $3,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4`,
+      [entry.id, entry.plan_date, reason, found[0].id]
+    );
+    return { ...base, status: 'tagged', entryId: found[0].id };
+  }
+
+  const last = await client.query(
+    'SELECT COALESCE(MAX(position), 0) AS position FROM trial_plan_entries WHERE plan_id = $1',
+    [plan.id]
+  );
+  const { rows } = await client.query(
+    `INSERT INTO trial_plan_entries
+       (plan_id, position, urgent, ${CARRY_COPY.join(', ')},
+        carried_from_entry_id, carried_from_date, carry_reason, carry_added, created_by)
+     VALUES ($1, $2, true, ${CARRY_COPY.map((_, i) => `$${i + 3}`).join(', ')},
+        $${CARRY_COPY.length + 3}, $${CARRY_COPY.length + 4}, $${CARRY_COPY.length + 5}, true, $${CARRY_COPY.length + 6})
+     RETURNING id`,
+    [plan.id, Number(last.rows[0].position) + 1, ...CARRY_COPY.map(k => entry[k] ?? null),
+      entry.id, entry.plan_date, reason, userId]
+  );
+  return { ...base, status: 'added', entryId: rows[0].id };
+}
+
+// The result was corrected away from Not run: a line the carry added comes off
+// the later plan, and a line it only tagged loses the tag. Either is left alone
+// once it has a result of its own.
+async function undoCarry(client, entryId) {
+  const { rows } = await client.query(
+    'SELECT id, outcome, carry_added FROM trial_plan_entries WHERE carried_from_entry_id = $1',
+    [entryId]
+  );
+  let removed = 0;
+  for (const row of rows) {
+    if (row.outcome) continue;
+    if (row.carry_added) {
+      await client.query('DELETE FROM trial_plan_entries WHERE id = $1', [row.id]);
+      removed += 1;
+    } else {
+      await client.query(
+        `UPDATE trial_plan_entries
+            SET carried_from_entry_id = NULL, carried_from_date = NULL, carry_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1`,
+        [row.id]
+      );
+    }
+  }
+  return { status: 'undone', removed };
 }
 
 // Alloy is not kept on the die record, so the plan offers the alloy the die
@@ -594,9 +733,9 @@ async function rangeSummary(client, from, to, plantInput = null) {
 }
 
 module.exports = {
-  ENTRY_TYPES, OUTCOMES, PLAN_STATUSES, PLANTS, OUT_OF_QUEUE_REASONS, FAIL_REASONS,
+  ENTRY_TYPES, OUTCOMES, PLAN_STATUSES, PLANTS, OUT_OF_QUEUE_REASONS, NOT_RUN_REASONS, FAIL_REASONS,
   RESULT_GRACE_DAYS, CORRECTOR_LOAD_FLAG, MAX_SUMMARY_DAYS,
-  addDays, isPlanDate, plantName, defaultPlanDate, planState,
+  addDays, isPlanDate, plantName, nextWorkingDay, carryTarget, defaultPlanDate, planState,
   validateEntry, validateOutcome, summarise, findChecks,
   planView, lastAlloy, customerFor, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
 };

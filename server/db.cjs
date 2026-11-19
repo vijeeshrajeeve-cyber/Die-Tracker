@@ -1416,6 +1416,16 @@ const initializeDatabase = async () => {
       ALTER TABLE trial_plans ALTER COLUMN plant SET NOT NULL;
       ALTER TABLE trial_plans DROP CONSTRAINT IF EXISTS trial_plans_plan_date_key;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_plans_day_plant ON trial_plans(plan_date, plant);
+
+      -- Why a planned die did not run, and where it was carried to. A Not run
+      -- carries the die onto the next working day's plan for its plant, marked
+      -- urgent; carried_from_* names the plan line it came from.
+      ALTER TABLE trial_plan_entries ADD COLUMN IF NOT EXISTS not_run_reason TEXT;
+      ALTER TABLE trial_plan_entries ADD COLUMN IF NOT EXISTS carried_from_entry_id INTEGER REFERENCES trial_plan_entries(id) ON DELETE SET NULL;
+      ALTER TABLE trial_plan_entries ADD COLUMN IF NOT EXISTS carried_from_date DATE;
+      ALTER TABLE trial_plan_entries ADD COLUMN IF NOT EXISTS carry_reason TEXT;
+      ALTER TABLE trial_plan_entries ADD COLUMN IF NOT EXISTS carry_added BOOLEAN NOT NULL DEFAULT false;
+      CREATE INDEX IF NOT EXISTS idx_trial_plan_entries_carried_from ON trial_plan_entries(carried_from_entry_id) WHERE carried_from_entry_id IS NOT NULL;
     `);
 
     // The published trial schedule goes to each plant's own list, kept where

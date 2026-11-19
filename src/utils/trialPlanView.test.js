@@ -140,3 +140,14 @@ test('the queue for a plant takes either spelling of that plant and nothing else
   assert.deepEqual(availableToPlan(samples, [], { plant: 'GEX 1' }).map(s => s.die), ['1-1', '2-1']);
   assert.deepEqual(availableToPlan(samples, [], { plant: 'GEX 2' }).map(s => s.die), ['3-1']);
 });
+
+test('a carry-over reads as the plant asked, and lands on the next working day', async () => {
+  const { carryNote, carryTarget, nextWorkingDay, resultOf, ordinalDate } = await import('./trialPlanView.js');
+  assert.equal(carryNote({ carried_from_date: '2026-11-20', carry_reason: 'Alloy shortage' }), 'Carry over from 20th Nov because of Alloy shortage');
+  assert.equal(carryNote({}), null);
+  assert.equal(ordinalDate('2026-11-22'), '22nd Nov');
+  assert.equal(ordinalDate('2026-11-11'), '11th Nov');
+  assert.equal(nextWorkingDay('2026-11-21'), '2026-11-23');
+  assert.equal(carryTarget('2026-11-16', '2026-11-19'), '2026-11-19');
+  assert.equal(resultOf({ outcome: 'Not run', not_run_reason: 'Press breakdown' }).label, 'Not run · Press breakdown');
+});

@@ -114,7 +114,7 @@ test('a failed trial needs one of the fixed reasons', () => {
 
 test('a passed or not-run trial drops any reason it carries', () => {
   assert.equal(plans.validateOutcome({ outcome: 'OK', fail_reason: 'Shape' }, 'Trial').value.fail_reason, null);
-  assert.equal(plans.validateOutcome({ outcome: 'Not run', fail_reason: 'Shape' }, 'Trial').value.fail_reason, null);
+  assert.equal(plans.validateOutcome({ outcome: 'Not run', not_run_reason: 'Alloy shortage', fail_reason: 'Shape' }, 'Trial').value.fail_reason, null);
 });
 
 test('a supervised run that went wrong needs a comment, not a trial reason', () => {
@@ -214,8 +214,17 @@ function fakeClient(script) {
 const PLAN_ROW = { id: 7, plan_date: TODAY, status: 'published', revision: 1 };
 const dbEntry = (over = {}) => ({
   id: 31, plan_id: 7, entry_type: 'Trial', die_no: '32140-401', die_order_id: 12, sample_followup_id: null,
-  outcome: null, sample_trial_id: null, plan_date: TODAY, plan_status: 'published', ...over,
+  outcome: null, sample_trial_id: null, plan_date: TODAY, plan_plant: 'GEX 1', plan_status: 'published', ...over,
 });
+
+// The queries a Not run makes to carry the die onto the next working day.
+const CARRY = [
+  [/^INSERT INTO trial_plans/, (params) => ({ rows: [{ id: 9, plan_date: params[0], plant: params[1], status: 'draft', revision: 0 }] })],
+  [/^SELECT id, outcome FROM trial_plan_entries/, { rows: [] }],
+  [/^SELECT COALESCE\(MAX\(position\)/, { rows: [{ position: 2 }] }],
+  [/^INSERT INTO trial_plan_entries/, { rows: [{ id: 44 }] }],
+];
+const NOT_RUN = { outcome: 'Not run', not_run_reason: 'Alloy shortage' };
 const USER = { id: 5, role: 'user' };
 
 test('adding to a past day is refused before anything is written', async () => {
@@ -274,9 +283,10 @@ test('a closed plan refuses a user and lets an admin through', async () => {
   const script = () => [
     [/^SELECT e\.id/, { rows: [dbEntry({ plan_date: '2026-11-10', die_order_id: null })] }],
     [/^UPDATE trial_plan_entries/, { rows: [{ id: 31, outcome: 'Not run' }] }],
+    ...CARRY,
   ];
-  assert.equal((await plans.recordOutcome(fakeClient(script()), 31, { outcome: 'Not run' }, USER, TODAY)).status, 409);
-  assert.equal((await plans.recordOutcome(fakeClient(script()), 31, { outcome: 'Not run' }, { id: 1, role: 'admin' }, TODAY)).ok, true);
+  assert.equal((await plans.recordOutcome(fakeClient(script()), 31, NOT_RUN, USER, TODAY)).status, 409);
+  assert.equal((await plans.recordOutcome(fakeClient(script()), 31, NOT_RUN, { id: 1, role: 'admin' }, TODAY)).ok, true);
 });
 
 test("a Not OK trial is written to the die's trial log, dated the plan day, and linked back", async () => {
@@ -285,7 +295,7 @@ test("a Not OK trial is written to the die's trial log, dated the plan day, and 
     [/^SELECT design_enhancement FROM die_orders/, { rows: [{ design_enhancement: 0 }] }],
     [/FROM sample_trials WHERE die_order_id = \$1 ORDER BY trial_no/, { rows: [{ trial_no: 1 }] }],
     [/^INSERT INTO sample_trials \(die_order_id/, (params) => ({ rows: [{ id: 88, trial_no: params[1] }] })],
-    [/^UPDATE trial_plan_entries/, (params) => ({ rows: [{ id: 31, outcome: params[0], sample_trial_id: params[3] }] })],
+    [/^UPDATE trial_plan_entries/, (params) => ({ rows: [{ id: 31, outcome: params[0], sample_trial_id: params[4] }] })],
   ]);
   const out = await plans.recordOutcome(client, 31, { outcome: 'Not OK', fail_reason: 'Shape', comments: 'Wall thin' }, USER, TODAY);
   assert.equal(out.ok, true);
@@ -297,9 +307,10 @@ test("a Not OK trial is written to the die's trial log, dated the plan day, and 
 test('Not run records the plan entry and leaves the trial log alone', async () => {
   const client = fakeClient([
     [/^SELECT e\.id/, { rows: [dbEntry()] }],
-    [/^UPDATE trial_plan_entries/, (params) => ({ rows: [{ id: 31, outcome: params[0], sample_trial_id: params[3] }] })],
+    [/^UPDATE trial_plan_entries/, (params) => ({ rows: [{ id: 31, outcome: params[0], sample_trial_id: params[4] }] })],
+    ...CARRY,
   ]);
-  const out = await plans.recordOutcome(client, 31, { outcome: 'Not run' }, USER, TODAY);
+  const out = await plans.recordOutcome(client, 31, NOT_RUN, USER, TODAY);
   assert.deepEqual(out.row, { id: 31, outcome: 'Not run', sample_trial_id: null });
   assert.ok(!client.has('INSERT INTO sample_trials'));
 });
@@ -319,7 +330,7 @@ test('correcting a result updates the same trial instead of adding a second', as
     [/^SELECT die_order_id FROM sample_trials WHERE id = \$1/, { rows: [{ die_order_id: 12 }] }],
     [/^SELECT design_enhancement FROM die_orders/, { rows: [{ design_enhancement: 0 }] }],
     [/^UPDATE sample_trials/, { rows: [{ id: 88 }], rowCount: 1 }],
-    [/^UPDATE trial_plan_entries/, (params) => ({ rows: [{ id: 31, outcome: params[0], sample_trial_id: params[3] }] })],
+    [/^UPDATE trial_plan_entries/, (params) => ({ rows: [{ id: 31, outcome: params[0], sample_trial_id: params[4] }] })],
   ]);
   const out = await plans.recordOutcome(client, 31, { outcome: 'OK' }, USER, TODAY);
   assert.deepEqual(out.row, { id: 31, outcome: 'OK', sample_trial_id: 88 });
@@ -328,7 +339,7 @@ test('correcting a result updates the same trial instead of adding a second', as
 
 test('a logged trial cannot be quietly turned into Not run', async () => {
   const client = fakeClient([[/^SELECT e\.id/, { rows: [dbEntry({ outcome: 'OK', sample_trial_id: 88 })] }]]);
-  const out = await plans.recordOutcome(client, 31, { outcome: 'Not run' }, USER, TODAY);
+  const out = await plans.recordOutcome(client, 31, NOT_RUN, USER, TODAY);
   assert.equal(out.status, 409);
   assert.ok(!client.has('UPDATE'));
 });
@@ -403,4 +414,110 @@ test('a plan shows the customer for entries saved without one, looking each die 
   const view = await plans.planView(client, TOMORROW, 'GEX 1', TODAY);
   assert.deepEqual(view.entries.map(e => e.customer), ['Gulf Extrusions', 'Gulf Extrusions', 'Kept']);
   assert.equal(client.log.filter(({ q }) => q.startsWith('WITH d AS')).length, 1);
+});
+
+// ── Not run reasons and carry-over ────────────────────────────────────────
+
+test('a Not run needs a reason from the list, and Other needs a comment', () => {
+  assert.match(plans.validateOutcome({ outcome: 'Not run' }, 'Trial').error, /why the die did not run/);
+  assert.equal(plans.validateOutcome({ outcome: 'Not run', not_run_reason: 'Raining' }, 'Trial').ok, false);
+  assert.equal(plans.validateOutcome({ outcome: 'Not run', not_run_reason: 'Other' }, 'Trial').ok, false);
+  const other = plans.validateOutcome({ outcome: 'Not run', not_run_reason: 'Other', comments: 'Crane down' }, 'Supervised');
+  assert.equal(other.ok, true);
+  assert.equal(other.value.not_run_reason, 'Other');
+  assert.equal(plans.validateOutcome({ outcome: 'OK', not_run_reason: 'Alloy shortage' }, 'Trial').value.not_run_reason, null);
+});
+
+test('the next working day skips Sunday', () => {
+  assert.equal(plans.nextWorkingDay('2026-11-20'), '2026-11-21'); // Friday -> Saturday
+  assert.equal(plans.nextWorkingDay('2026-11-21'), '2026-11-23'); // Saturday -> Monday
+});
+
+test('a carry goes to the next working day, or to today when that day has passed', () => {
+  assert.equal(plans.carryTarget('2026-11-20', '2026-11-20'), '2026-11-21');
+  assert.equal(plans.carryTarget('2026-11-21', '2026-11-21'), '2026-11-23');
+  assert.equal(plans.carryTarget('2026-11-16', '2026-11-19'), '2026-11-19');
+  assert.equal(plans.carryTarget('2026-11-14', '2026-11-22'), '2026-11-23'); // late, on a Sunday
+});
+
+test('a Not run adds the die to the next working day for its plant, urgent and tagged', async () => {
+  const client = fakeClient([
+    [/^SELECT e\.id/, { rows: [dbEntry({ plan_date: '2026-11-21', press: 'PRESS 4', customer: 'Customer B', alloy: '6063', tooling: 'i-15781', corrector: 'erive', plant: 'GEX 1' })] }],
+    [/^UPDATE trial_plan_entries/, { rows: [{ id: 31, outcome: 'Not run' }] }],
+    ...CARRY,
+  ]);
+  const out = await plans.recordOutcome(client, 31, NOT_RUN, USER, '2026-11-21');
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.carry, { date: '2026-11-23', plant: 'GEX 1', revision: 0, published: false, status: 'added', entryId: 44 });
+  assert.deepEqual(client.log.find(({ q }) => q.startsWith('INSERT INTO trial_plans')).params.slice(0, 2), ['2026-11-23', 'GEX 1']);
+  const insert = client.log.find(({ q }) => q.startsWith('INSERT INTO trial_plan_entries'));
+  assert.match(insert.q, /VALUES \(\$1, \$2, true,/);
+  assert.deepEqual(insert.params, [9, 3, 'Trial', 12, null, '32140-401', 'GEX 1', 'PRESS 4', 'Customer B', '6063', 'i-15781', 'erive',
+    31, '2026-11-21', 'Alloy shortage', 5]);
+});
+
+test('Other carries its comment as the reason', async () => {
+  const client = fakeClient([
+    [/^SELECT e\.id/, { rows: [dbEntry()] }],
+    [/^UPDATE trial_plan_entries/, { rows: [{ id: 31 }] }],
+    ...CARRY,
+  ]);
+  await plans.recordOutcome(client, 31, { outcome: 'Not run', not_run_reason: 'Other', comments: 'Crane down' }, USER, TODAY);
+  assert.equal(client.log.find(({ q }) => q.startsWith('INSERT INTO trial_plan_entries')).params.at(-2), 'Crane down');
+});
+
+test('a die already on the next plan is tagged and made urgent, not added twice', async () => {
+  const client = fakeClient([
+    [/^SELECT e\.id/, { rows: [dbEntry()] }],
+    [/^UPDATE trial_plan_entries\s+SET outcome/, { rows: [{ id: 31 }] }],
+    [/^INSERT INTO trial_plans/, { rows: [{ id: 9, status: 'published', revision: 1 }] }],
+    [/^SELECT id, outcome FROM trial_plan_entries/, { rows: [{ id: 50, outcome: null }] }],
+    [/^UPDATE trial_plan_entries\s+SET urgent = true/, { rows: [] }],
+  ]);
+  const out = await plans.recordOutcome(client, 31, NOT_RUN, USER, TODAY);
+  assert.equal(out.carry.status, 'tagged');
+  assert.equal(out.carry.published, true);
+  assert.ok(!client.has('INSERT INTO trial_plan_entries'));
+  assert.deepEqual(client.log.find(({ q }) => q.startsWith('UPDATE trial_plan_entries SET urgent')).params, [31, TODAY, 'Alloy shortage', 50]);
+});
+
+test('correcting a Not run takes the carried line back off, unless it has a result', async () => {
+  const client = fakeClient([
+    [/^SELECT e\.id/, { rows: [dbEntry({ entry_type: 'Supervised', outcome: 'Not run' })] }],
+    [/^UPDATE trial_plan_entries\s+SET outcome/, { rows: [{ id: 31, outcome: 'OK' }] }],
+    [/^SELECT id, outcome, carry_added FROM trial_plan_entries/, { rows: [
+      { id: 44, outcome: null, carry_added: true },
+      { id: 45, outcome: null, carry_added: false },
+      { id: 46, outcome: 'OK', carry_added: true },
+    ] }],
+    [/^DELETE FROM trial_plan_entries/, { rows: [] }],
+    [/^UPDATE trial_plan_entries\s+SET carried_from_entry_id = NULL/, { rows: [] }],
+  ]);
+  const out = await plans.recordOutcome(client, 31, { outcome: 'OK' }, USER, TODAY);
+  assert.deepEqual(out.carry, { status: 'undone', removed: 1 });
+  assert.deepEqual(client.log.filter(({ q }) => q.startsWith('DELETE')).map(({ params }) => params), [[44]]);
+  assert.deepEqual(client.log.filter(({ q }) => q.startsWith('UPDATE trial_plan_entries SET carried_from')).map(({ params }) => params), [[45]]);
+});
+
+test('the summary counts Not run reasons in the list order', () => {
+  const s = plans.summarise([
+    { entry_type: 'Trial', outcome: 'Not run', not_run_reason: 'Press breakdown' },
+    { entry_type: 'Trial', outcome: 'Not run', not_run_reason: 'Alloy shortage' },
+    { entry_type: 'Trial', outcome: 'Not run', not_run_reason: 'Alloy shortage' },
+    { entry_type: 'Supervised', outcome: 'Not run', not_run_reason: 'Die not ready' },
+  ]);
+  assert.deepEqual(s.notRunReasons, [{ reason: 'Alloy shortage', count: 2 }, { reason: 'Press breakdown', count: 1 }]);
+});
+
+test('a published plan counts carry-overs that arrived after it went out', async () => {
+  const client = fakeClient([
+    [/^SELECT .* FROM trial_plans WHERE plan_date/, { rows: [{ id: 7, status: 'published', revision: 1, published_at: '2026-11-18T10:00:00Z' }] }],
+    [/FROM trial_plan_entries WHERE plan_id/, { rows: [
+      dbEntry({ id: 1, customer: 'A', carried_from_entry_id: 9, updated_at: '2026-11-18T12:00:00Z' }),
+      dbEntry({ id: 2, customer: 'A', carried_from_entry_id: 8, updated_at: '2026-11-18T09:00:00Z' }),
+      dbEntry({ id: 3, customer: 'A', updated_at: '2026-11-18T12:00:00Z' }),
+    ] }],
+  ]);
+  const view = await plans.planView(client, TOMORROW, 'GEX 1', TODAY);
+  assert.equal(view.carriedAfterPublish, 1);
 });

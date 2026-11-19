@@ -204,13 +204,48 @@ export const checkSentence = (check) => {
 };
 
 // The result chip for an entry: label and tone.
+// The working week is Monday to Saturday, as on the server.
+const isSundayDay = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
+};
+export const nextWorkingDay = (iso) => {
+  const next = addDays(iso, 1);
+  return isSundayDay(next) ? addDays(next, 1) : next;
+};
+// Where the server will carry a die that did not run (see carryTarget there).
+export const carryTarget = (planDate, today) => {
+  const target = nextWorkingDay(planDate);
+  if (target >= today) return target;
+  return isSundayDay(today) ? addDays(today, 1) : today;
+};
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const ordinal = (n) => {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'}`;
+};
+// '20th Nov', for the carry-over wording the plant asked for.
+export const ordinalDate = (iso) => {
+  const [, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  return `${ordinal(d)} ${MONTHS_SHORT[m - 1]}`;
+};
+// "Carry over from 20th Nov because of Alloy shortage", or null.
+export const carryNote = (entry) => (entry?.carried_from_date
+  ? `Carry over from ${ordinalDate(entry.carried_from_date)}${entry.carry_reason ? ` because of ${entry.carry_reason}` : ''}`
+  : null);
+
 export const resultOf = (entry) => {
   const supervised = entry.entry_type === 'Supervised';
   if (entry.outcome === 'OK') return { label: supervised ? 'Run OK' : 'OK', tone: 'ok' };
   if (entry.outcome === 'Not OK') {
     return { label: entry.fail_reason ? `Not OK · ${shortReason(entry.fail_reason)}` : 'Not OK', tone: 'bad' };
   }
-  if (entry.outcome === 'Not run') return { label: 'Not run', tone: 'neutral' };
+  if (entry.outcome === 'Not run') {
+    const why = entry.not_run_reason === 'Other' ? 'Other' : entry.not_run_reason;
+    return { label: why ? `Not run · ${why}` : 'Not run', tone: 'neutral' };
+  }
   return { label: 'Awaiting result', tone: 'waiting' };
 };
 
@@ -243,7 +278,7 @@ export const planExportRows = (entries) => groupByPress(entries).flatMap(group =
   alloy: entry.alloy || '',
   tooling: entry.tooling || '',
   corrector: entry.corrector || '',
-  out_of_queue_reason: entry.out_of_queue_reason || '',
+  out_of_queue_reason: [carryNote(entry), entry.out_of_queue_reason].filter(Boolean).join('; '),
   result: entry.outcome ? resultOf(entry).label : '',
   comments: entry.comments || '',
 })));

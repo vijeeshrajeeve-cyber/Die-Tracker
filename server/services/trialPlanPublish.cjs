@@ -35,10 +35,23 @@ async function publisherName(client, userId) {
   return rows[0]?.name || '';
 }
 
+// published_at is a TIMESTAMP without a zone, written in the database
+// session's zone (UTC) but read back by node as server-local time, which puts
+// it hours early. Cast in the same session, it comes back as a true instant.
+async function issuedAt(client, planId) {
+  if (!planId) return null;
+  const { rows } = await client.query(
+    'SELECT published_at::timestamptz AS issued FROM trial_plans WHERE id = $1',
+    [planId]
+  );
+  return rows[0]?.issued || null;
+}
+
 // view: what trialPlans.planView returns.
 async function renderPlanPdf(client, view, { logoBytes = readLogo(), generatedAt = new Date() } = {}) {
   const publishedBy = await publisherName(client, view.plan?.published_by);
-  return generateTrialPlanPdf(view, { publishedBy, logoBytes, generatedAt });
+  const issued = await issuedAt(client, view.plan?.id);
+  return generateTrialPlanPdf(view, { publishedBy, logoBytes, generatedAt, issuedAt: issued });
 }
 
 const fileName = (view) => `Trial-schedule-${String(view.plant).replace(/\s+/g, '-')}-${view.date}.pdf`;

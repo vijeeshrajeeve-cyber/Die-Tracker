@@ -22,6 +22,7 @@ installFakeDb(async (sql, params = []) => {
     return { rows: [{ id: 7, plan_date: params[0], plant: params[1], status: planStatus, revision: planStatus === 'published' ? 1 : 0, published_by: 5 }] };
   }
   if (/FROM users WHERE id/.test(q)) return { rows: [{ name: 'A. Planner' }] };
+  if (/published_at::timestamptz/.test(q)) return { rows: [{ issued: new Date('2026-11-19T12:00:00Z') }] };
   if (/FROM email_templates WHERE name/.test(q)) return { rows: template ? [template] : [] };
   if (/FROM trial_plan_entries WHERE plan_id = \$1 ORDER BY position/.test(q)) {
     return { rows: [{ id: 31, entry_type: 'Trial', die_no: '32140-401', press: 'Press 4', tooling: 'i-15781', corrector: 'erive', urgent: true, outcome: null }] };

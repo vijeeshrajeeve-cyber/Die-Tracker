@@ -80,6 +80,22 @@ function wrap(str, font, size, width, max = 2) {
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
+const ordinal = (n) => {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'}`;
+};
+
+// "Carry over from 20th Nov because of Alloy shortage": the wording the plant
+// asked for on a die that did not run on an earlier plan.
+function carryNote(e) {
+  if (!e.carried_from_date) return '';
+  const [, m, d] = String(e.carried_from_date).slice(0, 10).split('-').map(Number);
+  return `Carry over from ${ordinal(d)} ${MONTHS[m - 1].slice(0, 3)}${e.carry_reason ? ` because of ${e.carry_reason}` : ''}`;
+}
+
+const remarksOf = (e) => [carryNote(e), e.out_of_queue_reason].filter(Boolean).join('; ');
+
 function longDate(iso) {
   const [y, m, d] = String(iso).split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -156,7 +172,7 @@ const LINE_H = 10;
 // view: what planView returns (date, plant, plan, entries).
 // opts.publishedBy: the publisher's display name; opts.logoBytes: PNG.
 async function generateTrialPlanPdf(view, opts = {}) {
-  const { publishedBy = '', generatedAt = new Date(), logoBytes = null } = opts;
+  const { publishedBy = '', generatedAt = new Date(), logoBytes = null, issuedAt = null } = opts;
   const entries = byPress(view.entries || []);
   const trials = entries.filter((e) => e.entry_type !== 'Supervised');
   const supervised = entries.filter((e) => e.entry_type === 'Supervised');
@@ -245,7 +261,7 @@ async function generateTrialPlanPdf(view, opts = {}) {
     const rows = [
       ['Reference', ref],
       ['Revision', revision],
-      ['Issued', published ? stamp(plan.published_at) || stamp(generatedAt) : 'Not published'],
+      ['Issued', published ? stamp(issuedAt || plan.published_at) || stamp(generatedAt) : 'Not published'],
       ['Page', ''],
     ];
     rows.forEach(([label, value], i) => {
@@ -298,9 +314,9 @@ async function generateTrialPlanPdf(view, opts = {}) {
   const cellLines = (e, col) => {
     const value = {
       press: e.press, die: e.die_no, customer: e.customer, alloy: e.alloy, tooling: e.tooling,
-      corrector: e.corrector, remarks: e.out_of_queue_reason,
+      corrector: e.corrector, remarks: remarksOf(e),
     }[col.key];
-    if (col.wrap) return wrap(value, font, BODY, col.w - CELL_PAD * 2);
+    if (col.wrap) return wrap(value, font, BODY, col.w - CELL_PAD * 2, col.key === 'remarks' ? 3 : 2);
     return value ? [fit(value, col.key === 'die' ? bold : font, BODY, col.w - CELL_PAD * 2)] : [];
   };
   const rowHeight = (e) => {
@@ -480,4 +496,4 @@ async function generateTrialPlanPdf(view, opts = {}) {
   return doc.save();
 }
 
-module.exports = { generateTrialPlanPdf, sanitize, fit, wrap, reference };
+module.exports = { generateTrialPlanPdf, sanitize, fit, wrap, reference, carryNote };

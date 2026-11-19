@@ -165,6 +165,24 @@ export default function TrialPlanSummary({ today, viewSwitch, onOpenDay, plant =
                 </ul>
               ) : <p className="sf-card-foot">No failed trials this {word}.</p>}
             </section>
+
+            <section className="sf-card tp-card" aria-labelledby="tp-notrun-title">
+              <h2 id="tp-notrun-title" className="sf-card-label">Why trials did not run</h2>
+              {data.summary.notRunReasons?.length ? (
+                <ul className="sf-plant-bars tp-reason-bars">
+                  {(() => {
+                    const max = Math.max(...data.summary.notRunReasons.map(f => f.count));
+                    return data.summary.notRunReasons.map(f => (
+                      <li key={f.reason}>
+                        <span className="tp-reason-name" title={f.reason}>{f.reason}</span>
+                        <span className="sf-bar" role="img" aria-label={`${f.count} trials`}><span style={{ width: `${(f.count / max) * 100}%` }} /></span>
+                        <span className="sf-mono sf-plant-ratio">{f.count}</span>
+                      </li>
+                    ));
+                  })()}
+                </ul>
+              ) : <p className="sf-card-foot">Every planned trial ran this {word}.</p>}
+            </section>
           </div>
         </>
       )}

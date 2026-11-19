@@ -11,7 +11,7 @@ import { validateTrialNumbers } from '../../utils/enhancementVerdict';
 import {
   addDays, formatPlanDate, formatShortDate, relativeDayLabel, dieKey, availableToPlan, searchSamples,
   isWaitingForTrial, needsOutOfQueueReason, entryFromSample, editableFields, groupByPress, pressNote,
-  toolingClashNotes, checkSentence, resultOf, showPct, plural, planExportRows, TRIAL_PLANTS,
+  toolingClashNotes, checkSentence, resultOf, showPct, plural, planExportRows, TRIAL_PLANTS, carryNote, carryTarget, ordinalDate,
 } from '../../utils/trialPlanView';
 
 // Shown until /meta answers, and if it never does.
@@ -21,6 +21,7 @@ const FALLBACK_META = {
   outOfQueueReasons: ['Re-trial after correction', 'Customer feedback', 'Design enhancement', 'Other'],
   resultGraceDays: 1,
   plants: TRIAL_PLANTS,
+  notRunReasons: ['Alloy shortage', 'Press breakdown', 'Die not ready', 'Production priority / no time', 'Other'],
 };
 
 const toast = (setToast, message, type = 'success') => {
@@ -226,6 +227,7 @@ function PlanTable({ entries, checks, meta, correctors, correctorsError, busy, o
                       {entry.urgent ? 'Urgent' : 'Mark urgent'}
                     </button>
                   </div>
+                  {carryNote(entry) && <span className="tp-carry-tag">{carryNote(entry)}</span>}
                   {entry.out_of_queue_reason && <span className="tp-reason-tag">{entry.out_of_queue_reason}</span>}
                 </td>
                 <td><CellInput entry={entry} field="customer" label="Customer" disabled={busy} onSave={onSave} /></td>
@@ -278,6 +280,7 @@ function ReadOnlyTable({ entries }) {
                 <td>
                   <span className="sf-mono tp-die">{entry.die_no}</span>
                   {entry.urgent && <span className="tp-urgent-chip">Urgent</span>}
+                  {carryNote(entry) && <span className="tp-carry-tag">{carryNote(entry)}</span>}
                   {entry.out_of_queue_reason && <span className="tp-reason-tag">{entry.out_of_queue_reason}</span>}
                 </td>
                 <td>{entry.customer || '—'}</td>
@@ -299,11 +302,12 @@ function ReadOnlyTable({ entries }) {
 }
 
 // The supervisor's form for one entry.
-function ResultPanel({ entry, sample, meta, trialsForDie, enhanced, busy, onSave, onCancel }) {
+function ResultPanel({ entry, sample, meta, trialsForDie, enhanced, busy, onSave, onCancel, plant, planDate, today }) {
   const supervised = entry.entry_type === 'Supervised';
   const [form, setForm] = useState({
     outcome: entry.outcome || entry._preset || 'OK',
     fail_reason: entry.fail_reason || '',
+    not_run_reason: entry.not_run_reason || '',
     comments: entry.comments || '',
     productivity_kgh: '',
     recovery_pct: '',
@@ -320,8 +324,11 @@ function ResultPanel({ entry, sample, meta, trialsForDie, enhanced, busy, onSave
     setError('');
     if (form.outcome === 'Not OK' && !supervised && !form.fail_reason) { setError('Choose why the trial was not OK.'); return; }
     if (form.outcome === 'Not OK' && supervised && !form.comments.trim()) { setError('Describe what went wrong on the supervised run.'); return; }
+    if (form.outcome === 'Not run' && !form.not_run_reason) { setError('Choose why the die did not run.'); return; }
+    if (form.outcome === 'Not run' && form.not_run_reason === 'Other' && !form.comments.trim()) { setError('Describe why the die did not run.'); return; }
     const body = { outcome: form.outcome, comments: form.comments };
     if (form.outcome === 'Not OK' && !supervised) body.fail_reason = form.fail_reason;
+    if (form.outcome === 'Not run') body.not_run_reason = form.not_run_reason;
     if (enhanced && writesLog) {
       const checked = validateTrialNumbers({ productivity: form.productivity_kgh, recovery: form.recovery_pct, required: form.outcome === 'OK', result: form.outcome });
       if (!checked.ok) { setError(Object.values(checked.errors)[0]); return; }
@@ -359,6 +366,15 @@ function ResultPanel({ entry, sample, meta, trialsForDie, enhanced, busy, onSave
             </select>
           </label>
         )}
+        {form.outcome === 'Not run' && (
+          <label className="tp-field">
+            <span className="tp-field-label">Why it did not run *</span>
+            <select value={form.not_run_reason} onChange={e => setForm({ ...form, not_run_reason: e.target.value })}>
+              <option value="">— choose a reason —</option>
+              {meta.notRunReasons.map(r => <option key={r} value={r}>{r === 'Other' ? 'Other (describe below)' : r}</option>)}
+            </select>
+          </label>
+        )}
         {enhanced && writesLog && (
           <div className="tp-two-cols">
             <label className="tp-field">
@@ -372,17 +388,23 @@ function ResultPanel({ entry, sample, meta, trialsForDie, enhanced, busy, onSave
           </div>
         )}
         <label className="tp-field">
-          <span className="tp-field-label">Comments{form.outcome === 'Not OK' && supervised ? ' *' : ''}</span>
+          <span className="tp-field-label">Comments{(form.outcome === 'Not OK' && supervised) || (form.outcome === 'Not run' && form.not_run_reason === 'Other') ? ' *' : ''}</span>
           <textarea rows={3} value={form.comments}
             placeholder={form.outcome === 'Not run' ? 'Why it did not run' : 'What was seen at the press'}
             onChange={e => setForm({ ...form, comments: e.target.value })} />
         </label>
         <div className="tp-after-save">
           <p className="tp-after-title">After saving</p>
+          {form.outcome === 'Not run' && (
+            <p className="tp-carry-note">
+              Carried over: added to the {plant} plan for {formatPlanDate(carryTarget(planDate, today))} as urgent,
+              marked &ldquo;Carry over from {ordinalDate(planDate)}{form.not_run_reason ? ` because of ${form.not_run_reason === 'Other' ? (form.comments.trim() || '…') : form.not_run_reason}` : ''}&rdquo;.
+            </p>
+          )}
           <p>
             {supervised ? 'A supervised run is a production run, not a trial, so nothing is written to the trial log.'
               : !linked ? 'This die has no record in Sample Followup, so the result stays on the plan only.'
-                : form.outcome === 'Not run' ? "Recorded on the plan only. The die's trial log is not touched, and the die stays available for the next plan."
+                : form.outcome === 'Not run' ? "The die's trial log is not touched and the sample status does not change."
                   : `${loggedTrial ? 'Updates' : 'Saved as'} trial ${trialNo} in the die's trial log, dated the plan day.${form.outcome === 'Not OK' && isWaitingForTrial(sample) ? ' The die stays waiting for trial and is offered for the next plan after correction.' : ''} The sample status does not change.`}
           </p>
           {approved && form.outcome === 'Not OK' && !supervised && (
@@ -412,6 +434,7 @@ function ResultsList({ entries, selectedId, canRecord, onPick }) {
             <div className="tp-result-main">
               <span className="sf-mono tp-die">{entry.die_no}{entry.urgent && <span className="tp-urgent-chip">Urgent</span>}</span>
               <span className="tp-meta">{[entry.customer, entry.alloy, entry.tooling, entry.corrector].filter(Boolean).join(' · ') || 'No details'}</span>
+              {carryNote(entry) && <span className="tp-carry-tag">{carryNote(entry)}</span>}
             </div>
             {sup && <span className="sf-pill tp-sup-pill">Supervised</span>}
             <div className="tp-result-side">
@@ -608,7 +631,14 @@ export default function TrialPlanTab({
 
   const saveResult = async (entry, body) => {
     // One click for a plain OK; the panel for anything that needs more.
-    const out = await run(() => trialPlansAPI.recordOutcome(entry.id, body), `${entry.die_no}: ${body.outcome === 'OK' && entry.entry_type === 'Supervised' ? 'Run OK' : body.outcome} recorded`);
+    const out = await run(() => trialPlansAPI.recordOutcome(entry.id, body), (res) => {
+      const said = `${entry.die_no}: ${body.outcome === 'OK' && entry.entry_type === 'Supervised' ? 'Run OK' : body.outcome} recorded`;
+      const carry = res?.carry;
+      if (carry?.status === 'added') return `${said}. Carried over to the ${carry.plant} plan for ${formatPlanDate(carry.date)} as urgent.`;
+      if (carry?.status === 'tagged') return `${said}. Already on the ${carry.plant} plan for ${formatPlanDate(carry.date)}; now marked urgent and carried over.`;
+      if (carry?.status === 'undone' && carry.removed) return `${said}. The carry-over was taken off the next plan.`;
+      return said;
+    });
     if (out) {
       setPicked(null);
       if (entry.entry_type === 'Trial') onTrialsChanged?.();
@@ -701,6 +731,12 @@ export default function TrialPlanTab({
           )}
           {!state.locked && !canEditPlan && canRecord && (
             <div className="tp-banner"><p>The plan is closed for changes. Results stay open until the end of {formatShortDate(addDays(planDate, meta.resultGraceDays))}.</p></div>
+          )}
+          {canEditPlan && published && view.carriedAfterPublish > 0 && (
+            <div className="tp-banner tp-banner-carry" role="status">
+              <p><strong>{plural(view.carriedAfterPublish, 'carry-over')} added after this plan was published.</strong> <span>The schedule people hold is out of date. Publish again to send the updated PDF.</span></p>
+              <button type="button" className="sf-button sf-button-tint" disabled={busy} onClick={publish}>Publish again</button>
+            </div>
           )}
           {canEditPlan && !published && planDate === today && plan && (
             <div className="tp-banner"><p>Publish today's plan before recording results.</p></div>
@@ -817,6 +853,7 @@ export default function TrialPlanTab({
                     <ResultPanel key={`${recordingEntry.id}:${preset}`} entry={{ ...recordingEntry, _preset: preset }} sample={sampleByEntry(recordingEntry)} meta={meta}
                       trialsForDie={trialsOf(recordingEntry)} busy={busy}
                       enhanced={Boolean(sampleByEntry(recordingEntry)?._order && isEnhancementOrder(sampleByEntry(recordingEntry)._order))}
+                      plant={plant} planDate={planDate} today={today}
                       onSave={saveResult} onCancel={() => setPicked(null)} />
                   ) : (
                     <section className="sf-card sf-empty tp-result-placeholder">

@@ -57,6 +57,7 @@ router.get('/meta', (req, res) => {
         outcomes: svc.OUTCOMES,
         failReasons: svc.FAIL_REASONS,
         outOfQueueReasons: svc.OUT_OF_QUEUE_REASONS,
+        notRunReasons: svc.NOT_RUN_REASONS,
         resultGraceDays: svc.RESULT_GRACE_DAYS,
         plants: svc.PLANTS,
     });
@@ -104,7 +105,7 @@ router.put('/entries/:id/outcome', withId, async (req, res) => {
     try {
         const out = await inTransaction(client => svc.recordOutcome(client, req.params.id, req.body, req.user, today()));
         if (!out.ok) return res.status(out.status).json({ error: out.error });
-        res.json({ entry: out.row, message: 'Result recorded' });
+        res.json({ entry: out.row, carry: out.carry, message: 'Result recorded' });
     } catch (error) {
         fail(res, 'Record trial plan outcome')(error);
     }
