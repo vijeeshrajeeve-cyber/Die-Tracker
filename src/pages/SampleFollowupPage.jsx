@@ -7,6 +7,8 @@ import { todayLocal } from '../utils/today';
 import { EnhancementTag, isEnhancementOrder } from '../components/DieAttentionLabels';
 import SampleFollowupForm from '../components/sample/SampleFollowupForm';
 import SampleFollowupDetail from '../components/sample/SampleFollowupDetail';
+import TrialPlanTab from '../components/sample/TrialPlanTab';
+import TrialPlanSummary from '../components/sample/TrialPlanSummary';
 import { trialCountFor } from '../utils/trials';
 import {
   STAGES, SUBMISSION_TARGET_DAYS, enrichSample, plantOf, scopeSampleFollowups, sortSampleFollowups,
@@ -75,6 +77,7 @@ const STAGE_HINT = {
   'Approved': 'No action needed',
 };
 const SORT_HINT = { received: 'Newest received first', plant: 'Grouped by plant' };
+const VIEWS = [['worklist', 'Worklist'], ['plan', 'Trial Plan'], ['summary', 'Summary']];
 
 export default function SampleFollowupPage({
   focusId = null, onFocusHandled,
@@ -98,6 +101,9 @@ export default function SampleFollowupPage({
   enhancements = {},
   onEnhancementChanged,
 }) {
+  const [view, setView] = useState('worklist');
+  // null: the plan the server says to open on (tomorrow).
+  const [planDate, setPlanDate] = useState(null);
   const [stage, setStage] = useState('Pending');
   const [sort, setSort] = useState('overdue');
   const [selectedId, setSelectedId] = useState(null);
@@ -365,13 +371,46 @@ export default function SampleFollowupPage({
 
   const total = plantScope.length;
 
+  // A focus from elsewhere (search, Work Queue) is about the worklist.
+  const activeView = focusId ? 'worklist' : view;
+  const changeView = (next) => {
+    onFocusHandled?.();
+    setView(next);
+  };
+  const viewSwitch = (
+    <div className="sf-segmented" role="group" aria-label="View">
+      {VIEWS.map(([key, label]) => (
+        <button type="button" key={key} aria-pressed={activeView === key} onClick={() => changeView(key)}>{label}</button>
+      ))}
+    </div>
+  );
+
+  const themeVars = {
+    '--sf-bg': theme.bg, '--sf-surface': theme.cardBg, '--sf-raised': theme.inputBg,
+    '--sf-line': theme.cardBorder, '--sf-text': theme.text, '--sf-muted': theme.textMuted,
+    '--sf-dim': theme.textDim || theme.textMuted, '--sf-shadow': theme.shadowSm || '0 1px 2px rgba(0,0,0,.28)',
+    '--sf-hover': theme.rowHover || 'rgba(255,255,255,.04)',
+  };
+
+  if (activeView !== 'worklist') {
+    return (
+      <section className="sample-followup" data-theme={theme.isDark ? 'dark' : 'light'} style={themeVars}>
+        {activeView === 'plan' ? (
+          <TrialPlanTab
+            date={planDate} setDate={setPlanDate} today={today} viewSwitch={viewSwitch}
+            samples={enriched} sampleTrials={sampleTrials} plantFilter={sfPlantFilter}
+            correctors={correctors} correctorsError={correctorsError}
+            setToast={setToast} onTrialsChanged={fetchSampleTrials} />
+        ) : (
+          <TrialPlanSummary today={today} viewSwitch={viewSwitch}
+            onOpenDay={(day) => { setPlanDate(day); setView('plan'); }} />
+        )}
+      </section>
+    );
+  }
+
   return (
-    <section className="sample-followup" data-theme={theme.isDark ? 'dark' : 'light'} style={{
-      '--sf-bg': theme.bg, '--sf-surface': theme.cardBg, '--sf-raised': theme.inputBg,
-      '--sf-line': theme.cardBorder, '--sf-text': theme.text, '--sf-muted': theme.textMuted,
-      '--sf-dim': theme.textDim || theme.textMuted, '--sf-shadow': theme.shadowSm || '0 1px 2px rgba(0,0,0,.28)',
-      '--sf-hover': theme.rowHover || 'rgba(255,255,255,.04)',
-    }}>
+    <section className="sample-followup" data-theme={theme.isDark ? 'dark' : 'light'} style={themeVars}>
       <header className="sf-header">
         <div className="sf-heading">
           <div className="sf-icon-tile" aria-hidden="true"><ClipboardList size={24} /></div>
@@ -387,6 +426,8 @@ export default function SampleFollowupPage({
           <button type="button" className="sf-button sf-button-header sf-button-primary" disabled={saving} onClick={addSample}><Plus size={16} />Add Record</button>
         </div>
       </header>
+
+      <div className="tp-toolbar">{viewSwitch}</div>
 
       <div className="sf-summary">
         <section className="sf-card sf-summary-card" aria-labelledby="sf-sum-stages">

@@ -27,6 +27,7 @@ const focReminderService = require('./services/focReminder.cjs');
 const dailySummaryService = require('./services/dailySummary.cjs');
 const sampleFollowupsRouter = require('./routes/sample-followups.cjs');
 const sampleTrialsRouter = require('./routes/sample-trials.cjs');
+const trialPlansRouter = require('./routes/trial-plans.cjs');
 const simulationRouter = require('./routes/simulation.cjs');
 const simulationSummaryRouter = require('./routes/simulation-summary.cjs');
 const enhancementSummaryRouter = require('./routes/enhancement-summary.cjs');
@@ -136,6 +137,8 @@ app.use('/api/sample-followups', authMiddleware, pageAccessMiddleware('flow-samp
 // Same page-access key: trials are part of the Sample Followup page, so anyone
 // who can see the page can see its trials.
 app.use('/api/sample-trials', authMiddleware, pageAccessMiddleware('flow-sample-followup'), sampleTrialsRouter);
+// The trial plan is a tab of the Sample Followup page, so it shares the key too.
+app.use('/api/trial-plans', authMiddleware, pageAccessMiddleware('flow-sample-followup'), trialPlansRouter);
 // The rounds belong to the Simulation page, so they share its key.
 app.use('/api/simulation', authMiddleware, pageAccessMiddleware('flow-simulation'), simulationRouter);
 // Shown on Analytics, and the Simulation page's own users may want their figures.

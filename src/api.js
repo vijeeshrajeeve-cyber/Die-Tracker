@@ -895,6 +895,30 @@ export const sampleTrialsAPI = {
     },
 };
 
+// The daily trial plan. Dates are 'YYYY-MM-DD' local days.
+export const trialPlansAPI = {
+    meta: async () => apiRequest('/trial-plans/meta'),
+    // { date, plan, entries, summary, checks, state: { planEditable, resultsOpen, locked } }
+    get: async (date) => apiRequest(`/trial-plans/${encodeURIComponent(date)}`),
+    summary: async (from, to) => apiRequest(`/trial-plans/summary?${new URLSearchParams({ from, to })}`),
+    lastAlloy: async (dieNo) => apiRequest(`/trial-plans/last-alloy/${encodeURIComponent(dieNo)}`),
+    addEntry: async (date, entry) => apiRequest(`/trial-plans/${encodeURIComponent(date)}/entries`, {
+        method: 'POST',
+        body: JSON.stringify(entry),
+    }),
+    updateEntry: async (id, entry) => apiRequest(`/trial-plans/entries/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(entry),
+    }),
+    removeEntry: async (id) => apiRequest(`/trial-plans/entries/${id}`, { method: 'DELETE' }),
+    publish: async (date) => apiRequest(`/trial-plans/${encodeURIComponent(date)}/publish`, { method: 'POST' }),
+    // { outcome, fail_reason?, comments?, productivity_kgh?, recovery_pct? }
+    recordOutcome: async (id, result) => apiRequest(`/trial-plans/entries/${id}/outcome`, {
+        method: 'PUT',
+        body: JSON.stringify(result),
+    }),
+};
+
 export const simulationAPI = {
     list: async () => apiRequest('/simulation'),
     recordStep: async (orderId, payload) => apiRequest(`/simulation/${orderId}/steps`, {

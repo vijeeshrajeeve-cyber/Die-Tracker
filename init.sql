@@ -290,6 +290,58 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_order_no
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_trials_sf_no
     ON sample_trials(sample_followup_id, trial_no) WHERE sample_followup_id IS NOT NULL;
 
+-- The daily trial plan. One row per calendar day; the sheet it replaces was
+-- one sheet per day for every press, so the day is the key, not the plant.
+CREATE TABLE IF NOT EXISTS trial_plans (
+    id            SERIAL PRIMARY KEY,
+    plan_date     DATE NOT NULL UNIQUE,
+    status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+    revision      INTEGER NOT NULL DEFAULT 0,
+    published_at  TIMESTAMP,
+    published_by  INTEGER REFERENCES users(id),
+    created_by    INTEGER REFERENCES users(id),
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- One die on one day's plan. Press, customer, alloy, tooling and corrector are
+-- copied here when the die is planned, so a past plan reads as it was
+-- published. The parent is optional (an old production die may have no record
+-- in this app) but never both, as on sample_trials. Deleting a die record
+-- keeps the plan line: SET NULL, not CASCADE, because the plan is history.
+CREATE TABLE IF NOT EXISTS trial_plan_entries (
+    id                  SERIAL PRIMARY KEY,
+    plan_id             INTEGER NOT NULL REFERENCES trial_plans(id) ON DELETE CASCADE,
+    position            INTEGER NOT NULL DEFAULT 0,
+    entry_type          TEXT NOT NULL DEFAULT 'Trial' CHECK (entry_type IN ('Trial', 'Supervised')),
+    urgent              BOOLEAN NOT NULL DEFAULT false,
+    die_order_id        INTEGER REFERENCES die_orders(id) ON DELETE SET NULL,
+    sample_followup_id  INTEGER REFERENCES sample_followups(id) ON DELETE SET NULL,
+    die_no              TEXT NOT NULL,
+    plant               TEXT,
+    press               TEXT,
+    customer            TEXT,
+    alloy               TEXT,
+    tooling             TEXT,
+    corrector           TEXT,
+    out_of_queue_reason TEXT,
+    outcome             TEXT CHECK (outcome IN ('OK', 'Not OK', 'Not run')),
+    fail_reason         TEXT,
+    comments            TEXT,
+    sample_trial_id     INTEGER REFERENCES sample_trials(id) ON DELETE SET NULL,
+    result_by           INTEGER REFERENCES users(id),
+    result_at           TIMESTAMP,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT trial_plan_entries_one_parent CHECK (
+        die_order_id IS NULL OR sample_followup_id IS NULL
+    ),
+    CONSTRAINT trial_plan_entries_one_die_per_plan UNIQUE (plan_id, die_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trial_plan_entries_plan ON trial_plan_entries(plan_id, position);
+
 -- Seed suppliers
 INSERT INTO suppliers (name, region) VALUES
     ('ADEX', 'Europe'),
