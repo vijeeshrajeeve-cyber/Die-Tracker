@@ -355,3 +355,11 @@ test('a summary range must be real, in order and not too long', async () => {
   assert.equal((await plans.rangeSummary(client, '2026-01-01', '2026-11-16')).status, 400);
   assert.equal(client.log.length, 0);
 });
+
+test('the last alloy is the newest planned one, matching either die spelling', async () => {
+  const client = fakeClient([[/^SELECT e\.alloy/, { rows: [{ alloy: '6063' }] }]]);
+  assert.equal(await plans.lastAlloy(client, '32140_401'), '6063');
+  assert.deepEqual(client.log[0].params, ['32140_401']);
+  assert.match(client.log[0].q, /ORDER BY p\.plan_date DESC/);
+  assert.equal(await plans.lastAlloy(fakeClient([]), '  '), null);
+});

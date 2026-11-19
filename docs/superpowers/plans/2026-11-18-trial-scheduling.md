@@ -74,19 +74,19 @@ Later phase: `day_shift_profiles` (`profile_no UNIQUE`, `reason`, `created_by`) 
 
 ### Phase 2: plan builder (mockup screen 1)
 
-- [ ] `trialPlansAPI` in `src/api.js`
-- [ ] "Worklist | Trial Plan | Summary" switch on `SampleFollowupPage`
-- [ ] `TrialPlanBuilder`: date control defaulting to the next day, "Available to plan" list from Sample Followup dies at Pending, plan grouped by press with Customer / Type / Alloy / Tooling / Corrector
-- [ ] Pre-fill press, customer and corrector from the die record; tooling from the die-tooling links; alloy from the last entry
-- [ ] "Add another die" search with required reason and a Re-trial tag
-- [ ] Checks card (tooling on two presses, corrector load) and the Publish action
+- [x] `trialPlansAPI` in `src/api.js`
+- [x] "Worklist | Trial Plan | Summary" switch on `SampleFollowupPage`
+- [x] `TrialPlanTab` (plan mode): date control defaulting to the next day, "Available to plan" list from Sample Followup dies at Pending, plan grouped by press with Customer / Type / Alloy / Tooling / Corrector
+- [x] Pre-fill press, customer and corrector from the die record; tooling from the die-tooling links; alloy from the last entry (`GET /last-alloy/:dieNo`)
+- [x] "Add another die" search with required reason and a Re-trial tag
+- [x] Checks card (tooling on two presses, corrector load) and the Publish action
 
 ### Phase 3: results and past plans (screens 2 and 4)
 
-- [ ] Results view with OK / Not OK / Not run and the entry panel, including productivity and recovery for enhancement dies
-- [ ] When an Approved die comes back Not OK, ask whether to reopen the sample or raise a QD; do neither automatically
-- [ ] Read-only past-plan view driven by the lock state the API returns
-- [ ] Excel and PDF export of a plan
+- [x] Results view with OK / Not OK / Not run and the entry panel, including productivity and recovery for enhancement dies
+- [x] When an Approved die comes back Not OK, the result panel tells the supervisor to decide between reopening the sample and raising a QD; neither happens automatically (no buttons yet)
+- [x] Read-only past-plan view driven by the lock state the API returns
+- [x] Excel export of a plan (PDF moves to phase 4 with the published-plan PDF)
 
 ### Phase 4: publishing (screen 3)
 
@@ -96,7 +96,7 @@ Later phase: `day_shift_profiles` (`profile_no UNIQUE`, `reason`, `created_by`) 
 
 ### Phase 5: summary (screen 5)
 
-- [ ] Summary tab with Week / Month switch, previous-period comparison, by day, by press, failure reasons
+- [x] Summary tab with Week / Month switch, previous-period comparison, by day, by press, failure reasons
 - [ ] Switch the table to by customer / corrector / supplier
 - [ ] Dies on their third trial or more; re-trials counted on their own line
 

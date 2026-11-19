@@ -467,6 +467,23 @@ async function recordOutcome(client, id, input, user, today) {
   return { ok: true, row: rows[0] };
 }
 
+// Alloy is not kept on the die record, so the plan offers the alloy the die
+// ran with last time it was planned. Underscore and hyphen spellings of a die
+// number are the same die, as everywhere else in the app.
+async function lastAlloy(client, dieNo) {
+  const die = trim(dieNo);
+  if (!die) return null;
+  const { rows } = await client.query(
+    `SELECT e.alloy
+       FROM trial_plan_entries e JOIN trial_plans p ON p.id = e.plan_id
+      WHERE translate(e.die_no, '_', '-') = translate($1, '_', '-') AND e.alloy IS NOT NULL
+      ORDER BY p.plan_date DESC, e.id DESC
+      LIMIT 1`,
+    [die]
+  );
+  return rows[0]?.alloy || null;
+}
+
 // The longest range a summary will cover. A quarter is the widest view the page
 // offers; this is headroom, not a feature.
 const MAX_SUMMARY_DAYS = 100;
@@ -508,5 +525,5 @@ module.exports = {
   RESULT_GRACE_DAYS, CORRECTOR_LOAD_FLAG, MAX_SUMMARY_DAYS,
   addDays, isPlanDate, defaultPlanDate, planState,
   validateEntry, validateOutcome, summarise, findChecks,
-  planView, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
+  planView, lastAlloy, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
 };

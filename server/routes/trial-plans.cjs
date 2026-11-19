@@ -70,6 +70,14 @@ router.get('/summary', async (req, res) => {
     }
 });
 
+router.get('/last-alloy/:dieNo', async (req, res) => {
+    try {
+        res.json({ alloy: await svc.lastAlloy(pool, req.params.dieNo) });
+    } catch (error) {
+        fail(res, 'Trial plan last alloy')(error);
+    }
+});
+
 router.put('/entries/:id', withId, async (req, res) => {
     try {
         const out = await inTransaction(client => svc.updateEntry(client, req.params.id, req.body, today()));
