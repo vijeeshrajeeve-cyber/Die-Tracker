@@ -70,8 +70,10 @@ function buildSampleStatus({ rows, trials, reportDate, plant = 'All' }) {
 
     const status = text(r.status) || 'Pending';
     const submission = dayOf(r.submissionDate);
-    const submittedToday = submission === reportDate;
-    const listed = status === 'Pending' || status === 'On hold' || status === 'Rejected' || submittedToday;
+    const rejected = status === 'Rejected';
+    // A Rejected die submitted today is still a Rejected die, not a fresh submission.
+    const submittedToday = !rejected && submission === reportDate;
+    const listed = status === 'Pending' || status === 'On hold' || rejected || submittedToday;
     // A die that is not Approved-and-gone still counts its trials today, so
     // trials are tallied for every row of the page, listed or not.
     const own = (trialsByParent.get(`${r.source}:${r.id}`) || []).slice()
@@ -86,10 +88,9 @@ function buildSampleStatus({ rows, trials, reportDate, plant = 'All' }) {
     }
     if (!listed || status === 'Approved') continue;
 
-    const rejected = status === 'Rejected';
     const end = submission ?? reportDate;
     const days = span(r.receivedDate, end);
-    const late = !rejected && days !== null && days > SUBMISSION_TARGET_DAYS;
+    const late = (status === 'Pending' || status === 'On hold') && !submittedToday && days !== null && days > SUBMISSION_TARGET_DAYS;
     const rejectedWait = rejected ? span(submission, reportDate) : null;
     const latestTrial = own[own.length - 1];
     const legacy = Number(r.legacyTrials) || 0;

@@ -56,6 +56,24 @@ test('rejected rows count their wait since submission and are never late', () =>
   assert.equal(report.totals.inTrial, 1);
 });
 
+test('a die submitted today is never late', () => {
+  const report = build([row({ status: 'Sample Submitted', receivedDate: '2026-11-01', submissionDate: TODAY })]);
+  assert.equal(allRows(report)[0].late, false);
+  assert.equal(report.totals.late, 0);
+  assert.equal(report.totals.submittedToday, 1);
+});
+
+test('a Rejected die submitted today stays a Rejected row in trial', () => {
+  const report = build([row({ status: 'Rejected', receivedDate: '2026-11-01', submissionDate: TODAY })]);
+  const [r] = allRows(report);
+  assert.equal(r.submittedToday, false);
+  assert.equal(r.rejectedWait, 0);
+  assert.equal(r.late, false);
+  assert.notEqual(r.latest, 'Submitted today');
+  assert.equal(report.totals.inTrial, 1);
+  assert.equal(report.totals.submittedToday, 0);
+});
+
 test('latest trial line', () => {
   const t = [
     trial({ trialNo: 1 }),
