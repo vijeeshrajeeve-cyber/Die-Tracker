@@ -45,6 +45,7 @@ import { designToEmsSince } from './utils/oracleEntry';
 import { determineStatus, hasDieReceivedDate } from './utils/determineStatus';
 import { typeLabel, dieTypeLabel, erpDieTypeCode } from './utils/dieType';
 import SampleFollowupPage from './pages/SampleFollowupPage';
+import { belongsInSampleFollowup } from './utils/sampleFollowupView';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import OrdersPage from './pages/OrdersPage';
@@ -2133,10 +2134,12 @@ export default function DieOrderingSystem() {
   // SF rows come from two sources:
   //  - 'order': die_orders past the receiving stage (created by the normal process flow).
   //  - 'standalone': rows in the sample_followups table (entered manually via the SF page's Add Record).
+  // One rule for both: a die is listed only once it is received in plant, and never while its order is
+  // cancelled or on hold (belongsInSampleFollowup). The Daily Sample Status report uses the same rule.
   // The row's id is namespaced per source so edit/delete handlers can route correctly.
   const sampleFollowups = useMemo(() => {
     const fromOrders = (data || [])
-      .filter(o => o['Die Received Date'] || o['Sample Status'] || o.STATUS === 'DIE RECEIVED')
+      .filter(o => belongsInSampleFollowup({ receivedDate: o['Die Received Date'], orderStatus: o.STATUS }))
       .map(o => ({
         id: `order-${o.id}`,
         _source: 'order',
@@ -2158,7 +2161,9 @@ export default function DieOrderingSystem() {
         corrector: o['Corrector'] || '',
       }));
 
-    const fromStandalone = (sampleFollowupsStandalone || []).map(sf => ({
+    const fromStandalone = (sampleFollowupsStandalone || [])
+      .filter(sf => belongsInSampleFollowup({ receivedDate: sf.die_received_date }))
+      .map(sf => ({
       id: `sf-${sf.id}`,
       _source: 'standalone',
       _raw: sf,

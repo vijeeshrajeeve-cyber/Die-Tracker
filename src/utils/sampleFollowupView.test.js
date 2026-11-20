@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   STAGES, stageOf, enrichSample, scopeSampleFollowups, sortSampleFollowups,
   bandsFor, stageSummary, daysToSubmission, lateByPlant, daysSince, plural,
+  belongsInSampleFollowup,
 } from './sampleFollowupView.js';
 
 const TODAY = '2026-09-19';
@@ -127,4 +128,14 @@ test('an approved die with no submission date is not still waiting', () => {
   const skipped = enrichSample({ status: 'Approved', die_received_date: '2026-03-04', sample_approval_date: '2026-04-30' }, TODAY);
   assert.equal(skipped.days, null);
   assert.equal(skipped.late, false);
+});
+
+test('only received dies on live orders belong in Sample Followup', () => {
+  assert.equal(belongsInSampleFollowup({ receivedDate: '2026-11-01', orderStatus: 'DIE RECEIVED' }), true);
+  assert.equal(belongsInSampleFollowup({ receivedDate: '', orderStatus: 'DIE RECEIVED' }), false);
+  assert.equal(belongsInSampleFollowup({ receivedDate: '  ', orderStatus: null }), false);
+  assert.equal(belongsInSampleFollowup({ receivedDate: '2026-11-01', orderStatus: 'CANCELLED' }), false);
+  assert.equal(belongsInSampleFollowup({ receivedDate: '2026-11-01', orderStatus: ' hold ' }), false);
+  // text that is not a date still counts as received
+  assert.equal(belongsInSampleFollowup({ receivedDate: 'received', orderStatus: undefined }), true);
 });

@@ -149,3 +149,11 @@ export const sampleStatusClass = (status) => ({
   Pending: 'pending', 'Sample Submitted': 'submitted', Approved: 'approved',
   Rejected: 'rejected', 'On hold': 'hold',
 }[status || 'Pending'] || 'hold');
+
+// The one listing rule: a die is in Sample Followup only once it is received in plant, and never
+// while its order is cancelled or on hold. The Daily Sample Status report applies the same rule.
+export const belongsInSampleFollowup = ({ receivedDate, orderStatus }) => {
+  if (!String(receivedDate || '').trim()) return false;
+  const status = String(orderStatus || '').trim().toUpperCase();
+  return status !== 'CANCELLED' && status !== 'HOLD';
+};
