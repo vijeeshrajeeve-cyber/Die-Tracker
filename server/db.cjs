@@ -891,6 +891,11 @@ const initializeDatabase = async () => {
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_to       TEXT DEFAULT '';
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS daily_summary_cc       TEXT DEFAULT '';
 
+      -- Sample Status: Monday to Saturday; recipients on the 'Sample Status' email template.
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sample_status_enabled  BOOLEAN DEFAULT false;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sample_status_time     TEXT DEFAULT '18:00';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sample_status_last_run DATE;
+
       -- Die delivery chaser: dies past the supplier's ETA, or with none, out to
       -- each supplier at most once every interval_days. Checked daily at time.
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS delivery_chaser_enabled       BOOLEAN DEFAULT false;
@@ -1433,7 +1438,8 @@ const initializeDatabase = async () => {
     await client.query(`
       INSERT INTO email_templates (name, subject_template, body_template, category) VALUES
       ('Trial Plan - GEX 1', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan'),
-      ('Trial Plan - GEX 2', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan')
+      ('Trial Plan - GEX 2', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan'),
+      ('Sample Status', 'Sample status - {{date}}', 'The sample status for {{date}} is attached.', 'sample_status')
       ON CONFLICT (name) DO NOTHING
     `);
 
