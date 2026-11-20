@@ -106,7 +106,7 @@ test('email body: human totals per plant, escaped', async () => {
     bytes: new Uint8Array([1]),
   });
   await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0) });
-  assert.match(sent[0].body, /GEX &lt;1&gt;<\/strong>: In trial 12 .*Late 4 .*Submitted today 2 .*Trials today 5 \(3 OK \/ 2 Not OK\)/);
+  assert.match(sent[0].body, /GEX &lt;1&gt;<\/strong>: In trial 12 &middot; Late 4 &middot; Submitted today 2 &middot; Trials today 5 \(3 OK \/ 2 Not OK\)/);
   assert.doesNotMatch(sent[0].body, /inTrial/);
 });
 

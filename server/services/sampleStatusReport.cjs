@@ -97,7 +97,7 @@ function escapeHtml(value) {
 
 function buildEmailBody(intro, report) {
   const line = (report.plants || [])
-    .map((p) => `<p style="font-size:13px;margin:2px 0;"><strong>${escapeHtml(p.plant)}</strong>: ${escapeHtml(summaryText(p.counts || {}).replace(/ - /g, ' · '))}</p>`)
+    .map((p) => `<p style="font-size:13px;margin:2px 0;"><strong>${escapeHtml(p.plant)}</strong>: ${escapeHtml(summaryText(p.counts || {})).replace(/ - /g, ' &middot; ')}</p>`)
     .join('');
   return `
     <div style="font-family:Arial,sans-serif;font-size:13px;color:#0F172A;">
