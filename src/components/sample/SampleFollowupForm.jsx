@@ -31,7 +31,7 @@ export default function SampleFollowupForm({ value, onChange, onSubmit, onCancel
                   {(key === 'status' ? SAMPLE_STATUSES : ['Yes', 'No']).map(option => <option key={option}>{option}</option>)}
                 </select>
               ) : (
-                <input id={`sf-form-${key}`} type={type} required={key === 'die'}
+                <input id={`sf-form-${key}`} type={type} required={key === 'die' || key === 'die_received_date'}
                   value={type === 'date' ? String(value[key] || '').slice(0, 10) : value[key] || ''}
                   onChange={event => onChange({ ...value, [key]: event.target.value })} />
               )}

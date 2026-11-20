@@ -215,3 +215,55 @@ test('loadSampleStatus maps DB columns and filters', async () => {
   const one = await loadSampleStatus(db, { reportDate: TODAY, plant: 'GEX 2' });
   assert.equal(one.plants.length, 1);
 });
+
+test('plant filter accepts non-canonical plant spellings', () => {
+  const rows = [row({ id: 1, plant: 'GEX 1' }), row({ id: 2, plant: 'GEX 2' })];
+  for (const spelling of ['GEX 01', 'GEX_1', 'gex 1']) {
+    const report = build(rows, [], { plant: spelling });
+    assert.equal(report.plantFilter, 'GEX 1', spelling);
+    assert.deepEqual(report.plants.map(p => p.plant), ['GEX 1'], spelling);
+  }
+});
+
+test('loadSampleStatus fills a blank customer: die match beats profile match beats profiles table', async () => {
+  let customerQueries = 0;
+  const base = { plant: 'GEX 1', press: 'P', die_type: 'SF', supplier: 'S', die_received_date: '2026-11-10', submission_date: null,
+    sample_status: 'Pending', order_status: 'Active', corrector: null, no_of_trial: 0, sample_remark: null };
+  const db = {
+    async query(sql) {
+      if (/FROM\s+die_orders/i.test(sql)) return { rows: [
+        { ...base, id: 1, die_no: '123-4', customer_name: '' },
+        { ...base, id: 2, die_no: '123-9', customer_name: null },
+        { ...base, id: 3, die_no: '777-1', customer_name: '' },
+        { ...base, id: 4, die_no: '555-1', customer_name: 'Own' },
+        { ...base, id: 5, die_no: '999-1', customer_name: '' },
+      ] };
+      if (/FROM\s+sample_followups/i.test(sql)) return { rows: [
+        { id: 7, profile: '123_4', plant: 'GEX 1', press: 'P', customer: '', supplier: 'S', die_received_date: '2026-11-10',
+          submission_date: null, sample_status: 'Pending', no_of_trial: 0, remark: '', corrector: null },
+      ] };
+      if (/FROM\s+sample_trials/i.test(sql)) return { rows: [] };
+      if (/existing_die_details/i.test(sql)) {
+        customerQueries += 1;
+        return { rows: [
+          { kind: 'die', key: '123-4', customer: 'DieMatch-old', id: 1 },
+          { kind: 'die', key: '123-4', customer: 'DieMatch', id: 2 },
+          { kind: 'profile', key: '123', customer: 'ProfileMatch', id: 3 },
+          { kind: 'profile', key: '777', customer: 'ProfileMatch777', id: 4 },
+          { kind: 'master', key: '123', customer: 'Master123', id: 5 },
+          { kind: 'master', key: '999', customer: 'Master999', id: 6 },
+        ] };
+      }
+      throw new Error('unexpected sql ' + sql);
+    },
+  };
+  const report = await loadSampleStatus(db, { reportDate: TODAY });
+  assert.equal(customerQueries, 1);
+  const byDie = Object.fromEntries(allRows(report).map(r => [r.die, r.customer]));
+  assert.equal(byDie['123-4'], 'DieMatch');
+  assert.equal(byDie['123-9'], 'ProfileMatch');
+  assert.equal(byDie['777-1'], 'ProfileMatch777');
+  assert.equal(byDie['555-1'], 'Own');
+  assert.equal(byDie['999-1'], 'Master999');
+  assert.equal(byDie['123_4'], 'DieMatch');
+});

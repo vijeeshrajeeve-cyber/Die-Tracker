@@ -10,7 +10,7 @@ const { pool } = require('../db.cjs');
 const emailService = require('./email.cjs');
 const { todayLocal } = require('./dates.cjs');
 const { loadSampleStatus } = require('./sampleStatusReportData.cjs');
-const { generateSampleStatusPdf } = require('./sampleStatusReportPdf.cjs');
+const { generateSampleStatusPdf, summaryText } = require('./sampleStatusReportPdf.cjs');
 
 const TEMPLATE_NAME = 'Sample Status';
 const DEFAULT_TIME = '18:00';
@@ -77,7 +77,8 @@ function readLogo() {
 }
 
 function fileName(reportDate, plant) {
-  const suffix = plant && plant !== 'All' ? `-${String(plant).replace(/\s+/g, '')}` : '';
+  const safe = String(plant || '').replace(/[^A-Za-z0-9-]/g, '');
+  const suffix = safe && safe !== 'All' ? `-${safe}` : '';
   return `Sample-Status-${reportDate}${suffix}.pdf`;
 }
 
@@ -95,10 +96,9 @@ function escapeHtml(value) {
 }
 
 function buildEmailBody(intro, report) {
-  const t = report.totals || {};
-  const line = Object.keys(t).length
-    ? `<p style="font-size:13px;">${Object.entries(t).map(([k, v]) => `${escapeHtml(k)}: <strong>${escapeHtml(v)}</strong>`).join(' &middot; ')}</p>`
-    : '';
+  const line = (report.plants || [])
+    .map((p) => `<p style="font-size:13px;margin:2px 0;"><strong>${escapeHtml(p.plant)}</strong>: ${escapeHtml(summaryText(p.counts || {}).replace(/ - /g, ' · '))}</p>`)
+    .join('');
   return `
     <div style="font-family:Arial,sans-serif;font-size:13px;color:#0F172A;">
       <p>${escapeHtml(intro)}</p>
@@ -107,7 +107,9 @@ function buildEmailBody(intro, report) {
     </div>`;
 }
 
-async function sendSampleStatus({ now = new Date() } = {}) {
+// stamp: true only from the scheduler tick. Send now must not mark the day as
+// done, or it would suppress that day's scheduled email.
+async function sendSampleStatus({ now = new Date(), stamp: stampDay = false } = {}) {
   if (state.running) return { status: 'skipped', message: 'Already running' };
   state.running = true;
   try {
@@ -120,7 +122,7 @@ async function sendSampleStatus({ now = new Date() } = {}) {
     );
     const template = rows[0];
     const to = String(template?.default_to || '').trim();
-    const stamp = () => db.query(
+    const stamp = () => !stampDay ? null : db.query(
       'UPDATE reminder_settings SET sample_status_last_run = $1 WHERE id = $2', [reportDate, settings.id]
     );
 
@@ -172,7 +174,7 @@ async function sampleStatusTick() {
   try {
     const s = await getSampleStatusSettings();
     if (!isDue({ enabled: s.sample_status_enabled, time: s.sample_status_time, lastRun: s.sample_status_last_run })) return;
-    await sendSampleStatus();
+    await sendSampleStatus({ stamp: true });
   } catch {
     // Logged in sendSampleStatus; never let the tick throw
   }

@@ -49,7 +49,9 @@ const GROUP_ORDER = { late: 0, waiting: 1, rejected: 2, submittedToday: 3 };
 const desc = (a, b) => (b - a);
 const nullLast = (a, b, cmp) => (a === null ? (b === null ? 0 : 1) : b === null ? -1 : cmp(a, b));
 
-function buildSampleStatus({ rows, trials, reportDate, plant = 'All' }) {
+function buildSampleStatus({ rows, trials, reportDate, plant: plantInput = 'All' }) {
+  // The page offers raw plant values ('GEX 01', 'GEX_2'); compare as the report names them.
+  const plant = plantInput === 'All' ? 'All' : (plantName(plantInput) || text(plantInput));
   const trialsByParent = new Map();
   for (const t of trials || []) {
     const key = `${t.source}:${t.parentId}`;
@@ -154,6 +156,45 @@ function buildSampleStatus({ rows, trials, reportDate, plant = 'All' }) {
   return { reportDate, plantFilter: plant, totals, plants };
 }
 
+// Most die orders carry no customer name, so a blank one is looked up the way
+// trial plans do it (customerFor in trialPlans.cjs): the die list for that exact
+// die, then any die of the same profile, then the profile master; newest wins.
+// One batched query for every die, never one per die.
+const dieKey = (die) => text(die).replace(/_/g, '-');
+const profileOf = (die) => dieKey(die).split('-')[0];
+
+async function withCustomers(db, rows) {
+  const blank = rows.filter(r => !text(r.customer) && dieKey(r.die));
+  if (!blank.length) return rows;
+  const dies = [...new Set(blank.map(r => dieKey(r.die)))];
+  const profiles = [...new Set(blank.map(r => profileOf(r.die)).filter(Boolean))];
+  const { rows: found } = await db.query(
+    `SELECT 'die' AS kind, translate(x.die_no, '_', '-') AS key, x.customer, x.id
+       FROM existing_die_details x
+      WHERE translate(x.die_no, '_', '-') = ANY($1::text[]) AND COALESCE(trim(x.customer), '') <> ''
+     UNION ALL
+     SELECT 'profile', x.profile_number, x.customer, x.id
+       FROM existing_die_details x
+      WHERE x.profile_number = ANY($2::text[]) AND COALESCE(trim(x.customer), '') <> ''
+     UNION ALL
+     SELECT 'master', p.profile_number, p.customer_name, p.id
+       FROM profiles p
+      WHERE p.profile_number = ANY($2::text[]) AND COALESCE(trim(p.customer_name), '') <> ''`,
+    [dies, profiles]
+  );
+  const best = new Map(); // kind:key -> { id, customer }; the latest id wins
+  for (const f of found) {
+    const k = `${f.kind}:${f.key}`;
+    if (!best.has(k) || Number(f.id) > best.get(k).id) best.set(k, { id: Number(f.id), customer: text(f.customer) });
+  }
+  const pick = (kind, key) => best.get(`${kind}:${key}`)?.customer || '';
+  return rows.map(r => {
+    if (text(r.customer) || !dieKey(r.die)) return r;
+    const customer = pick('die', dieKey(r.die)) || pick('profile', profileOf(r.die)) || pick('master', profileOf(r.die));
+    return customer ? { ...r, customer } : r;
+  });
+}
+
 async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' } = {}) {
   const orders = await db.query(
     `SELECT id, die_no, plant, press, customer_name, die_type, supplier, die_received_date, submission_date,
@@ -170,7 +211,7 @@ async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' }
        FROM sample_trials`
   );
 
-  const rows = [
+  const loaded = [
     ...orders.rows.map(o => ({
       source: 'order', id: o.id, die: o.die_no, plant: o.plant, press: o.press, customer: o.customer_name,
       dieType: o.die_type, supplier: o.supplier, receivedDate: o.die_received_date, submissionDate: o.submission_date,
@@ -184,6 +225,7 @@ async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' }
       legacyTrials: s.no_of_trial, remark: s.remark,
     })),
   ].filter(belongsInSampleFollowup);
+  const rows = await withCustomers(db, loaded);
 
   const trials = trialRows.rows.map(t => ({
     source: t.die_order_id != null ? 'order' : 'standalone',

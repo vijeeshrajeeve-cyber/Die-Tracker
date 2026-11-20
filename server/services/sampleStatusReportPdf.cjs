@@ -287,4 +287,4 @@ async function generateSampleStatusPdf(report, { generatedAt = new Date(), logoB
   return doc.save();
 }
 
-module.exports = { generateSampleStatusPdf };
+module.exports = { generateSampleStatusPdf, summaryText };

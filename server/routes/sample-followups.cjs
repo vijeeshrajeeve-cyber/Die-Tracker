@@ -67,9 +67,9 @@ router.get('/status-report.pdf', async (req, res) => {
         }
         const rawPlant = String(req.query.plant || '').trim();
         const plant = !rawPlant || rawPlant === 'All' ? 'All' : rawPlant;
-        const { bytes } = await sampleStatusService.renderPdfFor({ reportDate: date, plant });
+        const { report, bytes } = await sampleStatusService.renderPdfFor({ reportDate: date, plant });
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${sampleStatusService.fileName(date, plant)}"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${sampleStatusService.fileName(date, report.plantFilter)}"`);
         res.send(Buffer.from(bytes));
     } catch (error) {
         console.error('Sample status PDF error:', error);

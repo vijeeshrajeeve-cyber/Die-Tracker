@@ -52,7 +52,7 @@ function stub({ to }) {
 
 test('sendSampleStatus: empty To is skipped, nothing sent, last run still stamped', async () => {
   const { sent, queries } = stub({ to: '  ' });
-  const r = await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0) });
+  const r = await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0), stamp: true });
   assert.equal(r.status, 'skipped');
   assert.equal(r.message, 'No recipients set for "Sample Status" in Settings, so the report was not emailed');
   assert.equal(sent.length, 0);
@@ -80,4 +80,36 @@ test('sendSampleStatus: a mail error throws and records the error', async () => 
 test('fileName: plant without spaces', () => {
   assert.equal(svc.fileName('2026-11-20', 'All'), 'Sample-Status-2026-11-20.pdf');
   assert.equal(svc.fileName('2026-11-20', 'GEX 1'), 'Sample-Status-2026-11-20-GEX1.pdf');
+});
+
+test('sendSampleStatus: run-now (no stamp option) never stamps, sent or skipped', async () => {
+  let { queries } = stub({ to: 'a@x.com' });
+  let r = await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0) });
+  assert.equal(r.status, 'sent');
+  assert.ok(!queries.some((q) => /UPDATE reminder_settings SET sample_status_last_run/.test(q.sql)));
+  ({ queries } = stub({ to: '' }));
+  r = await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0) });
+  assert.equal(r.status, 'skipped');
+  assert.ok(!queries.some((q) => /UPDATE reminder_settings SET sample_status_last_run/.test(q.sql)));
+});
+
+test('sendSampleStatus: scheduler path (stamp: true) stamps after a send', async () => {
+  const { queries } = stub({ to: 'a@x.com' });
+  await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0), stamp: true });
+  assert.ok(queries.some((q) => /UPDATE reminder_settings SET sample_status_last_run/.test(q.sql)));
+});
+
+test('email body: human totals per plant, escaped', async () => {
+  const { sent } = stub({ to: 'a@x.com' });
+  svc._deps.renderPdfFor = async ({ reportDate }) => ({
+    report: { reportDate, plants: [{ plant: 'GEX <1>', counts: { inTrial: 12, late: 4, submittedToday: 2, trialsToday: 5, trialsOk: 3, trialsNotOk: 2 } }] },
+    bytes: new Uint8Array([1]),
+  });
+  await svc.sendSampleStatus({ now: at(2026, 11, 20, 18, 0) });
+  assert.match(sent[0].body, /GEX &lt;1&gt;<\/strong>: In trial 12 .*Late 4 .*Submitted today 2 .*Trials today 5 \(3 OK \/ 2 Not OK\)/);
+  assert.doesNotMatch(sent[0].body, /inTrial/);
+});
+
+test('fileName: strips unsafe plant characters', () => {
+  assert.equal(svc.fileName('2026-11-20', 'GEX"\r\n_2'), 'Sample-Status-2026-11-20-GEX2.pdf');
 });
