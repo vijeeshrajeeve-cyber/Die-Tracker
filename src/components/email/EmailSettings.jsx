@@ -10,6 +10,7 @@ import DesignReminderSettings from './DesignReminderSettings';
 import OrderingReminderSettings from './OrderingReminderSettings';
 import FocReminderSettings from './FocReminderSettings';
 import DailySummarySettings from './DailySummarySettings';
+import SampleStatusSettings from './SampleStatusSettings';
 import DeliveryChaserSettings from './DeliveryChaserSettings';
 
 // Settings → Email.
@@ -133,7 +134,7 @@ const EmailSettings = ({ theme }) => {
                 <div role="status" style={{
                     position: 'fixed', top: '20px', right: '20px', zIndex: 9999,
                     padding: '12px 20px', borderRadius: '12px',
-                    background: toast.type === 'success' ? '#0F7A4D' : '#B3261E',
+                    background: toast.type === 'success' ? '#0F7A4D' : toast.type === 'warning' ? '#92600A' : '#B3261E',
                     color: '#ffffff', fontSize: '0.875rem', fontWeight: 500,
                     display: 'flex', alignItems: 'center', gap: '8px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
@@ -322,6 +323,7 @@ const EmailSettings = ({ theme }) => {
                     <FocReminderSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <DeliveryChaserSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <DailySummarySettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                    <SampleStatusSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                 </div>
             </section>
         </div>

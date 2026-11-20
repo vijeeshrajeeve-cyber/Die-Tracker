@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, Plus, ClipboardList, Download } from 'lucide-react';
+import { X, Plus, ClipboardList, Download, FileText } from 'lucide-react';
 import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
 import { exportToExcel } from '../utils/exportExcel';
@@ -335,6 +335,20 @@ export default function SampleFollowupPage({
   // Everything in the current plant and search scope, across all three stages.
   const exportRows = sortSampleFollowups(scoped, sort);
 
+  const handleStatusPdf = async () => {
+    const plant = sfPlantFilter && sfPlantFilter !== 'All' ? sfPlantFilter : 'All';
+    const date = todayLocal();
+    const blob = await sampleFollowupsAPI.statusReportPdf(date, plant);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Sample-Status-${date}${plant === 'All' ? '' : `-${plant.replace(/\s+/g, '')}`}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  };
+
   const handleExport = async () => {
     const followupColumns = [
       { key: 'die', label: 'Die' },
@@ -443,6 +457,7 @@ export default function SampleFollowupPage({
         </div>
         <div className="sf-header-actions">
           <button type="button" className="sf-button sf-button-header" disabled={!exportRows.length} onClick={() => handleExport().catch(error => setToast({ type: 'error', message: `Export failed: ${error.message}` }))}><Download size={16} />Export</button>
+          <button type="button" className="sf-button sf-button-header" onClick={() => handleStatusPdf().catch(error => setToast({ type: 'error', message: `Sample Status PDF failed: ${error.message}` }))}><FileText size={16} />Sample Status PDF</button>
           <button type="button" className="sf-button sf-button-header sf-button-primary" disabled={saving} onClick={addSample}><Plus size={16} />Add Record</button>
         </div>
       </header>
