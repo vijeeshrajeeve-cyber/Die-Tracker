@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { X, Plus, ClipboardList, Download, FileText } from 'lucide-react';
 import { ordersAPI, sampleFollowupsAPI } from '../api';
 import { dialogs } from '../components/ui/DialogProvider';
@@ -123,6 +123,12 @@ export default function SampleFollowupPage({
   // '' is both plants added together.
   const [summaryPlant, setSummaryPlant] = useState('');
   const [stage, setStage] = useState('Pending');
+  // The PDF takes a second or two to build. Without a busy state a second click
+  // starts a second download, and the browser cancels one of them -- which
+  // surfaced as "Failed to fetch". The ref blocks clicks that land before the
+  // re-render disables the button.
+  const [statusPdfBusy, setStatusPdfBusy] = useState(false);
+  const statusPdfBusyRef = useRef(false);
   const [sort, setSort] = useState('overdue');
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -336,17 +342,25 @@ export default function SampleFollowupPage({
   const exportRows = sortSampleFollowups(scoped, sort);
 
   const handleStatusPdf = async () => {
-    const plant = sfPlantFilter && sfPlantFilter !== 'All' ? sfPlantFilter : 'All';
-    const date = todayLocal();
-    const blob = await sampleFollowupsAPI.statusReportPdf(date, plant);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Sample-Status-${date}${plant === 'All' ? '' : `-${plant.replace(/\s+/g, '')}`}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    if (statusPdfBusyRef.current) return;
+    statusPdfBusyRef.current = true;
+    setStatusPdfBusy(true);
+    try {
+      const plant = sfPlantFilter && sfPlantFilter !== 'All' ? sfPlantFilter : 'All';
+      const date = todayLocal();
+      const blob = await sampleFollowupsAPI.statusReportPdf(date, plant);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Sample-Status-${date}${plant === 'All' ? '' : `-${plant.replace(/[^A-Za-z0-9-]/g, '')}`}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } finally {
+      statusPdfBusyRef.current = false;
+      setStatusPdfBusy(false);
+    }
   };
 
   const handleExport = async () => {
@@ -457,7 +471,7 @@ export default function SampleFollowupPage({
         </div>
         <div className="sf-header-actions">
           <button type="button" className="sf-button sf-button-header" disabled={!exportRows.length} onClick={() => handleExport().catch(error => setToast({ type: 'error', message: `Export failed: ${error.message}` }))}><Download size={16} />Export</button>
-          <button type="button" className="sf-button sf-button-header" onClick={() => handleStatusPdf().catch(error => setToast({ type: 'error', message: `Sample Status PDF failed: ${error.message}` }))}><FileText size={16} />Sample Status PDF</button>
+          <button type="button" className="sf-button sf-button-header" disabled={statusPdfBusy} aria-busy={statusPdfBusy} onClick={() => handleStatusPdf().catch(error => setToast({ type: 'error', message: `Sample Status PDF failed: ${error.message}` }))}><FileText size={16} />{statusPdfBusy ? 'Preparing PDF…' : 'Sample Status PDF'}</button>
           <button type="button" className="sf-button sf-button-header sf-button-primary" disabled={saving} onClick={addSample}><Plus size={16} />Add Record</button>
         </div>
       </header>
