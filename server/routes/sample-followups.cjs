@@ -1,6 +1,8 @@
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
+const { todayLocal } = require('../services/dates.cjs');
+const sampleStatusService = require('../services/sampleStatusReport.cjs');
 
 const router = express.Router();
 
@@ -54,6 +56,26 @@ const followupValidation = [
 const idValidation = [
     param('id').isInt({ min: 1 }).withMessage('Invalid ID')
 ];
+
+// Sample Status PDF: rendered on demand, records nothing. Declared before the
+// /:id routes so "status-report.pdf" is never read as an id.
+router.get('/status-report.pdf', async (req, res) => {
+    try {
+        const date = req.query.date === undefined || req.query.date === '' ? todayLocal() : String(req.query.date);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+        }
+        const rawPlant = String(req.query.plant || '').trim();
+        const plant = !rawPlant || rawPlant === 'All' ? 'All' : rawPlant;
+        const { report, bytes } = await sampleStatusService.renderPdfFor({ reportDate: date, plant });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${sampleStatusService.fileName(date, report.plantFilter)}"`);
+        res.send(Buffer.from(bytes));
+    } catch (error) {
+        console.error('Sample status PDF error:', error);
+        res.status(500).json({ error: 'Failed to generate the sample status PDF' });
+    }
+});
 
 // Get all sample followups
 router.get('/', async (req, res) => {

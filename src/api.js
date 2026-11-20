@@ -837,6 +837,16 @@ export const emailAPI = {
 
     // Sends nothing: the emails the next run would send.
     previewDeliveryChaser: async () => apiRequest('/email/delivery-chaser-preview'),
+
+    getSampleStatusSettings: async () => apiRequest('/email/sample-status-settings'),
+
+    updateSampleStatusSettings: async (settings) => apiRequest('/email/sample-status-settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+    }),
+
+    // Emails the Sample Status report to the template recipients right now.
+    runSampleStatusNow: async () => apiRequest('/email/sample-status-settings/run-now', { method: 'POST' }),
 };
 
 // Sample Followups API
@@ -863,6 +873,20 @@ export const sampleFollowupsAPI = {
         return apiRequest(`/sample-followups/${id}`, {
             method: 'DELETE',
         });
+    },
+
+    // Returns a Blob. Sends nothing; builds the Sample Status PDF for a day.
+    statusReportPdf: async (date, plant = 'All') => {
+        const response = await fetch(
+            `${API_BASE_URL}/sample-followups/status-report.pdf?date=${encodeURIComponent(date)}&plant=${encodeURIComponent(plant || 'All')}`,
+            { headers: { Authorization: `Bearer ${getToken()}` } }
+        );
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
     },
 };
 

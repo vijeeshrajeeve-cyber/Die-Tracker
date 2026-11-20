@@ -496,4 +496,4 @@ async function generateTrialPlanPdf(view, opts = {}) {
   return doc.save();
 }
 
-module.exports = { generateTrialPlanPdf, sanitize, fit, wrap, reference, carryNote };
+module.exports = { generateTrialPlanPdf, sanitize, fit, wrap, reference, carryNote, longDate, stamp };

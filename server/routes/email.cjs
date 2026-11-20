@@ -10,6 +10,7 @@ const designReminderService = require('../services/designReminder.cjs');
 const orderingReminderService = require('../services/orderingReminder.cjs');
 const focReminderService = require('../services/focReminder.cjs');
 const dailySummaryService = require('../services/dailySummary.cjs');
+const sampleStatusService = require('../services/sampleStatusReport.cjs');
 const deliveryChaserService = require('../services/deliveryChaser.cjs');
 const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
@@ -488,6 +489,54 @@ router.get('/daily-summary.pdf', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Daily summary PDF error:', error);
         res.status(500).json({ error: 'Failed to generate the daily summary PDF' });
+    }
+});
+
+// ── Sample status ─────────────────────────────────────────────────────────────
+
+router.get('/sample-status-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const settings = await sampleStatusService.getSampleStatusSettings();
+        res.json({ settings, state: sampleStatusService.getSampleStatusState() });
+    } catch (error) {
+        console.error('Get sample status settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch sample status settings' });
+    }
+});
+
+router.put('/sample-status-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const { enabled, time } = req.body;
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({ error: 'enabled must be a boolean' });
+        }
+        if (time !== undefined && !HHMM.test(time)) {
+            return res.status(400).json({ error: 'time must be in HH:MM (24-hour) format' });
+        }
+        const settings = await sampleStatusService.updateSampleStatusSettings({ enabled, time });
+        res.json({ message: 'Sample status settings updated', settings });
+    } catch (error) {
+        console.error('Update sample status settings error:', error);
+        res.status(500).json({ error: 'Failed to update sample status settings' });
+    }
+});
+
+router.post('/sample-status-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const summary = await sampleStatusService.sendSampleStatus();
+        res.json({ message: summary.message, summary });
+    } catch (error) {
+        console.error('Manual sample status run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to send the sample status report' });
     }
 });
 

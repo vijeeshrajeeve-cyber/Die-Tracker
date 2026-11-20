@@ -248,6 +248,9 @@ const startServer = async () => {
         // Daily summary of the previous day's activity (runs when enabled in settings)
         dailySummaryService.scheduleDailySummary();
 
+        // Daily Sample Status PDF (Monday to Saturday, when enabled in settings)
+        require('./services/sampleStatusReport.cjs').scheduleSampleStatus();
+
         // Die delivery chaser: overdue and no-ETA dies out to each supplier
         require('./services/deliveryChaser.cjs').scheduleDeliveryChasers();
         scheduleWorkQueueNotifications(pool);
