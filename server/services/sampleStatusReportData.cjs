@@ -195,15 +195,17 @@ async function withCustomers(db, rows) {
   });
 }
 
-async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' } = {}) {
+// The three queries, mapping, listing filter and customer fallback shared by the
+// Sample Status and Sample Approval reports.
+async function loadFollowupRows(db) {
   const orders = await db.query(
     `SELECT id, die_no, plant, press, customer_name, die_type, supplier, die_received_date, submission_date,
-            sample_status, status AS order_status, corrector, no_of_trial, sample_remark
+            sample_status, sample_approval_date, status AS order_status, corrector, no_of_trial, sample_remark
        FROM die_orders`
   );
   const standalone = await db.query(
     `SELECT id, profile, plant, press, customer, supplier, die_received_date, submission_date,
-            status AS sample_status, corrector, no_of_trial, remark
+            status AS sample_status, sample_approval_date, corrector, no_of_trial, remark
        FROM sample_followups`
   );
   const trialRows = await db.query(
@@ -215,13 +217,13 @@ async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' }
     ...orders.rows.map(o => ({
       source: 'order', id: o.id, die: o.die_no, plant: o.plant, press: o.press, customer: o.customer_name,
       dieType: o.die_type, supplier: o.supplier, receivedDate: o.die_received_date, submissionDate: o.submission_date,
-      status: o.sample_status, orderStatus: o.order_status, corrector: o.corrector,
+      status: o.sample_status, sampleApprovalDate: o.sample_approval_date, orderStatus: o.order_status, corrector: o.corrector,
       legacyTrials: o.no_of_trial, remark: o.sample_remark,
     })),
     ...standalone.rows.map(s => ({
       source: 'standalone', id: s.id, die: s.profile, plant: s.plant, press: s.press, customer: s.customer,
       dieType: '', supplier: s.supplier, receivedDate: s.die_received_date, submissionDate: s.submission_date,
-      status: s.sample_status, orderStatus: null, corrector: s.corrector,
+      status: s.sample_status, sampleApprovalDate: s.sample_approval_date, orderStatus: null, corrector: s.corrector,
       legacyTrials: s.no_of_trial, remark: s.remark,
     })),
   ].filter(belongsInSampleFollowup);
@@ -237,7 +239,12 @@ async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' }
     comments: t.comments,
   }));
 
+  return { rows, trials };
+}
+
+async function loadSampleStatus(db, { reportDate = todayLocal(), plant = 'All' } = {}) {
+  const { rows, trials } = await loadFollowupRows(db);
   return buildSampleStatus({ rows, trials, reportDate, plant });
 }
 
-module.exports = { belongsInSampleFollowup, buildSampleStatus, loadSampleStatus, SUBMISSION_TARGET_DAYS };
+module.exports = { belongsInSampleFollowup, buildSampleStatus, dayNumber, dayOf, loadFollowupRows, loadSampleStatus, SUBMISSION_TARGET_DAYS };
