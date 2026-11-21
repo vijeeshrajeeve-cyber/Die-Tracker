@@ -54,6 +54,11 @@ test('titled with month and target', async () => {
   assert.match(page, /Waiting now 3 - Overdue 1 - Approved in November 2 - Avg days to approval 6\.5/);
 });
 
+test('waiting section says it is as of the issue date', async () => {
+  const [page] = await textOf(await generateSampleApprovalPdf(report(), opts));
+  assert.match(page, /WAITING FOR APPROVAL - as of 1 Dec 2026/);
+});
+
 test('customer band and overdue', async () => {
   const [page] = await textOf(await generateSampleApprovalPdf(report(), opts));
   assert.match(page, /ABC Ltd 2 waiting, 1 overdue - oldest 21 d/);
@@ -115,4 +120,23 @@ test('many waiting rows paginate with repeated headers and no empty page', async
   assert.ok(pages.at(-1).length > 300);
   assert.match(pages.at(-1), new RegExp(`${pages.length} of ${pages.length}`));
   assert.match(pages.at(-1), /LAST MONTH/);
+});
+
+test('the Last month table, Total and notes stay together, never a lone footnote page', async () => {
+  // Sweep the amount of waiting content so the page break lands in every position near the foot.
+  for (let n = 10; n <= 40; n++) {
+    const rows = Array.from({ length: n }, (_, i) => wrow({ die: `Q-${i}`, daysWaiting: 20 - (i % 10) }));
+    const r = report({
+      waiting: [group('ABC Ltd', rows)],
+      lastMonth: {
+        rows: [{ customer: 'ABC Ltd', approved: 2, rejected: 1, avgDays: 6.5 }, { customer: 'XYZ Co', approved: 1, rejected: 0, avgDays: 3 }],
+        total: { approved: 3, rejected: 1, avgDays: 5 },
+      },
+    });
+    const pages = await textOf(await generateSampleApprovalPdf(r, opts));
+    const last = pages.at(-1);
+    assert.ok(last.includes(NOTE), `n=${n}: notes on the last page`);
+    assert.match(last, /Total 3 1 5\.0/, `n=${n}: Total on the last page`);
+    assert.match(last, /XYZ Co 1 0 3\.0/, `n=${n}: last data row beside Total`);
+  }
 });

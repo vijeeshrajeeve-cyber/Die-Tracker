@@ -4,6 +4,10 @@ const XLSX = require('xlsx');
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad = (n) => String(n).padStart(2, '0');
 const stamp = (d) => `${pad(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const longDate = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : '';
+};
 const DATE_FORMAT = 'dd-mmm-yyyy';
 
 // 'YYYY-MM-DD' -> Excel serial number (days since 1899-12-30, from the UTC day), so no timezone can
@@ -55,6 +59,7 @@ function generateSampleApprovalXlsx(report, { generatedAt = new Date() } = {}) {
   const aboutRows = [
     ['Report month', report.monthLabel || report.month || ''],
     ['Generated', stamp(generatedAt)],
+    ['Waiting list as of', longDate(report.reportDate)],
     ['Target days', report.targetDays],
     ['Waiting now', report.header ? report.header.waiting : 0],
     ['Overdue now', report.header ? report.header.overdue : 0],

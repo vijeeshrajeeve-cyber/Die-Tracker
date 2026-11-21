@@ -75,7 +75,9 @@ const ApprovalReportSettings = ({ theme, showToast, openId, setOpenId }) => {
     const hintStyle = hintStyleFor(theme);
     const secondaryButton = (busy) => secondaryButtonFor(theme, busy);
 
-    const dirty = JSON.stringify(settings) !== JSON.stringify(saved);
+    // The inputs hold strings and the saved values are numbers, so compare them as numbers.
+    const comparable = (v) => ({ ...v, day: Number(v.day), targetDays: Number(v.targetDays) });
+    const dirty = JSON.stringify(comparable(settings)) !== JSON.stringify(comparable(saved));
     const lastResult = state?.lastResult;
     const status = dirty
         ? { tone: 'warn', text: 'Unsaved changes' }

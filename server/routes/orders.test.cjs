@@ -27,6 +27,7 @@ installFakeDb(async (sql, params = []) => {
   if (/^SELECT design_enhancement, sample_status FROM die_orders WHERE id = \$1 FOR UPDATE/.test(q)) {
     return { rows: [{ design_enhancement: storedEnhancement, sample_status: storedSampleStatus }] };
   }
+  if (/^SELECT sample_status, status FROM die_orders WHERE id = \$1/.test(q)) return { rows: [{ sample_status: storedSampleStatus, status: 'SAMPLE FOLLOWUP' }] };
   if (/^SELECT 1 FROM sample_trials/.test(q)) return { rows: measuredOk ? [{ '?column?': 1 }] : [] };
   if (/^INSERT INTO design_enhancements/.test(q)) return { rows: [{ id: 1 }] };
   if (/^UPDATE die_orders SET/.test(q)) return { rows: [], rowCount: storedEta === undefined ? 0 : 1 };
@@ -283,4 +284,32 @@ test('POST refuses to create an enhancement order that is already Approved', asy
 test('POST still creates a routine order that is Approved', async () => {
   createDefaults = true;
   assert.equal((await create({ 'DIE NO': 'X1', STATUS: 'AWAITING FOR DESIGN', 'Sample Status': 'Approved' })).status, 201);
+});
+
+const statusLogs = () => log.filter(({ q, params }) => q.startsWith('INSERT INTO order_changes') && params[4] === 'Sample Status');
+
+test('PATCH changing Sample Status with no Change Log writes exactly one log row', async () => {
+  const { status } = await patch({ 'Sample Status': 'Rejected' });
+  assert.equal(status, 200);
+  const rows = statusLogs();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].params[5], 'Sample Submitted');
+  assert.equal(rows[0].params[6], 'Rejected');
+  assert.equal(rows[0].params[1], 5);
+  assert.equal(rows[0].params[8], 'SAMPLE FOLLOWUP');
+});
+
+test('PATCH whose Change Log already has the Sample Status entry writes no extra row', async () => {
+  const { status } = await patch({
+    'Sample Status': 'Rejected',
+    'Change Log': [{ field: 'Sample Status', oldValue: 'Sample Submitted', newValue: 'Rejected' }],
+  });
+  assert.equal(status, 200);
+  assert.equal(statusLogs().length, 1);
+});
+
+test('PATCH not touching or not changing Sample Status writes no status log', async () => {
+  assert.equal((await patch({ Remark: 'x' })).status, 200);
+  assert.equal((await patch({ 'Sample Status': 'Sample Submitted' })).status, 200);
+  assert.equal(statusLogs().length, 0);
 });

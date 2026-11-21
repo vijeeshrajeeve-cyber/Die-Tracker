@@ -68,6 +68,7 @@ test('about sheet carries settings and footnotes', () => {
   const wb = gen(fixtureReport());
   const text = XLSX.utils.sheet_to_json(wb.Sheets['About'], { header: 1 }).map((r) => r.join('|')).join('\n');
   assert.match(text, /Report month\|October 2026/);
+  assert.match(text, /Waiting list as of\|21 Nov 2026/);
   assert.match(text, /Target days\|14/);
   assert.match(text, /Waiting now\|2/);
   assert.match(text, /Rejections are counted where the status change was recorded in the app\./);

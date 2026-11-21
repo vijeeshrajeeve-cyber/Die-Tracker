@@ -72,7 +72,11 @@ const pad = (n) => String(n).padStart(2, '0');
 function sendMonthFor(month, day, now = new Date()) { // eslint-disable-line no-unused-vars
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m, Number(day) || DEFAULT_DAY)); // month index m = next month
-  if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+  if (d.getUTCDay() === 0) {
+    // Sunday goes to Monday, unless that leaves the send month: then the Saturday before.
+    const monday = new Date(d.getTime() + 86400000);
+    d.setTime(monday.getUTCMonth() === d.getUTCMonth() ? monday.getTime() : d.getTime() - 86400000);
+  }
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
@@ -85,6 +89,7 @@ function isDue({ enabled, day, time, lastMonth }, now = new Date()) {
   if (lastMonth === month) return false;
   const sendDate = sendMonthFor(month, day || DEFAULT_DAY, now);
   if (today < sendDate) return false;
+  // Same-month check is defensive: sendMonthFor always stays in the month after the report month.
   if (today.slice(0, 7) !== sendDate.slice(0, 7)) return false;
   if (today === sendDate) {
     const nowHHMM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;

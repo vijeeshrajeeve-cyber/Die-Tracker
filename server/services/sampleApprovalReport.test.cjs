@@ -98,3 +98,9 @@ test('settings validation', async () => {
   await assert.rejects(() => svc.updateApprovalReportSettings({ time: '8am' }), (e) => e.status === 400 && /HH:MM/.test(e.message));
   await svc.updateApprovalReportSettings({ day: 28, targetDays: 90, time: '08:30' });
 });
+
+test('a Sunday that would push the send past the month goes to the Saturday before', () => {
+  assert.equal(svc.sendMonthFor('2027-01', 28), '2027-02-27');
+  assert.equal(svc.sendMonthFor('2026-12', 1), '2027-01-01');
+  assert.equal(svc.isDue({ ...ON, day: 28, lastMonth: '2026-12' }, at(2027, 2, 27, 8, 0)), true);
+});

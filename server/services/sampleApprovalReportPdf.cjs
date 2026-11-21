@@ -246,7 +246,7 @@ async function generateSampleApprovalPdf(report, { generatedAt = new Date(), log
   };
 
   // Section 1: waiting for approval.
-  sectionTitle('WAITING FOR APPROVAL');
+  sectionTitle(`WAITING FOR APPROVAL - as of ${shortDate(report.reportDate) || shortDate(generatedAt.toISOString())}`);
   if (!groups.length) {
     text('No samples are waiting for approval.', M, y - 10, { size: 10, f: bold });
     y -= 24;
@@ -268,17 +268,26 @@ async function generateSampleApprovalPdf(report, { generatedAt = new Date(), log
     }
   }
 
+  // Footnotes, worked out first so the last table rows can reserve room for them.
+  const notes = [];
+  if (footnotes.rejectionsNote) notes.push(footnotes.rejectionsNote);
+  const excluded = Number(footnotes.excludedFromAverage) || 0;
+  if (excluded > 0) notes.push(`${excluded} approval(s) had no usable submission date and are not in the averages.`);
+  const NOTES_H = notes.length ? 6 + notes.length * 11 + 8 : 0;
+  // The Total row and the notes always travel with the last data row.
+  const TAIL_H = ROW_H + 6 + NOTES_H;
+
   // Section 2: last month.
   y -= 6;
-  if (y - (24 + HEAD_H + ROW_H * 2) < BOTTOM) newPage();
+  if (y - (24 + HEAD_H + ROW_H + (monthRows.length <= 1 ? TAIL_H : ROW_H)) < BOTTOM) newPage();
   sectionTitle(`LAST MONTH - ${monthLabel}`);
   if (!monthRows.length) {
     text(`No approvals or rejections in ${monthLabel}.`, M, y - 10, { size: 10, f: bold });
     y -= 24;
   } else {
     const monthHead = () => tableHead(monthCols, MONTH_TABLE_W);
-    const monthRow = (r, isTotal) => {
-      if (y - ROW_H < BOTTOM) {
+    const monthRow = (r, isTotal, reserve = 0) => {
+      if (y - (ROW_H + reserve) < BOTTOM) {
         newPage();
         monthHead();
       }
@@ -296,17 +305,13 @@ async function generateSampleApprovalPdf(report, { generatedAt = new Date(), log
       y -= ROW_H;
     };
     monthHead();
-    monthRows.forEach((r) => monthRow(r, false));
+    monthRows.forEach((r, i) => monthRow(r, false, i === monthRows.length - 1 ? TAIL_H : 0));
     monthRow(total, true);
     y -= 6;
   }
 
-  // Footnotes.
-  const notes = [];
-  if (footnotes.rejectionsNote) notes.push(footnotes.rejectionsNote);
-  const excluded = Number(footnotes.excludedFromAverage) || 0;
-  if (excluded > 0) notes.push(`${excluded} approval(s) had no usable submission date and are not in the averages.`);
-  if (y - (notes.length * 11 + 8) < BOTTOM) newPage();
+  // Footnotes (space was reserved above; the check only matters for an empty last-month section).
+  if (y - NOTES_H < BOTTOM) newPage();
   y -= 6;
   notes.forEach((n) => {
     text(n, M, y - 8, { size: 8, color: MUTED, width: CONTENT_W });
