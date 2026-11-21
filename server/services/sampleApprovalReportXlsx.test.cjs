@@ -15,7 +15,7 @@ function fixtureReport() {
   ];
   return buildSampleApproval({ rows, trials: [], rejections: [], reportDate: '2026-11-21', month: '2026-10', targetDays: 14 });
 }
-const gen = (r) => XLSX.read(generateSampleApprovalXlsx(r, { generatedAt: new Date(2026, 10, 21, 8, 0) }), { type: 'buffer', cellDates: true });
+const gen = (r) => XLSX.read(generateSampleApprovalXlsx(r, { generatedAt: new Date(2026, 10, 21, 8, 0) }), { type: 'buffer', cellNF: true });
 const sheetRows = (wb, n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: null });
 
 test('three sheets in order', () => {
@@ -24,10 +24,19 @@ test('three sheets in order', () => {
 
 test('waiting rows carry real dates and numbers', () => {
   const report = fixtureReport();
-  const rows = sheetRows(gen(report), 'Waiting');
+  const wb = gen(report);
+  const rows = sheetRows(wb, 'Waiting');
   const r = rows.find((x) => x['Die #'] === '032064-2501');
-  assert.ok(r['Submitted'] instanceof Date);
-  assert.equal(r['Submitted'].toISOString().slice(0, 10), '2026-04-27');
+  assert.equal(r['Submitted'], 46139);
+  const wsW = wb.Sheets['Waiting'];
+  const hdr = XLSX.utils.sheet_to_json(wsW, { header: 1 })[0];
+  const col = XLSX.utils.encode_col(hdr.indexOf('Submitted'));
+  const idx = rows.indexOf(r) + 2;
+  const cell = wsW[`${col}${idx}`];
+  assert.equal(cell.t, 'n');
+  assert.equal(cell.v, 46139);
+  assert.equal(cell.z, 'dd-mmm-yyyy');
+  assert.equal(wsW[`${col}${rows.indexOf(rows.find((x) => x['Die #'] === '032064-2502')) + 2}`], undefined);
   assert.equal(r['Days waiting'], 208);
   assert.equal(r['Overdue'], 'Yes');
   const u = rows.find((x) => x['Die #'] === '032064-2502');
