@@ -11,6 +11,7 @@ import OrderingReminderSettings from './OrderingReminderSettings';
 import FocReminderSettings from './FocReminderSettings';
 import DailySummarySettings from './DailySummarySettings';
 import SampleStatusSettings from './SampleStatusSettings';
+import ApprovalReportSettings from './ApprovalReportSettings';
 import DeliveryChaserSettings from './DeliveryChaserSettings';
 
 // Settings → Email.
@@ -324,6 +325,7 @@ const EmailSettings = ({ theme }) => {
                     <DeliveryChaserSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <DailySummarySettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                     <SampleStatusSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
+                    <ApprovalReportSettings theme={theme} showToast={showToast} openId={openId} setOpenId={setOpenId} />
                 </div>
             </section>
         </div>

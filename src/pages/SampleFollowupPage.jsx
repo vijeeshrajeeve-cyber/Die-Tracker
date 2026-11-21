@@ -7,6 +7,7 @@ import { todayLocal } from '../utils/today';
 import { EnhancementTag, isEnhancementOrder } from '../components/DieAttentionLabels';
 import SampleFollowupForm from '../components/sample/SampleFollowupForm';
 import SampleFollowupDetail from '../components/sample/SampleFollowupDetail';
+import ApprovalReportMenu from '../components/sample/ApprovalReportMenu';
 import TrialPlanTab from '../components/sample/TrialPlanTab';
 import TrialPlanSummary from '../components/sample/TrialPlanSummary';
 import { TRIAL_PLANTS, plantKey } from '../utils/trialPlanView';
@@ -472,6 +473,7 @@ export default function SampleFollowupPage({
         <div className="sf-header-actions">
           <button type="button" className="sf-button sf-button-header" disabled={!exportRows.length} onClick={() => handleExport().catch(error => setToast({ type: 'error', message: `Export failed: ${error.message}` }))}><Download size={16} />Export</button>
           <button type="button" className="sf-button sf-button-header" disabled={statusPdfBusy} aria-busy={statusPdfBusy} onClick={() => handleStatusPdf().catch(error => setToast({ type: 'error', message: `Sample Status PDF failed: ${error.message}` }))}><FileText size={16} />{statusPdfBusy ? 'Preparing PDF…' : 'Sample Status PDF'}</button>
+          <ApprovalReportMenu onError={(message) => setToast({ type: 'error', message })} />
           <button type="button" className="sf-button sf-button-header sf-button-primary" disabled={saving} onClick={addSample}><Plus size={16} />Add Record</button>
         </div>
       </header>
