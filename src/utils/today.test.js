@@ -58,3 +58,10 @@ test('todayLocal is localDay applied to now', () => {
   const at = new Date(2026, 8, 5, 1, 30, 0);
   assert.equal(todayLocal(at), localDay(at));
 });
+
+test('previousMonth steps back one month, across a year boundary', async () => {
+  const { previousMonth } = await import('./today.js');
+  assert.equal(previousMonth('2026-11-21'), '2026-10');
+  assert.equal(previousMonth('2026-01-01'), '2025-12');
+  assert.equal(previousMonth('2026-03-31'), '2026-02');
+});

@@ -251,6 +251,9 @@ const startServer = async () => {
         // Daily Sample Status PDF (Monday to Saturday, when enabled in settings)
         require('./services/sampleStatusReport.cjs').scheduleSampleStatus();
 
+        // Monthly Sample Approval Followup PDF + Excel (when enabled in settings)
+        require('./services/sampleApprovalReport.cjs').scheduleApprovalReport();
+
         // Die delivery chaser: overdue and no-ETA dies out to each supplier
         require('./services/deliveryChaser.cjs').scheduleDeliveryChasers();
         scheduleWorkQueueNotifications(pool);

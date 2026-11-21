@@ -20,3 +20,12 @@ export const localDay = (date) => {
 
 // The local calendar day right now.
 export const todayLocal = (now = new Date()) => localDay(now);
+
+// The calendar month before the given local day, as 'YYYY-MM'. String
+// arithmetic on purpose (see localDay): no Date, no UTC shift.
+export const previousMonth = (day = todayLocal()) => {
+  let y = Number(day.slice(0, 4));
+  let m = Number(day.slice(5, 7)) - 1;
+  if (m < 1) { m = 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+};

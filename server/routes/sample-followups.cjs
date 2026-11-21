@@ -3,6 +3,8 @@ const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../db.cjs');
 const { todayLocal } = require('../services/dates.cjs');
 const sampleStatusService = require('../services/sampleStatusReport.cjs');
+const approvalReportService = require('../services/sampleApprovalReport.cjs');
+const { isMonth, previousMonth } = require('../services/sampleApprovalReportData.cjs');
 
 const router = express.Router();
 
@@ -76,6 +78,28 @@ router.get('/status-report.pdf', async (req, res) => {
         res.status(500).json({ error: 'Failed to generate the sample status PDF' });
     }
 });
+
+// Sample Approval Followup downloads: rendered on demand, record nothing.
+// Before the /:id routes so "approval-report.pdf" is never read as an id.
+for (const kind of ['pdf', 'xlsx']) {
+    router.get(`/approval-report.${kind}`, async (req, res) => {
+        try {
+            const month = req.query.month === undefined || req.query.month === '' ? previousMonth(todayLocal()) : String(req.query.month);
+            if (!isMonth(month)) {
+                return res.status(400).json({ error: 'month must be YYYY-MM' });
+            }
+            const { bytes } = await approvalReportService.renderFor({ month, kind });
+            res.setHeader('Content-Type', kind === 'xlsx'
+                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                : 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${approvalReportService.fileName(month, kind)}"`);
+            res.send(Buffer.from(bytes));
+        } catch (error) {
+            console.error(`Sample approval ${kind} error:`, error);
+            res.status(500).json({ error: `Failed to generate the sample approval ${kind === 'xlsx' ? 'Excel file' : 'PDF'}` });
+        }
+    });
+}
 
 // Get all sample followups
 router.get('/', async (req, res) => {

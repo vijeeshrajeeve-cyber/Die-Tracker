@@ -896,6 +896,13 @@ const initializeDatabase = async () => {
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sample_status_time     TEXT DEFAULT '18:00';
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sample_status_last_run DATE;
 
+      -- Sample Approval Followup: monthly; recipients on the 'Approval Report' email template.
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS approval_report_enabled    BOOLEAN DEFAULT false;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS approval_report_day        INTEGER DEFAULT 1;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS approval_report_time       TEXT DEFAULT '08:00';
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS approval_report_last_month TEXT;
+      ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS approval_target_days       INTEGER DEFAULT 14;
+
       -- Die delivery chaser: dies past the supplier's ETA, or with none, out to
       -- each supplier at most once every interval_days. Checked daily at time.
       ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS delivery_chaser_enabled       BOOLEAN DEFAULT false;
@@ -1439,7 +1446,8 @@ const initializeDatabase = async () => {
       INSERT INTO email_templates (name, subject_template, body_template, category) VALUES
       ('Trial Plan - GEX 1', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan'),
       ('Trial Plan - GEX 2', 'Trial schedule {{plant}} - {{date}}', 'The trial schedule for {{plant}} on {{date}} is attached.', 'trial_plan'),
-      ('Sample Status', 'Sample status - {{date}}', 'The sample status for {{date}} is attached.', 'sample_status')
+      ('Sample Status', 'Sample status - {{date}}', 'The sample status for {{date}} is attached.', 'sample_status'),
+      ('Approval Report', 'Sample approval report - {{month}}', 'The sample approval report for {{month}} is attached.', 'approval_report')
       ON CONFLICT (name) DO NOTHING
     `);
 

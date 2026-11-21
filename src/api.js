@@ -847,6 +847,16 @@ export const emailAPI = {
 
     // Emails the Sample Status report to the template recipients right now.
     runSampleStatusNow: async () => apiRequest('/email/sample-status-settings/run-now', { method: 'POST' }),
+
+    getApprovalReportSettings: async () => apiRequest('/email/approval-report-settings'),
+
+    updateApprovalReportSettings: async (settings) => apiRequest('/email/approval-report-settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+    }),
+
+    // Emails the Sample Approval report to the template recipients right now.
+    runApprovalReportNow: async () => apiRequest('/email/approval-report-settings/run-now', { method: 'POST' }),
 };
 
 // Sample Followups API
@@ -879,6 +889,20 @@ export const sampleFollowupsAPI = {
     statusReportPdf: async (date, plant = 'All') => {
         const response = await fetch(
             `${API_BASE_URL}/sample-followups/status-report.pdf?date=${encodeURIComponent(date)}&plant=${encodeURIComponent(plant || 'All')}`,
+            { headers: { Authorization: `Bearer ${getToken()}` } }
+        );
+        if (!response.ok) {
+            let message = nonApiErrorMessage(response.status);
+            try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+            throw new Error(message);
+        }
+        return response.blob();
+    },
+
+    // Returns a Blob. kind is 'pdf' or 'xlsx'; month is 'YYYY-MM'.
+    approvalReport: async (month, kind) => {
+        const response = await fetch(
+            `${API_BASE_URL}/sample-followups/approval-report.${kind === 'xlsx' ? 'xlsx' : 'pdf'}?month=${encodeURIComponent(month)}`,
             { headers: { Authorization: `Bearer ${getToken()}` } }
         );
         if (!response.ok) {

@@ -11,6 +11,7 @@ const orderingReminderService = require('../services/orderingReminder.cjs');
 const focReminderService = require('../services/focReminder.cjs');
 const dailySummaryService = require('../services/dailySummary.cjs');
 const sampleStatusService = require('../services/sampleStatusReport.cjs');
+const approvalReportService = require('../services/sampleApprovalReport.cjs');
 const deliveryChaserService = require('../services/deliveryChaser.cjs');
 const { authMiddleware, pageAccessMiddleware } = require('./auth.cjs');
 
@@ -537,6 +538,49 @@ router.post('/sample-status-settings/run-now', authMiddleware, async (req, res) 
     } catch (error) {
         console.error('Manual sample status run error:', error);
         res.status(500).json({ error: error.message || 'Failed to send the sample status report' });
+    }
+});
+
+// ── Sample approval report ───────────────────────────────────────────────────
+
+router.get('/approval-report-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const settings = await approvalReportService.getApprovalReportSettings();
+        res.json({ settings, state: approvalReportService.getApprovalReportState() });
+    } catch (error) {
+        console.error('Get approval report settings error:', error);
+        res.status(500).json({ error: 'Failed to fetch approval report settings' });
+    }
+});
+
+router.put('/approval-report-settings', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const { enabled, day, time, targetDays } = req.body;
+        const settings = await approvalReportService.updateApprovalReportSettings({ enabled, day, time, targetDays });
+        res.json({ message: 'Approval report settings updated', settings });
+    } catch (error) {
+        if (error.status === 400) return res.status(400).json({ error: error.message });
+        console.error('Update approval report settings error:', error);
+        res.status(500).json({ error: 'Failed to update approval report settings' });
+    }
+});
+
+router.post('/approval-report-settings/run-now', authMiddleware, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const summary = await approvalReportService.sendApprovalReport();
+        res.json({ message: summary.message, summary });
+    } catch (error) {
+        console.error('Manual approval report run error:', error);
+        res.status(500).json({ error: error.message || 'Failed to send the approval report' });
     }
 });
 

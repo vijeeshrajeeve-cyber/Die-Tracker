@@ -139,10 +139,30 @@ async function guardApproval(client, id, body) {
     if (!(await hasMeasuredOkTrial(client, id))) throw new OrderEditError(APPROVAL_NEEDS_TRIAL, 'TRIAL_REQUIRED');
 }
 
+// The Sample Approval report counts rejections from the change log, but the
+// Sample Followup form patches the status without writing a log entry. The
+// status before the update (read under the row lock), or null if not patched.
+async function readSampleStatusBefore(client, id, body) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'Sample Status')) return null;
+    const { rows } = await client.query('SELECT sample_status, status FROM die_orders WHERE id = $1', [id]);
+    return rows.length ? rows[0] : null;
+}
+
+// Writes the Sample Status change when the client sent none, so it is never logged twice.
+async function insertMissingSampleStatusLog(client, id, body, before, user) {
+    if (!before) return;
+    const oldValue = before.sample_status == null ? '' : String(before.sample_status);
+    const newValue = sanitizeString(body['Sample Status']) || '';
+    if (oldValue === newValue) return;
+    const entries = Array.isArray(body['Change Log']) ? body['Change Log'] : [];
+    if (entries.some((e) => e && e.field === 'Sample Status')) return;
+    await insertChangeLog(client, id, [{ field: 'Sample Status', oldValue, newValue, stage: before.status }], user);
+}
+
 // Runs one order update in a transaction with its ETA event and change log.
 // Resolves to null on success, or to the HTTP answer to send instead, so each
 // route keeps its own success message.
-async function updateWithEta(id, body, user, runUpdate, { fullReplace = false } = {}) {
+async function updateWithEta(id, body, user, runUpdate, { fullReplace = false, logSampleStatus = false } = {}) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -153,6 +173,7 @@ async function updateWithEta(id, body, user, runUpdate, { fullReplace = false } 
         }
         await guardSimulationOff(client, id, body, fullReplace);
         await guardApproval(client, id, body);
+        const before = logSampleStatus ? await readSampleStatusBefore(client, id, body) : null;
         const result = await runUpdate(client);
         if (result.rowCount === 0) {
             await client.query('ROLLBACK');
@@ -160,6 +181,7 @@ async function updateWithEta(id, body, user, runUpdate, { fullReplace = false } 
         }
         if (eta.plan) await insertEtaEvent(client, id, eta.plan, user);
         await insertChangeLog(client, id, body['Change Log'], user);
+        await insertMissingSampleStatusLog(client, id, body, before, user);
         await client.query('COMMIT');
         return null;
     } catch (error) {
@@ -554,7 +576,7 @@ router.patch('/:id', orderIdValidation, handleValidationErrors, async (req, res)
         const refused = await updateWithEta(id, body, req.user, (client) => client.query(
             `UPDATE die_orders SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`,
             params
-        ));
+        ), { logSampleStatus: true });
         if (refused) return res.status(refused.status).json(refused.json);
 
         await autoUpdateBackupRequests(body['DIE NO'], body['Ordered date']);
