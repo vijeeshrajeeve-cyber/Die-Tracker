@@ -96,23 +96,51 @@ export function TrialSummaryStrip({ summary, title = 'Summary of trial' }) {
   );
 }
 
+const dieListMeta = (d, plant) => [
+  d.die_status,
+  d.press,
+  d.customer,
+  d.plant && d.plant !== plant ? `${d.plant} die` : null,
+].filter(Boolean).join(' · ');
+
 // "Add another die": any die, in any stage, or one with no record at all.
-function AddDiePanel({ samples, entries, meta, defaultType, busy, onAdd, onClose }) {
+// Dies in Sample Followup come first; below them, dies from the plants' die
+// list that were never ordered through this app, with their details.
+function AddDiePanel({ samples, entries, meta, defaultType, busy, onAdd, onClose, plant }) {
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState(null); // a sample, or { free: 'DIE-NO' }
+  const [picked, setPicked] = useState(null); // a sample, { list: dieListRow } or { free: 'DIE-NO' }
   const [entryType, setEntryType] = useState(defaultType);
   const [urgent, setUrgent] = useState(false);
   const [reason, setReason] = useState('');
+  // Die list answers, kept with the text they answer so a slow reply for an
+  // older query never shows under a newer one.
+  const [found, setFound] = useState({ q: '', dies: [], error: '' });
   const matches = useMemo(() => searchSamples(samples, query, entries), [samples, query, entries]);
-  const sample = picked && !picked.free ? picked : null;
+  const sample = picked && !picked.free && !picked.list ? picked : null;
+  const listDie = picked?.list || null;
   const reasonNeeded = picked ? needsOutOfQueueReason(sample, entryType) : false;
   const typed = query.trim();
   const alreadyPlanned = typed && entries.some(e => dieKey(e.die_no) === dieKey(typed));
 
+  useEffect(() => {
+    if (typed.length < 3) return undefined;
+    const timer = setTimeout(() => {
+      trialPlansAPI.dieSearch(typed, plant)
+        .then(r => setFound({ q: typed, dies: r.dies || [], error: '' }))
+        .catch(err => setFound({ q: typed, dies: [], error: err.message || 'Could not search the die list' }));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [typed, plant]);
+
+  const fresh = found.q === typed && typed.length >= 3;
+  const known = new Set([...matches.map(s => dieKey(s.die)), ...entries.map(e => dieKey(e.die_no))]);
+  const listMatches = fresh ? found.dies.filter(d => !known.has(dieKey(d.die_no))) : [];
+  const inList = fresh && found.dies.some(d => dieKey(d.die_no) === dieKey(typed));
+
   const submit = (event) => {
     event.preventDefault();
     if (!picked || (reasonNeeded && !reason)) return;
-    onAdd({ sample, freeDie: picked.free || null, entryType, urgent, reason: reasonNeeded ? reason : (reason || null) });
+    onAdd({ sample, listDie, freeDie: picked.free || null, entryType, urgent, reason: reasonNeeded ? reason : (reason || null) });
   };
 
   return (
@@ -137,11 +165,22 @@ function AddDiePanel({ samples, entries, meta, defaultType, busy, onAdd, onClose
                 </button>
               </li>
             ))}
-            {typed && !alreadyPlanned && !matches.some(s => dieKey(s.die) === dieKey(typed)) && (
+            {listMatches.length > 0 && <li className="tp-search-group">From the die list</li>}
+            {listMatches.map(d => (
+              <li key={`list-${d.die_no}`}>
+                <button type="button" onClick={() => setPicked({ list: d })}>
+                  <span className="sf-mono tp-die">{d.die_no}</span>
+                  <span className="tp-meta">{dieListMeta(d, plant) || 'In the die list'}</span>
+                </button>
+              </li>
+            ))}
+            {typed.length > 0 && typed.length < 3 && !matches.length && <li className="tp-meta tp-search-note">Type at least 3 characters to search the die list.</li>}
+            {fresh && found.error && <li className="tp-meta tp-search-note">{found.error}</li>}
+            {typed && !alreadyPlanned && !inList && !matches.some(s => dieKey(s.die) === dieKey(typed)) && (
               <li>
                 <button type="button" onClick={() => setPicked({ free: typed })}>
                   <span className="sf-mono tp-die">{typed}</span>
-                  <span className="tp-meta">Not in Sample Followup · plan it without a die record</span>
+                  <span className="tp-meta">Not in Sample Followup or the die list · plan it without a die record</span>
                 </button>
               </li>
             )}
@@ -151,8 +190,10 @@ function AddDiePanel({ samples, entries, meta, defaultType, busy, onAdd, onClose
       ) : (
         <>
           <div className="tp-picked">
-            <span className="sf-mono tp-die">{sample ? sample.die : picked.free}</span>
-            <span className="tp-meta">{sample ? [sample.status, sample.press, sample.customer].filter(Boolean).join(' · ') : 'No die record. Nothing is written to a trial log.'}</span>
+            <span className="sf-mono tp-die">{sample ? sample.die : listDie ? listDie.die_no : picked.free}</span>
+            <span className="tp-meta">{sample ? [sample.status, sample.press, sample.customer].filter(Boolean).join(' · ')
+              : listDie ? `From the die list: ${dieListMeta(listDie, plant) || 'no details'}. Not in Sample Followup, so nothing is written to a trial log.`
+                : 'No die record. Nothing is written to a trial log.'}</span>
             <button type="button" className="sf-text-button" onClick={() => { setPicked(null); setReason(''); }}>Change</button>
           </div>
           <div className="tp-add-fields">
@@ -556,9 +597,23 @@ export default function TrialPlanTab({
     return trialPlansAPI.addEntry(planDate, plant, entryFromSample(sample, { ...prefill, entryType, urgent, reason }));
   }, `${sample.die} added to the plan`);
 
-  const addOther = async ({ sample, freeDie, entryType, urgent, reason }) => {
+  const addOther = async ({ sample, listDie, freeDie, entryType, urgent, reason }) => {
     if (sample) {
       const out = await addFromSample(sample, { entryType, urgent, reason });
+      if (out) setAdding(null);
+      return;
+    }
+    if (listDie) {
+      // A die from the plants' die list: its press and customer come from the
+      // list, tooling and alloy as for any other die.
+      const out = await run(async () => {
+        const prefill = await prefillFor(listDie.die_no, plant);
+        return trialPlansAPI.addEntry(planDate, plant, {
+          die_no: listDie.die_no, plant: listDie.plant || plant, press: listDie.press, customer: listDie.customer,
+          entry_type: entryType, urgent, out_of_queue_reason: reason || null,
+          tooling: prefill.toolings.join(', ').slice(0, 120) || null, alloy: prefill.alloy,
+        });
+      }, `${listDie.die_no} added to the plan from the die list`);
       if (out) setAdding(null);
       return;
     }
@@ -791,7 +846,7 @@ export default function TrialPlanTab({
                     <span>{plant} dies from Sample Followup</span>
                   </header>
                   {adding && (
-                    <AddDiePanel samples={samples} entries={entries} meta={meta} defaultType={adding} busy={busy}
+                    <AddDiePanel samples={samples} entries={entries} meta={meta} defaultType={adding} busy={busy} plant={plant}
                       onAdd={addOther} onClose={() => setAdding(null)} />
                   )}
                   <div className="sf-band-head">
@@ -810,7 +865,7 @@ export default function TrialPlanTab({
                   ))}
                   {!queue.length && <p className="tp-empty-note">No {plant} dies are waiting for trial.</p>}
                   <div className="tp-queue-foot">
-                    <button type="button" className="tp-dashed" onClick={() => setAdding('Trial')}>+ Add another die (re-trial, approved, or not in Sample Followup)</button>
+                    <button type="button" className="tp-dashed" onClick={() => setAdding('Trial')}>+ Search and add any die (Sample Followup or the die list)</button>
                     <button type="button" className="tp-dashed" onClick={() => setAdding('Supervised')}>+ Add any die as a supervised run for this day</button>
                   </div>
                 </section>

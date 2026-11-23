@@ -521,3 +521,33 @@ test('a published plan counts carry-overs that arrived after it went out', async
   const view = await plans.planView(client, TOMORROW, 'GEX 1', TODAY);
   assert.equal(view.carriedAfterPublish, 1);
 });
+
+// ── Die list search ───────────────────────────────────────────────────────
+
+test('the die list is searched from the start of the number, in either spelling', async () => {
+  const client = fakeClient([[/FROM existing_die_details/, { rows: [] }]]);
+  assert.deepEqual(await plans.searchDieList(client, ' 12158_5 ', 'GEX 1'), []);
+  assert.deepEqual(client.log[0].params, ['12158-5']);
+  assert.match(client.log[0].q, /translate\(die_no, '_', '-'\) ILIKE \$1 \|\| '%'/);
+});
+
+test('fewer than three characters, or a wildcard, never runs a broad search', async () => {
+  const client = fakeClient([[/FROM existing_die_details/, { rows: [] }]]);
+  assert.deepEqual(await plans.searchDieList(client, '12', 'GEX 1'), []);
+  assert.equal(client.log.length, 0);
+  await plans.searchDieList(client, '1%5', 'GEX 1');
+  assert.deepEqual(client.log[0].params, ['15']);
+});
+
+test("die list matches put the plan's plant first and scrapped dies last, in the app's spelling", async () => {
+  const client = fakeClient([[/FROM existing_die_details/, { rows: [
+    { die_no: '12158-103', plant: 'GEX 01', press: 'M_PRESS.1', customer: 'Gulf', die_status: 'SCRAPPED' },
+    { die_no: '12158-504', plant: 'GEX 01', press: 'PRESS 5', customer: 'Gulf ', die_status: 'AVAILABLE' },
+    { die_no: '12158-601', plant: 'GEX 2', press: 'PRESS 7', customer: 'Gulf', die_status: 'AVAILABLE' },
+  ] }]]);
+  const dies = await plans.searchDieList(client, '12158', 'GEX 1');
+  assert.deepEqual(dies.map(d => [d.die_no, d.plant, d.press]), [
+    ['12158-504', 'GEX 1', 'PRESS 5'], ['12158-103', 'GEX 1', 'M_PRESS.1'], ['12158-601', 'GEX 2', 'PRESS 7'],
+  ]);
+  assert.equal(dies[0].customer, 'Gulf');
+});

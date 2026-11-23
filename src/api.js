@@ -955,6 +955,8 @@ export const trialPlansAPI = {
     // plant: '' for both plants added together
     summary: async (from, to, plant = '') => apiRequest(`/trial-plans/summary?${new URLSearchParams({ from, to, ...(plant ? { plant } : {}) })}`),
     lastAlloy: async (dieNo) => apiRequest(`/trial-plans/last-alloy/${encodeURIComponent(dieNo)}`),
+    // { dies: [{ die_no, plant, press, customer, die_status, die_type, supplier }] } from the plants' die list
+    dieSearch: async (q, plant) => apiRequest(`/trial-plans/die-search?${new URLSearchParams({ q, plant })}`),
     addEntry: async (date, plant, entry) => apiRequest(planPath(date, plant, '/entries'), {
         method: 'POST',
         body: JSON.stringify(entry),

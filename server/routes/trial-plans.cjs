@@ -73,6 +73,15 @@ router.get('/summary', async (req, res) => {
     }
 });
 
+// Dies from the plants' die list, for planning one that was never ordered here.
+router.get('/die-search', async (req, res) => {
+    try {
+        res.json({ dies: await svc.searchDieList(pool, req.query.q, req.query.plant) });
+    } catch (error) {
+        fail(res, 'Trial plan die search')(error);
+    }
+});
+
 router.get('/last-alloy/:dieNo', async (req, res) => {
     try {
         res.json({ alloy: await svc.lastAlloy(pool, req.params.dieNo) });

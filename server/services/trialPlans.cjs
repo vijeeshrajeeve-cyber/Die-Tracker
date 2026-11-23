@@ -650,6 +650,48 @@ async function lastAlloy(client, dieNo) {
   return rows[0]?.alloy || null;
 }
 
+// The die list (existing_die_details) holds every die the plants have, most of
+// which were never ordered through this app. The plan searches it so an old
+// production die can be planned with its press and customer filled in.
+// Numbers are matched from the start, in either spelling; the plan's own plant
+// comes first, scrapped dies last, and the list writes dies with '_', which is
+// shown as '-' like everywhere else in the app.
+const DIE_SEARCH_LIMIT = 15;
+async function searchDieList(client, query, plantInput = null) {
+  const q = trim(query).replace(/_/g, '-');
+  if (q.length < 3) return [];
+  const plant = plantName(plantInput);
+  const { rows } = await client.query(
+    `SELECT DISTINCT ON (translate(die_no, '_', '-'))
+            translate(die_no, '_', '-') AS die_no, plant, press, customer, die_status, die_type, supplier, profile_number
+       FROM existing_die_details
+      WHERE translate(die_no, '_', '-') ILIKE $1 || '%'
+      ORDER BY translate(die_no, '_', '-'), updated_at DESC NULLS LAST, id DESC
+      LIMIT 200`,
+    [q.replace(/[%\\]/g, '')]
+  );
+  const rank = (r) => [
+    plant && plantName(r.plant) !== plant ? 1 : 0,
+    /SCRAP/i.test(r.die_status || '') ? 1 : 0,
+  ];
+  return rows
+    .map(r => ({
+      die_no: r.die_no,
+      plant: plantName(r.plant) || trim(r.plant) || null,
+      press: trim(r.press) || null,
+      customer: trim(r.customer) || null,
+      die_status: trim(r.die_status) || null,
+      die_type: trim(r.die_type) || null,
+      supplier: trim(r.supplier) || null,
+    }))
+    .sort((a, b) => {
+      const [a1, a2] = rank(a);
+      const [b1, b2] = rank(b);
+      return a1 - b1 || a2 - b2 || a.die_no.localeCompare(b.die_no, 'en', { numeric: true });
+    })
+    .slice(0, DIE_SEARCH_LIMIT);
+}
+
 // Most die orders carry no customer name, so a blank customer is looked up the
 // way the rest of the app knows it: the die list for that exact die, then any
 // die of the same profile, then the profile master.
@@ -737,5 +779,5 @@ module.exports = {
   RESULT_GRACE_DAYS, CORRECTOR_LOAD_FLAG, MAX_SUMMARY_DAYS,
   addDays, isPlanDate, plantName, nextWorkingDay, carryTarget, defaultPlanDate, planState,
   validateEntry, validateOutcome, summarise, findChecks,
-  planView, lastAlloy, customerFor, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
+  planView, lastAlloy, customerFor, searchDieList, addEntry, updateEntry, removeEntry, publishPlan, recordOutcome, rangeSummary,
 };
