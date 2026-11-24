@@ -2,7 +2,8 @@
 // One-off importer for the historical Sample Followup Excel sheet.
 //   node server/scripts/import-sample-followup-sheet.cjs <sheet.xlsx> [--dry-run] [--report <path>]
 // The sheet path must come first. Fills only blank sample fields on matching
-// die_orders and moves sample_status forward; never replaces an existing value,
+// die_orders and moves sample_status forward, logging each change in the order
+// history (order_changes); never replaces an existing value,
 // creates orders, deletes, or clears a value the sheet leaves blank.
 // Design: docs/superpowers/specs/2026-08-03-sample-followup-excel-import-design.md
 const fs = require('fs');
@@ -78,8 +79,8 @@ function renderReport(plan, { file, dryRun, missingColumns, ledger, skippedCheck
   }
 
   out.push('');
-  out.push(`== 7. No die received date — saved, but not shown on Sample Followup (${plan.notReceived.length}) ==`);
-  for (const e of plan.notReceived) out.push(`  row ${e.sheetRow}  ${e.die}  (order ${e.orderId})`);
+  out.push(`== 7. Saved, but not shown on Sample Followup (${plan.notShown.length}) ==`);
+  for (const e of plan.notShown) out.push(`  row ${e.sheetRow}  ${e.die}  (order ${e.orderId})  ${e.reason}`);
 
   out.push('');
   out.push(`== 8. Corrector names the dropdown would not offer — shown as "not in list" (${plan.unknownCorrectors.length}) ==`);
@@ -102,6 +103,7 @@ function renderReport(plan, { file, dryRun, missingColumns, ledger, skippedCheck
          + `${plan.notFound.length} not found, ${plan.ambiguous.length} ambiguous, `
          + `${plan.conflicts.length} differ, ${plan.warnings.length} warnings, `
          + `${ledger.length} marked as already reported in Daily Summary.`);
+  out.push('Every change is also written to the order history as "Sample Followup sheet import".');
   return out.join('\n');
 }
 
@@ -121,9 +123,12 @@ async function loadChecks() {
   const standalone = await tableExists('sample_followups');
   if (!standalone) skippedChecks.push('sample_followups');
   const hasLedger = await tableExists('daily_report_ledger');
+  const hasChangeLog = await tableExists('order_changes');
+  if (!hasChangeLog) skippedChecks.push('order_changes (no order history entries will be written)');
   return {
     skippedChecks,
     hasLedger,
+    hasChangeLog,
     correctors: correctors
       ? (await pool.query('SELECT name, plant, is_active FROM correctors')).rows
       : undefined,
@@ -152,7 +157,7 @@ function localToday() {
   return `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
 }
 
-async function apply(plan, ledger, today) {
+async function apply(plan, ledger, today, { hasChangeLog }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -166,6 +171,17 @@ async function apply(plan, ledger, today) {
         `UPDATE die_orders SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${params.length}`,
         params,
       );
+      if (!hasChangeLog) continue;
+      // One history row per changed field, like an edit in the app, so the
+      // order drawer shows where the value came from.
+      for (const log of imp.changeLogEntries(entry)) {
+        await client.query(
+          `INSERT INTO order_changes
+             (order_id, user_id, changed_by_name, changed_at, field_name, old_value, new_value, reason, stage)
+           VALUES ($1, NULL, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7)`,
+          [entry.orderId, imp.IMPORT_REASON, log.field, log.oldValue, log.newValue, log.reason, log.stage],
+        );
+      }
     }
     for (const row of ledger) {
       await client.query(
@@ -205,7 +221,7 @@ async function main() {
   }
 
   const orders = (await pool.query(ORDER_QUERY)).rows;
-  const { skippedChecks, hasLedger, correctors, loggedTrials, standaloneProfiles, measuredOkOrders } = await loadChecks();
+  const { skippedChecks, hasLedger, hasChangeLog, correctors, loggedTrials, standaloneProfiles, measuredOkOrders } = await loadChecks();
   const plan = imp.buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles, measuredOkOrders });
   const today = localToday();
   const ledger = hasLedger ? imp.ledgerRows(plan, today) : [];
@@ -223,7 +239,7 @@ async function main() {
   if (dryRun) {
     console.log('Dry run — no changes were written.');
   } else {
-    await apply(plan, ledger, today);
+    await apply(plan, ledger, today, { hasChangeLog });
     console.log(`Applied ${plan.updates.length} updates.`);
   }
 

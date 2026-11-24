@@ -255,6 +255,17 @@ function planRowUpdate({ row, order, loggedTrials = 0 }) {
   return { updates, warnings, conflicts, trialsIgnored };
 }
 
+// Why the Sample Followup page would not list this order, or null if it would.
+// Same rule as belongsInSampleFollowup in src/utils/sampleFollowupView.js
+// (cancelled orders never get this far: selectOrder skips them).
+function hiddenReason(order) {
+  if (!String(order.die_received_date || '').trim()) return 'no die received date';
+  const status = String(order.status || '').trim().toUpperCase();
+  if (status === 'HOLD') return 'order is on hold';
+  if (status === 'CANCELLED') return 'order is cancelled';
+  return null;
+}
+
 function buildImportPlan({ rows, orders, correctors, loggedTrials, standaloneProfiles, measuredOkOrders }) {
   const byDie = new Map();
   for (const o of orders || []) {
@@ -266,7 +277,7 @@ function buildImportPlan({ rows, orders, correctors, loggedTrials, standalonePro
 
   const plan = {
     updates: [], noop: [], notFound: [], ambiguous: [], warnings: [],
-    conflicts: [], notReceived: [], trialsIgnored: [], standalone: [], unknownCorrectors: [],
+    conflicts: [], notShown: [], trialsIgnored: [], standalone: [], unknownCorrectors: [],
     approvalSkipped: [],
   };
   const seen = new Map();
@@ -320,7 +331,8 @@ function buildImportPlan({ rows, orders, correctors, loggedTrials, standalonePro
 
     if (conflicts.length) plan.conflicts.push({ ...entry, conflicts });
     if (trialsIgnored) plan.trialsIgnored.push({ ...entry, ...trialsIgnored });
-    if (Object.keys(updates).length && !order.die_received_date) plan.notReceived.push(entry);
+    const hidden = hiddenReason(order);
+    if (Object.keys(updates).length && hidden) plan.notShown.push({ ...entry, reason: hidden });
     if (correctors && updates.corrector && !correctorInDropdown(correctors, order.plant, updates.corrector)) {
       if (!unknownNames.has(updates.corrector)) unknownNames.set(updates.corrector, []);
       unknownNames.get(updates.corrector).push(dieRaw);
@@ -329,6 +341,30 @@ function buildImportPlan({ rows, orders, correctors, loggedTrials, standalonePro
 
   plan.unknownCorrectors = [...unknownNames].map(([name, dies]) => ({ name, dies }));
   return plan;
+}
+
+// The order history (order_changes) shows each change under the field name the
+// app's own edit forms log, so an imported value reads like any other edit.
+const LOG_FIELD = {
+  submission_date: 'Submission Date',
+  sample_approval_date: 'Sample Approval Date',
+  no_of_trial: 'No of Trial',
+  corrector: 'Corrector',
+  sample_status: 'Sample Status',
+};
+const IMPORT_REASON = 'Sample Followup sheet import';
+
+function changeLogEntries(entry) {
+  const shown = (v) => (v == null ? '' : String(v));
+  return Object.entries(entry.updates)
+    .filter(([col]) => WRITABLE_COLUMNS.has(col) && LOG_FIELD[col])
+    .map(([col, next]) => ({
+      field: LOG_FIELD[col],
+      oldValue: shown(entry.before[col]),
+      newValue: shown(next),
+      reason: IMPORT_REASON,
+      stage: entry.before.status || null,
+    }));
 }
 
 // Daily Summary lists any stage dated before the report date that has no ledger
@@ -349,7 +385,8 @@ function ledgerRows(plan, today) {
 }
 
 module.exports = {
-  COLUMNS, MAX_TRIALS, STATUS_RANK, WRITABLE_COLUMNS, FIELDS,
+  COLUMNS, MAX_TRIALS, STATUS_RANK, WRITABLE_COLUMNS, FIELDS, IMPORT_REASON,
   readCell, readColumn, checkColumns, normalizeDieNo, cleanText, parseSheetDate, parseTrialCount,
   selectOrder, deriveSampleStatus, correctorInDropdown, planRowUpdate, buildImportPlan, ledgerRows,
+  changeLogEntries, hiddenReason,
 };

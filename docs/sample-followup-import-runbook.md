@@ -7,7 +7,9 @@ Design: `docs/superpowers/specs/2026-08-03-sample-followup-excel-import-design.m
 and fills in blank `submission_date`, `sample_approval_date`, `no_of_trial` and
 `corrector`, and moves `sample_status` forward to match. New past submission
 dates are also marked as already reported, so Daily Summary does not list them
-as "Recorded late".
+as "Recorded late". Every changed field is also written to the order history
+(`order_changes`), under the name "Sample Followup sheet import", so the order
+drawer shows where each value came from.
 
 **What it never does:** replace a value already in the app, write the die
 received date, create orders, delete anything, touch the main order `status`, or
@@ -82,13 +84,18 @@ those describe the rehearsal snapshot, not production. Check these instead:
   plant or supplier. Disagreements are reported only, never written.
 - **Section 6 — sheet differs from the app.** The app value is kept. If the sheet
   is right for any of these, correct them on screen afterwards.
-- **Section 7 — no die received date.** The values are saved, but these dies will
-  not appear on the Sample Followup page until a received date is entered.
+- **Section 7 — saved, but not shown on Sample Followup.** The reason is printed
+  on each line: `no die received date` (the die appears once a received date is
+  entered) or `order is on hold` (it appears once the order is taken off hold).
 - **Section 8 — corrector names.** Fix the spelling in the sheet or add the person
   in Settings, then run the dry run again. A name is saved exactly as typed.
 - **Section 9 — trials already logged.** The app shows the logged trials, so the
   sheet count is not saved.
 - **Section 10 — hand-added records.** These are not updated. Enter them on screen.
+- **Section 11 — enhancement dies.** Dates are saved but the status is not set to
+  Approved until a measured OK trial is logged, the same rule the app applies.
+- **`CHECK NOT RUN` lines** mean production is running older code without that
+  table. For `order_changes`, the import still works but writes no history rows.
 
 ## 5. Back up the database
 
@@ -162,6 +169,12 @@ docker exec die-ordering-db psql -h /var/run/postgresql -U postgres -d die_order
 This also undoes any sample edits made in the app since the import, so check with
 users first. Daily Summary ledger rows from the import stay behind; the only effect
 is that a re-entered old date for those dies is not listed as "Recorded late".
+The import's order history rows also stay behind; remove them if you want the
+history to match:
+
+```bash
+docker exec die-ordering-db psql -h /var/run/postgresql -U postgres -d die_ordering -c "DELETE FROM order_changes WHERE changed_by_name = 'Sample Followup sheet import' AND user_id IS NULL"
+```
 
 **Last resort: restore the whole database** from the step 5 backup, only into an
 empty database and only if nothing else has been entered since. A plain restore

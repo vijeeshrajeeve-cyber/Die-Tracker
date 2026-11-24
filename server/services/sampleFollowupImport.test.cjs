@@ -414,7 +414,7 @@ test('buildImportPlan collects every list the report needs to flag', () => {
     loggedTrials: new Map([[2, 1]]),
     standaloneProfiles: new Set(['D']),
   });
-  assert.deepEqual(plan.notReceived.map((e) => e.orderId), [1]);
+  assert.deepEqual(plan.notShown.map((e) => e.orderId), [1]);
   assert.deepEqual(plan.unknownCorrectors, [{ name: 'Stranger', dies: ['A', 'B'] }]);
   assert.deepEqual(plan.trialsIgnored.map((e) => e.orderId), [2]);
   assert.deepEqual(plan.conflicts.map((e) => e.die), ['C']);
@@ -446,4 +446,40 @@ test('an enhancement die without a measured OK trial is not set to Approved, and
   const ok = imp.buildImportPlan({ ...base, measuredOkOrders: new Set([10]) });
   assert.equal(ok.updates[0].updates.sample_status, 'Approved');
   assert.equal(ok.approvalSkipped.length, 0);
+});
+
+test('a die on a HOLD order is listed as not shown on Sample Followup, with the reason', () => {
+  const plan = imp.buildImportPlan({
+    rows: [sheetRow({ 'Die': 'A' }), sheetRow({ 'Die': 'B' }), sheetRow({ 'Die': 'C' })],
+    orders: [
+      order({ id: 1, die_no: 'A', die_received_date: null }),
+      order({ id: 2, die_no: 'B', die_received_date: '2025-01-01', status: 'Hold' }),
+      order({ id: 3, die_no: 'C', die_received_date: '2025-01-01' }),
+    ],
+  });
+  assert.deepEqual(plan.notShown.map((e) => [e.orderId, e.reason]),
+    [[1, 'no die received date'], [2, 'order is on hold']]);
+});
+
+test('changeLogEntries names each change the way the app logs it', () => {
+  const entries = imp.changeLogEntries({
+    before: order({ status: 'DONE', no_of_trial: 0, sample_status: 'Pending' }),
+    updates: {
+      submission_date: '2025-02-01', sample_approval_date: '2025-02-10',
+      no_of_trial: 3, corrector: 'Dinesh', sample_status: 'Approved',
+    },
+  });
+  assert.deepEqual(entries.map((e) => [e.field, e.oldValue, e.newValue]), [
+    ['Submission Date', '', '2025-02-01'],
+    ['Sample Approval Date', '', '2025-02-10'],
+    ['No of Trial', '0', '3'],
+    ['Corrector', '', 'Dinesh'],
+    ['Sample Status', 'Pending', 'Approved'],
+  ]);
+  assert.ok(entries.every((e) => e.stage === 'DONE' && e.reason === imp.IMPORT_REASON));
+});
+
+test('changeLogEntries skips columns the import may not write', () => {
+  const entries = imp.changeLogEntries({ before: order(), updates: { die_received_date: '2025-01-01' } });
+  assert.deepEqual(entries, []);
 });
